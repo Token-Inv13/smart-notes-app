@@ -1,0 +1,39 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    // User files
+    match /users/{userId}/{allPaths=**} {
+      allow read: if isAuthenticated() && isOwner(userId);
+      allow write: if isAuthenticated() && isOwner(userId);
+    }
+    
+    // Note attachments
+    match /users/{userId}/notes/{noteId}/{allFiles=**} {
+      allow read: if isAuthenticated() && isOwner(userId);
+      allow write: if isAuthenticated() && isOwner(userId);
+    }
+    
+    // Workspace files
+    match /workspaces/{workspaceId}/{allPaths=**} {
+      allow read: if isAuthenticated() && (
+        exists(/databases/$(database)/documents/workspaces/$(workspaceId)) &&
+        (
+          get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerId == request.auth.uid ||
+          request.auth.uid in get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.members
+        )
+      );
+      allow write: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/workspaces/$(workspaceId)) &&
+        get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerId == request.auth.uid;
+    }
+  }
+}
