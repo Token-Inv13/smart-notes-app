@@ -8,6 +8,8 @@ import {
   orderBy,
   limit as fsLimit,
   type Query,
+  type CollectionReference,
+  type QueryConstraint,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/hooks/useAuth';
@@ -26,8 +28,8 @@ export function useUserTasks(params?: UseUserTasksParams) {
   const tasksQuery: Query<TaskDoc> | null = useMemo(() => {
     if (!user) return null;
 
-    const baseRef = collection(db, 'tasks') as unknown as ReturnType<typeof collection<TaskDoc>>;
-    const constraints = [where('userId', '==', user.uid)];
+    const baseRef = collection(db, 'tasks') as CollectionReference<TaskDoc>;
+    const constraints: QueryConstraint[] = [where('userId', '==', user.uid)];
 
     if (params?.workspaceId) {
       constraints.push(where('workspaceId', '==', params.workspaceId));
