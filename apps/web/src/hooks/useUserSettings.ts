@@ -33,7 +33,7 @@ export function useUserSettings(): UseUserSettingsState {
     const ref = doc(db, 'users', user.uid);
 
     const unsubscribe = onSnapshot(
-      ref,
+      ref as any,
       (snapshot: DocumentSnapshot<UserDoc>) => {
         if (snapshot.exists()) {
           setData({ id: snapshot.id, ...(snapshot.data() as UserDoc) });

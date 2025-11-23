@@ -1,13 +1,12 @@
 import withPWA from 'next-pwa';
-import type { NextConfig } from 'next';
 
-const baseConfig: NextConfig = {
+const baseConfig = {
   experimental: {
     appDir: true,
   },
 };
 
-const nextConfig: NextConfig = withPWA({
+const nextConfig = withPWA({
   dest: 'public',
   register: true,
   skipWaiting: true,
