@@ -4,6 +4,6 @@
   "/(public)/register/page": "/register",
   "/page": "/",
   "/(protected)/settings/page": "/settings",
-  "/(protected)/tasks/page": "/tasks",
-  "/(protected)/dashboard/page": "/dashboard"
+  "/(protected)/dashboard/page": "/dashboard",
+  "/(protected)/tasks/page": "/tasks"
 }

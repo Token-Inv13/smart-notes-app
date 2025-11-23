@@ -4,6 +4,6 @@
   "/(public)/register/page": "app/(public)/register/page.js",
   "/page": "app/page.js",
   "/(protected)/settings/page": "app/(protected)/settings/page.js",
-  "/(protected)/tasks/page": "app/(protected)/tasks/page.js",
-  "/(protected)/dashboard/page": "app/(protected)/dashboard/page.js"
+  "/(protected)/dashboard/page": "app/(protected)/dashboard/page.js",
+  "/(protected)/tasks/page": "app/(protected)/tasks/page.js"
 }
