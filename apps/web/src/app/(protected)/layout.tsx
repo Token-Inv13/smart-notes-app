@@ -1,11 +1,11 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 
-export default function ProtectedLayout({ children }: { children: ReactNode }) {
+export default function ProtectedLayout(props: any) {
+  const { children } = props;
   const { user, loading } = useAuth();
   const router = useRouter();
 

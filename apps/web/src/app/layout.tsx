@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import './globals.css';
 
 export const metadata = {
@@ -8,7 +7,8 @@ export const metadata = {
   themeColor: '#111827',
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout(props: any) {
+  const { children } = props;
   return (
     <html lang="en" suppressHydrationWarning>
       <head>

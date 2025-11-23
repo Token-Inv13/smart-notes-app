@@ -4,7 +4,8 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
-  AuthError
+  AuthError,
+  type User,
 } from 'firebase/auth';
 import {
   collection,
@@ -97,7 +98,7 @@ const FirebaseTest: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
+    const unsubscribe = auth.onAuthStateChanged((user: User | null) => {
       if (user) {
         setMessage(`Welcome back, ${user.email}`);
         setMessageType('success');

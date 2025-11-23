@@ -11,6 +11,7 @@ import {
   ListItemIcon,
   ListItemText,
   Container,
+  ListItemButton,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -51,36 +52,36 @@ const Dashboard = () => {
     <div>
       <Toolbar />
       <List>
-        <ListItem button>
+        <ListItemButton>
           <ListItemIcon>
             <NoteIcon />
           </ListItemIcon>
           <ListItemText primary="Notes" />
-        </ListItem>
-        <ListItem button>
+        </ListItemButton>
+        <ListItemButton>
           <ListItemIcon>
             <TaskIcon />
           </ListItemIcon>
           <ListItemText primary="Tasks" />
-        </ListItem>
-        <ListItem button>
+        </ListItemButton>
+        <ListItemButton>
           <ListItemIcon>
             <WorkspaceIcon />
           </ListItemIcon>
           <ListItemText primary="Workspaces" />
-        </ListItem>
-        <ListItem button>
+        </ListItemButton>
+        <ListItemButton>
           <ListItemIcon>
             <SettingsIcon />
           </ListItemIcon>
           <ListItemText primary="Settings" />
-        </ListItem>
-        <ListItem button onClick={handleLogout}>
+        </ListItemButton>
+        <ListItemButton onClick={handleLogout}>
           <ListItemIcon>
             <LogoutIcon />
           </ListItemIcon>
           <ListItemText primary="Logout" />
-        </ListItem>
+        </ListItemButton>
       </List>
     </div>
   );

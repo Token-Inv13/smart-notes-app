@@ -4,6 +4,7 @@ import {
   getDownloadURL,
   deleteObject,
   listAll,
+  getMetadata,
 } from 'firebase/storage';
 import { storage } from './firebase';
 import { Attachment } from '../types';
@@ -61,7 +62,7 @@ export const getNoteAttachments = async (
     const attachments = await Promise.all(
       attachmentsList.items.map(async (item) => {
         const downloadURL = await getDownloadURL(item);
-        const metadata = await item.getMetadata();
+        const metadata = await getMetadata(item);
         
         return {
           id: item.fullPath,
