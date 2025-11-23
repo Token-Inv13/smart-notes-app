@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { collection, query, where, onSnapshot, type QuerySnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/hooks/useAuth';
 import type { WorkspaceDoc } from '@/types/firestore';
@@ -42,7 +42,7 @@ export function useUserWorkspaces(): UseUserWorkspacesState {
 
     const unsubscribeOwners = onSnapshot(
       ownerRef,
-      (snapshot: QuerySnapshot<WorkspaceDoc>) => {
+      (snapshot) => {
         const ownerDocs = snapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as WorkspaceDoc) }));
         setData((prev) => {
           const memberOnly = prev.filter((w) => w.ownerId !== user.uid);
@@ -58,7 +58,7 @@ export function useUserWorkspaces(): UseUserWorkspacesState {
 
     const unsubscribeMembers = onSnapshot(
       memberRef,
-      (snapshot: QuerySnapshot<WorkspaceDoc>) => {
+      (snapshot) => {
         const memberDocs = snapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as WorkspaceDoc) }));
         setData((prev) => {
           const ownerOnly = prev.filter((w) => w.ownerId === user.uid);
