@@ -3,7 +3,7 @@
   "/(public)/login/page": "/login",
   "/(public)/register/page": "/register",
   "/page": "/",
-  "/(protected)/settings/page": "/settings",
   "/(protected)/dashboard/page": "/dashboard",
+  "/(protected)/settings/page": "/settings",
   "/(protected)/tasks/page": "/tasks"
 }
