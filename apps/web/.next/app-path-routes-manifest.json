@@ -1,9 +1,0 @@
-{
-  "/_not-found/page": "/_not-found",
-  "/(public)/login/page": "/login",
-  "/(public)/register/page": "/register",
-  "/page": "/",
-  "/(protected)/dashboard/page": "/dashboard",
-  "/(protected)/settings/page": "/settings",
-  "/(protected)/tasks/page": "/tasks"
-}
