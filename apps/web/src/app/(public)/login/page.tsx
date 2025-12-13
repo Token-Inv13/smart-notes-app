@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { auth } from "@/lib/firebase";
 import {
   signInWithEmailAndPassword,
@@ -11,10 +12,31 @@ import {
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextPath = searchParams.get("next") || "/dashboard";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const establishSession = async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      throw new Error("No authenticated user after sign-in");
+    }
+
+    const idToken = await user.getIdToken();
+    const res = await fetch("/api/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ idToken }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || "Failed to establish session");
+    }
+  };
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,7 +44,8 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      router.replace("/dashboard");
+      await establishSession();
+      router.replace(nextPath);
     } catch (err: any) {
       setError(err?.message ?? "Failed to sign in");
     } finally {
@@ -36,7 +59,8 @@ export default function LoginPage() {
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-      router.replace("/dashboard");
+      await establishSession();
+      router.replace(nextPath);
     } catch (err: any) {
       setError(err?.message ?? "Failed to sign in with Google");
     } finally {

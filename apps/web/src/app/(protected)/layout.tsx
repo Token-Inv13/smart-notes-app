@@ -1,26 +1,22 @@
-"use client";
+import type { ReactNode } from "react";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { verifySessionCookie } from "@/lib/firebaseAdmin";
+import LogoutButton from "./LogoutButton";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/hooks/useAuth";
+interface ProtectedLayoutProps {
+  children: ReactNode;
+}
 
-export default function ProtectedLayout(props: any) {
-  const { children } = props;
-  const { user, loading } = useAuth();
-  const router = useRouter();
+export default async function ProtectedLayout({ children }: ProtectedLayoutProps) {
+  const sessionCookie = (await cookies()).get("session")?.value;
+  if (!sessionCookie) {
+    redirect("/login");
+  }
 
-  useEffect(() => {
-    if (!loading && !user) {
-      router.replace("/login");
-    }
-  }, [loading, user, router]);
-
-  if (loading || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
-        <div>Loading...</div>
-      </div>
-    );
+  const decoded = await verifySessionCookie(sessionCookie);
+  if (!decoded) {
+    redirect("/login");
   }
 
   return (
@@ -29,6 +25,7 @@ export default function ProtectedLayout(props: any) {
       <div className="flex-1 flex flex-col">
         <header className="h-14 border-b border-border px-4 flex items-center justify-between">
           <div>Topbar</div>
+          <LogoutButton />
         </header>
         <main className="flex-1 p-4">{children}</main>
       </div>
