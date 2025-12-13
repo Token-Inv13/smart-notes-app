@@ -24,12 +24,13 @@ interface UseUserTasksParams {
 
 export function useUserTasks(params?: UseUserTasksParams) {
   const { user } = useAuth();
+  const userUid = user?.uid;
 
   const tasksQuery: Query<TaskDoc> | null = useMemo(() => {
-    if (!user) return null;
+    if (!userUid) return null;
 
     const baseRef = collection(db, 'tasks') as CollectionReference<TaskDoc>;
-    const constraints: QueryConstraint[] = [where('userId', '==', user.uid)];
+    const constraints: QueryConstraint[] = [where('userId', '==', userUid)];
 
     if (params?.workspaceId) {
       constraints.push(where('workspaceId', '==', params.workspaceId));
@@ -43,11 +44,7 @@ export function useUserTasks(params?: UseUserTasksParams) {
     }
 
     return query(baseRef, ...constraints) as Query<TaskDoc>;
-  }, [user, params?.workspaceId, params?.limit]);
-
-  if (!user) {
-    return { data: [] as TaskDoc[], loading: false, error: null as Error | null, refetch: () => {} };
-  }
+  }, [userUid, params?.workspaceId, params?.limit]);
 
   return useCollection<TaskDoc>(tasksQuery);
 }

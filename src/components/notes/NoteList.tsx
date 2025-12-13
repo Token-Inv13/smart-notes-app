@@ -3,8 +3,8 @@ import { useSelector, useDispatch } from 'react-redux';
 import {
   List,
   ListItem,
+  ListItemButton,
   ListItemText,
-  ListItemSecondaryAction,
   IconButton,
   Paper,
   Typography,
@@ -88,33 +88,36 @@ const NoteList: React.FC<NoteListProps> = ({ workspaceId, onEditNote }) => {
           {filteredNotes.map((note) => (
             <ListItem
               key={note.id}
-              button
-              onClick={() => dispatch(setSelectedNote(note))}
+              disablePadding
+              secondaryAction={
+                <>
+                  <IconButton
+                    edge="end"
+                    aria-label="edit"
+                    onClick={() => onEditNote(note.id)}
+                    sx={{ mr: 1 }}
+                  >
+                    <EditIcon />
+                  </IconButton>
+                  <IconButton
+                    edge="end"
+                    aria-label="delete"
+                    onClick={() => handleDeleteNote(note.id)}
+                  >
+                    <DeleteIcon />
+                  </IconButton>
+                </>
+              }
             >
-              <ListItemText
-                primary={note.title}
-                secondary={`Last updated: ${format(
-                  new Date(note.updatedAt),
-                  'MMM dd, yyyy HH:mm'
-                )}`}
-              />
-              <ListItemSecondaryAction>
-                <IconButton
-                  edge="end"
-                  aria-label="edit"
-                  onClick={() => onEditNote(note.id)}
-                  sx={{ mr: 1 }}
-                >
-                  <EditIcon />
-                </IconButton>
-                <IconButton
-                  edge="end"
-                  aria-label="delete"
-                  onClick={() => handleDeleteNote(note.id)}
-                >
-                  <DeleteIcon />
-                </IconButton>
-              </ListItemSecondaryAction>
+              <ListItemButton onClick={() => dispatch(setSelectedNote(note))}>
+                <ListItemText
+                  primary={note.title}
+                  secondary={`Last updated: ${format(
+                    new Date(note.updatedAt),
+                    'MMM dd, yyyy HH:mm'
+                  )}`}
+                />
+              </ListItemButton>
             </ListItem>
           ))}
         </List>

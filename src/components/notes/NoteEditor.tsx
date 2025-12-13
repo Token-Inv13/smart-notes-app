@@ -15,7 +15,6 @@ import {
   Close as CloseIcon,
 } from '@mui/icons-material';
 import { RootState } from '../../store';
-import { Note } from '../../types';
 import { updateNote, addNote } from '../../features/notes/notesSlice';
 import {
   createNote as createNoteService,

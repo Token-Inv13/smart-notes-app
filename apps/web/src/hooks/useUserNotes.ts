@@ -23,12 +23,13 @@ interface UseUserNotesParams {
 
 export function useUserNotes(params?: UseUserNotesParams) {
   const { user } = useAuth();
+  const userUid = user?.uid;
 
   const notesQuery: Query<NoteDoc> | null = useMemo(() => {
-    if (!user) return null;
+    if (!userUid) return null;
 
     const baseRef = collection(db, 'notes') as CollectionReference<NoteDoc>;
-    const constraints: QueryConstraint[] = [where('userId', '==', user.uid)];
+    const constraints: QueryConstraint[] = [where('userId', '==', userUid)];
 
     if (params?.workspaceId) {
       constraints.push(where('workspaceId', '==', params.workspaceId));
@@ -41,11 +42,7 @@ export function useUserNotes(params?: UseUserNotesParams) {
     }
 
     return query(baseRef, ...constraints) as Query<NoteDoc>;
-  }, [user?.uid, params?.workspaceId, params?.limit]);
-
-  if (!user) {
-    return { data: [] as NoteDoc[], loading: false, error: null as Error | null, refetch: () => {} };
-  }
+  }, [userUid, params?.workspaceId, params?.limit]);
 
   return useCollection<NoteDoc>(notesQuery);
 }

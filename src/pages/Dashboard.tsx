@@ -7,7 +7,6 @@ import {
   Typography,
   IconButton,
   List,
-  ListItem,
   ListItemIcon,
   ListItemText,
   Container,
