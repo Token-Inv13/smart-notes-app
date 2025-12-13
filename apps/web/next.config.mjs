@@ -1,9 +1,6 @@
 import withPWA from 'next-pwa';
 
 const baseConfig = {
-  experimental: {
-    appDir: true,
-  },
 };
 
 const nextConfig = withPWA({
