@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { verifySessionCookie } from "@/lib/firebaseAdmin";
 import LogoutButton from "./LogoutButton";
 
+export const dynamic = "force-dynamic";
+
 interface ProtectedLayoutProps {
   children: ReactNode;
 }
