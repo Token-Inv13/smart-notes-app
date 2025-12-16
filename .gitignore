@@ -32,3 +32,4 @@ apps/web/public/workbox-*.js
 *.sln
 *.sw?
 .vercel
+.env*.local

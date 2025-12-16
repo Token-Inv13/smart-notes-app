@@ -10,10 +10,6 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
     
-    function isWorkspaceMember(workspaceId) {
-      return request.auth.uid in get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.members;
-    }
-    
     // Users collection
     match /users/{userId} {
       allow read, update, delete: if request.auth != null && request.auth.uid == userId;
