@@ -29,6 +29,7 @@ export async function POST(request: Request) {
     return res;
   } catch (e) {
     console.error('Error creating session cookie', e);
-    return new NextResponse('Failed to create session', { status: 401 });
+    const message = e instanceof Error ? e.message : 'Failed to create session';
+    return new NextResponse(message, { status: 500 });
   }
 }
