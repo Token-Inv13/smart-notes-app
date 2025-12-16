@@ -18,11 +18,17 @@ function getAdminApp(): admin.app.App {
     return app;
   }
 
+  let normalizedPrivateKey = privateKey.trim();
+  normalizedPrivateKey = normalizedPrivateKey.replace(/^"|"$/g, "");
+  normalizedPrivateKey = normalizedPrivateKey.replace(/,$/, "");
+  normalizedPrivateKey = normalizedPrivateKey.replace(/\r\n/g, "\n");
+  normalizedPrivateKey = normalizedPrivateKey.replace(/\\n/g, "\n");
+
   app = admin.initializeApp({
     credential: admin.credential.cert({
       projectId,
       clientEmail,
-      privateKey: privateKey.replace(/\\n/g, '\n'),
+      privateKey: normalizedPrivateKey,
     }),
   });
 
