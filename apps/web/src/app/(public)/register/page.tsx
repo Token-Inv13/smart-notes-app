@@ -5,6 +5,27 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { auth } from "@/lib/firebase";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 
+function getFirebaseAuthErrorMessage(err: unknown): string {
+  const code = typeof err === "object" && err && "code" in err ? (err as any).code : undefined;
+  if (typeof code !== "string") {
+    const message = typeof err === "object" && err && "message" in err ? String((err as any).message) : "";
+    return message || "Une erreur est survenue. Réessaie.";
+  }
+
+  switch (code) {
+    case "auth/email-already-in-use":
+      return "Cette adresse email est déjà utilisée.";
+    case "auth/invalid-email":
+      return "Adresse email invalide.";
+    case "auth/weak-password":
+      return "Mot de passe trop faible (6 caractères minimum).";
+    case "auth/network-request-failed":
+      return "Problème réseau. Vérifie ta connexion puis réessaie.";
+    default:
+      return "Une erreur est survenue. Réessaie.";
+  }
+}
+
 export default function RegisterPage() {
   return (
     <Suspense>
@@ -51,7 +72,7 @@ function RegisterPageInner() {
       await establishSession();
       router.replace(nextPath);
     } catch (err: any) {
-      setError(err?.message ?? "Failed to create account");
+      setError(getFirebaseAuthErrorMessage(err));
     } finally {
       setLoading(false);
     }

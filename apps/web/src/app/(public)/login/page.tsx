@@ -8,7 +8,37 @@ import {
   signInWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup,
+  sendPasswordResetEmail,
 } from "firebase/auth";
+
+function getFirebaseAuthErrorMessage(err: unknown): string {
+  const code = typeof err === "object" && err && "code" in err ? (err as any).code : undefined;
+  if (typeof code !== "string") {
+    const message = typeof err === "object" && err && "message" in err ? String((err as any).message) : "";
+    return message || "Une erreur est survenue. Réessaie.";
+  }
+
+  switch (code) {
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+      return "Email ou mot de passe incorrect.";
+    case "auth/invalid-email":
+      return "Adresse email invalide.";
+    case "auth/user-disabled":
+      return "Ce compte a été désactivé.";
+    case "auth/too-many-requests":
+      return "Trop de tentatives. Réessaie plus tard.";
+    case "auth/popup-closed-by-user":
+      return "Connexion annulée.";
+    case "auth/popup-blocked":
+      return "La popup a été bloquée par le navigateur. Autorise les popups puis réessaie.";
+    case "auth/network-request-failed":
+      return "Problème réseau. Vérifie ta connexion puis réessaie.";
+    default:
+      return "Une erreur est survenue. Réessaie.";
+  }
+}
 
 export default function LoginPage() {
   return (
@@ -26,6 +56,7 @@ function LoginPageInner() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resetStatus, setResetStatus] = useState<string | null>(null);
 
   const establishSession = async () => {
     const user = auth.currentUser;
@@ -49,13 +80,14 @@ function LoginPageInner() {
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setResetStatus(null);
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
       await establishSession();
       router.replace(nextPath);
     } catch (err: any) {
-      setError(err?.message ?? "Failed to sign in");
+      setError(getFirebaseAuthErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -63,6 +95,7 @@ function LoginPageInner() {
 
   const handleGoogleLogin = async () => {
     setError(null);
+    setResetStatus(null);
     setLoading(true);
     try {
       const provider = new GoogleAuthProvider();
@@ -70,7 +103,28 @@ function LoginPageInner() {
       await establishSession();
       router.replace(nextPath);
     } catch (err: any) {
-      setError(err?.message ?? "Failed to sign in with Google");
+      setError(getFirebaseAuthErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    setError(null);
+    setResetStatus(null);
+
+    const trimmed = email.trim();
+    if (!trimmed) {
+      setError("Renseigne ton email pour recevoir un lien de réinitialisation.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, trimmed);
+      setResetStatus("Email de réinitialisation envoyé (si un compte existe pour cette adresse).");
+    } catch (err) {
+      setError(getFirebaseAuthErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -121,12 +175,27 @@ function LoginPageInner() {
             </p>
           )}
 
+          {resetStatus && (
+            <p className="text-sm text-muted-foreground mt-2" aria-live="polite">
+              {resetStatus}
+            </p>
+          )}
+
           <button
             type="submit"
             disabled={loading}
             className="w-full mt-2 inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? "Connexion..." : "Se connecter"}
+          </button>
+
+          <button
+            type="button"
+            disabled={loading}
+            onClick={handleResetPassword}
+            className="w-full inline-flex items-center justify-center px-4 py-2 rounded-md border border-input bg-background text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Mot de passe oublié ?
           </button>
         </form>
 
@@ -144,6 +213,13 @@ function LoginPageInner() {
         >
           Continuer avec Google
         </button>
+
+        <p className="text-xs text-muted-foreground mt-4 text-center">
+          Pas encore de compte ?{" "}
+          <a className="underline" href={`/register?next=${encodeURIComponent(nextPath)}`}>
+            Créer un compte
+          </a>
+        </p>
       </div>
     </div>
   );
