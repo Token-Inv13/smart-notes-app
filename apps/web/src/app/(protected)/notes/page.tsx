@@ -165,6 +165,9 @@ export default function NotesPage() {
       await updateDoc(doc(db, "notes", note.id), {
         title: validation.data.title,
         content: validation.data.content,
+        workspaceId: typeof note.workspaceId === "string" ? note.workspaceId : null,
+        favorite: note.favorite === true,
+        completed: note.completed === true,
         updatedAt: serverTimestamp(),
       });
       cancelEditing();
