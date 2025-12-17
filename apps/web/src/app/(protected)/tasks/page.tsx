@@ -45,6 +45,9 @@ export default function TasksPage() {
   const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>("all");
   const [workspaceFilter, setWorkspaceFilter] = useState<WorkspaceFilter>("all");
 
+  const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
+  const [movingTaskId, setMovingTaskId] = useState<string | null>(null);
+
   // New task form state
   const [newTitle, setNewTitle] = useState("");
   const [newStatus, setNewStatus] = useState<TaskStatus>("todo");
@@ -148,7 +151,6 @@ export default function TasksPage() {
         createdAt: serverTimestamp() as unknown as TaskDoc["createdAt"],
         updatedAt: serverTimestamp() as unknown as TaskDoc["updatedAt"],
       };
-
       await addDoc(collection(db, "tasks"), payload);
 
       setNewTitle("");
@@ -163,6 +165,63 @@ export default function TasksPage() {
       setCreating(false);
     }
   };
+
+  const handleMoveTask = async (task: TaskDoc, nextStatus: TaskStatus) => {
+    if (!task.id) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== task.userId) return;
+
+    const currentStatus = ((task.status as TaskStatus | undefined) ?? "todo") as TaskStatus;
+    if (currentStatus === nextStatus) return;
+
+    setMovingTaskId(task.id);
+    try {
+      await updateDoc(doc(db, "tasks", task.id), {
+        status: nextStatus,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error("Error moving task", e);
+    } finally {
+      setMovingTaskId(null);
+    }
+  };
+
+  const handleDragStart = (e: React.DragEvent, taskId: string) => {
+    e.dataTransfer.setData("text/plain", taskId);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDrop = async (e: React.DragEvent, status: TaskStatus) => {
+    e.preventDefault();
+    const taskId = e.dataTransfer.getData("text/plain");
+    if (!taskId) return;
+
+    const task = filteredTasks.find((t) => t.id === taskId);
+    if (!task) return;
+
+    await handleMoveTask(task, status);
+  };
+
+  const allowDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
+
+  const tasksByStatus = useMemo(() => {
+    const groups: Record<TaskStatus, TaskDoc[]> = {
+      todo: [],
+      doing: [],
+      done: [],
+    };
+
+    for (const task of filteredTasks) {
+      const status = ((task.status as TaskStatus | undefined) ?? "todo") as TaskStatus;
+      groups[status].push(task);
+    }
+
+    return groups;
+  }, [filteredTasks]);
 
   const startEditing = (task: TaskDoc) => {
     setEditingId(task.id ?? null);
@@ -333,6 +392,26 @@ export default function TasksPage() {
       <header className="flex flex-col gap-2 mb-4">
         <h1 className="text-xl font-semibold">Tasks</h1>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setViewMode("list")}
+            className={`border border-border rounded px-3 py-1 bg-background ${
+              viewMode === "list" ? "font-semibold" : ""
+            }`}
+          >
+            Liste
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("kanban")}
+            className={`border border-border rounded px-3 py-1 bg-background ${
+              viewMode === "kanban" ? "font-semibold" : ""
+            }`}
+          >
+            Kanban
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2">
           <label className="flex items-center gap-2">
             <span>Status:</span>
             <select
@@ -436,7 +515,7 @@ export default function TasksPage() {
 
       {!loading && !error && filteredTasks.length === 0 && <p>No tasks yet.</p>}
 
-      {!loading && !error && filteredTasks.length > 0 && (
+      {!loading && !error && viewMode === "list" && filteredTasks.length > 0 && (
         <ul className="space-y-2">
           {filteredTasks.map((task) => {
             const isEditing = editingId === task.id;
@@ -517,6 +596,7 @@ export default function TasksPage() {
                           type="datetime-local"
                           value={newReminderTimes[task.id ?? ""] ?? ""}
                           onChange={(e) => handleReminderTimeChange(task.id ?? "", e.target.value)}
+                          aria-label="Reminder time"
                           className="border border-border rounded px-2 py-1 bg-background"
                         />
                         <button
@@ -609,6 +689,73 @@ export default function TasksPage() {
             );
           })}
         </ul>
+      )}
+
+      {!loading && !error && viewMode === "kanban" && (
+        <section className="grid gap-4 md:grid-cols-3">
+          {(statusFilter === "all" ? (["todo", "doing", "done"] as TaskStatus[]) : ([statusFilter] as TaskStatus[])).map(
+            (colStatus) => (
+              <div
+                key={colStatus}
+                className="border border-border rounded-lg bg-card p-3 min-h-[240px]"
+                onDragOver={allowDrop}
+                onDrop={(e) => handleDrop(e, colStatus)}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="font-semibold capitalize">{colStatus}</h2>
+                  <span className="text-xs text-muted-foreground">{tasksByStatus[colStatus].length}</span>
+                </div>
+
+                <div className="space-y-2">
+                  {tasksByStatus[colStatus].map((task) => {
+                    const dueLabel = formatTimestampToLocalString(task.dueDate ?? null);
+                    const isMoving = movingTaskId === task.id;
+
+                    return (
+                      <div
+                        key={task.id}
+                        draggable={!isMoving}
+                        onDragStart={(e) => task.id && handleDragStart(e, task.id)}
+                        className={`border border-border rounded-md bg-background p-2 cursor-move ${
+                          isMoving ? "opacity-50" : ""
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium truncate">{task.title}</div>
+                            {dueLabel && (
+                              <div className="text-xs text-muted-foreground mt-0.5">Due: {dueLabel}</div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => startEditing(task)}
+                              className="text-xs underline"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTask(task)}
+                              className="text-xs underline text-destructive"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {tasksByStatus[colStatus].length === 0 && (
+                    <div className="text-sm text-muted-foreground">Dépose une tâche ici</div>
+                  )}
+                </div>
+              </div>
+            ),
+          )}
+        </section>
       )}
     </div>
   );
