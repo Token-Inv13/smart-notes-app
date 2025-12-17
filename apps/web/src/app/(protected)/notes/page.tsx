@@ -51,6 +51,9 @@ export default function NotesPage() {
       });
   }, [notes]);
 
+  const activeNotes = useMemo(() => sortedNotes.filter((n) => n.completed !== true), [sortedNotes]);
+  const completedNotes = useMemo(() => sortedNotes.filter((n) => n.completed === true), [sortedNotes]);
+
   const handleCreateNote = async () => {
     const user = auth.currentUser;
     if (!user) {
@@ -78,6 +81,7 @@ export default function NotesPage() {
         title: validation.data.title,
         content: validation.data.content,
         favorite: false,
+        completed: false,
         createdAt: serverTimestamp() as unknown as NoteDoc["createdAt"],
         updatedAt: serverTimestamp() as unknown as NoteDoc["updatedAt"],
       };
@@ -96,6 +100,24 @@ export default function NotesPage() {
       }
     } finally {
       setCreating(false);
+    }
+  };
+
+  const toggleCompleted = async (note: NoteDoc, nextCompleted: boolean) => {
+    if (!note.id) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== note.userId) return;
+
+    try {
+      await updateDoc(doc(db, "notes", note.id), {
+        completed: nextCompleted,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error("Error toggling completed", e);
+      if (e instanceof FirebaseError) {
+        setEditError(`${e.code}: ${e.message}`);
+      }
     }
   };
 
@@ -257,10 +279,10 @@ export default function NotesPage() {
         {loading && <p>Loading…</p>}
         {error && <p className="text-sm text-destructive">{error.message}</p>}
 
-        {!loading && !error && sortedNotes.length === 0 && <p>Aucune note.</p>}
+        {!loading && !error && activeNotes.length === 0 && <p>Aucune note.</p>}
 
         <ul className="space-y-2">
-          {sortedNotes.map((note) => {
+          {activeNotes.map((note) => {
             const isEditing = !!note.id && note.id === editingId;
 
             return (
@@ -274,6 +296,14 @@ export default function NotesPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      <label className="text-xs flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={note.completed === true}
+                          onChange={(e) => toggleCompleted(note, e.target.checked)}
+                        />
+                        Terminé
+                      </label>
                       <button
                         type="button"
                         onClick={() => toggleFavorite(note)}
@@ -345,6 +375,35 @@ export default function NotesPage() {
               </li>
             );
           })}
+        </ul>
+      </section>
+
+      <section>
+        <h2 className="text-lg font-semibold mb-2">Terminées</h2>
+        {!loading && !error && completedNotes.length === 0 && <p>Aucune note terminée.</p>}
+
+        <ul className="space-y-2">
+          {completedNotes.map((note) => (
+            <li key={note.id} className="border border-border rounded-md p-3 bg-card">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{note.title}</div>
+                  <div className="text-sm text-muted-foreground whitespace-pre-wrap break-words mt-1">
+                    {note.content}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => toggleCompleted(note, false)}
+                    className="text-xs underline"
+                  >
+                    Restaurer
+                  </button>
+                </div>
+              </div>
+            </li>
+          ))}
         </ul>
       </section>
     </div>

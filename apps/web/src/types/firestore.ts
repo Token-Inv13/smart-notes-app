@@ -25,6 +25,7 @@ export interface NoteDoc {
   title: string;
   content: string;
   favorite?: boolean;
+  completed?: boolean;
   tags?: string[];
   createdAt?: Timestamp;
   updatedAt?: Timestamp;

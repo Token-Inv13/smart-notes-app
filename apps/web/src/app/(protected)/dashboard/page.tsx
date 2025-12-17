@@ -33,13 +33,16 @@ export default function DashboardPage() {
     data: notes,
     loading: notesLoading,
     error: notesError,
-  } = useUserNotes({ workspaceId, favoriteOnly: true, limit: 5 });
+  } = useUserNotes({ workspaceId, favoriteOnly: true, limit: 20 });
 
   const {
     data: tasks,
     loading: tasksLoading,
     error: tasksError,
-  } = useUserTasks({ workspaceId, favoriteOnly: true, limit: 5 });
+  } = useUserTasks({ workspaceId, favoriteOnly: true, limit: 20 });
+
+  const activeFavoriteNotes = notes.filter((n) => n.completed !== true);
+  const activeFavoriteTasks = tasks.filter((t) => (t.status ?? 'todo') !== 'done');
 
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editNoteTitle, setEditNoteTitle] = useState('');
@@ -223,9 +226,9 @@ export default function DashboardPage() {
         {notesLoading && <p>Loading notes...</p>}
         {notesError && <p>Error loading notes: {notesError.message}</p>}
         {noteActionError && <p className="text-sm text-destructive">{noteActionError}</p>}
-        {!notesLoading && !notesError && notes.length === 0 && <p>No notes yet.</p>}
+        {!notesLoading && !notesError && activeFavoriteNotes.length === 0 && <p>No notes yet.</p>}
         <ul className="space-y-1">
-          {notes.map((note) => {
+          {activeFavoriteNotes.map((note) => {
             const isEditing = !!note.id && note.id === editingNoteId;
             return (
               <li key={note.id} className="border border-border rounded-md p-2">
@@ -304,9 +307,9 @@ export default function DashboardPage() {
         {tasksLoading && <p>Loading tasks...</p>}
         {tasksError && <p>Error loading tasks: {tasksError.message}</p>}
         {taskActionError && <p className="text-sm text-destructive">{taskActionError}</p>}
-        {!tasksLoading && !tasksError && tasks.length === 0 && <p>No tasks yet.</p>}
+        {!tasksLoading && !tasksError && activeFavoriteTasks.length === 0 && <p>No tasks yet.</p>}
         <ul className="space-y-1">
-          {tasks.map((task) => {
+          {activeFavoriteTasks.map((task) => {
             const isEditing = !!task.id && task.id === editingTaskId;
             return (
               <li key={task.id} className="border border-border rounded-md p-2">

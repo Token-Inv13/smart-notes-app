@@ -46,6 +46,7 @@ service cloud.firestore {
         && isNonEmptyString(request.resource.data.title)
         && isNonEmptyString(request.resource.data.content)
         && isOptionalBool(request.resource.data.favorite)
+        && isOptionalBool(request.resource.data.completed)
         && isServerTimestamp(request.resource.data.createdAt)
         && isServerTimestamp(request.resource.data.updatedAt);
 
@@ -56,6 +57,7 @@ service cloud.firestore {
         && isNonEmptyString(request.resource.data.title)
         && isNonEmptyString(request.resource.data.content)
         && isOptionalBool(request.resource.data.favorite)
+        && isOptionalBool(request.resource.data.completed)
         && isServerTimestamp(request.resource.data.updatedAt);
 
       allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;

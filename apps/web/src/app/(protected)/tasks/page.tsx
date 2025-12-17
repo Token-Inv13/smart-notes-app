@@ -129,6 +129,30 @@ export default function TasksPage() {
       });
   }, [tasks, statusFilter, workspaceFilter]);
 
+  const activeTasks = useMemo(
+    () => filteredTasks.filter((t) => ((t.status as TaskStatus | undefined) ?? "todo") !== "done"),
+    [filteredTasks],
+  );
+
+  const completedTasks = useMemo(
+    () => {
+      // Completed list should respect workspace filter, but ignore statusFilter.
+      let result = tasks;
+      if (workspaceFilter !== "all") {
+        result = result.filter((task) => task.workspaceId === workspaceFilter);
+      }
+      return result
+        .filter((t) => ((t.status as TaskStatus | undefined) ?? "todo") === "done")
+        .slice()
+        .sort((a, b) => {
+          const aUpdated = a.updatedAt ? a.updatedAt.toMillis() : 0;
+          const bUpdated = b.updatedAt ? b.updatedAt.toMillis() : 0;
+          return bUpdated - aUpdated;
+        });
+    },
+    [tasks, workspaceFilter],
+  );
+
   const handleCreateTask = async () => {
     const user = auth.currentUser;
     if (!user) {
@@ -205,6 +229,22 @@ export default function TasksPage() {
       console.error("Error moving task", e);
     } finally {
       setMovingTaskId(null);
+    }
+  };
+
+  const toggleDone = async (task: TaskDoc, nextDone: boolean) => {
+    if (!task.id) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== task.userId) return;
+
+    const nextStatus: TaskStatus = nextDone ? "done" : "todo";
+    try {
+      await updateDoc(doc(db, "tasks", task.id), {
+        status: nextStatus,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error("Error toggling done", e);
     }
   };
 
@@ -556,11 +596,11 @@ export default function TasksPage() {
       {loading && <p>Loading tasks...</p>}
       {error && <p>Error loading tasks.</p>}
 
-      {!loading && !error && filteredTasks.length === 0 && <p>No tasks yet.</p>}
+      {!loading && !error && activeTasks.length === 0 && <p>No tasks yet.</p>}
 
-      {!loading && !error && viewMode === "list" && filteredTasks.length > 0 && (
+      {!loading && !error && viewMode === "list" && activeTasks.length > 0 && (
         <ul className="space-y-2">
-          {filteredTasks.map((task) => {
+          {activeTasks.map((task) => {
             const isEditing = editingId === task.id;
             const status = (task.status as TaskStatus | undefined) ?? "todo";
             const workspaceName =
@@ -586,6 +626,14 @@ export default function TasksPage() {
                       {dueLabel && <span>Due: {dueLabel}</span>}
                     </div>
                     <div className="mt-2 flex gap-2 text-sm">
+                      <label className="flex items-center gap-1 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={status === "done"}
+                          onChange={(e) => toggleDone(task, e.target.checked)}
+                        />
+                        Terminé
+                      </label>
                       <button
                         type="button"
                         onClick={() => startEditing(task)}
@@ -779,6 +827,14 @@ export default function TasksPage() {
                             )}
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
+                            <label className="text-xs flex items-center gap-1">
+                              <input
+                                type="checkbox"
+                                checked={((task.status as TaskStatus | undefined) ?? "todo") === "done"}
+                                onChange={(e) => toggleDone(task, e.target.checked)}
+                              />
+                              Terminé
+                            </label>
                             <button
                               type="button"
                               onClick={() => startEditing(task)}
@@ -814,6 +870,30 @@ export default function TasksPage() {
               </div>
             ),
           )}
+        </section>
+      )}
+
+      {!loading && !error && completedTasks.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-lg font-semibold">Terminées</h2>
+          <ul className="space-y-2">
+            {completedTasks.map((task) => (
+              <li key={task.id} className="border border-border rounded px-3 py-2 bg-card">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-medium truncate">{task.title}</div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <button
+                      type="button"
+                      onClick={() => toggleDone(task, false)}
+                      className="text-xs underline"
+                    >
+                      Restaurer
+                    </button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
     </div>
