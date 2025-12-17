@@ -1,3 +1,5 @@
+import type { Timestamp } from 'firebase/firestore';
+
 export interface UserDoc {
   uid: string;
   email: string | null;
@@ -23,12 +25,10 @@ export interface NoteDoc {
   title: string;
   content: string;
   tags?: string[];
-  createdAt?: string;
-  updatedAt?: string;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
   [key: string]: unknown;
 }
-
-import type { Timestamp } from 'firebase/firestore';
 
 export interface TaskDoc {
   id?: string;
