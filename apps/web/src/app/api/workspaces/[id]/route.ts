@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import { cookies } from 'next/headers';
 import type { Firestore, Query } from 'firebase-admin/firestore';
 import { getAdminDb, verifySessionCookie } from '@/lib/firebaseAdmin';
@@ -18,10 +18,9 @@ async function deleteQueryInBatches(db: Firestore, q: Query, batchSize = 400) {
   }
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
   try {
-    const { pathname } = new URL(request.url);
-    const id = decodeURIComponent(pathname.split('/').pop() ?? '');
+    const id = request.nextUrl.pathname.split('/').pop();
     if (!id) return new NextResponse('Missing workspace id', { status: 400 });
 
     const sessionCookie = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
