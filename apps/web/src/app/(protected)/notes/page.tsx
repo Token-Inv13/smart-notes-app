@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { z } from "zod";
 import { FirebaseError } from "firebase/app";
@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserNotes } from "@/hooks/useUserNotes";
+import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import type { NoteDoc } from "@/types/firestore";
 
 const newNoteSchema = z.object({
@@ -24,16 +25,22 @@ const newNoteSchema = z.object({
 export default function NotesPage() {
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId") || undefined;
-  const workspaceRequired = !workspaceId;
+  const { data: workspaces } = useUserWorkspaces();
 
   const { data: notes, loading, error } = useUserNotes({ workspaceId });
 
   const [noteTitle, setNoteTitle] = useState("");
   const [noteContent, setNoteContent] = useState("");
+  const [noteWorkspaceId, setNoteWorkspaceId] = useState<string>(workspaceId ?? "");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
+
+  useEffect(() => {
+    if (createOpen) return;
+    setNoteWorkspaceId(workspaceId ?? "");
+  }, [workspaceId, createOpen]);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -63,8 +70,8 @@ export default function NotesPage() {
       return;
     }
 
-    if (workspaceRequired) {
-      setCreateError("Sélectionne un dossier (workspace) dans la sidebar avant de créer une note.");
+    if (!noteWorkspaceId) {
+      setCreateError("Sélectionne un dossier (workspace) pour enregistrer la note.");
       return;
     }
 
@@ -79,7 +86,7 @@ export default function NotesPage() {
     try {
       const payload: Omit<NoteDoc, "id"> = {
         userId: user.uid,
-        workspaceId,
+        workspaceId: noteWorkspaceId,
         title: validation.data.title,
         content: validation.data.content,
         favorite: false,
@@ -239,7 +246,7 @@ export default function NotesPage() {
 
         {createOpen && (
           <div className="px-4 pb-4" id="create-note-panel">
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
+            <div className="grid grid-cols-1 md:grid-cols-2 md:grid-rows-1 md:items-end gap-3">
               <div className="space-y-1">
                 <label className="text-sm font-medium" htmlFor="note-title">
                   Titre
@@ -253,14 +260,35 @@ export default function NotesPage() {
                 />
               </div>
 
-              <button
-                type="button"
-                disabled={creating || workspaceRequired}
-                onClick={handleCreateNote}
-                className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {creating ? "Création…" : "Ajouter"}
-              </button>
+              <div className="space-y-1">
+                <label className="text-sm font-medium" htmlFor="note-workspace">
+                  Dossier
+                </label>
+                <select
+                  id="note-workspace"
+                  value={noteWorkspaceId}
+                  onChange={(e) => setNoteWorkspaceId(e.target.value)}
+                  className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">—</option>
+                  {workspaces.map((ws) => (
+                    <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
+                      {ws.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-2 flex justify-end">
+                <button
+                  type="button"
+                  disabled={creating}
+                  onClick={handleCreateNote}
+                  className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {creating ? "Création…" : "Ajouter"}
+                </button>
+              </div>
             </div>
 
             <div className="mt-3 space-y-1">
@@ -284,12 +312,6 @@ export default function NotesPage() {
           </div>
         )}
       </section>
-
-      {workspaceRequired && (
-        <p className="text-sm text-muted-foreground">
-          Sélectionne un dossier (workspace) dans la sidebar pour créer des notes.
-        </p>
-      )}
 
       <section>
         <h2 className="text-lg font-semibold mb-2">Toutes les notes</h2>

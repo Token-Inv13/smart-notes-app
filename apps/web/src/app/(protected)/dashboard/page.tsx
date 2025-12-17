@@ -1,12 +1,9 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { z } from 'zod';
-import { FirebaseError } from 'firebase/app';
 import {
-  addDoc,
-  collection,
   deleteDoc,
   doc,
   serverTimestamp,
@@ -16,7 +13,6 @@ import { auth, db } from '@/lib/firebase';
 import { formatTimestampForInput, parseLocalDateTimeToTimestamp } from '@/lib/datetime';
 import { useUserNotes } from '@/hooks/useUserNotes';
 import { useUserTasks } from '@/hooks/useUserTasks';
-import { useUserWorkspaces } from '@/hooks/useUserWorkspaces';
 import type { NoteDoc, TaskDoc } from '@/types/firestore';
 
 function formatFrDateTime(ts?: { toDate: () => Date } | null) {
@@ -44,8 +40,6 @@ export default function DashboardPage() {
   const workspaceId = searchParams.get('workspaceId') || undefined;
   const suffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : '';
 
-  const { data: workspaces } = useUserWorkspaces();
-
   const {
     data: notes,
     loading: notesLoading,
@@ -72,68 +66,6 @@ export default function DashboardPage() {
   const [editTaskDueDate, setEditTaskDueDate] = useState('');
   const [savingTask, setSavingTask] = useState(false);
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
-
-  const [createOpen, setCreateOpen] = useState(false);
-  const [noteTitle, setNoteTitle] = useState('');
-  const [noteContent, setNoteContent] = useState('');
-  const [noteWorkspaceId, setNoteWorkspaceId] = useState<string>(workspaceId ?? '');
-  const [creatingNote, setCreatingNote] = useState(false);
-  const [createNoteError, setCreateNoteError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (createOpen) return;
-    setNoteWorkspaceId(workspaceId ?? '');
-  }, [workspaceId, createOpen]);
-
-  const handleCreateNote = async () => {
-    const user = auth.currentUser;
-    if (!user) {
-      setCreateNoteError('Tu dois être connecté pour créer une note.');
-      return;
-    }
-
-    if (!noteWorkspaceId) {
-      setCreateNoteError('Sélectionne un dossier (workspace) pour enregistrer la note.');
-      return;
-    }
-
-    setCreateNoteError(null);
-    const validation = newNoteSchema.safeParse({ title: noteTitle, content: noteContent });
-    if (!validation.success) {
-      setCreateNoteError(validation.error.issues[0]?.message ?? 'Données invalides.');
-      return;
-    }
-
-    setCreatingNote(true);
-    try {
-      const payload: Omit<NoteDoc, 'id'> = {
-        userId: user.uid,
-        workspaceId: noteWorkspaceId,
-        title: validation.data.title,
-        content: validation.data.content,
-        favorite: false,
-        completed: false,
-        createdAt: serverTimestamp() as unknown as NoteDoc['createdAt'],
-        updatedAt: serverTimestamp() as unknown as NoteDoc['updatedAt'],
-      };
-
-      await addDoc(collection(db, 'notes'), payload);
-      setNoteTitle('');
-      setNoteContent('');
-      setCreateOpen(false);
-    } catch (e) {
-      console.error('Error creating note', e);
-      if (e instanceof FirebaseError) {
-        setCreateNoteError(`${e.code}: ${e.message}`);
-      } else if (e instanceof Error) {
-        setCreateNoteError(e.message);
-      } else {
-        setCreateNoteError('Erreur lors de la création de la note.');
-      }
-    } finally {
-      setCreatingNote(false);
-    }
-  };
 
   const startEditNote = (note: NoteDoc) => {
     setEditingNoteId(note.id ?? null);
@@ -300,87 +232,6 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <section className="border border-border rounded-lg bg-card">
-        <div className="p-4 flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold">Nouvelle note</h2>
-          <button
-            type="button"
-            onClick={() => setCreateOpen((v) => !v)}
-            className="inline-flex items-center justify-center px-3 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
-            aria-expanded={createOpen}
-            aria-controls="dashboard-create-note-panel"
-          >
-            {createOpen ? 'Fermer' : 'Créer'}
-          </button>
-        </div>
-
-        {createOpen && (
-          <div className="px-4 pb-4" id="dashboard-create-note-panel">
-            <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_auto] gap-3 items-end">
-              <div className="space-y-1">
-                <label className="text-sm font-medium" htmlFor="dashboard-note-title">
-                  Titre
-                </label>
-                <input
-                  id="dashboard-note-title"
-                  value={noteTitle}
-                  onChange={(e) => setNoteTitle(e.target.value)}
-                  className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                  placeholder="Ex: Idées pour demain"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium" htmlFor="dashboard-note-workspace">
-                  Dossier
-                </label>
-                <select
-                  id="dashboard-note-workspace"
-                  value={noteWorkspaceId}
-                  onChange={(e) => setNoteWorkspaceId(e.target.value)}
-                  className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                >
-                  <option value="">—</option>
-                  {workspaces.map((ws) => (
-                    <option key={ws.id ?? ws.name} value={ws.id ?? ''}>
-                      {ws.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleCreateNote}
-                disabled={creatingNote}
-                className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50"
-              >
-                {creatingNote ? 'Création…' : 'Ajouter'}
-              </button>
-            </div>
-
-            <div className="mt-3 space-y-1">
-              <label className="text-sm font-medium" htmlFor="dashboard-note-content">
-                Contenu
-              </label>
-              <textarea
-                id="dashboard-note-content"
-                value={noteContent}
-                onChange={(e) => setNoteContent(e.target.value)}
-                className="w-full min-h-[96px] md:min-h-[110px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                placeholder="Écris ta note…"
-              />
-            </div>
-
-            {createNoteError && (
-              <p className="mt-2 text-sm text-destructive" aria-live="polite">
-                {createNoteError}
-              </p>
-            )}
-          </div>
-        )}
-      </section>
-
       <section>
         <h2 className="text-lg font-semibold mb-2">Notes favorites</h2>
         {notesLoading && <p>Loading notes...</p>}
