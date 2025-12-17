@@ -70,8 +70,21 @@ export default function SidebarWorkspaces() {
 
   const navigateToDashboard = () => {
     const params = new URLSearchParams(searchParams.toString());
+    params.delete("workspaceId");
     const qs = params.toString();
     router.push(qs ? `/dashboard?${qs}` : "/dashboard");
+  };
+
+  const navigateToNotes = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    const qs = params.toString();
+    router.push(qs ? `/notes?${qs}` : "/notes");
+  };
+
+  const navigateToTasks = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    const qs = params.toString();
+    router.push(qs ? `/tasks?${qs}` : "/tasks");
   };
 
   const handleCreate = async () => {
@@ -184,7 +197,7 @@ export default function SidebarWorkspaces() {
   return (
     <div className="space-y-4">
       <div>
-        <div className="text-sm font-semibold mb-2">Dashboard</div>
+        <div className="text-sm font-semibold mb-2">Navigation</div>
         <button
           type="button"
           onClick={navigateToDashboard}
@@ -192,19 +205,26 @@ export default function SidebarWorkspaces() {
         >
           Ouvrir le dashboard
         </button>
+
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={navigateToNotes}
+            className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
+          >
+            Notes
+          </button>
+          <button
+            type="button"
+            onClick={navigateToTasks}
+            className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
+          >
+            Tâches
+          </button>
+        </div>
       </div>
       <div>
         <div className="text-sm font-semibold mb-2">Dossiers</div>
-
-        <button
-          type="button"
-          onClick={() => navigateWithWorkspace(null)}
-          className={`w-full text-left border border-border rounded px-3 py-2 bg-background text-sm ${
-            !currentWorkspaceId ? "font-semibold" : ""
-          }`}
-        >
-          Tous
-        </button>
 
         <div className="mt-2 space-y-2">
           {loading && <div className="text-sm text-muted-foreground">Chargement…</div>}
