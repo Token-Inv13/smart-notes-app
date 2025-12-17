@@ -16,6 +16,7 @@ import { z } from "zod";
 import { collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
+import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useUserTaskReminders } from "@/hooks/useUserTaskReminders";
 import { formatTimestampForInput, formatTimestampToLocalString, parseLocalDateTimeToTimestamp } from "@/lib/datetime";
@@ -35,6 +36,12 @@ const newTaskSchema = z.object({
 
 export default function TasksPage() {
   const { data: tasks, loading, error } = useUserTasks();
+  const { data: userSettings } = useUserSettings();
+  const isPro = userSettings?.plan === "pro";
+  const freeLimitMessage = "Limite Free atteinte. Passe en Pro pour débloquer plus de tâches et favoris.";
+
+  const { data: allTasksForLimit } = useUserTasks({ limit: 16 });
+  const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
   const { data: workspaces } = useUserWorkspaces();
   const {
     reminders,
@@ -159,6 +166,11 @@ export default function TasksPage() {
     const user = auth.currentUser;
     if (!user) {
       setCreateError("You must be signed in to create tasks.");
+      return;
+    }
+
+    if (!isPro && allTasksForLimit.length >= 15) {
+      setCreateError(freeLimitMessage);
       return;
     }
 
@@ -376,6 +388,11 @@ export default function TasksPage() {
     if (!task.id) return;
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) return;
+
+    if (!isPro && task.favorite !== true && favoriteTasksForLimit.length >= 15) {
+      setEditError(freeLimitMessage);
+      return;
+    }
 
     try {
       await updateDoc(doc(db, "tasks", task.id), {

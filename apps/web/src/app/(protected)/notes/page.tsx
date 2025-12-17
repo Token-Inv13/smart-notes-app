@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserNotes } from "@/hooks/useUserNotes";
+import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import type { NoteDoc } from "@/types/firestore";
 
@@ -27,7 +28,14 @@ export default function NotesPage() {
   const workspaceId = searchParams.get("workspaceId") || undefined;
   const { data: workspaces } = useUserWorkspaces();
 
+  const { data: userSettings } = useUserSettings();
+  const isPro = userSettings?.plan === "pro";
+  const freeLimitMessage =
+    "Limite Free atteinte. Passe en Pro pour débloquer plus de notes et favoris.";
+
   const { data: notes, loading, error } = useUserNotes({ workspaceId });
+  const { data: allNotesForLimit } = useUserNotes({ limit: 16 });
+  const { data: favoriteNotesForLimit } = useUserNotes({ favoriteOnly: true, limit: 11 });
 
   const [noteTitle, setNoteTitle] = useState("");
   const [noteContent, setNoteContent] = useState("");
@@ -67,6 +75,11 @@ export default function NotesPage() {
     const user = auth.currentUser;
     if (!user) {
       setCreateError("Tu dois être connecté pour créer une note.");
+      return;
+    }
+
+    if (!isPro && allNotesForLimit.length >= 15) {
+      setCreateError(freeLimitMessage);
       return;
     }
 
@@ -217,6 +230,11 @@ export default function NotesPage() {
     if (!note.id) return;
     const user = auth.currentUser;
     if (!user || user.uid !== note.userId) return;
+
+    if (!isPro && note.favorite !== true && favoriteNotesForLimit.length >= 10) {
+      setEditError(freeLimitMessage);
+      return;
+    }
 
     try {
       await updateDoc(doc(db, "notes", note.id), {

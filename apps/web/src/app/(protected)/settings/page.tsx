@@ -13,6 +13,9 @@ export default function SettingsPage() {
   const [toggleMessage, setToggleMessage] = useState<string | null>(null);
   const [fcmStatus, setFcmStatus] = useState<string | null>(null);
 
+  const [savingPlan, setSavingPlan] = useState(false);
+  const [planMessage, setPlanMessage] = useState<string | null>(null);
+
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
   const [displayNameDraft, setDisplayNameDraft] = useState<string>(user?.displayName ?? "");
@@ -50,6 +53,30 @@ export default function SettingsPage() {
       setToggleMessage("Error updating task reminders.");
     } finally {
       setToggling(false);
+    }
+  };
+
+  const handleTogglePlan = async () => {
+    const currentUser = ensureCanEdit();
+    if (!currentUser) {
+      setPlanMessage("Cannot update plan for this user.");
+      return;
+    }
+
+    const currentPlan = user?.plan ?? 'free';
+    const nextPlan = currentPlan === 'pro' ? 'free' : 'pro';
+
+    setSavingPlan(true);
+    setPlanMessage(null);
+    try {
+      const userRef = doc(db, 'users', currentUser.uid);
+      await updateDoc(userRef, { plan: nextPlan });
+      setPlanMessage(nextPlan === 'pro' ? 'Plan Pro activé (test).' : 'Plan Free activé.');
+    } catch (e) {
+      console.error('Error updating plan', e);
+      setPlanMessage('Erreur lors de la mise à jour du plan.');
+    } finally {
+      setSavingPlan(false);
     }
   };
 
@@ -262,10 +289,18 @@ export default function SettingsPage() {
 
           <section className="border border-border rounded-lg p-4 bg-card space-y-2">
             <h2 className="text-lg font-semibold">Abonnement</h2>
-            <p className="text-sm text-muted-foreground">
-              La gestion des paiements sera ajoutée ici (Stripe ou autre). Dis-moi le modèle
-              d’abonnement souhaité et je l’intègre proprement.
-            </p>
+            <div className="text-sm">
+              <span className="font-medium">Plan actuel:</span> <span>{user.plan ?? 'free'}</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleTogglePlan}
+              disabled={savingPlan}
+              className="border border-border rounded px-3 py-2 bg-background text-sm disabled:opacity-50"
+            >
+              {savingPlan ? 'Mise à jour…' : user.plan === 'pro' ? 'Repasser en Free' : 'Activer Pro (test)'}
+            </button>
+            {planMessage && <p className="text-sm">{planMessage}</p>}
           </section>
         </div>
       )}

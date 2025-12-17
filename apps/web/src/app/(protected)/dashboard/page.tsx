@@ -14,6 +14,7 @@ import { formatTimestampForInput, parseLocalDateTimeToTimestamp } from '@/lib/da
 import { useUserNotes } from '@/hooks/useUserNotes';
 import { useUserTasks } from '@/hooks/useUserTasks';
 import { useUserWorkspaces } from '@/hooks/useUserWorkspaces';
+import { useUserSettings } from '@/hooks/useUserSettings';
 import type { NoteDoc, TaskDoc } from '@/types/firestore';
 
 function formatFrDateTime(ts?: { toDate: () => Date } | null) {
@@ -46,6 +47,13 @@ export default function DashboardPage() {
     loading: notesLoading,
     error: notesError,
   } = useUserNotes({ workspaceId, favoriteOnly: true, limit: 20 });
+
+  const { data: userSettings } = useUserSettings();
+  const isPro = userSettings?.plan === 'pro';
+  const freeLimitMessage = 'Limite Free atteinte. Passe en Pro pour débloquer plus de favoris.';
+
+  const { data: favoriteNotesForLimit } = useUserNotes({ favoriteOnly: true, limit: 11 });
+  const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
 
   const { data: workspaces } = useUserWorkspaces();
 
@@ -89,6 +97,11 @@ export default function DashboardPage() {
     if (!note.id) return;
     const user = auth.currentUser;
     if (!user || user.uid !== note.userId) return;
+
+    if (!isPro && note.favorite !== true && favoriteNotesForLimit.length >= 10) {
+      setNoteActionError(freeLimitMessage);
+      return;
+    }
 
     try {
       await updateDoc(doc(db, 'notes', note.id), {
@@ -163,6 +176,11 @@ export default function DashboardPage() {
     if (!task.id) return;
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) return;
+
+    if (!isPro && task.favorite !== true && favoriteTasksForLimit.length >= 15) {
+      setTaskActionError(freeLimitMessage);
+      return;
+    }
 
     try {
       await updateDoc(doc(db, 'tasks', task.id), {

@@ -5,6 +5,7 @@ export interface UserDoc {
   email: string | null;
   displayName?: string | null;
   photoURL?: string | null;
+  plan?: 'free' | 'pro';
   createdAt?: string;
   updatedAt?: string;
   fcmTokens?: Record<string, boolean>;

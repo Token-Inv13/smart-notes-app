@@ -46,6 +46,7 @@ export function useUserSettings(): UseUserSettingsState {
               email: user.email ?? null,
               displayName: user.displayName ?? null,
               photoURL: user.photoURL ?? null,
+              plan: 'free',
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
               settings: {
