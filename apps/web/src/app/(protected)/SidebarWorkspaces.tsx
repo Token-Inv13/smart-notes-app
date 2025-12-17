@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { z } from "zod";
 import {
@@ -30,6 +30,15 @@ export default function SidebarWorkspaces() {
   const { data: workspaces, loading, error } = useUserWorkspaces();
 
   const currentWorkspaceId = searchParams.get("workspaceId");
+
+  const [lastSection, setLastSection] = useState<"notes" | "tasks">("notes");
+
+  useEffect(() => {
+    const saved = typeof window !== "undefined" ? window.localStorage.getItem("lastSection") : null;
+    if (saved === "tasks" || saved === "notes") {
+      setLastSection(saved);
+    }
+  }, []);
 
   const navButtonClass = (active: boolean) =>
     `w-full inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent ${
@@ -75,8 +84,12 @@ export default function SidebarWorkspaces() {
     }
 
     const qs = params.toString();
-    const nextPath = pathname.startsWith('/settings') ? '/dashboard' : pathname;
-    router.replace(qs ? `${nextPath}?${qs}` : nextPath);
+
+    const sectionFromPath = pathname.startsWith("/tasks") ? "tasks" : "notes";
+    const isContentPage = pathname.startsWith("/notes") || pathname.startsWith("/tasks");
+
+    const targetBase = isContentPage ? `/${sectionFromPath}` : `/${lastSection}`;
+    router.push(qs ? `${targetBase}?${qs}` : targetBase);
   };
 
   const navigateToSettings = () => {
@@ -95,12 +108,16 @@ export default function SidebarWorkspaces() {
   const navigateToNotes = () => {
     const params = new URLSearchParams(searchParams.toString());
     const qs = params.toString();
+    setLastSection("notes");
+    window.localStorage.setItem("lastSection", "notes");
     router.push(qs ? `/notes?${qs}` : "/notes");
   };
 
   const navigateToTasks = () => {
     const params = new URLSearchParams(searchParams.toString());
     const qs = params.toString();
+    setLastSection("tasks");
+    window.localStorage.setItem("lastSection", "tasks");
     router.push(qs ? `/tasks?${qs}` : "/tasks");
   };
 
