@@ -18,6 +18,7 @@ export function middleware(request: NextRequest) {
   const isProtectedRoute =
     pathname.startsWith('/dashboard') ||
     pathname.startsWith('/tasks') ||
+    pathname.startsWith('/notes') ||
     pathname.startsWith('/settings');
 
   if (!isProtectedRoute) {
