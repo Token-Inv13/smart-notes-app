@@ -3,7 +3,6 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { verifySessionCookie } from "@/lib/firebaseAdmin";
 import SidebarWorkspaces from "./SidebarWorkspaces";
-import TopbarNav from "./TopbarNav";
 
 export const dynamic = "force-dynamic";
 
@@ -28,9 +27,6 @@ export default async function ProtectedLayout({ children }: ProtectedLayoutProps
         <SidebarWorkspaces />
       </aside>
       <div className="flex-1 flex flex-col">
-        <header className="h-14 border-b border-border px-4 flex items-center justify-between">
-          <TopbarNav />
-        </header>
         <main className="flex-1 p-4">{children}</main>
       </div>
     </div>
