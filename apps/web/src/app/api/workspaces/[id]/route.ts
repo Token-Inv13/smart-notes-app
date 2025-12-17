@@ -20,7 +20,7 @@ async function deleteQueryInBatches(db: Firestore, q: Query, batchSize = 400) {
 
 export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
   try {
-    const { id } = params;
+    const id = params?.id;
     if (!id) return new NextResponse('Missing workspace id', { status: 400 });
 
     const sessionCookie = (await cookies()).get(SESSION_COOKIE_NAME)?.value;

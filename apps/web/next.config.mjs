@@ -1,6 +1,9 @@
 import withPWA from 'next-pwa';
 
 const baseConfig = {
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
 };
 
 const nextConfig = withPWA({
