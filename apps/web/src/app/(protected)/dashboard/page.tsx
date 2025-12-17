@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { z } from 'zod';
 import {
   deleteDoc,
@@ -15,6 +15,15 @@ import { useUserNotes } from '@/hooks/useUserNotes';
 import { useUserTasks } from '@/hooks/useUserTasks';
 import type { NoteDoc, TaskDoc } from '@/types/firestore';
 
+function formatFrDateTime(ts?: NoteDoc['updatedAt'] | NoteDoc['createdAt'] | null) {
+  if (!ts) return '';
+  const d = ts.toDate();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(
+    d.getMinutes(),
+  )}`;
+}
+
 const newNoteSchema = z.object({
   title: z.string().min(1, 'Le titre est requis.'),
   content: z.string().min(1, 'Le contenu est requis.'),
@@ -26,8 +35,10 @@ const newTaskSchema = z.object({
 });
 
 export default function DashboardPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get('workspaceId') || undefined;
+  const suffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : '';
 
   const {
     data: notes,
@@ -230,11 +241,26 @@ export default function DashboardPage() {
         <ul className="space-y-1">
           {activeFavoriteNotes.map((note) => {
             const isEditing = !!note.id && note.id === editingNoteId;
+            const when = note.updatedAt ?? note.createdAt ?? null;
+            const whenLabel = formatFrDateTime(when);
             return (
               <li key={note.id} className="border border-border rounded-md p-2">
                 {!isEditing ? (
                   <div className="flex items-center justify-between gap-2">
-                    <div className="text-sm font-medium truncate">{note.title}</div>
+                    <button
+                      type="button"
+                      onClick={() => note.id && router.push(`/notes/${encodeURIComponent(note.id)}${suffix}`)}
+                      className="min-w-0 text-left text-sm font-medium truncate cursor-pointer hover:underline"
+                      aria-label={`Ouvrir la note ${note.title}`}
+                      disabled={!note.id}
+                    >
+                      <span className="truncate">{note.title}</span>
+                      {whenLabel && (
+                        <span className="ml-2 text-xs text-muted-foreground whitespace-nowrap">
+                          {whenLabel}
+                        </span>
+                      )}
+                    </button>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
