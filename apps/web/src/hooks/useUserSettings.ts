@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { doc, onSnapshot, type DocumentSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, serverTimestamp, setDoc, type DocumentSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/hooks/useAuth';
 import type { UserDoc } from '@/types/firestore';
@@ -38,6 +38,23 @@ export function useUserSettings(): UseUserSettingsState {
         if (snapshot.exists()) {
           setData({ id: snapshot.id, ...(snapshot.data() as UserDoc) });
         } else {
+          // First login / legacy accounts: ensure a default user document exists.
+          void setDoc(
+            ref,
+            {
+              uid: user.uid,
+              email: user.email ?? null,
+              displayName: user.displayName ?? null,
+              photoURL: user.photoURL ?? null,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+              settings: {
+                appearance: { mode: 'light', background: 'none' },
+                notifications: { taskReminders: false },
+              },
+            } as unknown as UserDoc,
+            { merge: true },
+          );
           setData(null);
         }
         setLoading(false);

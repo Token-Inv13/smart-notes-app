@@ -8,6 +8,10 @@ export default function TopbarNav() {
   const workspaceId = searchParams.get("workspaceId");
   const suffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
 
+  if (pathname.startsWith("/settings")) {
+    return null;
+  }
+
   const isActive = (href: string) => pathname.startsWith(href);
 
   return (
