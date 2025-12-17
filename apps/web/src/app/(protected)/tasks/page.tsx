@@ -78,6 +78,7 @@ export default function TasksPage() {
   const searchParams = useSearchParams();
   const highlightedTaskId = searchParams.get("taskId");
   const workspaceIdParam = searchParams.get("workspaceId");
+  const workspaceRequired = !workspaceIdParam;
 
   // Keep workspaceFilter and default new workspace in sync with ?workspaceId=... from the sidebar.
   useEffect(() => {
@@ -135,6 +136,11 @@ export default function TasksPage() {
       return;
     }
 
+    if (workspaceRequired && !newWorkspaceId) {
+      setCreateError("Sélectionne un dossier (workspace) dans la sidebar avant de créer une tâche.");
+      return;
+    }
+
     setCreateError(null);
     setCreateSuccess(null);
 
@@ -150,7 +156,7 @@ export default function TasksPage() {
       return;
     }
 
-    const { title, status, workspaceId, dueDate } = validation.data;
+    const { title, status, dueDate } = validation.data;
 
     const dueTimestamp = dueDate ? parseLocalDateTimeToTimestamp(dueDate) : null;
 
@@ -160,7 +166,7 @@ export default function TasksPage() {
         userId: user.uid,
         title,
         status,
-        workspaceId: workspaceId ?? null,
+        workspaceId: newWorkspaceId,
         dueDate: dueTimestamp,
         favorite: false,
         createdAt: serverTimestamp() as unknown as TaskDoc["createdAt"],
@@ -409,6 +415,8 @@ export default function TasksPage() {
     dueDate: newDueDate || undefined,
   }).success;
 
+  const createWorkspaceMissing = workspaceRequired && !newWorkspaceId;
+
   useEffect(() => {
     if (!highlightedTaskId) return;
     const el = document.getElementById(`task-${highlightedTaskId}`);
@@ -530,12 +538,17 @@ export default function TasksPage() {
           <button
             type="button"
             onClick={handleCreateTask}
-            disabled={creating || !canCreate}
+            disabled={creating || !canCreate || createWorkspaceMissing}
             className="border border-border rounded px-3 py-1 bg-background"
           >
             {creating ? "Creating..." : "Create"}
           </button>
         </div>
+        {createWorkspaceMissing && (
+          <p className="text-sm text-muted-foreground">
+            Sélectionne un dossier (workspace) dans la sidebar pour créer des tâches.
+          </p>
+        )}
         {createError && <p className="text-sm">{createError}</p>}
         {createSuccess && <p className="text-sm">{createSuccess}</p>}
       </section>

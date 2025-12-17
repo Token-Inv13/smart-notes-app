@@ -24,6 +24,7 @@ const newNoteSchema = z.object({
 export default function NotesPage() {
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId") || undefined;
+  const workspaceRequired = !workspaceId;
 
   const { data: notes, loading, error } = useUserNotes({ workspaceId });
 
@@ -57,6 +58,11 @@ export default function NotesPage() {
       return;
     }
 
+    if (workspaceRequired) {
+      setCreateError("Sélectionne un dossier (workspace) dans la sidebar avant de créer une note.");
+      return;
+    }
+
     setCreateError(null);
     const validation = newNoteSchema.safeParse({ title: noteTitle, content: noteContent });
     if (!validation.success) {
@@ -68,7 +74,7 @@ export default function NotesPage() {
     try {
       const payload: Omit<NoteDoc, "id"> = {
         userId: user.uid,
-        workspaceId: workspaceId ?? null,
+        workspaceId,
         title: validation.data.title,
         content: validation.data.content,
         favorite: false,
@@ -231,7 +237,7 @@ export default function NotesPage() {
 
           <button
             type="button"
-            disabled={creating}
+            disabled={creating || workspaceRequired}
             onClick={handleCreateNote}
             className="w-full inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -239,6 +245,12 @@ export default function NotesPage() {
           </button>
         </div>
       </section>
+
+      {workspaceRequired && (
+        <p className="text-sm text-muted-foreground">
+          Sélectionne un dossier (workspace) dans la sidebar pour créer des notes.
+        </p>
+      )}
 
       <section>
         <h2 className="text-lg font-semibold mb-2">Toutes les notes</h2>

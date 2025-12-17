@@ -25,6 +25,10 @@ service cloud.firestore {
     function isOptionalBool(value) {
       return value == null || value is bool;
     }
+
+    function isServerTimestamp(value) {
+      return value == request.time;
+    }
     
     // Users collection
     match /users/{userId} {
@@ -38,12 +42,12 @@ service cloud.firestore {
 
       allow create: if isAuthenticated()
         && request.auth.uid == request.resource.data.userId
-        && isNullOrString(request.resource.data.workspaceId)
+        && isNonEmptyString(request.resource.data.workspaceId)
         && isNonEmptyString(request.resource.data.title)
         && isNonEmptyString(request.resource.data.content)
         && isOptionalBool(request.resource.data.favorite)
-        && request.resource.data.createdAt is timestamp
-        && request.resource.data.updatedAt is timestamp;
+        && isServerTimestamp(request.resource.data.createdAt)
+        && isServerTimestamp(request.resource.data.updatedAt);
 
       allow update: if isAuthenticated()
         && request.auth.uid == resource.data.userId
@@ -52,7 +56,7 @@ service cloud.firestore {
         && isNonEmptyString(request.resource.data.title)
         && isNonEmptyString(request.resource.data.content)
         && isOptionalBool(request.resource.data.favorite)
-        && request.resource.data.updatedAt is timestamp;
+        && isServerTimestamp(request.resource.data.updatedAt);
 
       allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
     }
@@ -63,13 +67,13 @@ service cloud.firestore {
 
       allow create: if isAuthenticated()
         && request.auth.uid == request.resource.data.userId
-        && isNullOrString(request.resource.data.workspaceId)
+        && isNonEmptyString(request.resource.data.workspaceId)
         && isNonEmptyString(request.resource.data.title)
         && (request.resource.data.status in ['todo', 'doing', 'done'])
         && isNullOrTimestamp(request.resource.data.dueDate)
         && isOptionalBool(request.resource.data.favorite)
-        && request.resource.data.createdAt is timestamp
-        && request.resource.data.updatedAt is timestamp;
+        && isServerTimestamp(request.resource.data.createdAt)
+        && isServerTimestamp(request.resource.data.updatedAt);
 
       allow update: if isAuthenticated()
         && request.auth.uid == resource.data.userId
@@ -79,7 +83,7 @@ service cloud.firestore {
         && (request.resource.data.status in ['todo', 'doing', 'done'])
         && isNullOrTimestamp(request.resource.data.dueDate)
         && isOptionalBool(request.resource.data.favorite)
-        && request.resource.data.updatedAt is timestamp;
+        && isServerTimestamp(request.resource.data.updatedAt);
 
       allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
     }
