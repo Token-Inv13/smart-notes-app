@@ -31,6 +31,23 @@ export default function SidebarWorkspaces() {
 
   const currentWorkspaceId = searchParams.get("workspaceId");
 
+  const navButtonClass = (active: boolean) =>
+    `w-full inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent ${
+      active ? " bg-accent font-semibold" : ""
+    }`;
+
+  const navButtonClassCompact = (active: boolean) =>
+    `inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent ${
+      active ? " bg-accent font-semibold" : ""
+    }`;
+
+  const isNavActive = (href: "/dashboard" | "/notes" | "/tasks" | "/settings") => {
+    if (href === "/dashboard") {
+      return pathname.startsWith("/dashboard") && !currentWorkspaceId;
+    }
+    return pathname.startsWith(href);
+  };
+
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -201,7 +218,7 @@ export default function SidebarWorkspaces() {
         <button
           type="button"
           onClick={navigateToDashboard}
-          className="w-full inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
+          className={navButtonClass(isNavActive("/dashboard"))}
         >
           Ouvrir le dashboard
         </button>
@@ -210,14 +227,14 @@ export default function SidebarWorkspaces() {
           <button
             type="button"
             onClick={navigateToNotes}
-            className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
+            className={navButtonClassCompact(isNavActive("/notes"))}
           >
             Notes
           </button>
           <button
             type="button"
             onClick={navigateToTasks}
-            className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
+            className={navButtonClassCompact(isNavActive("/tasks"))}
           >
             Tâches
           </button>
@@ -340,7 +357,7 @@ export default function SidebarWorkspaces() {
         <button
           type="button"
           onClick={navigateToSettings}
-          className="w-full inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
+          className={navButtonClass(isNavActive("/settings"))}
         >
           Ouvrir les paramètres
         </button>
