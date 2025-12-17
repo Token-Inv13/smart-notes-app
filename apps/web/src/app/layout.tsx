@@ -1,4 +1,5 @@
 import './globals.css';
+import ThemeClientProvider from './ThemeClientProvider';
 
 export const metadata = {
   title: 'Smart Notes',
@@ -19,7 +20,7 @@ export default function RootLayout(props: any) {
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
       </head>
       <body className="min-h-screen bg-background text-foreground antialiased">
-        {children}
+        <ThemeClientProvider>{children}</ThemeClientProvider>
       </body>
     </html>
   );

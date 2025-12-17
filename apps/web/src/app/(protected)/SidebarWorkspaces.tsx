@@ -61,6 +61,12 @@ export default function SidebarWorkspaces() {
     router.replace(qs ? `${pathname}?${qs}` : pathname);
   };
 
+  const navigateToSettings = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    const qs = params.toString();
+    router.push(qs ? `/settings?${qs}` : "/settings");
+  };
+
   const handleCreate = async () => {
     const user = auth.currentUser;
     if (!user) {
@@ -289,6 +295,17 @@ export default function SidebarWorkspaces() {
           className="w-full mt-2 inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {creating ? "Création…" : "Créer"}
+        </button>
+      </div>
+
+      <div className="border-t border-border pt-4">
+        <div className="text-sm font-semibold mb-2">Paramètres</div>
+        <button
+          type="button"
+          onClick={navigateToSettings}
+          className="w-full inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
+        >
+          Ouvrir les paramètres
         </button>
       </div>
     </div>

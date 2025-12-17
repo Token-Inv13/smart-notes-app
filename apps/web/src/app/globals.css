@@ -4,8 +4,12 @@
 
 :root {
   color-scheme: light;
+  --app-bg-image: none;
+  --app-bg-size: auto;
 }
 
 body {
   margin: 0;
+  background-image: var(--app-bg-image);
+  background-size: var(--app-bg-size);
 }

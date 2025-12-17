@@ -1,7 +1,7 @@
 "use client";
 
 import { useUserSettings } from "@/hooks/useUserSettings";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { auth, db } from "@/lib/firebase";
 import { doc, updateDoc } from "firebase/firestore";
 import { registerFcmToken } from "@/lib/fcm";
@@ -11,6 +11,17 @@ export default function SettingsPage() {
   const [toggling, setToggling] = useState(false);
   const [toggleMessage, setToggleMessage] = useState<string | null>(null);
   const [fcmStatus, setFcmStatus] = useState<string | null>(null);
+
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileMessage, setProfileMessage] = useState<string | null>(null);
+  const [displayNameDraft, setDisplayNameDraft] = useState<string>(user?.displayName ?? "");
+
+  const [savingAppearance, setSavingAppearance] = useState(false);
+  const [appearanceMessage, setAppearanceMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDisplayNameDraft(user?.displayName ?? "");
+  }, [user?.displayName]);
 
   const handleToggleTaskReminders = async () => {
     if (!user) return;
@@ -41,6 +52,86 @@ export default function SettingsPage() {
     }
   };
 
+  const ensureCanEdit = () => {
+    const currentUser = auth.currentUser;
+    if (!user || !currentUser || currentUser.uid !== user.uid) {
+      return null;
+    }
+    return currentUser;
+  };
+
+  const handleSaveDisplayName = async () => {
+    const currentUser = ensureCanEdit();
+    if (!currentUser) {
+      setProfileMessage("Cannot update profile for this user.");
+      return;
+    }
+
+    setSavingProfile(true);
+    setProfileMessage(null);
+    try {
+      const userRef = doc(db, "users", currentUser.uid);
+      await updateDoc(userRef, {
+        displayName: displayNameDraft.trim() || null,
+      });
+      setProfileMessage("Profil mis à jour.");
+    } catch (e) {
+      console.error("Error updating profile", e);
+      setProfileMessage("Erreur lors de la mise à jour du profil.");
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleToggleThemeMode = async () => {
+    const currentUser = ensureCanEdit();
+    if (!currentUser) {
+      setAppearanceMessage("Cannot update appearance for this user.");
+      return;
+    }
+
+    const currentMode = user?.settings?.appearance?.mode ?? "light";
+    const nextMode = currentMode === "dark" ? "light" : "dark";
+
+    setSavingAppearance(true);
+    setAppearanceMessage(null);
+    try {
+      const userRef = doc(db, "users", currentUser.uid);
+      await updateDoc(userRef, {
+        "settings.appearance.mode": nextMode,
+      });
+      setAppearanceMessage("Mode mis à jour.");
+    } catch (e) {
+      console.error("Error updating appearance", e);
+      setAppearanceMessage("Erreur lors de la mise à jour de l'apparence.");
+    } finally {
+      setSavingAppearance(false);
+    }
+  };
+
+  const handleSetBackground = async (background: "none" | "dots" | "grid") => {
+    const currentUser = ensureCanEdit();
+    if (!currentUser) {
+      setAppearanceMessage("Cannot update appearance for this user.");
+      return;
+    }
+
+    setSavingAppearance(true);
+    setAppearanceMessage(null);
+    try {
+      const userRef = doc(db, "users", currentUser.uid);
+      await updateDoc(userRef, {
+        "settings.appearance.background": background,
+      });
+      setAppearanceMessage("Fond mis à jour.");
+    } catch (e) {
+      console.error("Error updating background", e);
+      setAppearanceMessage("Erreur lors de la mise à jour du fond.");
+    } finally {
+      setSavingAppearance(false);
+    }
+  };
+
   const handleEnablePushNotifications = async () => {
     setFcmStatus("Enabling push notifications...");
     try {
@@ -54,7 +145,7 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Settings (read-only)</h1>
+      <h1 className="text-xl font-semibold">Paramètres</h1>
 
       {loading && <p>Loading settings...</p>}
       {error && <p>Error loading settings.</p>}
@@ -62,44 +153,115 @@ export default function SettingsPage() {
       {!loading && !error && !user && <p>No settings found.</p>}
 
       {!loading && !error && user && (
-        <div className="space-y-2">
-          <div>
-            <span className="font-medium">Display name:</span>{" "}
-            <span>{user.displayName || "—"}</span>
-          </div>
-          <div>
-            <span className="font-medium">Email:</span>{" "}
-            <span>{user.email || "—"}</span>
-          </div>
-          <div>
-            <span className="font-medium">Task reminders:</span>{" "}
-            <span>
-              {user.settings?.notifications?.taskReminders ? "Enabled" : "Disabled"}
-            </span>
-          </div>
+        <div className="space-y-6">
+          <section className="border border-border rounded-lg p-4 bg-card space-y-3">
+            <h2 className="text-lg font-semibold">Profil</h2>
+            <div className="text-sm">
+              <span className="font-medium">Email:</span> <span>{user.email || "—"}</span>
+            </div>
 
-          <div className="space-y-1">
+            <div className="space-y-1">
+              <label className="text-sm font-medium" htmlFor="displayName">
+                Nom affiché
+              </label>
+              <input
+                id="displayName"
+                value={displayNameDraft}
+                onChange={(e) => setDisplayNameDraft(e.target.value)}
+                className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                placeholder="Ex: Token"
+              />
+            </div>
+
             <button
               type="button"
-              onClick={handleToggleTaskReminders}
-              disabled={toggling}
-              className="border border-border rounded px-3 py-1 bg-background"
+              onClick={handleSaveDisplayName}
+              disabled={savingProfile}
+              className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
             >
-              {toggling ? "Updating..." : "Toggle task reminders"}
+              {savingProfile ? "Enregistrement…" : "Enregistrer"}
             </button>
-            {toggleMessage && <p className="text-sm">{toggleMessage}</p>}
-          </div>
+            {profileMessage && <p className="text-sm">{profileMessage}</p>}
+          </section>
 
-          <div className="space-y-1">
-            <button
-              type="button"
-              onClick={handleEnablePushNotifications}
-              className="border border-border rounded px-3 py-1 bg-background"
-            >
-              Enable push notifications
-            </button>
-            {fcmStatus && <p className="text-sm">{fcmStatus}</p>}
-          </div>
+          <section className="border border-border rounded-lg p-4 bg-card space-y-3">
+            <h2 className="text-lg font-semibold">Apparence</h2>
+
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium">Mode</div>
+                <div className="text-sm text-muted-foreground">
+                  {user.settings?.appearance?.mode === "dark" ? "Sombre" : "Clair"}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleToggleThemeMode}
+                disabled={savingAppearance}
+                className="border border-border rounded px-3 py-2 bg-background text-sm disabled:opacity-50"
+              >
+                Basculer
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-sm font-medium">Fond</div>
+              <select
+                value={user.settings?.appearance?.background ?? "none"}
+                onChange={(e) => handleSetBackground(e.target.value as "none" | "dots" | "grid")}
+                disabled={savingAppearance}
+                className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm disabled:opacity-50"
+                aria-label="Fond de page"
+              >
+                <option value="none">Aucun</option>
+                <option value="dots">Points</option>
+                <option value="grid">Grille</option>
+              </select>
+            </div>
+
+            {appearanceMessage && <p className="text-sm">{appearanceMessage}</p>}
+          </section>
+
+          <section className="border border-border rounded-lg p-4 bg-card space-y-2">
+            <h2 className="text-lg font-semibold">Notifications</h2>
+            <div className="text-sm">
+              <span className="font-medium">Rappels de tâches:</span>{" "}
+              <span>
+                {user.settings?.notifications?.taskReminders ? "Activés" : "Désactivés"}
+              </span>
+            </div>
+
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={handleToggleTaskReminders}
+                disabled={toggling}
+                className="border border-border rounded px-3 py-1 bg-background"
+              >
+                {toggling ? "Mise à jour…" : "Basculer rappels"}
+              </button>
+              {toggleMessage && <p className="text-sm">{toggleMessage}</p>}
+            </div>
+
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={handleEnablePushNotifications}
+                className="border border-border rounded px-3 py-1 bg-background"
+              >
+                Activer notifications push
+              </button>
+              {fcmStatus && <p className="text-sm">{fcmStatus}</p>}
+            </div>
+          </section>
+
+          <section className="border border-border rounded-lg p-4 bg-card space-y-2">
+            <h2 className="text-lg font-semibold">Abonnement</h2>
+            <p className="text-sm text-muted-foreground">
+              La gestion des paiements sera ajoutée ici (Stripe ou autre). Dis-moi le modèle
+              d’abonnement souhaité et je l’intègre proprement.
+            </p>
+          </section>
         </div>
       )}
     </div>

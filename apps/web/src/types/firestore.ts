@@ -9,6 +9,11 @@ export interface UserDoc {
   updatedAt?: string;
   fcmTokens?: Record<string, boolean>;
   settings?: {
+    appearance?: {
+      mode?: 'light' | 'dark';
+      background?: 'none' | 'dots' | 'grid';
+      [key: string]: unknown;
+    };
     notifications?: {
       taskReminders?: boolean;
       [key: string]: unknown;
