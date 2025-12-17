@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { z } from "zod";
+import { FirebaseError } from "firebase/app";
 import {
   addDoc,
   collection,
@@ -80,7 +81,13 @@ export default function NotesPage() {
       setNoteContent("");
     } catch (e) {
       console.error("Error creating note", e);
-      setCreateError("Erreur lors de la création de la note.");
+      if (e instanceof FirebaseError) {
+        setCreateError(`${e.code}: ${e.message}`);
+      } else if (e instanceof Error) {
+        setCreateError(e.message);
+      } else {
+        setCreateError("Erreur lors de la création de la note.");
+      }
     } finally {
       setCreating(false);
     }
@@ -126,7 +133,13 @@ export default function NotesPage() {
       cancelEditing();
     } catch (e) {
       console.error("Error updating note", e);
-      setEditError("Erreur lors de la modification de la note.");
+      if (e instanceof FirebaseError) {
+        setEditError(`${e.code}: ${e.message}`);
+      } else if (e instanceof Error) {
+        setEditError(e.message);
+      } else {
+        setEditError("Erreur lors de la modification de la note.");
+      }
     } finally {
       setSaving(false);
     }
@@ -148,7 +161,13 @@ export default function NotesPage() {
       }
     } catch (e) {
       console.error("Error deleting note", e);
-      setEditError("Erreur lors de la suppression de la note.");
+      if (e instanceof FirebaseError) {
+        setEditError(`${e.code}: ${e.message}`);
+      } else if (e instanceof Error) {
+        setEditError(e.message);
+      } else {
+        setEditError("Erreur lors de la suppression de la note.");
+      }
     } finally {
       setDeletingId(null);
     }
@@ -166,6 +185,9 @@ export default function NotesPage() {
       });
     } catch (e) {
       console.error("Error toggling favorite", e);
+      if (e instanceof FirebaseError) {
+        setEditError(`${e.code}: ${e.message}`);
+      }
     }
   };
 
