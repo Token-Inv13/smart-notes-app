@@ -77,6 +77,20 @@ export default function TasksPage() {
 
   const searchParams = useSearchParams();
   const highlightedTaskId = searchParams.get("taskId");
+  const workspaceIdParam = searchParams.get("workspaceId");
+
+  // Keep workspaceFilter and default new workspace in sync with ?workspaceId=... from the sidebar.
+  useEffect(() => {
+    const nextFilter = workspaceIdParam ?? "all";
+    if (workspaceFilter !== nextFilter) {
+      setWorkspaceFilter(nextFilter as WorkspaceFilter);
+    }
+
+    if (workspaceIdParam && !newWorkspaceId) {
+      setNewWorkspaceId(workspaceIdParam);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceIdParam]);
 
   const filteredTasks = useMemo(() => {
     let result = tasks;

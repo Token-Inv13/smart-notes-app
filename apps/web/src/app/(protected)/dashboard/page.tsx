@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { z } from 'zod';
 import {
   deleteDoc,
@@ -25,17 +26,20 @@ const newTaskSchema = z.object({
 });
 
 export default function DashboardPage() {
+  const searchParams = useSearchParams();
+  const workspaceId = searchParams.get('workspaceId') || undefined;
+
   const {
     data: notes,
     loading: notesLoading,
     error: notesError,
-  } = useUserNotes({ limit: 5 });
+  } = useUserNotes({ workspaceId, limit: 5 });
 
   const {
     data: tasks,
     loading: tasksLoading,
     error: tasksError,
-  } = useUserTasks({ limit: 5 });
+  } = useUserTasks({ workspaceId, limit: 5 });
 
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editNoteTitle, setEditNoteTitle] = useState('');

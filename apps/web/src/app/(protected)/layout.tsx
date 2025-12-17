@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { verifySessionCookie } from "@/lib/firebaseAdmin";
 import LogoutButton from "./LogoutButton";
+import SidebarWorkspaces from "./SidebarWorkspaces";
+import TopbarNav from "./TopbarNav";
 
 export const dynamic = "force-dynamic";
 
@@ -23,20 +25,12 @@ export default async function ProtectedLayout({ children }: ProtectedLayoutProps
 
   return (
     <div className="min-h-screen flex bg-background text-foreground">
-      <aside className="w-64 border-r border-border p-4">Sidebar</aside>
+      <aside className="w-64 border-r border-border p-4">
+        <SidebarWorkspaces />
+      </aside>
       <div className="flex-1 flex flex-col">
         <header className="h-14 border-b border-border px-4 flex items-center justify-between">
-          <nav className="flex items-center gap-2">
-            <a className="border border-border rounded px-3 py-1 bg-background" href="/dashboard">
-              Dashboard
-            </a>
-            <a className="border border-border rounded px-3 py-1 bg-background" href="/notes">
-              Notes
-            </a>
-            <a className="border border-border rounded px-3 py-1 bg-background" href="/tasks">
-              Tasks
-            </a>
-          </nav>
+          <TopbarNav />
           <LogoutButton />
         </header>
         <main className="flex-1 p-4">{children}</main>

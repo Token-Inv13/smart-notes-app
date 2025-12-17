@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { z } from "zod";
 import {
   addDoc,
@@ -20,7 +21,10 @@ const newNoteSchema = z.object({
 });
 
 export default function NotesPage() {
-  const { data: notes, loading, error } = useUserNotes();
+  const searchParams = useSearchParams();
+  const workspaceId = searchParams.get("workspaceId") || undefined;
+
+  const { data: notes, loading, error } = useUserNotes({ workspaceId });
 
   const [noteTitle, setNoteTitle] = useState("");
   const [noteContent, setNoteContent] = useState("");
@@ -63,7 +67,7 @@ export default function NotesPage() {
     try {
       const payload: Omit<NoteDoc, "id"> = {
         userId: user.uid,
-        workspaceId: null,
+        workspaceId: workspaceId ?? null,
         title: validation.data.title,
         content: validation.data.content,
         createdAt: serverTimestamp() as unknown as NoteDoc["createdAt"],
