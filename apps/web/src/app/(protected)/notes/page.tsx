@@ -19,7 +19,7 @@ import type { NoteDoc } from "@/types/firestore";
 
 const newNoteSchema = z.object({
   title: z.string().min(1, "Le titre est requis."),
-  content: z.string().min(1, "Le contenu est requis."),
+  content: z.string().optional(),
 });
 
 export default function NotesPage() {
@@ -88,7 +88,7 @@ export default function NotesPage() {
         userId: user.uid,
         workspaceId: noteWorkspaceId,
         title: validation.data.title,
-        content: validation.data.content,
+        content: validation.data.content ?? "",
         favorite: false,
         completed: false,
         createdAt: serverTimestamp() as unknown as NoteDoc["createdAt"],
@@ -133,7 +133,7 @@ export default function NotesPage() {
   const startEditing = (note: NoteDoc) => {
     setEditingId(note.id ?? null);
     setEditTitle(note.title);
-    setEditContent(note.content);
+    setEditContent(note.content ?? "");
     setEditError(null);
   };
 
@@ -164,7 +164,7 @@ export default function NotesPage() {
     try {
       await updateDoc(doc(db, "notes", note.id), {
         title: validation.data.title,
-        content: validation.data.content,
+        content: validation.data.content ?? "",
         workspaceId: typeof note.workspaceId === "string" ? note.workspaceId : null,
         favorite: note.favorite === true,
         completed: note.completed === true,

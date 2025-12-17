@@ -104,7 +104,7 @@ export default function NoteDetailPage(props: any) {
             <div className="text-sm font-medium">Contenu</div>
             <textarea
               readOnly
-              value={note.content}
+              value={note.content ?? ""}
               aria-label="Contenu de la note"
               className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
             />

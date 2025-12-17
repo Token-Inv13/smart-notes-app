@@ -27,7 +27,7 @@ function formatFrDateTime(ts?: { toDate: () => Date } | null) {
 
 const newNoteSchema = z.object({
   title: z.string().min(1, 'Le titre est requis.'),
-  content: z.string().min(1, 'Le contenu est requis.'),
+  content: z.string().optional(),
 });
 
 const newTaskSchema = z.object({
@@ -81,7 +81,7 @@ export default function DashboardPage() {
   const startEditNote = (note: NoteDoc) => {
     setEditingNoteId(note.id ?? null);
     setEditNoteTitle(note.title);
-    setEditNoteContent(note.content);
+    setEditNoteContent(note.content ?? '');
     setNoteActionError(null);
   };
 
@@ -126,7 +126,7 @@ export default function DashboardPage() {
     try {
       await updateDoc(doc(db, 'notes', note.id), {
         title: validation.data.title,
-        content: validation.data.content,
+        content: validation.data.content ?? '',
         workspaceId: typeof note.workspaceId === 'string' ? note.workspaceId : null,
         favorite: note.favorite === true,
         completed: note.completed === true,

@@ -14,6 +14,10 @@ service cloud.firestore {
       return value is string && value.size() > 0;
     }
 
+    function isString(value) {
+      return value is string;
+    }
+
     function isNullOrString(value) {
       return value == null || value is string;
     }
@@ -44,7 +48,7 @@ service cloud.firestore {
         && request.auth.uid == request.resource.data.userId
         && isNonEmptyString(request.resource.data.workspaceId)
         && isNonEmptyString(request.resource.data.title)
-        && isNonEmptyString(request.resource.data.content)
+        && isNullOrString(request.resource.data.content)
         && isOptionalBool(request.resource.data.favorite)
         && isOptionalBool(request.resource.data.completed)
         && isServerTimestamp(request.resource.data.createdAt)
@@ -55,7 +59,7 @@ service cloud.firestore {
         && request.resource.data.userId == resource.data.userId
         && isNullOrString(request.resource.data.workspaceId)
         && isNonEmptyString(request.resource.data.title)
-        && isNonEmptyString(request.resource.data.content)
+        && isNullOrString(request.resource.data.content)
         && isOptionalBool(request.resource.data.favorite)
         && isOptionalBool(request.resource.data.completed)
         && isServerTimestamp(request.resource.data.updatedAt);
