@@ -15,7 +15,7 @@ import { useUserNotes } from '@/hooks/useUserNotes';
 import { useUserTasks } from '@/hooks/useUserTasks';
 import type { NoteDoc, TaskDoc } from '@/types/firestore';
 
-function formatFrDateTime(ts?: NoteDoc['updatedAt'] | NoteDoc['createdAt'] | null) {
+function formatFrDateTime(ts?: { toDate: () => Date } | null) {
   if (!ts) return '';
   const d = ts.toDate();
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -241,8 +241,6 @@ export default function DashboardPage() {
         <ul className="space-y-1">
           {activeFavoriteNotes.map((note) => {
             const isEditing = !!note.id && note.id === editingNoteId;
-            const when = note.updatedAt ?? note.createdAt ?? null;
-            const whenLabel = formatFrDateTime(when);
             return (
               <li key={note.id} className="border border-border rounded-md p-2">
                 {!isEditing ? (
@@ -255,11 +253,6 @@ export default function DashboardPage() {
                       disabled={!note.id}
                     >
                       <span className="truncate">{note.title}</span>
-                      {whenLabel && (
-                        <span className="ml-2 text-xs text-muted-foreground whitespace-nowrap">
-                          {whenLabel}
-                        </span>
-                      )}
                     </button>
                     <div className="flex items-center gap-2">
                       <button
@@ -337,11 +330,19 @@ export default function DashboardPage() {
         <ul className="space-y-1">
           {activeFavoriteTasks.map((task) => {
             const isEditing = !!task.id && task.id === editingTaskId;
+            const dueLabel = formatFrDateTime(task.dueDate ?? null);
             return (
               <li key={task.id} className="border border-border rounded-md p-2">
                 {!isEditing ? (
                   <div className="flex items-center justify-between gap-2">
-                    <div className="text-sm font-medium truncate">{task.title}</div>
+                    <div className="min-w-0 text-sm font-medium truncate">
+                      <span className="truncate">{task.title}</span>
+                      {dueLabel && (
+                        <span className="ml-2 text-xs text-muted-foreground whitespace-nowrap">
+                          {dueLabel}
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
