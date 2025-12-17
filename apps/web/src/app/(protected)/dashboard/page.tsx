@@ -16,6 +16,7 @@ import { useUserTasks } from '@/hooks/useUserTasks';
 import { useUserWorkspaces } from '@/hooks/useUserWorkspaces';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import type { NoteDoc, TaskDoc } from '@/types/firestore';
+import Link from 'next/link';
 
 function formatFrDateTime(ts?: { toDate: () => Date } | null) {
   if (!ts) return '';
@@ -270,12 +271,24 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <section>
         <h2 className="text-lg font-semibold mb-2">Notes favorites</h2>
         {notesLoading && <p>Loading notes...</p>}
         {notesError && <p>Error loading notes: {notesError.message}</p>}
-        {noteActionError && <p className="text-sm text-destructive">{noteActionError}</p>}
+        {noteActionError && (
+        <div className="space-y-2">
+          <p className="text-sm text-destructive">{noteActionError}</p>
+          {noteActionError.includes('Limite Free atteinte') && (
+            <Link
+              href="/upgrade"
+              className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+            >
+              Passer Pro
+            </Link>
+          )}
+        </div>
+      )}
         {!notesLoading && !notesError && activeFavoriteNotes.length === 0 && <p>No notes yet.</p>}
         <ul className="space-y-1">
           {activeFavoriteNotes.map((note) => {
@@ -369,7 +382,19 @@ export default function DashboardPage() {
         <h2 className="text-lg font-semibold mb-2">Tâches favorites</h2>
         {tasksLoading && <p>Loading tasks...</p>}
         {tasksError && <p>Error loading tasks: {tasksError.message}</p>}
-        {taskActionError && <p className="text-sm text-destructive">{taskActionError}</p>}
+        {taskActionError && (
+        <div className="space-y-2">
+          <p className="text-sm text-destructive">{taskActionError}</p>
+          {taskActionError.includes('Limite Free atteinte') && (
+            <Link
+              href="/upgrade"
+              className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+            >
+              Passer Pro
+            </Link>
+          )}
+        </div>
+      )}
         {!tasksLoading && !tasksError && activeFavoriteTasks.length === 0 && <p>No tasks yet.</p>}
         <ul className="space-y-1">
           {activeFavoriteTasks.map((task) => {

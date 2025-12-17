@@ -17,6 +17,7 @@ import { useUserNotes } from "@/hooks/useUserNotes";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import type { NoteDoc } from "@/types/firestore";
+import Link from "next/link";
 
 const newNoteSchema = z.object({
   title: z.string().min(1, "Le titre est requis."),
@@ -57,6 +58,9 @@ export default function NotesPage() {
   const [editError, setEditError] = useState<string | null>(null);
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const showUpgradeCta =
+    !!createError?.includes("Limite Free atteinte") || !!editError?.includes("Limite Free atteinte");
 
   const sortedNotes = useMemo(() => {
     return notes
@@ -107,7 +111,6 @@ export default function NotesPage() {
         createdAt: serverTimestamp() as unknown as NoteDoc["createdAt"],
         updatedAt: serverTimestamp() as unknown as NoteDoc["updatedAt"],
       };
-
       await addDoc(collection(db, "notes"), payload);
       setNoteTitle("");
       setNoteContent("");
@@ -337,7 +340,15 @@ export default function NotesPage() {
       <section>
         <h2 className="text-lg font-semibold mb-2">Toutes les notes</h2>
         {loading && <p>Loading…</p>}
-        {error && <p className="text-sm text-destructive">{error.message}</p>}
+        {createError && <p className="mt-2 text-sm text-destructive">{createError}</p>}
+        {showUpgradeCta && (
+          <Link
+            href="/upgrade"
+            className="mt-2 inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+          >
+            Passer Pro
+          </Link>
+        )}
 
         {!loading && !error && activeNotes.length === 0 && <p>Aucune note.</p>}
 

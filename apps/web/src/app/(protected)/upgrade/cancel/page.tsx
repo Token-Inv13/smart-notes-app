@@ -7,7 +7,7 @@ export default function UpgradeCancelPage() {
     <div className="max-w-xl space-y-4">
       <h1 className="text-xl font-semibold">Paiement annulé</h1>
       <p className="text-sm text-muted-foreground">
-        Le paiement a été annulé. Tu peux réessayer quand tu veux.
+        Le paiement a été annulé. Aucun changement n’a été appliqué. Tu peux réessayer quand tu veux.
       </p>
       <div className="flex gap-2">
         <Link

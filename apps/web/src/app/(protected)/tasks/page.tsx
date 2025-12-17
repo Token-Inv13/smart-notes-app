@@ -22,6 +22,7 @@ import { useUserTaskReminders } from "@/hooks/useUserTaskReminders";
 import { formatTimestampForInput, formatTimestampToLocalString, parseLocalDateTimeToTimestamp } from "@/lib/datetime";
 import type { TaskDoc, TaskReminderDoc } from "@/types/firestore";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 
 type TaskStatus = "todo" | "doing" | "done";
 type TaskStatusFilter = "all" | TaskStatus;
@@ -82,6 +83,9 @@ export default function TasksPage() {
   const [newReminderTimes, setNewReminderTimes] = useState<Record<string, string>>({});
   const [creatingReminderForId, setCreatingReminderForId] = useState<string | null>(null);
   const [reminderError, setReminderError] = useState<string | null>(null);
+
+  const showUpgradeCta =
+    !!createError?.includes("Limite Free atteinte") || !!editError?.includes("Limite Free atteinte");
   const [deletingReminderId, setDeletingReminderId] = useState<string | null>(null);
 
   const searchParams = useSearchParams();
@@ -649,6 +653,14 @@ export default function TasksPage() {
               </p>
             )}
             {createError && <p className="mt-2 text-sm text-destructive">{createError}</p>}
+            {showUpgradeCta && (
+              <Link
+                href="/upgrade"
+                className="mt-2 inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+              >
+                Passer Pro
+              </Link>
+            )}
             {createSuccess && <p className="mt-2 text-sm">{createSuccess}</p>}
           </div>
         )}

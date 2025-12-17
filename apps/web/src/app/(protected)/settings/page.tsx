@@ -2,6 +2,7 @@
 
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { auth, db } from "@/lib/firebase";
 import { doc, updateDoc } from "firebase/firestore";
 import { registerFcmToken } from "@/lib/fcm";
@@ -292,6 +293,12 @@ export default function SettingsPage() {
             <div className="text-sm">
               <span className="font-medium">Plan actuel:</span> <span>{user.plan ?? 'free'}</span>
             </div>
+            <Link
+              href="/upgrade"
+              className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium"
+            >
+              Page Passer Pro
+            </Link>
             <button
               type="button"
               onClick={handleTogglePlan}
