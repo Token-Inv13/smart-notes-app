@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { verifySessionCookie } from "@/lib/firebaseAdmin";
-import LogoutButton from "./LogoutButton";
 import SidebarWorkspaces from "./SidebarWorkspaces";
 import TopbarNav from "./TopbarNav";
 
@@ -31,7 +30,6 @@ export default async function ProtectedLayout({ children }: ProtectedLayoutProps
       <div className="flex-1 flex flex-col">
         <header className="h-14 border-b border-border px-4 flex items-center justify-between">
           <TopbarNav />
-          <LogoutButton />
         </header>
         <main className="flex-1 p-4">{children}</main>
       </div>

@@ -58,13 +58,20 @@ export default function SidebarWorkspaces() {
     }
 
     const qs = params.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname);
+    const nextPath = pathname.startsWith('/settings') ? '/dashboard' : pathname;
+    router.replace(qs ? `${nextPath}?${qs}` : nextPath);
   };
 
   const navigateToSettings = () => {
     const params = new URLSearchParams(searchParams.toString());
     const qs = params.toString();
     router.push(qs ? `/settings?${qs}` : "/settings");
+  };
+
+  const navigateToDashboard = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    const qs = params.toString();
+    router.push(qs ? `/dashboard?${qs}` : "/dashboard");
   };
 
   const handleCreate = async () => {
@@ -176,6 +183,16 @@ export default function SidebarWorkspaces() {
 
   return (
     <div className="space-y-4">
+      <div>
+        <div className="text-sm font-semibold mb-2">Dashboard</div>
+        <button
+          type="button"
+          onClick={navigateToDashboard}
+          className="w-full inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
+        >
+          Ouvrir le dashboard
+        </button>
+      </div>
       <div>
         <div className="text-sm font-semibold mb-2">Dossiers</div>
 

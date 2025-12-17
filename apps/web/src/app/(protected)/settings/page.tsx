@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { auth, db } from "@/lib/firebase";
 import { doc, updateDoc } from "firebase/firestore";
 import { registerFcmToken } from "@/lib/fcm";
+import LogoutButton from "../LogoutButton";
 
 export default function SettingsPage() {
   const { data: user, loading, error } = useUserSettings();
@@ -146,6 +147,10 @@ export default function SettingsPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">Paramètres</h1>
+
+      <div>
+        <LogoutButton />
+      </div>
 
       {loading && <p>Loading settings...</p>}
       {error && <p>Error loading settings.</p>}
