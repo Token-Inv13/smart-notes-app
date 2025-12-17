@@ -334,7 +334,7 @@ export default function NotesPage() {
                     <div className="min-w-0">
                       <div className="font-medium truncate">{note.title}</div>
                       <div className="text-sm text-muted-foreground whitespace-pre-wrap break-words mt-1">
-                        {note.content}
+                        {note.content ?? ""}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
