@@ -18,6 +18,7 @@ import type { NoteDoc } from '@/types/firestore';
 
 interface UseUserNotesParams {
   workspaceId?: string;
+  favoriteOnly?: boolean;
   limit?: number;
 }
 
@@ -35,6 +36,10 @@ export function useUserNotes(params?: UseUserNotesParams) {
       constraints.push(where('workspaceId', '==', params.workspaceId));
     }
 
+    if (params?.favoriteOnly) {
+      constraints.push(where('favorite', '==', true));
+    }
+
     constraints.push(orderBy('updatedAt', 'desc'));
 
     if (params?.limit && params.limit > 0) {
@@ -42,7 +47,7 @@ export function useUserNotes(params?: UseUserNotesParams) {
     }
 
     return query(baseRef, ...constraints) as Query<NoteDoc>;
-  }, [userUid, params?.workspaceId, params?.limit]);
+  }, [userUid, params?.workspaceId, params?.favoriteOnly, params?.limit]);
 
   return useCollection<NoteDoc>(notesQuery);
 }

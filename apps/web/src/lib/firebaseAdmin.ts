@@ -99,6 +99,10 @@ export function getAdminAuth(): admin.auth.Auth {
   return getAdminApp().auth();
 }
 
+export function getAdminDb(): admin.firestore.Firestore {
+  return getAdminApp().firestore();
+}
+
 export async function verifySessionCookie(sessionCookie: string) {
   try {
     return await getAdminAuth().verifySessionCookie(sessionCookie, true);

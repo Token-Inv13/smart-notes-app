@@ -162,6 +162,7 @@ export default function TasksPage() {
         status,
         workspaceId: workspaceId ?? null,
         dueDate: dueTimestamp,
+        favorite: false,
         createdAt: serverTimestamp() as unknown as TaskDoc["createdAt"],
         updatedAt: serverTimestamp() as unknown as TaskDoc["updatedAt"],
       };
@@ -314,6 +315,21 @@ export default function TasksPage() {
       console.error("Error deleting task", e);
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const toggleFavorite = async (task: TaskDoc) => {
+    if (!task.id) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== task.userId) return;
+
+    try {
+      await updateDoc(doc(db, "tasks", task.id), {
+        favorite: !task.favorite,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error("Error toggling favorite", e);
     }
   };
 
@@ -566,6 +582,14 @@ export default function TasksPage() {
                       </button>
                       <button
                         type="button"
+                        onClick={() => toggleFavorite(task)}
+                        className="border border-border rounded px-2 py-1 bg-background"
+                        aria-label={task.favorite ? "Unfavorite" : "Favorite"}
+                      >
+                        {task.favorite ? "★" : "☆"}
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleDeleteTask(task)}
                         disabled={deletingId === task.id}
                         className="border border-border rounded px-2 py-1 bg-background"
@@ -748,6 +772,14 @@ export default function TasksPage() {
                               className="text-xs underline"
                             >
                               Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => toggleFavorite(task)}
+                              className="text-xs underline"
+                              aria-label={task.favorite ? "Unfavorite" : "Favorite"}
+                            >
+                              {task.favorite ? "★" : "☆"}
                             </button>
                             <button
                               type="button"

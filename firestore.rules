@@ -21,6 +21,10 @@ service cloud.firestore {
     function isNullOrTimestamp(value) {
       return value == null || value is timestamp;
     }
+
+    function isOptionalBool(value) {
+      return value == null || value is bool;
+    }
     
     // Users collection
     match /users/{userId} {
@@ -37,6 +41,7 @@ service cloud.firestore {
         && isNullOrString(request.resource.data.workspaceId)
         && isNonEmptyString(request.resource.data.title)
         && isNonEmptyString(request.resource.data.content)
+        && isOptionalBool(request.resource.data.favorite)
         && request.resource.data.createdAt is timestamp
         && request.resource.data.updatedAt is timestamp;
 
@@ -46,6 +51,7 @@ service cloud.firestore {
         && isNullOrString(request.resource.data.workspaceId)
         && isNonEmptyString(request.resource.data.title)
         && isNonEmptyString(request.resource.data.content)
+        && isOptionalBool(request.resource.data.favorite)
         && request.resource.data.updatedAt is timestamp;
 
       allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
@@ -61,6 +67,7 @@ service cloud.firestore {
         && isNonEmptyString(request.resource.data.title)
         && (request.resource.data.status in ['todo', 'doing', 'done'])
         && isNullOrTimestamp(request.resource.data.dueDate)
+        && isOptionalBool(request.resource.data.favorite)
         && request.resource.data.createdAt is timestamp
         && request.resource.data.updatedAt is timestamp;
 
@@ -71,6 +78,7 @@ service cloud.firestore {
         && isNonEmptyString(request.resource.data.title)
         && (request.resource.data.status in ['todo', 'doing', 'done'])
         && isNullOrTimestamp(request.resource.data.dueDate)
+        && isOptionalBool(request.resource.data.favorite)
         && request.resource.data.updatedAt is timestamp;
 
       allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;

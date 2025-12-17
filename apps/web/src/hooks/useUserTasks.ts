@@ -19,6 +19,7 @@ import type { TaskDoc } from '@/types/firestore';
 interface UseUserTasksParams {
   workspaceId?: string;
   status?: 'todo' | 'doing' | 'done';
+  favoriteOnly?: boolean;
   limit?: number;
 }
 
@@ -36,6 +37,10 @@ export function useUserTasks(params?: UseUserTasksParams) {
       constraints.push(where('workspaceId', '==', params.workspaceId));
     }
 
+    if (params?.favoriteOnly) {
+      constraints.push(where('favorite', '==', true));
+    }
+
     // We order by dueDate only (index exists). Fallback by updatedAt will be handled client-side.
     constraints.push(orderBy('dueDate', 'asc'));
 
@@ -44,7 +49,7 @@ export function useUserTasks(params?: UseUserTasksParams) {
     }
 
     return query(baseRef, ...constraints) as Query<TaskDoc>;
-  }, [userUid, params?.workspaceId, params?.limit]);
+  }, [userUid, params?.workspaceId, params?.favoriteOnly, params?.limit]);
 
   return useCollection<TaskDoc>(tasksQuery);
 }

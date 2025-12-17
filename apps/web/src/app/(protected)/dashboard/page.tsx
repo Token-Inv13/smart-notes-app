@@ -33,13 +33,13 @@ export default function DashboardPage() {
     data: notes,
     loading: notesLoading,
     error: notesError,
-  } = useUserNotes({ workspaceId, limit: 5 });
+  } = useUserNotes({ workspaceId, favoriteOnly: true, limit: 5 });
 
   const {
     data: tasks,
     loading: tasksLoading,
     error: tasksError,
-  } = useUserTasks({ workspaceId, limit: 5 });
+  } = useUserTasks({ workspaceId, favoriteOnly: true, limit: 5 });
 
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editNoteTitle, setEditNoteTitle] = useState('');
@@ -58,6 +58,21 @@ export default function DashboardPage() {
     setEditNoteTitle(note.title);
     setEditNoteContent(note.content);
     setNoteActionError(null);
+  };
+
+  const toggleNoteFavorite = async (note: NoteDoc) => {
+    if (!note.id) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== note.userId) return;
+
+    try {
+      await updateDoc(doc(db, 'notes', note.id), {
+        favorite: !note.favorite,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error('Error toggling note favorite', e);
+    }
   };
 
   const cancelEditNote = () => {
@@ -113,6 +128,21 @@ export default function DashboardPage() {
     } catch (e) {
       console.error('Error deleting note', e);
       setNoteActionError('Erreur lors de la suppression de la note.');
+    }
+  };
+
+  const toggleTaskFavorite = async (task: TaskDoc) => {
+    if (!task.id) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== task.userId) return;
+
+    try {
+      await updateDoc(doc(db, 'tasks', task.id), {
+        favorite: !task.favorite,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error('Error toggling task favorite', e);
     }
   };
 
@@ -189,7 +219,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8">
       <section>
-        <h2 className="text-lg font-semibold mb-2">Recent notes</h2>
+        <h2 className="text-lg font-semibold mb-2">Notes favorites</h2>
         {notesLoading && <p>Loading notes...</p>}
         {notesError && <p>Error loading notes: {notesError.message}</p>}
         {noteActionError && <p className="text-sm text-destructive">{noteActionError}</p>}
@@ -203,6 +233,14 @@ export default function DashboardPage() {
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-sm font-medium truncate">{note.title}</div>
                     <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleNoteFavorite(note)}
+                        className="text-xs underline"
+                        aria-label={note.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+                      >
+                        {note.favorite ? '★' : '☆'}
+                      </button>
                       <button
                         type="button"
                         onClick={() => startEditNote(note)}
@@ -262,7 +300,7 @@ export default function DashboardPage() {
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold mb-2">Upcoming tasks</h2>
+        <h2 className="text-lg font-semibold mb-2">Tâches favorites</h2>
         {tasksLoading && <p>Loading tasks...</p>}
         {tasksError && <p>Error loading tasks: {tasksError.message}</p>}
         {taskActionError && <p className="text-sm text-destructive">{taskActionError}</p>}
@@ -276,6 +314,14 @@ export default function DashboardPage() {
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-sm font-medium truncate">{task.title}</div>
                     <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleTaskFavorite(task)}
+                        className="text-xs underline"
+                        aria-label={task.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+                      >
+                        {task.favorite ? '★' : '☆'}
+                      </button>
                       <button
                         type="button"
                         onClick={() => startEditTask(task)}

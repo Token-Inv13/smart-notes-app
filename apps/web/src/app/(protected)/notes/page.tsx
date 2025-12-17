@@ -70,6 +70,7 @@ export default function NotesPage() {
         workspaceId: workspaceId ?? null,
         title: validation.data.title,
         content: validation.data.content,
+        favorite: false,
         createdAt: serverTimestamp() as unknown as NoteDoc["createdAt"],
         updatedAt: serverTimestamp() as unknown as NoteDoc["updatedAt"],
       };
@@ -153,6 +154,21 @@ export default function NotesPage() {
     }
   };
 
+  const toggleFavorite = async (note: NoteDoc) => {
+    if (!note.id) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== note.userId) return;
+
+    try {
+      await updateDoc(doc(db, "notes", note.id), {
+        favorite: !note.favorite,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error("Error toggling favorite", e);
+    }
+  };
+
   return (
     <div className="space-y-8">
       <section className="border border-border rounded-lg p-4 bg-card">
@@ -224,6 +240,14 @@ export default function NotesPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => toggleFavorite(note)}
+                        className="text-xs underline"
+                        aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                      >
+                        {note.favorite ? "★" : "☆"}
+                      </button>
                       <button
                         type="button"
                         onClick={() => startEditing(note)}

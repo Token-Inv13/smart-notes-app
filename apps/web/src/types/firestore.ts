@@ -24,6 +24,7 @@ export interface NoteDoc {
   workspaceId?: string | null;
   title: string;
   content: string;
+  favorite?: boolean;
   tags?: string[];
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
@@ -38,6 +39,7 @@ export interface TaskDoc {
   description?: string;
   status?: 'todo' | 'doing' | 'done';
   dueDate?: Timestamp | null;
+  favorite?: boolean;
   completed?: boolean;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;

@@ -6,9 +6,8 @@ import { z } from "zod";
 import {
   addDoc,
   collection,
-  deleteDoc,
-  doc,
   serverTimestamp,
+  doc,
   updateDoc,
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
@@ -149,11 +148,15 @@ export default function SidebarWorkspaces() {
     const user = auth.currentUser;
     if (!user || user.uid !== ws.ownerId) return;
 
-    if (!confirm("Supprimer ce dossier ? Les notes/tâches associées ne seront pas supprimées.")) return;
+    if (!confirm("Supprimer ce dossier ? Toutes les notes et tâches qu'il contient seront définitivement supprimées.")) return;
 
     setDeletingId(ws.id);
     try {
-      await deleteDoc(doc(db, "workspaces", ws.id));
+      const res = await fetch(`/api/workspaces/${encodeURIComponent(ws.id)}`, { method: "DELETE" });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || "Failed to delete workspace");
+      }
 
       if (currentWorkspaceId === ws.id) {
         navigateWithWorkspace(null);
