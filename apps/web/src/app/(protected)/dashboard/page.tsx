@@ -166,7 +166,11 @@ export default function DashboardPage() {
 
     try {
       await updateDoc(doc(db, 'tasks', task.id), {
-        favorite: !task.favorite,
+        title: task.title,
+        status: (task.status ?? 'todo') as TaskDoc['status'],
+        workspaceId: typeof task.workspaceId === 'string' ? task.workspaceId : null,
+        dueDate: task.dueDate ?? null,
+        favorite: !(task.favorite === true),
         updatedAt: serverTimestamp(),
       });
     } catch (e) {
@@ -214,7 +218,10 @@ export default function DashboardPage() {
     try {
       await updateDoc(doc(db, 'tasks', task.id), {
         title: validation.data.title,
+        status: (task.status ?? 'todo') as TaskDoc['status'],
+        workspaceId: typeof task.workspaceId === 'string' ? task.workspaceId : null,
         dueDate: dueTimestamp,
+        favorite: task.favorite === true,
         updatedAt: serverTimestamp(),
       });
       cancelEditTask();
