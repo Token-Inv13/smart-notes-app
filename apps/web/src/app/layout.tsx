@@ -5,6 +5,9 @@ export const metadata = {
   title: 'Smart Notes',
   description: 'Notes and tasks with reminders',
   manifest: '/manifest.webmanifest',
+};
+
+export const viewport = {
   themeColor: '#111827',
 };
 
