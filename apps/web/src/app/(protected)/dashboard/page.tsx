@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { z } from 'zod';
 import {
@@ -13,6 +13,7 @@ import { auth, db } from '@/lib/firebase';
 import { formatTimestampForInput, parseLocalDateTimeToTimestamp } from '@/lib/datetime';
 import { useUserNotes } from '@/hooks/useUserNotes';
 import { useUserTasks } from '@/hooks/useUserTasks';
+import { useUserWorkspaces } from '@/hooks/useUserWorkspaces';
 import type { NoteDoc, TaskDoc } from '@/types/firestore';
 
 function formatFrDateTime(ts?: { toDate: () => Date } | null) {
@@ -45,6 +46,16 @@ export default function DashboardPage() {
     loading: notesLoading,
     error: notesError,
   } = useUserNotes({ workspaceId, favoriteOnly: true, limit: 20 });
+
+  const { data: workspaces } = useUserWorkspaces();
+
+  const workspaceNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    workspaces.forEach((w) => {
+      if (w.id && w.name) m.set(w.id, w.name);
+    });
+    return m;
+  }, [workspaces]);
 
   const {
     data: tasks,
@@ -256,6 +267,11 @@ export default function DashboardPage() {
                       disabled={!note.id}
                     >
                       <span className="truncate">{note.title}</span>
+                      {note.workspaceId && typeof note.workspaceId === 'string' && (
+                        <span className="ml-2 text-xs text-muted-foreground whitespace-nowrap">
+                          {workspaceNameById.get(note.workspaceId) ?? note.workspaceId}
+                        </span>
+                      )}
                     </button>
                     <div className="flex items-center gap-2">
                       <button
@@ -346,6 +362,11 @@ export default function DashboardPage() {
                       disabled={!task.id}
                     >
                       <span className="truncate">{task.title}</span>
+                      {task.workspaceId && typeof task.workspaceId === 'string' && (
+                        <span className="ml-2 text-xs text-muted-foreground whitespace-nowrap">
+                          {workspaceNameById.get(task.workspaceId) ?? task.workspaceId}
+                        </span>
+                      )}
                       <span className="ml-2 text-xs text-muted-foreground whitespace-nowrap">
                         {dueLabel || 'Aucun rappel'}
                       </span>
