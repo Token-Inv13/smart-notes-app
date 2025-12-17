@@ -14,10 +14,6 @@ service cloud.firestore {
       return value is string && value.size() > 0;
     }
 
-    function isString(value) {
-      return value is string;
-    }
-
     function isNullOrString(value) {
       return value == null || value is string;
     }
