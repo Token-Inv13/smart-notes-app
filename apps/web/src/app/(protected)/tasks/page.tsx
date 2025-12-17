@@ -57,6 +57,8 @@ export default function TasksPage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
 
+  const [createOpen, setCreateOpen] = useState(false);
+
   // Edit state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -523,74 +525,106 @@ export default function TasksPage() {
       </header>
 
       {/* New Task form */}
-      <section className="space-y-2 border border-border rounded px-3 py-2">
-        <h2 className="font-semibold">New Task</h2>
-        <div className="flex flex-wrap gap-2 items-center">
-          <label className="flex flex-col text-sm">
-            <span>Title</span>
-            <input
-              type="text"
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              className="border border-border rounded px-2 py-1 bg-background"
-            />
-          </label>
-
-          <label className="flex flex-col text-sm">
-            <span>Status</span>
-            <select
-              value={newStatus}
-              onChange={(e) => setNewStatus(e.target.value as TaskStatus)}
-              className="border border-border rounded px-2 py-1 bg-background"
-            >
-              <option value="todo">Todo</option>
-              <option value="doing">Doing</option>
-              <option value="done">Done</option>
-            </select>
-          </label>
-
-          <label className="flex flex-col text-sm">
-            <span>Workspace</span>
-            <select
-              value={newWorkspaceId}
-              onChange={(e) => setNewWorkspaceId(e.target.value)}
-              className="border border-border rounded px-2 py-1 bg-background"
-            >
-              <option value="">—</option>
-              {workspaces.map((ws) => (
-                <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
-                  {ws.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex flex-col text-sm">
-            <span>Due date</span>
-            <input
-              type="datetime-local"
-              value={newDueDate}
-              onChange={(e) => setNewDueDate(e.target.value)}
-              className="border border-border rounded px-2 py-1 bg-background"
-            />
-          </label>
-
+      <section className="border border-border rounded-lg bg-card">
+        <div className="p-4 flex items-center justify-between gap-3">
+          <h2 className="font-semibold">Tâches</h2>
           <button
             type="button"
-            onClick={handleCreateTask}
-            disabled={creating || !canCreate || createWorkspaceMissing}
-            className="border border-border rounded px-3 py-1 bg-background"
+            onClick={() => setCreateOpen((v) => !v)}
+            className="inline-flex items-center justify-center px-3 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
+            aria-expanded={createOpen}
+            aria-controls="create-task-panel"
           >
-            {creating ? "Creating..." : "Create"}
+            {createOpen ? "Fermer" : "Nouvelle tâche"}
           </button>
         </div>
-        {createWorkspaceMissing && (
-          <p className="text-sm text-muted-foreground">
-            Sélectionne un dossier (workspace) dans la sidebar pour créer des tâches.
-          </p>
+
+        {createOpen && (
+          <div className="px-4 pb-4" id="create-task-panel">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 items-end">
+              <div className="space-y-1 lg:col-span-2">
+                <label className="text-sm font-medium" htmlFor="task-new-title">
+                  Titre
+                </label>
+                <input
+                  id="task-new-title"
+                  type="text"
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                  placeholder="Ex: Payer le loyer"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-sm font-medium" htmlFor="task-new-status">
+                  Statut
+                </label>
+                <select
+                  id="task-new-status"
+                  value={newStatus}
+                  onChange={(e) => setNewStatus(e.target.value as TaskStatus)}
+                  className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                >
+                  <option value="todo">Todo</option>
+                  <option value="doing">Doing</option>
+                  <option value="done">Done</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-sm font-medium" htmlFor="task-new-due">
+                  Rappel
+                </label>
+                <input
+                  id="task-new-due"
+                  type="datetime-local"
+                  value={newDueDate}
+                  onChange={(e) => setNewDueDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 items-end">
+              <div className="space-y-1">
+                <label className="text-sm font-medium" htmlFor="task-new-workspace">
+                  Dossier
+                </label>
+                <select
+                  id="task-new-workspace"
+                  value={newWorkspaceId}
+                  onChange={(e) => setNewWorkspaceId(e.target.value)}
+                  className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                >
+                  <option value="">—</option>
+                  {workspaces.map((ws) => (
+                    <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
+                      {ws.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCreateTask}
+                disabled={creating || !canCreate || createWorkspaceMissing}
+                className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50"
+              >
+                {creating ? "Création…" : "Créer"}
+              </button>
+            </div>
+
+            {createWorkspaceMissing && (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Sélectionne un dossier (workspace) dans la sidebar pour créer des tâches.
+              </p>
+            )}
+            {createError && <p className="mt-2 text-sm text-destructive">{createError}</p>}
+            {createSuccess && <p className="mt-2 text-sm">{createSuccess}</p>}
+          </div>
         )}
-        {createError && <p className="text-sm">{createError}</p>}
-        {createSuccess && <p className="text-sm">{createSuccess}</p>}
       </section>
 
       {loading && <p>Loading tasks...</p>}

@@ -33,6 +33,8 @@ export default function NotesPage() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
+  const [createOpen, setCreateOpen] = useState(false);
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editContent, setEditContent] = useState("");
@@ -221,51 +223,66 @@ export default function NotesPage() {
 
   return (
     <div className="space-y-8">
-      <section className="border border-border rounded-lg p-4 bg-card">
-        <h1 className="text-xl font-semibold mb-3">Notes</h1>
-
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <label className="text-sm font-medium" htmlFor="note-title">
-              Titre
-            </label>
-            <input
-              id="note-title"
-              value={noteTitle}
-              onChange={(e) => setNoteTitle(e.target.value)}
-              className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              placeholder="Ex: Idées pour demain"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-sm font-medium" htmlFor="note-content">
-              Contenu
-            </label>
-            <textarea
-              id="note-content"
-              value={noteContent}
-              onChange={(e) => setNoteContent(e.target.value)}
-              className="w-full min-h-[120px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              placeholder="Écris ta note…"
-            />
-          </div>
-
-          {createError && (
-            <p className="text-sm text-destructive" aria-live="polite">
-              {createError}
-            </p>
-          )}
-
+      <section className="border border-border rounded-lg bg-card">
+        <div className="p-4 flex items-center justify-between gap-3">
+          <h1 className="text-xl font-semibold">Notes</h1>
           <button
             type="button"
-            disabled={creating || workspaceRequired}
-            onClick={handleCreateNote}
-            className="w-full inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={() => setCreateOpen((v) => !v)}
+            className="inline-flex items-center justify-center px-3 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
+            aria-expanded={createOpen}
+            aria-controls="create-note-panel"
           >
-            {creating ? "Création…" : "Ajouter la note"}
+            {createOpen ? "Fermer" : "Nouvelle note"}
           </button>
         </div>
+
+        {createOpen && (
+          <div className="px-4 pb-4" id="create-note-panel">
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
+              <div className="space-y-1">
+                <label className="text-sm font-medium" htmlFor="note-title">
+                  Titre
+                </label>
+                <input
+                  id="note-title"
+                  value={noteTitle}
+                  onChange={(e) => setNoteTitle(e.target.value)}
+                  className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Ex: Idées pour demain"
+                />
+              </div>
+
+              <button
+                type="button"
+                disabled={creating || workspaceRequired}
+                onClick={handleCreateNote}
+                className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {creating ? "Création…" : "Ajouter"}
+              </button>
+            </div>
+
+            <div className="mt-3 space-y-1">
+              <label className="text-sm font-medium" htmlFor="note-content">
+                Contenu
+              </label>
+              <textarea
+                id="note-content"
+                value={noteContent}
+                onChange={(e) => setNoteContent(e.target.value)}
+                className="w-full min-h-[96px] md:min-h-[110px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="Écris ta note…"
+              />
+            </div>
+
+            {createError && (
+              <p className="mt-2 text-sm text-destructive" aria-live="polite">
+                {createError}
+              </p>
+            )}
+          </div>
+        )}
       </section>
 
       {workspaceRequired && (
