@@ -5,6 +5,8 @@ import { verifySessionCookie, getAdminDb } from '@/lib/firebaseAdmin';
 
 const SESSION_COOKIE_NAME = 'session';
 
+export const runtime = 'nodejs';
+
 export async function POST() {
   try {
     const sessionCookie = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
