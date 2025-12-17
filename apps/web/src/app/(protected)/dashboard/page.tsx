@@ -335,14 +335,18 @@ export default function DashboardPage() {
               <li key={task.id} className="border border-border rounded-md p-2">
                 {!isEditing ? (
                   <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0 text-sm font-medium truncate">
+                    <button
+                      type="button"
+                      onClick={() => task.id && router.push(`/tasks/${encodeURIComponent(task.id)}${suffix}`)}
+                      className="min-w-0 text-left text-sm font-medium truncate cursor-pointer hover:underline"
+                      aria-label={`Ouvrir la tâche ${task.title}`}
+                      disabled={!task.id}
+                    >
                       <span className="truncate">{task.title}</span>
-                      {dueLabel && (
-                        <span className="ml-2 text-xs text-muted-foreground whitespace-nowrap">
-                          {dueLabel}
-                        </span>
-                      )}
-                    </div>
+                      <span className="ml-2 text-xs text-muted-foreground whitespace-nowrap">
+                        {dueLabel || 'Aucun rappel'}
+                      </span>
+                    </button>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
