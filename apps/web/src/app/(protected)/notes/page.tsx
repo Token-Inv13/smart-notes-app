@@ -29,6 +29,8 @@ export default function NotesPage() {
   const workspaceId = searchParams.get("workspaceId") || undefined;
   const { data: workspaces } = useUserWorkspaces();
 
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === "pro";
   const freeLimitMessage =
@@ -71,6 +73,26 @@ export default function NotesPage() {
         return bUpdated - aUpdated;
       });
   }, [notes]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("notesViewMode");
+      if (raw === "list" || raw === "grid") {
+        setViewMode(raw);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const setAndPersistViewMode = (next: "list" | "grid") => {
+    setViewMode(next);
+    try {
+      window.localStorage.setItem("notesViewMode", next);
+    } catch {
+      // ignore
+    }
+  };
 
   const activeNotes = useMemo(() => sortedNotes.filter((n) => n.completed !== true), [sortedNotes]);
   const completedNotes = useMemo(() => sortedNotes.filter((n) => n.completed === true), [sortedNotes]);
@@ -261,7 +283,7 @@ export default function NotesPage() {
             type="button"
             onClick={() => setCreateOpen((v) => !v)}
             className="inline-flex items-center justify-center px-3 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
-            aria-expanded={createOpen}
+            aria-expanded={createOpen ? "true" : "false"}
             aria-controls="create-note-panel"
           >
             {createOpen ? "Fermer" : "Nouvelle note"}
@@ -338,7 +360,29 @@ export default function NotesPage() {
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold mb-2">Toutes les notes</h2>
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <h2 className="text-lg font-semibold">Toutes les notes</h2>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setAndPersistViewMode("list")}
+              className={`border border-border rounded px-3 py-1 bg-background text-sm ${
+                viewMode === "list" ? "font-semibold" : ""
+              }`}
+            >
+              Liste
+            </button>
+            <button
+              type="button"
+              onClick={() => setAndPersistViewMode("grid")}
+              className={`border border-border rounded px-3 py-1 bg-background text-sm ${
+                viewMode === "grid" ? "font-semibold" : ""
+              }`}
+            >
+              Vignettes
+            </button>
+          </div>
+        </div>
         {loading && <p>Loading…</p>}
         {createError && <p className="mt-2 text-sm text-destructive">{createError}</p>}
         {showUpgradeCta && (
@@ -352,101 +396,227 @@ export default function NotesPage() {
 
         {!loading && !error && activeNotes.length === 0 && <p>Aucune note.</p>}
 
-        <ul className="space-y-2">
-          {activeNotes.map((note) => {
-            const isEditing = !!note.id && note.id === editingId;
+        {viewMode === "list" && (
+          <ul className="space-y-2">
+            {activeNotes.map((note) => {
+              const isEditing = !!note.id && note.id === editingId;
+              const workspaceName = workspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";
 
-            return (
-              <li key={note.id} className="border border-border rounded-md p-3 bg-card">
-                {!isEditing ? (
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="font-medium truncate">{note.title}</div>
-                      <div className="text-sm text-muted-foreground whitespace-pre-wrap break-words mt-1">
-                        {note.content ?? ""}
+              return (
+                <li key={note.id} className="border border-border rounded-md p-3 bg-card">
+                  {!isEditing ? (
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">{note.title}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <span className="text-xs px-2 py-0.5 rounded-full border border-border bg-background">
+                            {workspaceName}
+                          </span>
+                          {note.favorite && (
+                            <span className="text-xs px-2 py-0.5 rounded-full border border-border bg-background">
+                              Favori
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-muted-foreground whitespace-pre-wrap break-words mt-2">
+                          {note.content ?? ""}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <label className="text-xs flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={note.completed === true}
+                            onChange={(e) => toggleCompleted(note, e.target.checked)}
+                          />
+                          Terminé
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => toggleFavorite(note)}
+                          className="text-xs underline"
+                          aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                        >
+                          {note.favorite ? "★" : "☆"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => startEditing(note)}
+                          className="text-xs underline"
+                        >
+                          Modifier
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(note)}
+                          disabled={deletingId === note.id}
+                          className="text-xs underline text-destructive disabled:opacity-50"
+                        >
+                          {deletingId === note.id ? "Suppression…" : "Supprimer"}
+                        </button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <label className="text-xs flex items-center gap-1">
-                        <input
-                          type="checkbox"
-                          checked={note.completed === true}
-                          onChange={(e) => toggleCompleted(note, e.target.checked)}
-                        />
-                        Terminé
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => toggleFavorite(note)}
-                        className="text-xs underline"
-                        aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                      >
-                        {note.favorite ? "★" : "☆"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => startEditing(note)}
-                        className="text-xs underline"
-                      >
-                        Modifier
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(note)}
-                        disabled={deletingId === note.id}
-                        className="text-xs underline text-destructive disabled:opacity-50"
-                      >
-                        {deletingId === note.id ? "Suppression…" : "Supprimer"}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <input
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      aria-label="Titre de la note"
-                      placeholder="Titre"
-                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                    />
-                    <textarea
-                      value={editContent}
-                      onChange={(e) => setEditContent(e.target.value)}
-                      aria-label="Contenu de la note"
-                      placeholder="Contenu"
-                      className="w-full min-h-[120px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                    />
+                  ) : (
+                    <div className="space-y-3">
+                      <input
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        aria-label="Titre de la note"
+                        placeholder="Titre"
+                        className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                      />
+                      <textarea
+                        value={editContent}
+                        onChange={(e) => setEditContent(e.target.value)}
+                        aria-label="Contenu de la note"
+                        placeholder="Contenu"
+                        className="w-full min-h-[120px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                      />
 
-                    {editError && (
-                      <p className="text-sm text-destructive" aria-live="polite">
-                        {editError}
-                      </p>
-                    )}
+                      {editError && (
+                        <p className="text-sm text-destructive" aria-live="polite">
+                          {editError}
+                        </p>
+                      )}
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={saving}
-                        onClick={() => handleSave(note)}
-                        className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
-                      >
-                        {saving ? "Enregistrement…" : "Enregistrer"}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={saving}
-                        onClick={cancelEditing}
-                        className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-                      >
-                        Annuler
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() => handleSave(note)}
+                          className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+                        >
+                          {saving ? "Enregistrement…" : "Enregistrer"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={cancelEditing}
+                          className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+                        >
+                          Annuler
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {viewMode === "grid" && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {activeNotes.map((note) => {
+              const isEditing = !!note.id && note.id === editingId;
+              const workspaceName = workspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";
+
+              return (
+                <div
+                  key={note.id}
+                  className="border border-border rounded-md p-3 bg-card min-w-0"
+                >
+                  {!isEditing ? (
+                    <div className="flex flex-col gap-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-medium leading-snug line-clamp-2">{note.title}</div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span className="text-xs px-2 py-0.5 rounded-full border border-border bg-background">
+                              {workspaceName}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleFavorite(note)}
+                          className="text-xs underline shrink-0"
+                          aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                        >
+                          {note.favorite ? "★" : "☆"}
+                        </button>
+                      </div>
+
+                      <div className="text-sm text-muted-foreground whitespace-pre-wrap break-words line-clamp-4">
+                        {note.content ?? ""}
+                      </div>
+
+                      <div className="mt-auto flex items-center justify-between gap-2">
+                        <label className="text-xs flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={note.completed === true}
+                            onChange={(e) => toggleCompleted(note, e.target.checked)}
+                          />
+                          Terminé
+                        </label>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => startEditing(note)}
+                            className="text-xs underline"
+                          >
+                            Modifier
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(note)}
+                            disabled={deletingId === note.id}
+                            className="text-xs underline text-destructive disabled:opacity-50"
+                          >
+                            {deletingId === note.id ? "Suppression…" : "Supprimer"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <input
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        aria-label="Titre de la note"
+                        placeholder="Titre"
+                        className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                      />
+                      <textarea
+                        value={editContent}
+                        onChange={(e) => setEditContent(e.target.value)}
+                        aria-label="Contenu de la note"
+                        placeholder="Contenu"
+                        className="w-full min-h-[120px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                      />
+
+                      {editError && (
+                        <p className="text-sm text-destructive" aria-live="polite">
+                          {editError}
+                        </p>
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() => handleSave(note)}
+                          className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+                        >
+                          {saving ? "Enregistrement…" : "Enregistrer"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={cancelEditing}
+                          className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+                        >
+                          Annuler
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section>

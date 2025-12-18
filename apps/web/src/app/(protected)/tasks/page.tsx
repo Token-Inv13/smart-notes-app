@@ -53,7 +53,7 @@ export default function TasksPage() {
   const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>("all");
   const [workspaceFilter, setWorkspaceFilter] = useState<WorkspaceFilter>("all");
 
-  const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
+  const [viewMode, setViewMode] = useState<"list" | "grid" | "kanban">("list");
   const [movingTaskId, setMovingTaskId] = useState<string | null>(null);
 
   // New task form state
@@ -92,6 +92,26 @@ export default function TasksPage() {
   const highlightedTaskId = searchParams.get("taskId");
   const workspaceIdParam = searchParams.get("workspaceId");
   const workspaceRequired = !workspaceIdParam;
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("tasksViewMode");
+      if (raw === "list" || raw === "grid" || raw === "kanban") {
+        setViewMode(raw);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const setAndPersistViewMode = (next: "list" | "grid" | "kanban") => {
+    setViewMode(next);
+    try {
+      window.localStorage.setItem("tasksViewMode", next);
+    } catch {
+      // ignore
+    }
+  };
 
   // Keep workspaceFilter and default new workspace in sync with ?workspaceId=... from the sidebar.
   useEffect(() => {
@@ -505,7 +525,7 @@ export default function TasksPage() {
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => setViewMode("list")}
+            onClick={() => setAndPersistViewMode("list")}
             className={`border border-border rounded px-3 py-1 bg-background ${
               viewMode === "list" ? "font-semibold" : ""
             }`}
@@ -514,7 +534,16 @@ export default function TasksPage() {
           </button>
           <button
             type="button"
-            onClick={() => setViewMode("kanban")}
+            onClick={() => setAndPersistViewMode("grid")}
+            className={`border border-border rounded px-3 py-1 bg-background ${
+              viewMode === "grid" ? "font-semibold" : ""
+            }`}
+          >
+            Vignettes
+          </button>
+          <button
+            type="button"
+            onClick={() => setAndPersistViewMode("kanban")}
             className={`border border-border rounded px-3 py-1 bg-background ${
               viewMode === "kanban" ? "font-semibold" : ""
             }`}
@@ -563,7 +592,7 @@ export default function TasksPage() {
             type="button"
             onClick={() => setCreateOpen((v) => !v)}
             className="inline-flex items-center justify-center px-3 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
-            aria-expanded={createOpen}
+            aria-expanded={createOpen ? "true" : "false"}
             aria-controls="create-task-panel"
           >
             {createOpen ? "Fermer" : "Nouvelle tâche"}
@@ -861,6 +890,213 @@ export default function TasksPage() {
             );
           })}
         </ul>
+      )}
+
+      {!loading && !error && viewMode === "grid" && activeTasks.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {activeTasks.map((task) => {
+            const isEditing = editingId === task.id;
+            const status = (task.status as TaskStatus | undefined) ?? "todo";
+            const workspaceName =
+              workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
+            const dueLabel = formatTimestampToLocalString(task.dueDate ?? null);
+            const taskReminders = reminders.filter((r) => r.taskId === task.id);
+            const nextReminder = taskReminders
+              .slice()
+              .sort((a, b) => new Date(a.reminderTime).getTime() - new Date(b.reminderTime).getTime())[0];
+
+            return (
+              <div
+                key={task.id}
+                id={task.id ? `task-${task.id}` : undefined}
+                className={`border rounded-md p-3 bg-card min-w-0 ${
+                  task.id && task.id === highlightedTaskId ? "border-primary" : "border-border"
+                }`}
+              >
+                {!isEditing && (
+                  <>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-medium leading-snug line-clamp-2">{task.title}</div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <span className="text-xs px-2 py-0.5 rounded-full border border-border bg-background">
+                            {workspaceName}
+                          </span>
+                          <span className="text-xs px-2 py-0.5 rounded-full border border-border bg-background">
+                            {status}
+                          </span>
+                          {(!!dueLabel || !!nextReminder) && (
+                            <span className="text-xs px-2 py-0.5 rounded-full border border-border bg-background">
+                              {dueLabel ? `Rappel: ${dueLabel}` : `Rappel: ${new Date(nextReminder!.reminderTime).toLocaleString()}`}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => toggleFavorite(task)}
+                        className="text-xs underline shrink-0"
+                        aria-label={task.favorite ? "Unfavorite" : "Favorite"}
+                      >
+                        {task.favorite ? "★" : "☆"}
+                      </button>
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between gap-2 text-sm">
+                      <label className="flex items-center gap-1 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={status === "done"}
+                          onChange={(e) => toggleDone(task, e.target.checked)}
+                        />
+                        Terminé
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => startEditing(task)}
+                          className="text-xs underline"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTask(task)}
+                          disabled={deletingId === task.id}
+                          className="text-xs underline text-destructive disabled:opacity-50"
+                        >
+                          {deletingId === task.id ? "Deleting..." : "Delete"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Reminders panel */}
+                    <div className="mt-3 space-y-1 text-sm">
+                      <div className="font-semibold">Reminders</div>
+                      {remindersLoading && <p>Loading reminders...</p>}
+                      {remindersError && <p>Error loading reminders.</p>}
+
+                      {!remindersLoading && taskReminders.length === 0 && <p>No reminders.</p>}
+
+                      {!remindersLoading && taskReminders.length > 0 && (
+                        <ul className="space-y-1">
+                          {taskReminders.map((reminder) => (
+                            <li key={reminder.id} className="flex items-center gap-2">
+                              <span>
+                                {new Date(reminder.reminderTime).toLocaleString()} {" "}
+                                {reminder.sent ? "(sent)" : "(pending)"}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteReminder(reminder)}
+                                disabled={deletingReminderId === reminder.id}
+                                className="border border-border rounded px-2 py-0.5 bg-background"
+                              >
+                                {deletingReminderId === reminder.id ? "Deleting..." : "Delete"}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+
+                      <div className="flex flex-wrap gap-2 items-center">
+                        <input
+                          type="datetime-local"
+                          value={newReminderTimes[task.id ?? ""] ?? ""}
+                          onChange={(e) => handleReminderTimeChange(task.id ?? "", e.target.value)}
+                          aria-label="Reminder time"
+                          className="border border-border rounded px-2 py-1 bg-background"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleCreateReminder(task)}
+                          disabled={creatingReminderForId === task.id}
+                          className="border border-border rounded px-2 py-1 bg-background"
+                        >
+                          {creatingReminderForId === task.id ? "Saving..." : "Add reminder"}
+                        </button>
+                      </div>
+                      {reminderError && <p className="text-xs">{reminderError}</p>}
+                    </div>
+                  </>
+                )}
+
+                {isEditing && (
+                  <>
+                    <div className="flex flex-wrap gap-2 items-center text-sm">
+                      <label className="flex flex-col">
+                        <span>Title</span>
+                        <input
+                          type="text"
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          className="border border-border rounded px-2 py-1 bg-background"
+                        />
+                      </label>
+
+                      <label className="flex flex-col">
+                        <span>Status</span>
+                        <select
+                          value={editStatus}
+                          onChange={(e) => setEditStatus(e.target.value as TaskStatus)}
+                          className="border border-border rounded px-2 py-1 bg-background"
+                        >
+                          <option value="todo">Todo</option>
+                          <option value="doing">Doing</option>
+                          <option value="done">Done</option>
+                        </select>
+                      </label>
+
+                      <label className="flex flex-col">
+                        <span>Workspace</span>
+                        <select
+                          value={editWorkspaceId}
+                          onChange={(e) => setEditWorkspaceId(e.target.value)}
+                          className="border border-border rounded px-2 py-1 bg-background"
+                        >
+                          <option value="">—</option>
+                          {workspaces.map((ws) => (
+                            <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
+                              {ws.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="flex flex-col">
+                        <span>Due date</span>
+                        <input
+                          type="datetime-local"
+                          value={editDueDate}
+                          onChange={(e) => setEditDueDate(e.target.value)}
+                          className="border border-border rounded px-2 py-1 bg-background"
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-2 flex gap-2 text-sm">
+                      <button
+                        type="button"
+                        onClick={() => handleSaveEdit(task)}
+                        disabled={savingEdit}
+                        className="border border-border rounded px-2 py-1 bg-background"
+                      >
+                        {savingEdit ? "Saving..." : "Save"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelEditing}
+                        className="border border-border rounded px-2 py-1 bg-background"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    {editError && <p className="text-sm mt-1">{editError}</p>}
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {!loading && !error && viewMode === "kanban" && (
