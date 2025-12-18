@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { z } from 'zod';
 import {
+  addDoc,
+  collection,
   deleteDoc,
   doc,
   serverTimestamp,
@@ -17,6 +19,7 @@ import { useUserWorkspaces } from '@/hooks/useUserWorkspaces';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import type { NoteDoc, TaskDoc } from '@/types/firestore';
 import Link from 'next/link';
+import { getOnboardingFlag, setOnboardingFlag } from '@/lib/onboarding';
 
 function formatFrDateTime(ts?: { toDate: () => Date } | null) {
   if (!ts) return '';
@@ -58,6 +61,9 @@ export default function DashboardPage() {
 
   const { data: workspaces } = useUserWorkspaces();
 
+  const { data: anyNotes, loading: anyNotesLoading } = useUserNotes({ workspaceId, limit: 1 });
+  const { data: anyTasks, loading: anyTasksLoading } = useUserTasks({ workspaceId, limit: 1 });
+
   const workspaceNameById = useMemo(() => {
     const m = new Map<string, string>();
     workspaces.forEach((w) => {
@@ -74,6 +80,73 @@ export default function DashboardPage() {
 
   const activeFavoriteNotes = notes.filter((n) => n.completed !== true);
   const activeFavoriteTasks = tasks.filter((t) => (t.status ?? 'todo') !== 'done');
+
+  const userId = auth.currentUser?.uid;
+  const hasAnyContent = (anyNotes?.length ?? 0) > 0 || (anyTasks?.length ?? 0) > 0;
+  const emptyStateReady = !anyNotesLoading && !anyTasksLoading;
+  const shouldShowWelcome = emptyStateReady && !hasAnyContent;
+
+  const preferredWorkspaceId = useMemo(() => {
+    if (workspaceId) return workspaceId;
+    const first = workspaces.find((w) => !!w.id)?.id;
+    return first || '';
+  }, [workspaceId, workspaces]);
+
+  const notesCreateHref = preferredWorkspaceId
+    ? `/notes?workspaceId=${encodeURIComponent(preferredWorkspaceId)}&create=1`
+    : '/notes?create=1';
+
+  const tasksCreateHref = preferredWorkspaceId
+    ? `/tasks?workspaceId=${encodeURIComponent(preferredWorkspaceId)}&create=1`
+    : '/tasks?create=1';
+
+  useEffect(() => {
+    if (!userId) return;
+    if (!emptyStateReady) return;
+    if (hasAnyContent) {
+      if (!getOnboardingFlag(userId, 'welcome_dismissed')) {
+        setOnboardingFlag(userId, 'welcome_dismissed', true);
+      }
+      return;
+    }
+
+    const alreadySeeded = getOnboardingFlag(userId, 'seed_v1');
+    if (alreadySeeded) return;
+    if (!preferredWorkspaceId) return;
+
+    const seed = async () => {
+      try {
+        await addDoc(collection(db, 'notes'), {
+          userId,
+          workspaceId: preferredWorkspaceId,
+          title: 'Bienvenue 👋',
+          content:
+            "Tu peux commencer en écrivant une note rapide ici.\n\nAstuce : utilise les favoris ⭐ pour retrouver l’essentiel.",
+          favorite: true,
+          completed: false,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
+        await addDoc(collection(db, 'tasks'), {
+          userId,
+          workspaceId: preferredWorkspaceId,
+          title: 'Ta première tâche',
+          status: 'todo',
+          dueDate: null,
+          favorite: true,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
+        setOnboardingFlag(userId, 'seed_v1', true);
+      } catch (e) {
+        console.error('Error seeding onboarding content', e);
+      }
+    };
+
+    seed();
+  }, [userId, emptyStateReady, hasAnyContent, preferredWorkspaceId]);
 
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editNoteTitle, setEditNoteTitle] = useState('');
@@ -272,6 +345,39 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {shouldShowWelcome && (
+        <section className="sn-card p-6">
+          <div className="space-y-3">
+            <div className="text-sm font-semibold">Bienvenue sur Smart Notes</div>
+            <div className="text-sm text-muted-foreground">
+              En moins d’une minute : crée ta première note ou ta première tâche. On a aussi ajouté un exemple pour te
+              guider.
+            </div>
+
+            {!preferredWorkspaceId && (
+              <div className="text-sm text-muted-foreground">
+                Commence par créer un dossier dans la sidebar, puis reviens ici.
+              </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Link
+                href={notesCreateHref}
+                className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+              >
+                Créer une note
+              </Link>
+              <Link
+                href={tasksCreateHref}
+                className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-input text-sm font-medium hover:bg-accent"
+              >
+                Créer une tâche
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
+
       <section>
         <h2 className="text-lg font-semibold mb-2">Notes favorites</h2>
         {notesLoading && (

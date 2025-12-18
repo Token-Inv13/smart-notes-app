@@ -23,6 +23,7 @@ import { formatTimestampForInput, formatTimestampToLocalString, parseLocalDateTi
 import type { TaskDoc, TaskReminderDoc } from "@/types/firestore";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
 
 type TaskStatus = "todo" | "doing" | "done";
 type TaskStatusFilter = "all" | TaskStatus;
@@ -91,7 +92,23 @@ export default function TasksPage() {
   const searchParams = useSearchParams();
   const highlightedTaskId = searchParams.get("taskId");
   const workspaceIdParam = searchParams.get("workspaceId");
+  const createParam = searchParams.get("create");
   const workspaceRequired = !workspaceIdParam;
+
+  const userId = auth.currentUser?.uid;
+  const showMicroGuide = !!userId && !getOnboardingFlag(userId, "tasks_microguide_v1");
+
+  useEffect(() => {
+    if (createParam !== "1") return;
+    setCreateOpen(true);
+  }, [createParam]);
+
+  useEffect(() => {
+    if (!userId) return;
+    if (!createOpen) return;
+    if (getOnboardingFlag(userId, "tasks_microguide_v1")) return;
+    setOnboardingFlag(userId, "tasks_microguide_v1", true);
+  }, [userId, createOpen]);
 
   useEffect(() => {
     try {
@@ -560,6 +577,28 @@ export default function TasksPage() {
             {createOpen ? "Fermer" : "Nouvelle tâche"}
           </button>
         </div>
+
+        {showMicroGuide && !createOpen && (
+          <div className="px-4 pb-4">
+            <div className="sn-card sn-card--muted p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold">Astuce</div>
+                  <div className="text-sm text-muted-foreground">
+                    Clique sur “Nouvelle tâche” pour créer ton premier rappel. Tu peux ensuite la mettre en favori ⭐.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => userId && setOnboardingFlag(userId, "tasks_microguide_v1", true)}
+                  className="sn-text-btn shrink-0"
+                >
+                  Compris
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {createOpen && (
           <div className="px-4 pb-4 sn-animate-in" id="create-task-panel">

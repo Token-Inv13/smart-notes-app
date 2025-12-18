@@ -18,6 +18,7 @@ import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import type { NoteDoc } from "@/types/firestore";
 import Link from "next/link";
+import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
 
 const newNoteSchema = z.object({
   title: z.string().min(1, "Le titre est requis."),
@@ -27,6 +28,7 @@ const newNoteSchema = z.object({
 export default function NotesPage() {
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId") || undefined;
+  const createParam = searchParams.get("create");
   const { data: workspaces } = useUserWorkspaces();
 
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
@@ -47,6 +49,21 @@ export default function NotesPage() {
   const [createError, setCreateError] = useState<string | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
+
+  const userId = auth.currentUser?.uid;
+  const showMicroGuide = !!userId && !getOnboardingFlag(userId, "notes_microguide_v1");
+
+  useEffect(() => {
+    if (createParam !== "1") return;
+    setCreateOpen(true);
+  }, [createParam]);
+
+  useEffect(() => {
+    if (!userId) return;
+    if (!createOpen) return;
+    if (getOnboardingFlag(userId, "notes_microguide_v1")) return;
+    setOnboardingFlag(userId, "notes_microguide_v1", true);
+  }, [userId, createOpen]);
 
   useEffect(() => {
     if (createOpen) return;
@@ -280,6 +297,28 @@ export default function NotesPage() {
             {createOpen ? "Fermer" : "Nouvelle note"}
           </button>
         </div>
+
+        {showMicroGuide && !createOpen && (
+          <div className="px-4 pb-4">
+            <div className="sn-card sn-card--muted p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold">Astuce</div>
+                  <div className="text-sm text-muted-foreground">
+                    Clique sur “Nouvelle note” pour capturer une idée. Tu pourras ensuite l’épingler en favori ⭐.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => userId && setOnboardingFlag(userId, "notes_microguide_v1", true)}
+                  className="sn-text-btn shrink-0"
+                >
+                  Compris
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {createOpen && (
           <div className="px-4 pb-4 sn-animate-in" id="create-note-panel">
