@@ -352,7 +352,13 @@ export default function NotesPage() {
 
       <section>
         <h2 className="text-lg font-semibold mb-2">Toutes les notes</h2>
-        {loading && <p>Loading…</p>}
+        {loading && (
+          <div className="sn-empty">
+            <div className="mx-auto sn-spinner" />
+            <div className="sn-empty-title mt-3">Chargement</div>
+            <div className="sn-empty-desc">Récupération de tes notes…</div>
+          </div>
+        )}
         {createError && <p className="mt-2 text-sm text-destructive">{createError}</p>}
         {showUpgradeCta && (
           <Link
@@ -363,7 +369,12 @@ export default function NotesPage() {
           </Link>
         )}
 
-        {!loading && !error && activeNotes.length === 0 && <p>Aucune note.</p>}
+        {!loading && !error && activeNotes.length === 0 && (
+          <div className="sn-empty">
+            <div className="sn-empty-title">Aucune note</div>
+            <div className="sn-empty-desc">Crée ta première note avec le bouton “Nouvelle note”.</div>
+          </div>
+        )}
 
         {viewMode === "list" && (
           <ul className="space-y-2">

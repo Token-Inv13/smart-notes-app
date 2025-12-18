@@ -274,8 +274,19 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <section>
         <h2 className="text-lg font-semibold mb-2">Notes favorites</h2>
-        {notesLoading && <p>Loading notes...</p>}
-        {notesError && <p>Error loading notes: {notesError.message}</p>}
+        {notesLoading && (
+          <div className="sn-empty">
+            <div className="mx-auto sn-spinner" />
+            <div className="sn-empty-title mt-3">Chargement</div>
+            <div className="sn-empty-desc">Récupération de tes favoris…</div>
+          </div>
+        )}
+        {notesError && (
+          <div className="sn-empty">
+            <div className="sn-empty-title">Erreur</div>
+            <div className="sn-empty-desc">Impossible de charger les notes favorites.</div>
+          </div>
+        )}
         {noteActionError && (
         <div className="space-y-2">
           <p className="text-sm text-destructive">{noteActionError}</p>
@@ -289,125 +300,143 @@ export default function DashboardPage() {
           )}
         </div>
       )}
-        {!notesLoading && !notesError && activeFavoriteNotes.length === 0 && <p>No notes yet.</p>}
-        <ul className="space-y-1">
-          {activeFavoriteNotes.map((note) => {
-            const isEditing = !!note.id && note.id === editingNoteId;
-            return (
-              <li
-                key={note.id}
-                className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4`}
-              >
-                {!isEditing ? (
-                  <div className="space-y-3">
-                    <div className="sn-card-header">
-                      <div className="min-w-0">
+        {!notesLoading && !notesError && activeFavoriteNotes.length === 0 && (
+          <div className="sn-empty">
+            <div className="sn-empty-title">Aucune note favorite</div>
+            <div className="sn-empty-desc">Ajoute des favoris depuis la page Notes.</div>
+          </div>
+        )}
+        {!notesLoading && !notesError && activeFavoriteNotes.length > 0 && (
+          <ul className="space-y-1">
+            {activeFavoriteNotes.map((note) => {
+              const isEditing = !!note.id && note.id === editingNoteId;
+              return (
+                <li
+                  key={note.id}
+                  className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4`}
+                >
+                  {!isEditing ? (
+                    <div className="space-y-3">
+                      <div className="sn-card-header">
+                        <div className="min-w-0">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              note.id && router.push(`/notes/${encodeURIComponent(note.id)}${suffix}`)
+                            }
+                            className="min-w-0 text-left"
+                            aria-label={`Ouvrir la note ${note.title}`}
+                            disabled={!note.id}
+                          >
+                            <div className="sn-card-title truncate">{note.title}</div>
+                            <div className="sn-card-meta">
+                              {note.workspaceId && typeof note.workspaceId === "string" && (
+                                <span className="sn-badge">
+                                  {workspaceNameById.get(note.workspaceId) ?? note.workspaceId}
+                                </span>
+                              )}
+                              {note.favorite && <span className="sn-badge">Favori</span>}
+                            </div>
+                          </button>
+                        </div>
+
+                        <div className="sn-card-actions sn-card-actions-secondary shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => toggleNoteFavorite(note)}
+                            className="sn-icon-btn"
+                            aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                            title={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                          >
+                            {note.favorite ? "★" : "☆"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="sn-card-actions sn-card-actions-secondary">
+                        <button type="button" onClick={() => startEditNote(note)} className="sn-text-btn">
+                          Modifier
+                        </button>
                         <button
                           type="button"
-                          onClick={() =>
-                            note.id && router.push(`/notes/${encodeURIComponent(note.id)}${suffix}`)
-                          }
-                          className="min-w-0 text-left"
-                          aria-label={`Ouvrir la note ${note.title}`}
-                          disabled={!note.id}
+                          onClick={() => handleDeleteNote(note)}
+                          className="sn-text-btn text-destructive"
                         >
-                          <div className="sn-card-title truncate">{note.title}</div>
-                          <div className="sn-card-meta">
-                            {note.workspaceId && typeof note.workspaceId === "string" && (
-                              <span className="sn-badge">
-                                {workspaceNameById.get(note.workspaceId) ?? note.workspaceId}
-                              </span>
-                            )}
-                            {note.favorite && <span className="sn-badge">Favori</span>}
-                          </div>
+                          Supprimer
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <input
+                        value={editNoteTitle}
+                        onChange={(e) => setEditNoteTitle(e.target.value)}
+                        aria-label="Titre de la note"
+                        placeholder="Titre"
+                        className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                      />
+                      <textarea
+                        value={editNoteContent}
+                        onChange={(e) => setEditNoteContent(e.target.value)}
+                        aria-label="Contenu de la note"
+                        placeholder="Contenu"
+                        className="w-full min-h-[80px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                      />
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={savingNote}
+                          onClick={() => handleSaveNote(note)}
+                          className="px-3 py-1 rounded-md bg-primary text-primary-foreground text-xs disabled:opacity-50"
+                        >
+                          {savingNote ? 'Enregistrement…' : 'Enregistrer'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={savingNote}
+                          onClick={cancelEditNote}
+                          className="px-3 py-1 rounded-md border border-input text-xs disabled:opacity-50"
+                        >
+                          Annuler
                         </button>
                       </div>
 
-                      <div className="sn-card-actions sn-card-actions-secondary shrink-0">
+                      <div className="sn-card-actions sn-card-actions-secondary">
+                        <button type="button" onClick={() => toggleNoteFavorite(note)} className="sn-text-btn">
+                          {note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                        </button>
                         <button
                           type="button"
-                          onClick={() => toggleNoteFavorite(note)}
-                          className="sn-icon-btn"
-                          aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                          title={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                          onClick={() => handleDeleteNote(note)}
+                          className="sn-text-btn text-destructive"
                         >
-                          {note.favorite ? "★" : "☆"}
+                          Supprimer
                         </button>
                       </div>
                     </div>
-
-                    <div className="sn-card-actions sn-card-actions-secondary">
-                      <button type="button" onClick={() => startEditNote(note)} className="sn-text-btn">
-                        Modifier
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteNote(note)}
-                        className="sn-text-btn text-destructive"
-                      >
-                        Supprimer
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <input
-                      value={editNoteTitle}
-                      onChange={(e) => setEditNoteTitle(e.target.value)}
-                      aria-label="Titre de la note"
-                      placeholder="Titre"
-                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                    />
-                    <textarea
-                      value={editNoteContent}
-                      onChange={(e) => setEditNoteContent(e.target.value)}
-                      aria-label="Contenu de la note"
-                      placeholder="Contenu"
-                      className="w-full min-h-[80px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                    />
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={savingNote}
-                        onClick={() => handleSaveNote(note)}
-                        className="px-3 py-1 rounded-md bg-primary text-primary-foreground text-xs disabled:opacity-50"
-                      >
-                        {savingNote ? 'Enregistrement…' : 'Enregistrer'}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={savingNote}
-                        onClick={cancelEditNote}
-                        className="px-3 py-1 rounded-md border border-input text-xs disabled:opacity-50"
-                      >
-                        Annuler
-                      </button>
-                    </div>
-
-                    <div className="sn-card-actions sn-card-actions-secondary">
-                      <button type="button" onClick={() => toggleNoteFavorite(note)} className="sn-text-btn">
-                        {note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteNote(note)}
-                        className="sn-text-btn text-destructive"
-                      >
-                        Supprimer
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </section>
 
       <section>
         <h2 className="text-lg font-semibold mb-2">Tâches favorites</h2>
-        {tasksLoading && <p>Loading tasks...</p>}
-        {tasksError && <p>Error loading tasks: {tasksError.message}</p>}
+        {tasksLoading && (
+          <div className="sn-empty">
+            <div className="mx-auto sn-spinner" />
+            <div className="sn-empty-title mt-3">Chargement</div>
+            <div className="sn-empty-desc">Récupération de tes favoris…</div>
+          </div>
+        )}
+        {tasksError && (
+          <div className="sn-empty">
+            <div className="sn-empty-title">Erreur</div>
+            <div className="sn-empty-desc">Impossible de charger les tâches favorites.</div>
+          </div>
+        )}
         {taskActionError && (
         <div className="space-y-2">
           <p className="text-sm text-destructive">{taskActionError}</p>
@@ -421,121 +450,128 @@ export default function DashboardPage() {
           )}
         </div>
       )}
-        {!tasksLoading && !tasksError && activeFavoriteTasks.length === 0 && <p>No tasks yet.</p>}
-        <ul className="space-y-1">
-          {activeFavoriteTasks.map((task) => {
-            const isEditing = !!task.id && task.id === editingTaskId;
-            const dueLabel = formatFrDateTime(task.dueDate ?? null);
-            return (
-              <li
-                key={task.id}
-                className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4`}
-              >
-                {!isEditing ? (
-                  <div className="space-y-3">
-                    <div className="sn-card-header">
-                      <div className="min-w-0">
+        {!tasksLoading && !tasksError && activeFavoriteTasks.length === 0 && (
+          <div className="sn-empty">
+            <div className="sn-empty-title">Aucune tâche favorite</div>
+            <div className="sn-empty-desc">Ajoute des favoris depuis la page Tâches.</div>
+          </div>
+        )}
+        {!tasksLoading && !tasksError && activeFavoriteTasks.length > 0 && (
+          <ul className="space-y-1">
+            {activeFavoriteTasks.map((task) => {
+              const isEditing = !!task.id && task.id === editingTaskId;
+              const dueLabel = formatFrDateTime(task.dueDate ?? null);
+              return (
+                <li
+                  key={task.id}
+                  className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4`}
+                >
+                  {!isEditing ? (
+                    <div className="space-y-3">
+                      <div className="sn-card-header">
+                        <div className="min-w-0">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              task.id && router.push(`/tasks/${encodeURIComponent(task.id)}${suffix}`)
+                            }
+                            className="min-w-0 text-left"
+                            aria-label={`Ouvrir la tâche ${task.title}`}
+                            disabled={!task.id}
+                          >
+                            <div className="sn-card-title truncate">{task.title}</div>
+                            <div className="sn-card-meta">
+                              {task.workspaceId && typeof task.workspaceId === "string" && (
+                                <span className="sn-badge">
+                                  {workspaceNameById.get(task.workspaceId) ?? task.workspaceId}
+                                </span>
+                              )}
+                              <span className="sn-badge">{dueLabel || "Aucun rappel"}</span>
+                              {task.favorite && <span className="sn-badge">Favori</span>}
+                            </div>
+                          </button>
+                        </div>
+
+                        <div className="sn-card-actions sn-card-actions-secondary shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => toggleTaskFavorite(task)}
+                            className="sn-icon-btn"
+                            aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                            title={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                          >
+                            {task.favorite ? "★" : "☆"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="sn-card-actions sn-card-actions-secondary">
+                        <button type="button" onClick={() => startEditTask(task)} className="sn-text-btn">
+                          Modifier
+                        </button>
                         <button
                           type="button"
-                          onClick={() =>
-                            task.id && router.push(`/tasks/${encodeURIComponent(task.id)}${suffix}`)
-                          }
-                          className="min-w-0 text-left"
-                          aria-label={`Ouvrir la tâche ${task.title}`}
-                          disabled={!task.id}
+                          onClick={() => handleDeleteTask(task)}
+                          className="sn-text-btn text-destructive"
                         >
-                          <div className="sn-card-title truncate">{task.title}</div>
-                          <div className="sn-card-meta">
-                            {task.workspaceId && typeof task.workspaceId === "string" && (
-                              <span className="sn-badge">
-                                {workspaceNameById.get(task.workspaceId) ?? task.workspaceId}
-                              </span>
-                            )}
-                            <span className="sn-badge">{dueLabel || "Aucun rappel"}</span>
-                            {task.favorite && <span className="sn-badge">Favori</span>}
-                          </div>
+                          Supprimer
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <input
+                        value={editTaskTitle}
+                        onChange={(e) => setEditTaskTitle(e.target.value)}
+                        aria-label="Titre de la tâche"
+                        placeholder="Titre"
+                        className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                      />
+                      <input
+                        type="datetime-local"
+                        value={editTaskDueDate}
+                        onChange={(e) => setEditTaskDueDate(e.target.value)}
+                        aria-label="Échéance de la tâche"
+                        className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                      />
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={savingTask}
+                          onClick={() => handleSaveTask(task)}
+                          className="px-3 py-1 rounded-md bg-primary text-primary-foreground text-xs disabled:opacity-50"
+                        >
+                          {savingTask ? 'Enregistrement…' : 'Enregistrer'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={savingTask}
+                          onClick={cancelEditTask}
+                          className="px-3 py-1 rounded-md border border-input text-xs disabled:opacity-50"
+                        >
+                          Annuler
                         </button>
                       </div>
 
-                      <div className="sn-card-actions sn-card-actions-secondary shrink-0">
+                      <div className="sn-card-actions sn-card-actions-secondary">
+                        <button type="button" onClick={() => toggleTaskFavorite(task)} className="sn-text-btn">
+                          {task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                        </button>
                         <button
                           type="button"
-                          onClick={() => toggleTaskFavorite(task)}
-                          className="sn-icon-btn"
-                          aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                          title={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                          onClick={() => handleDeleteTask(task)}
+                          className="sn-text-btn text-destructive"
                         >
-                          {task.favorite ? "★" : "☆"}
+                          Supprimer
                         </button>
                       </div>
                     </div>
-
-                    <div className="sn-card-actions sn-card-actions-secondary">
-                      <button type="button" onClick={() => startEditTask(task)} className="sn-text-btn">
-                        Modifier
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteTask(task)}
-                        className="sn-text-btn text-destructive"
-                      >
-                        Supprimer
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <input
-                      value={editTaskTitle}
-                      onChange={(e) => setEditTaskTitle(e.target.value)}
-                      aria-label="Titre de la tâche"
-                      placeholder="Titre"
-                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                    />
-                    <input
-                      type="datetime-local"
-                      value={editTaskDueDate}
-                      onChange={(e) => setEditTaskDueDate(e.target.value)}
-                      aria-label="Échéance de la tâche"
-                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                    />
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={savingTask}
-                        onClick={() => handleSaveTask(task)}
-                        className="px-3 py-1 rounded-md bg-primary text-primary-foreground text-xs disabled:opacity-50"
-                      >
-                        {savingTask ? 'Enregistrement…' : 'Enregistrer'}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={savingTask}
-                        onClick={cancelEditTask}
-                        className="px-3 py-1 rounded-md border border-input text-xs disabled:opacity-50"
-                      >
-                        Annuler
-                      </button>
-                    </div>
-
-                    <div className="sn-card-actions sn-card-actions-secondary">
-                      <button type="button" onClick={() => toggleTaskFavorite(task)} className="sn-text-btn">
-                        {task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteTask(task)}
-                        className="sn-text-btn text-destructive"
-                      >
-                        Supprimer
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </section>
     </div>
   );

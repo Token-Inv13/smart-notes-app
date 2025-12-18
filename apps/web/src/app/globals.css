@@ -173,6 +173,39 @@ body {
     box-shadow: var(--shadow-ambient);
   }
 
+  .sn-empty {
+    @apply sn-card p-6 text-center;
+  }
+
+  .sn-empty-title {
+    @apply text-sm font-semibold;
+  }
+
+  .sn-empty-desc {
+    @apply mt-1 text-sm text-muted-foreground;
+  }
+
+  .sn-spinner {
+    height: 1.25rem;
+    width: 1.25rem;
+    border-radius: 9999px;
+    border: 2px solid hsl(var(--border));
+    border-top-color: hsl(var(--primary));
+    animation: sn-spin 700ms linear infinite;
+  }
+
+  .sn-skeleton {
+    @apply rounded-md;
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted) / 0.55) 0%,
+      hsl(var(--muted) / 0.85) 35%,
+      hsl(var(--muted) / 0.55) 70%
+    );
+    background-size: 200% 100%;
+    animation: sn-shimmer 1.1s ease-in-out infinite;
+  }
+
   .sn-card {
     @apply bg-card border border-border rounded-lg;
     box-shadow: var(--shadow-ambient);

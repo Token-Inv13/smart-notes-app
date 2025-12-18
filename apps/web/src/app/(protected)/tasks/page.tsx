@@ -657,10 +657,27 @@ export default function TasksPage() {
         )}
       </section>
 
-      {loading && <p>Loading tasks...</p>}
-      {error && <p>Error loading tasks.</p>}
+      {loading && (
+        <div className="sn-empty">
+          <div className="mx-auto sn-spinner" />
+          <div className="sn-empty-title mt-3">Chargement</div>
+          <div className="sn-empty-desc">Récupération de tes tâches…</div>
+        </div>
+      )}
 
-      {!loading && !error && activeTasks.length === 0 && <p>No tasks yet.</p>}
+      {error && (
+        <div className="sn-empty">
+          <div className="sn-empty-title">Erreur</div>
+          <div className="sn-empty-desc">Impossible de charger les tâches pour le moment.</div>
+        </div>
+      )}
+
+      {!loading && !error && activeTasks.length === 0 && (
+        <div className="sn-empty">
+          <div className="sn-empty-title">Aucune tâche</div>
+          <div className="sn-empty-desc">Crée ta première tâche avec “Nouvelle tâche”.</div>
+        </div>
+      )}
 
       {!loading && !error && viewMode === "list" && activeTasks.length > 0 && (
         <ul className="space-y-2">
