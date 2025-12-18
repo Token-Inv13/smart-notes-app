@@ -42,7 +42,15 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
       {/* Desktop sidebar */}
       <aside className={`hidden md:flex ${sidebarWidthClass} border-r border-border`}>
         <div className="w-full flex flex-col">
-          <div className="p-3 flex items-center justify-between">
+          <div className="p-3 flex items-center justify-between gap-2">
+            <div className="min-w-0 flex items-center gap-2">
+              <img
+                src="/favicon.svg"
+                alt="Smart Notes"
+                className="h-8 w-8 rounded-md border border-border bg-background"
+              />
+              {!collapsed && <div className="text-sm font-semibold truncate">Smart Notes</div>}
+            </div>
             <button
               type="button"
               onClick={toggleCollapsed}
@@ -101,7 +109,14 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
           >
             <Menu className="h-4 w-4" />
           </button>
-          <div className="text-sm font-medium">Smart Notes</div>
+          <div className="min-w-0 flex items-center gap-2">
+            <img
+              src="/favicon.svg"
+              alt="Smart Notes"
+              className="h-7 w-7 rounded-md border border-border bg-background"
+            />
+            <div className="text-sm font-medium truncate">Smart Notes</div>
+          </div>
         </div>
 
         <main className="flex-1 p-4 min-w-0">{children}</main>

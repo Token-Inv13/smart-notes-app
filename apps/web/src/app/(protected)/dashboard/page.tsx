@@ -381,31 +381,31 @@ export default function DashboardPage() {
       <section>
         <h2 className="text-lg font-semibold mb-2">Tes notes importantes</h2>
         {notesLoading && (
-          <div className="sn-empty">
-            <div className="mx-auto sn-spinner" />
-            <div className="sn-empty-title mt-3">Chargement</div>
-            <div className="sn-empty-desc">Récupération de tes favoris…</div>
+          <div className="sn-empty sn-animate-in">
+            <div className="space-y-3">
+              <div className="mx-auto sn-skeleton-avatar" />
+              <div className="sn-skeleton-title w-40 mx-auto" />
+              <div className="sn-skeleton-line w-64 mx-auto" />
+              <div className="sn-skeleton-line w-56 mx-auto" />
+            </div>
           </div>
         )}
-        {notesError && (
-          <div className="sn-empty">
-            <div className="sn-empty-title">Erreur</div>
-            <div className="sn-empty-desc">Impossible de charger les notes favorites.</div>
-          </div>
-        )}
+        {notesError && <div className="sn-alert sn-alert--error">Impossible de charger les notes favorites.</div>}
         {noteActionError && (
-        <div className="space-y-2">
-          <p className="text-sm text-destructive">{noteActionError}</p>
-          {noteActionError.includes('Limite Free atteinte') && (
-            <Link
-              href="/upgrade"
-              className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
-            >
-              Débloquer Pro
-            </Link>
-          )}
-        </div>
-      )}
+          <div className="space-y-2">
+            <div className="sn-alert sn-alert--error" role="status" aria-live="polite">
+              {noteActionError}
+            </div>
+            {noteActionError.includes('Limite Free atteinte') && (
+              <Link
+                href="/upgrade"
+                className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+              >
+                Débloquer Pro
+              </Link>
+            )}
+          </div>
+        )}
         {!notesLoading && !notesError && activeFavoriteNotes.length === 0 && (
           <div className="sn-empty">
             <div className="sn-empty-title">Aucun favori pour l’instant</div>
@@ -531,31 +531,31 @@ export default function DashboardPage() {
       <section>
         <h2 className="text-lg font-semibold mb-2">Tes tâches importantes</h2>
         {tasksLoading && (
-          <div className="sn-empty">
-            <div className="mx-auto sn-spinner" />
-            <div className="sn-empty-title mt-3">Chargement</div>
-            <div className="sn-empty-desc">Récupération de tes favoris…</div>
+          <div className="sn-empty sn-animate-in">
+            <div className="space-y-3">
+              <div className="mx-auto sn-skeleton-avatar" />
+              <div className="sn-skeleton-title w-40 mx-auto" />
+              <div className="sn-skeleton-line w-64 mx-auto" />
+              <div className="sn-skeleton-line w-56 mx-auto" />
+            </div>
           </div>
         )}
-        {tasksError && (
-          <div className="sn-empty">
-            <div className="sn-empty-title">Erreur</div>
-            <div className="sn-empty-desc">Impossible de charger les tâches favorites.</div>
-          </div>
-        )}
+        {tasksError && <div className="sn-alert sn-alert--error">Impossible de charger les tâches favorites.</div>}
         {taskActionError && (
-        <div className="space-y-2">
-          <p className="text-sm text-destructive">{taskActionError}</p>
-          {taskActionError.includes('Limite Free atteinte') && (
-            <Link
-              href="/upgrade"
-              className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
-            >
-              Débloquer Pro
-            </Link>
-          )}
-        </div>
-      )}
+          <div className="space-y-2">
+            <div className="sn-alert sn-alert--error" role="status" aria-live="polite">
+              {taskActionError}
+            </div>
+            {taskActionError.includes('Limite Free atteinte') && (
+              <Link
+                href="/upgrade"
+                className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+              >
+                Débloquer Pro
+              </Link>
+            )}
+          </div>
+        )}
         {!tasksLoading && !tasksError && activeFavoriteTasks.length === 0 && (
           <div className="sn-empty">
             <div className="sn-empty-title">Aucun favori pour l’instant</div>

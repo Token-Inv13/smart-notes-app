@@ -380,8 +380,14 @@ export default function SidebarWorkspaces({
             <div className="text-sm font-semibold mb-2">Dossiers</div>
 
             <div className="mt-2 space-y-2">
-              {loading && <div className="text-sm text-muted-foreground">Chargement…</div>}
-              {error && <div className="text-sm text-destructive">{error.message}</div>}
+              {loading && (
+                <div className="space-y-2">
+                  <div className="sn-skeleton-line w-28" />
+                  <div className="sn-skeleton-line w-40" />
+                  <div className="sn-skeleton-line w-32" />
+                </div>
+              )}
+              {error && <div className="sn-alert sn-alert--error">{error.message}</div>}
 
               {!loading && !error && sortedWorkspaces.length === 0 && (
                 <div className="text-sm text-muted-foreground">Aucun dossier.</div>
@@ -433,7 +439,7 @@ export default function SidebarWorkspaces({
                         />
 
                         {renameError && (
-                          <div className="text-sm text-destructive" aria-live="polite">
+                          <div className="sn-alert sn-alert--error" role="status" aria-live="polite">
                             {renameError}
                           </div>
                         )}
@@ -474,7 +480,7 @@ export default function SidebarWorkspaces({
               className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
             />
             {createError && (
-              <div className="text-sm text-destructive mt-2" aria-live="polite">
+              <div className="mt-2 sn-alert sn-alert--error" role="status" aria-live="polite">
                 {createError}
               </div>
             )}

@@ -217,10 +217,22 @@ export default function SettingsPage() {
         <LogoutButton />
       </div>
 
-      {loading && <p>Chargement des paramètres…</p>}
-      {error && <p>Impossible de charger les paramètres.</p>}
+      {loading && (
+        <div className="sn-card p-4 space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="sn-skeleton-avatar" />
+            <div className="space-y-2 flex-1">
+              <div className="sn-skeleton-title w-48" />
+              <div className="sn-skeleton-line w-64" />
+            </div>
+          </div>
+          <div className="sn-skeleton-line w-72" />
+          <div className="sn-skeleton-line w-56" />
+        </div>
+      )}
+      {error && <div className="sn-alert sn-alert--error">Impossible de charger les paramètres.</div>}
 
-      {!loading && !error && !user && <p>Aucun paramètre disponible pour ce compte.</p>}
+      {!loading && !error && !user && <div className="sn-alert sn-alert--info">Aucun paramètre disponible pour ce compte.</div>}
 
       {!loading && !error && user && (
         <div className="space-y-6">

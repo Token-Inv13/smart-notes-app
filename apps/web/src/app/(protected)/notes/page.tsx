@@ -291,7 +291,7 @@ export default function NotesPage() {
             type="button"
             onClick={() => setCreateOpen((v) => !v)}
             className="inline-flex items-center justify-center px-3 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
-            aria-expanded={createOpen ? "true" : "false"}
+            aria-expanded={createOpen}
             aria-controls="create-note-panel"
           >
             {createOpen ? "Fermer" : "Capturer une idée"}
@@ -381,9 +381,9 @@ export default function NotesPage() {
             </div>
 
             {createError && (
-              <p className="mt-2 text-sm text-destructive" aria-live="polite">
+              <div className="mt-2 sn-alert sn-alert--error" role="status" aria-live="polite">
                 {createError}
-              </p>
+              </div>
             )}
           </div>
         )}
@@ -392,13 +392,15 @@ export default function NotesPage() {
       <section>
         <h2 className="text-lg font-semibold mb-2">Tes notes récentes</h2>
         {loading && (
-          <div className="sn-empty">
-            <div className="mx-auto sn-spinner" />
-            <div className="sn-empty-title mt-3">Chargement</div>
-            <div className="sn-empty-desc">Récupération de tes notes…</div>
+          <div className="sn-empty sn-animate-in">
+            <div className="space-y-3">
+              <div className="sn-skeleton-title w-48 mx-auto" />
+              <div className="sn-skeleton-line w-72 mx-auto" />
+              <div className="sn-skeleton-line w-64 mx-auto" />
+            </div>
           </div>
         )}
-        {createError && <p className="mt-2 text-sm text-destructive">{createError}</p>}
+        {createError && <div className="mt-2 sn-alert sn-alert--error">{createError}</div>}
         {showUpgradeCta && (
           <Link
             href="/upgrade"
@@ -416,8 +418,8 @@ export default function NotesPage() {
             </div>
           </div>
         )}
-
-        {viewMode === "list" && (
+        {error && <div className="sn-alert sn-alert--error">Impossible de charger les notes pour le moment.</div>}
+        {!loading && !error && viewMode === "list" && activeNotes.length > 0 && (
           <ul className="space-y-2">
             {activeNotes.map((note) => {
               const isEditing = !!note.id && note.id === editingId;
@@ -501,9 +503,9 @@ export default function NotesPage() {
                       />
 
                       {editError && (
-                        <p className="text-sm text-destructive" aria-live="polite">
+                        <div className="sn-alert sn-alert--error" role="status" aria-live="polite">
                           {editError}
-                        </p>
+                        </div>
                       )}
 
                       <div className="flex items-center gap-2">
@@ -615,9 +617,9 @@ export default function NotesPage() {
                       />
 
                       {editError && (
-                        <p className="text-sm text-destructive" aria-live="polite">
+                        <div className="sn-alert sn-alert--error" role="status" aria-live="polite">
                           {editError}
-                        </p>
+                        </div>
                       )}
 
                       <div className="flex items-center gap-2">

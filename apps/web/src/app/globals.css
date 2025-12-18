@@ -206,10 +206,72 @@ body {
     animation: sn-shimmer 1.1s ease-in-out infinite;
   }
 
+  .sn-skeleton-line {
+    @apply sn-skeleton;
+    height: 0.75rem;
+  }
+
+  .sn-skeleton-title {
+    @apply sn-skeleton;
+    height: 1rem;
+  }
+
+  .sn-skeleton-avatar {
+    @apply sn-skeleton;
+    height: 2rem;
+    width: 2rem;
+    border-radius: 9999px;
+  }
+
+  .sn-skeleton-btn {
+    @apply sn-skeleton;
+    height: 2.25rem;
+    width: 7.5rem;
+  }
+
+  .sn-skeleton-card {
+    @apply sn-card p-4;
+  }
+
+  .sn-skeleton-block-lg {
+    @apply sn-skeleton;
+    height: 10rem;
+  }
+
+  .sn-skeleton-block-md {
+    @apply sn-skeleton;
+    height: 7.5rem;
+  }
+
+  .sn-alert {
+    @apply rounded-lg border px-3 py-2 text-sm;
+    box-shadow: var(--shadow-ambient);
+    animation: sn-fade-up 160ms ease-out both;
+  }
+
+  .sn-alert--error {
+    border-color: hsl(var(--destructive) / 0.25);
+    background: hsl(var(--destructive) / 0.08);
+    color: hsl(var(--destructive));
+  }
+
+  .sn-alert--success {
+    border-color: hsl(var(--success) / 0.25);
+    background: hsl(var(--success) / 0.10);
+    color: hsl(var(--success));
+  }
+
+  .sn-alert--info {
+    border-color: hsl(var(--info) / 0.25);
+    background: hsl(var(--info) / 0.10);
+    color: hsl(var(--info));
+  }
+
   .sn-card {
     @apply bg-card border border-border rounded-lg;
     box-shadow: var(--shadow-ambient);
     transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+    will-change: transform;
   }
 
   .sn-card--note {
@@ -245,9 +307,6 @@ body {
   .sn-card:hover {
     box-shadow: var(--shadow-elevated);
     transform: translateY(-1px);
-  }
-
-  .sn-card:hover {
     border-color: hsl(var(--ring) / 0.25);
   }
 

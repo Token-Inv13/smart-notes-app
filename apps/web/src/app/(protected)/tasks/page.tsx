@@ -572,12 +572,12 @@ export default function TasksPage() {
       {/* New Task form */}
       <section className="border border-border rounded-lg bg-card">
         <div className="p-4 flex items-center justify-between gap-3">
-          <h2 className="font-semibold">À faire aujourd’hui</h2>
+          <h1 className="text-xl font-semibold">Tes tâches</h1>
           <button
             type="button"
             onClick={() => setCreateOpen((v) => !v)}
             className="inline-flex items-center justify-center px-3 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
-            aria-expanded={createOpen ? "true" : "false"}
+            aria-expanded={createOpen}
             aria-controls="create-task-panel"
           >
             {createOpen ? "Fermer" : "Planifier une tâche"}
@@ -688,7 +688,7 @@ export default function TasksPage() {
                 Choisis un dossier dans la sidebar pour organiser tes tâches.
               </p>
             )}
-            {createError && <p className="mt-2 text-sm text-destructive">{createError}</p>}
+            {createError && <div className="mt-2 sn-alert sn-alert--error">{createError}</div>}
             {showUpgradeCta && (
               <Link
                 href="/upgrade"
@@ -697,25 +697,22 @@ export default function TasksPage() {
                 Débloquer Pro
               </Link>
             )}
-            {createSuccess && <p className="mt-2 text-sm">{createSuccess}</p>}
+            {createSuccess && <div className="mt-2 sn-alert sn-alert--success">{createSuccess}</div>}
           </div>
         )}
       </section>
 
       {loading && (
-        <div className="sn-empty">
-          <div className="mx-auto sn-spinner" />
-          <div className="sn-empty-title mt-3">Chargement</div>
-          <div className="sn-empty-desc">Récupération de tes tâches…</div>
+        <div className="sn-empty sn-animate-in">
+          <div className="space-y-3">
+            <div className="sn-skeleton-title w-48 mx-auto" />
+            <div className="sn-skeleton-line w-72 mx-auto" />
+            <div className="sn-skeleton-line w-64 mx-auto" />
+          </div>
         </div>
       )}
 
-      {error && (
-        <div className="sn-empty">
-          <div className="sn-empty-title">Erreur</div>
-          <div className="sn-empty-desc">Impossible de charger les tâches pour le moment.</div>
-        </div>
-      )}
+      {error && <div className="sn-alert sn-alert--error">Impossible de charger les tâches pour le moment.</div>}
 
       {!loading && !error && activeTasks.length === 0 && (
         <div className="sn-empty">
@@ -847,7 +844,7 @@ export default function TasksPage() {
                           {creatingReminderForId === task.id ? "Ajout…" : "Ajouter un rappel"}
                         </button>
                       </div>
-                      {reminderError && <p className="text-xs">{reminderError}</p>}
+                      {reminderError && <div className="sn-alert sn-alert--error">{reminderError}</div>}
                     </div>
                   </>
                 )}
@@ -921,7 +918,7 @@ export default function TasksPage() {
                         Annuler
                       </button>
                     </div>
-                    {editError && <p className="text-sm mt-1">{editError}</p>}
+                    {editError && <div className="mt-2 sn-alert sn-alert--error">{editError}</div>}
                   </>
                 )}
               </li>
@@ -1053,7 +1050,7 @@ export default function TasksPage() {
                           {creatingReminderForId === task.id ? "Ajout…" : "Ajouter un rappel"}
                         </button>
                       </div>
-                      {reminderError && <p className="text-xs">{reminderError}</p>}
+                      {reminderError && <div className="sn-alert sn-alert--error">{reminderError}</div>}
                     </div>
                   </>
                 )}
@@ -1127,7 +1124,7 @@ export default function TasksPage() {
                         Annuler
                       </button>
                     </div>
-                    {editError && <p className="text-sm mt-1">{editError}</p>}
+                    {editError && <div className="mt-2 sn-alert sn-alert--error">{editError}</div>}
                   </>
                 )}
               </div>

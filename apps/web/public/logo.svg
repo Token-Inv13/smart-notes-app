@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="160" height="40" viewBox="0 0 160 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Smart Notes</title>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1E40AF" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#0EA5E9" stop-opacity="0.95"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="39" height="39" rx="10" fill="url(#g)"/>
+  <rect x="0.5" y="0.5" width="39" height="39" rx="10" stroke="#0B1220" stroke-opacity="0.18"/>
+  <path d="M15 24.5L18.6 28.1L26.9 19.8" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M13.6 12.7H26.4" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+  <text x="52" y="26" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" font-size="18" font-weight="800" fill="#0B1220">N&amp;T</text>
+  <text x="92" y="26" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" font-size="14" font-weight="600" fill="#64748B">Smart Notes</text>
+</svg>

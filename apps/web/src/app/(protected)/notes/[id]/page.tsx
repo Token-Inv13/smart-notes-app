@@ -90,11 +90,18 @@ export default function NoteDetailPage(props: any) {
         </button>
       </div>
 
-      {loading && <p>Chargement…</p>}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {loading && (
+        <div className="sn-skeleton-card space-y-3">
+          <div className="sn-skeleton-title w-56" />
+          <div className="sn-skeleton-line w-72" />
+          <div className="sn-skeleton-line w-64" />
+          <div className="sn-skeleton-block-lg w-full" />
+        </div>
+      )}
+      {error && <div className="sn-alert sn-alert--error">{error}</div>}
 
       {!loading && !error && note && (
-        <div className="space-y-3 border border-border rounded-lg p-4 bg-card">
+        <div className="sn-card p-4 space-y-3">
           <div className="space-y-1">
             <div className="text-sm font-medium">Titre</div>
             <div className="text-sm">{note.title}</div>

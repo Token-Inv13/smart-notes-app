@@ -15,6 +15,12 @@ function formatFrDateTime(ts?: TaskDoc["dueDate"] | null) {
   )}`;
 }
 
+function statusLabel(s?: TaskDoc["status"] | null) {
+  if (s === "doing") return "En cours";
+  if (s === "done") return "Terminée";
+  return "À faire";
+}
+
 export default function TaskDetailPage(props: any) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -89,11 +95,18 @@ export default function TaskDetailPage(props: any) {
         </button>
       </div>
 
-      {loading && <p>Chargement…</p>}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {loading && (
+        <div className="sn-skeleton-card space-y-3">
+          <div className="sn-skeleton-title w-56" />
+          <div className="sn-skeleton-line w-72" />
+          <div className="sn-skeleton-line w-64" />
+          <div className="sn-skeleton-block-md w-full" />
+        </div>
+      )}
+      {error && <div className="sn-alert sn-alert--error">{error}</div>}
 
       {!loading && !error && task && (
-        <div className="space-y-3 border border-border rounded-lg p-4 bg-card">
+        <div className="sn-card p-4 space-y-3">
           <div className="space-y-1">
             <div className="text-sm font-medium">Titre</div>
             <div className="text-sm">{task.title}</div>
@@ -111,7 +124,7 @@ export default function TaskDetailPage(props: any) {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
             <div>
-              <span className="font-medium">Statut:</span> {task.status ?? "todo"}
+              <span className="font-medium">Statut:</span> {statusLabel(task.status ?? null)}
             </div>
             <div>
               <span className="font-medium">Rappel:</span> {dueLabel || "Aucun rappel"}
