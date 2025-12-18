@@ -223,6 +223,14 @@ body {
     box-shadow: var(--shadow-ambient);
   }
 
+  @media (hover: none) {
+    .sn-card:hover {
+      box-shadow: var(--shadow-ambient);
+      transform: none;
+      border-color: hsl(var(--border));
+    }
+  }
+
   .sn-card:focus-within {
     border-color: hsl(var(--ring) / 0.55);
   }
@@ -258,6 +266,12 @@ body {
     transition: opacity 160ms ease;
   }
 
+  @media (max-width: 640px) {
+    .sn-card-actions-secondary {
+      opacity: 1;
+    }
+  }
+
   .sn-card:hover .sn-card-actions-secondary,
   .sn-card:focus-within .sn-card-actions-secondary {
     opacity: 1;
@@ -272,6 +286,13 @@ body {
     height: 2rem;
     width: 2rem;
     transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+  }
+
+  @media (max-width: 640px) {
+    .sn-icon-btn {
+      height: 2.75rem;
+      width: 2.75rem;
+    }
   }
 
   .sn-icon-btn:hover {
@@ -294,6 +315,33 @@ body {
 
   .sn-animate-in {
     animation: sn-fade-up 180ms ease-out both;
+  }
+
+  .sn-drawer-backdrop {
+    animation: sn-fade-in 160ms ease-out both;
+  }
+
+  .sn-drawer-panel {
+    animation: sn-slide-in-left 180ms ease-out both;
+    will-change: transform;
+  }
+}
+
+@keyframes sn-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sn-slide-in-left {
+  from {
+    transform: translateX(-14px);
+  }
+  to {
+    transform: translateX(0px);
   }
 }
 

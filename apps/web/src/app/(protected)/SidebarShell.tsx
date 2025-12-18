@@ -67,11 +67,11 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
         <div className="md:hidden fixed inset-0 z-50">
           <button
             type="button"
-            className="absolute inset-0 bg-black/40"
+            className="sn-drawer-backdrop absolute inset-0 bg-black/40"
             aria-label="Fermer le menu"
             onClick={closeMobile}
           />
-          <div className="absolute left-0 top-0 h-full w-72 bg-background border-r border-border">
+          <div className="sn-drawer-panel absolute left-0 top-0 h-full w-72 bg-background border-r border-border">
             <div className="p-3 flex items-center justify-between border-b border-border">
               <div className="text-sm font-medium">Menu</div>
               <button
