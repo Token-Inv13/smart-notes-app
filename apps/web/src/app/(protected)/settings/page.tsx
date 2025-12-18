@@ -152,7 +152,7 @@ export default function SettingsPage() {
   const handleToggleThemeMode = async () => {
     const currentUser = ensureCanEdit();
     if (!currentUser) {
-      setAppearanceMessage("Cannot update appearance for this user.");
+      setAppearanceMessage("Impossible de modifier l’apparence pour ce compte.");
       return;
     }
 
@@ -178,7 +178,7 @@ export default function SettingsPage() {
   const handleSetBackground = async (background: "none" | "dots" | "grid") => {
     const currentUser = ensureCanEdit();
     if (!currentUser) {
-      setAppearanceMessage("Cannot update appearance for this user.");
+      setAppearanceMessage("Impossible de modifier l’apparence pour ce compte.");
       return;
     }
 
@@ -199,13 +199,13 @@ export default function SettingsPage() {
   };
 
   const handleEnablePushNotifications = async () => {
-    setFcmStatus("Enabling push notifications...");
+    setFcmStatus("Activation des notifications push…");
     try {
       await registerFcmToken();
-      setFcmStatus("Push notifications enabled (if permission granted).");
+      setFcmStatus("Notifications push activées (si la permission a été accordée).");
     } catch (e) {
       console.error("Error enabling push notifications", e);
-      setFcmStatus("Error enabling push notifications.");
+      setFcmStatus("Impossible d’activer les notifications push pour le moment.");
     }
   };
 
@@ -217,17 +217,17 @@ export default function SettingsPage() {
         <LogoutButton />
       </div>
 
-      {loading && <p>Loading settings...</p>}
-      {error && <p>Error loading settings.</p>}
+      {loading && <p>Chargement des paramètres…</p>}
+      {error && <p>Impossible de charger les paramètres.</p>}
 
-      {!loading && !error && !user && <p>No settings found.</p>}
+      {!loading && !error && !user && <p>Aucun paramètre disponible pour ce compte.</p>}
 
       {!loading && !error && user && (
         <div className="space-y-6">
           <section className="border border-border rounded-lg p-4 bg-card space-y-3">
             <h2 className="text-lg font-semibold">Profil</h2>
             <div className="text-sm">
-              <span className="font-medium">Email:</span> <span>{user.email || "—"}</span>
+              <span className="font-medium">Email :</span> <span>{user.email || "—"}</span>
             </div>
 
             <div className="space-y-1">
@@ -361,13 +361,13 @@ export default function SettingsPage() {
           <section className="border border-border rounded-lg p-4 bg-card space-y-2">
             <h2 className="text-lg font-semibold">Abonnement</h2>
             <div className="text-sm">
-              <span className="font-medium">Plan actuel:</span> <span>{user.plan ?? 'free'}</span>
+              <span className="font-medium">Plan actuel :</span> <span>{user.plan ?? 'free'}</span>
             </div>
             <Link
               href="/upgrade"
-              className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium"
+              className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
             >
-              Page Passer Pro
+              Débloquer Pro
             </Link>
             <button
               type="button"
@@ -375,7 +375,7 @@ export default function SettingsPage() {
               disabled={savingPlan}
               className="border border-border rounded px-3 py-2 bg-background text-sm disabled:opacity-50"
             >
-              {savingPlan ? 'Mise à jour…' : user.plan === 'pro' ? 'Repasser en Free' : 'Activer Pro (test)'}
+              {savingPlan ? 'Mise à jour…' : user.plan === 'pro' ? 'Repasser en Free' : 'Activer Pro (démo)'}
             </button>
             {planMessage && <p className="text-sm">{planMessage}</p>}
           </section>

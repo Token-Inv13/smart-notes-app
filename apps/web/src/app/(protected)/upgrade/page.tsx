@@ -60,9 +60,9 @@ export default function UpgradePage() {
   return (
     <div className="max-w-3xl space-y-4">
       <div className="space-y-1">
-        <h1 className="text-xl font-semibold">Passer à Pro</h1>
+        <h1 className="text-xl font-semibold">Débloquer Pro</h1>
         <p className="text-sm text-muted-foreground">
-          Débloque toutes les limites et active les alertes pour 1,99€/mois.
+          Plus de limites, plus de favoris, et les rappels activés — pour 1,99€/mois.
         </p>
       </div>
 
@@ -79,7 +79,7 @@ export default function UpgradePage() {
               <li>15 tâches max</li>
               <li>10 notes favorites max</li>
               <li>15 tâches favorites max</li>
-              <li>Pas d’alertes</li>
+              <li>Rappels désactivés</li>
             </ul>
           </div>
 
@@ -100,7 +100,7 @@ export default function UpgradePage() {
             disabled={loading || isPro}
             className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
           >
-            {isPro ? 'Déjà Pro' : loading ? 'Redirection…' : 'Passer Pro'}
+            {isPro ? 'Pro activé' : loading ? 'Redirection…' : 'Débloquer Pro'}
           </button>
 
           {isPro && (

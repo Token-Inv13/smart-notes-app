@@ -30,7 +30,7 @@ type TaskStatusFilter = "all" | TaskStatus;
 type WorkspaceFilter = "all" | string;
 
 const newTaskSchema = z.object({
-  title: z.string().min(1, "Title is required"),
+  title: z.string().min(1, "Le titre est requis."),
   status: z.union([z.literal("todo"), z.literal("doing"), z.literal("done")]),
   workspaceId: z.string().optional(),
   dueDate: z.string().optional(),
@@ -40,7 +40,13 @@ export default function TasksPage() {
   const { data: tasks, loading, error } = useUserTasks();
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === "pro";
-  const freeLimitMessage = "Limite Free atteinte. Passe en Pro pour débloquer plus de tâches et favoris.";
+  const freeLimitMessage = "Limite Free atteinte. Passe en Pro pour créer plus de tâches et utiliser les favoris sans limite.";
+
+  const statusLabel = (s: TaskStatus) => {
+    if (s === "todo") return "À faire";
+    if (s === "doing") return "En cours";
+    return "Terminée";
+  };
 
   const { data: allTasksForLimit } = useUserTasks({ limit: 16 });
   const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
@@ -197,7 +203,7 @@ export default function TasksPage() {
   const handleCreateTask = async () => {
     const user = auth.currentUser;
     if (!user) {
-      setCreateError("You must be signed in to create tasks.");
+      setCreateError("Connecte-toi pour créer ta première tâche.");
       return;
     }
 
@@ -222,7 +228,7 @@ export default function TasksPage() {
     });
 
     if (!validation.success) {
-      setCreateError(validation.error.issues[0]?.message ?? "Invalid task data.");
+      setCreateError(validation.error.issues[0]?.message ?? "Données invalides.");
       return;
     }
 
@@ -248,10 +254,10 @@ export default function TasksPage() {
       setNewStatus("todo");
       setNewWorkspaceId("");
       setNewDueDate("");
-      setCreateSuccess("Task created.");
+      setCreateSuccess("Tâche créée.");
     } catch (e) {
       console.error("Error creating task", e);
-      setCreateError("Error creating task.");
+      setCreateError("Erreur lors de la création de la tâche.");
     } finally {
       setCreating(false);
     }
@@ -371,7 +377,7 @@ export default function TasksPage() {
     });
 
     if (!validation.success) {
-      setEditError(validation.error.issues[0]?.message ?? "Invalid task data.");
+      setEditError(validation.error.issues[0]?.message ?? "Données invalides.");
       return;
     }
 
@@ -391,7 +397,7 @@ export default function TasksPage() {
       cancelEditing();
     } catch (e) {
       console.error("Error updating task", e);
-      setEditError("Error updating task.");
+      setEditError("Erreur lors de la modification de la tâche.");
     } finally {
       setSavingEdit(false);
     }
@@ -404,7 +410,7 @@ export default function TasksPage() {
       return;
     }
 
-    if (!confirm("Delete this task?")) return;
+    if (!confirm("Supprimer cette tâche ?")) return;
 
     setDeletingId(task.id);
     try {
@@ -448,13 +454,13 @@ export default function TasksPage() {
     if (!task.id) return;
     const user = auth.currentUser;
     if (!user) {
-      setReminderError("You must be signed in to create reminders.");
+      setReminderError("Connecte-toi pour ajouter un rappel.");
       return;
     }
 
     const value = newReminderTimes[task.id] ?? "";
     if (!value) {
-      setReminderError("Please select a reminder time.");
+      setReminderError("Choisis une date et une heure de rappel.");
       return;
     }
 
@@ -464,7 +470,7 @@ export default function TasksPage() {
     try {
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) {
-        setReminderError("Invalid reminder time.");
+        setReminderError("Date/heure de rappel invalide.");
         setCreatingReminderForId(null);
         return;
       }
@@ -484,7 +490,7 @@ export default function TasksPage() {
       setNewReminderTimes((prev) => ({ ...prev, [task.id!]: "" }));
     } catch (e) {
       console.error("Error creating reminder", e);
-      setReminderError("Error creating reminder.");
+      setReminderError("Erreur lors de la création du rappel.");
     } finally {
       setCreatingReminderForId(null);
     }
@@ -497,7 +503,7 @@ export default function TasksPage() {
       return;
     }
 
-    if (!confirm("Delete this reminder?")) return;
+    if (!confirm("Supprimer ce rappel ?")) return;
 
     setDeletingReminderId(reminder.id);
     try {
@@ -529,30 +535,30 @@ export default function TasksPage() {
   return (
     <div className="space-y-4">
       <header className="flex flex-col gap-2 mb-4">
-        <h1 className="text-xl font-semibold">Tasks</h1>
+        <h1 className="text-xl font-semibold">Tes tâches</h1>
         <div className="flex flex-wrap gap-2">
           <label className="flex items-center gap-2">
-            <span>Status:</span>
+            <span>Statut :</span>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as TaskStatusFilter)}
               className="border border-border rounded px-2 py-1 bg-background"
             >
-              <option value="all">All</option>
-              <option value="todo">Todo</option>
-              <option value="doing">Doing</option>
-              <option value="done">Done</option>
+              <option value="all">Tous</option>
+              <option value="todo">À faire</option>
+              <option value="doing">En cours</option>
+              <option value="done">Terminées</option>
             </select>
           </label>
 
           <label className="flex items-center gap-2">
-            <span>Workspace:</span>
+            <span>Dossier :</span>
             <select
               value={workspaceFilter}
               onChange={(e) => setWorkspaceFilter(e.target.value as WorkspaceFilter)}
               className="border border-border rounded px-2 py-1 bg-background"
             >
-              <option value="all">All</option>
+              <option value="all">Tous</option>
               {workspaces.map((ws) => (
                 <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
                   {ws.name}
@@ -566,7 +572,7 @@ export default function TasksPage() {
       {/* New Task form */}
       <section className="border border-border rounded-lg bg-card">
         <div className="p-4 flex items-center justify-between gap-3">
-          <h2 className="font-semibold">Tâches</h2>
+          <h2 className="font-semibold">À faire aujourd’hui</h2>
           <button
             type="button"
             onClick={() => setCreateOpen((v) => !v)}
@@ -574,7 +580,7 @@ export default function TasksPage() {
             aria-expanded={createOpen ? "true" : "false"}
             aria-controls="create-task-panel"
           >
-            {createOpen ? "Fermer" : "Nouvelle tâche"}
+            {createOpen ? "Fermer" : "Planifier une tâche"}
           </button>
         </div>
 
@@ -585,7 +591,7 @@ export default function TasksPage() {
                 <div className="min-w-0">
                   <div className="text-sm font-semibold">Astuce</div>
                   <div className="text-sm text-muted-foreground">
-                    Clique sur “Nouvelle tâche” pour créer ton premier rappel. Tu peux ensuite la mettre en favori ⭐.
+                    Ajoute un titre simple, puis un rappel si besoin. Tu peux épingler l’essentiel en favori ⭐.
                   </div>
                 </div>
                 <button
@@ -613,7 +619,7 @@ export default function TasksPage() {
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                  placeholder="Ex: Payer le loyer"
+                  placeholder="Ex : Payer le loyer"
                 />
               </div>
 
@@ -627,9 +633,9 @@ export default function TasksPage() {
                   onChange={(e) => setNewStatus(e.target.value as TaskStatus)}
                   className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                 >
-                  <option value="todo">Todo</option>
-                  <option value="doing">Doing</option>
-                  <option value="done">Done</option>
+                  <option value="todo">À faire</option>
+                  <option value="doing">En cours</option>
+                  <option value="done">Terminée</option>
                 </select>
               </div>
 
@@ -673,13 +679,13 @@ export default function TasksPage() {
                 disabled={creating || !canCreate || createWorkspaceMissing}
                 className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50"
               >
-                {creating ? "Création…" : "Créer"}
+                {creating ? "Création…" : "Créer la tâche"}
               </button>
             </div>
 
             {createWorkspaceMissing && (
               <p className="mt-2 text-sm text-muted-foreground">
-                Sélectionne un dossier (workspace) dans la sidebar pour créer des tâches.
+                Choisis un dossier dans la sidebar pour organiser tes tâches.
               </p>
             )}
             {createError && <p className="mt-2 text-sm text-destructive">{createError}</p>}
@@ -688,7 +694,7 @@ export default function TasksPage() {
                 href="/upgrade"
                 className="mt-2 inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
               >
-                Passer Pro
+                Débloquer Pro
               </Link>
             )}
             {createSuccess && <p className="mt-2 text-sm">{createSuccess}</p>}
@@ -713,8 +719,8 @@ export default function TasksPage() {
 
       {!loading && !error && activeTasks.length === 0 && (
         <div className="sn-empty">
-          <div className="sn-empty-title">Aucune tâche</div>
-          <div className="sn-empty-desc">Crée ta première tâche avec “Nouvelle tâche”.</div>
+          <div className="sn-empty-title">Aucune tâche pour le moment</div>
+          <div className="sn-empty-desc">Planifie ta première tâche avec “Planifier une tâche”.</div>
         </div>
       )}
 
@@ -745,7 +751,7 @@ export default function TasksPage() {
                           <div className="sn-card-title truncate">{task.title}</div>
                           <div className="sn-card-meta">
                             <span className="sn-badge">{workspaceName}</span>
-                            <span className="sn-badge">{status}</span>
+                            <span className="sn-badge">{statusLabel(status)}</span>
                             {dueLabel && <span className="sn-badge">Rappel: {dueLabel}</span>}
                           </div>
                         </div>
@@ -755,8 +761,8 @@ export default function TasksPage() {
                             type="button"
                             onClick={() => toggleFavorite(task)}
                             className="sn-icon-btn"
-                            aria-label={task.favorite ? "Unfavorite" : "Favorite"}
-                            title={task.favorite ? "Unfavorite" : "Favorite"}
+                            aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                            title={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                           >
                             {task.favorite ? "★" : "☆"}
                           </button>
@@ -779,7 +785,7 @@ export default function TasksPage() {
                             onClick={() => startEditing(task)}
                             className="sn-text-btn"
                           >
-                            Edit
+                            Modifier
                           </button>
                           <button
                             type="button"
@@ -787,7 +793,7 @@ export default function TasksPage() {
                             disabled={deletingId === task.id}
                             className="sn-text-btn text-destructive disabled:opacity-50"
                           >
-                            {deletingId === task.id ? "Deleting..." : "Delete"}
+                            {deletingId === task.id ? "Suppression…" : "Supprimer"}
                           </button>
                         </div>
                       </div>
@@ -795,12 +801,12 @@ export default function TasksPage() {
 
                     {/* Reminders panel */}
                     <div className="mt-3 space-y-1 text-sm">
-                      <div className="font-semibold">Reminders</div>
-                      {remindersLoading && <p>Loading reminders...</p>}
-                      {remindersError && <p>Error loading reminders.</p>}
+                      <div className="font-semibold">Rappels</div>
+                      {remindersLoading && <p>Chargement des rappels…</p>}
+                      {remindersError && <p>Impossible de charger les rappels.</p>}
 
                       {!remindersLoading && taskReminders.length === 0 && (
-                        <p>No reminders.</p>
+                        <p>Aucun rappel pour cette tâche.</p>
                       )}
 
                       {!remindersLoading && taskReminders.length > 0 && (
@@ -809,7 +815,7 @@ export default function TasksPage() {
                             <li key={reminder.id} className="flex items-center gap-2">
                               <span>
                                 {new Date(reminder.reminderTime).toLocaleString()} {" "}
-                                {reminder.sent ? "(sent)" : "(pending)"}
+                                {reminder.sent ? "(envoyé)" : "(en attente)"}
                               </span>
                               <button
                                 type="button"
@@ -817,7 +823,7 @@ export default function TasksPage() {
                                 disabled={deletingReminderId === reminder.id}
                                 className="sn-text-btn text-destructive disabled:opacity-50"
                               >
-                                {deletingReminderId === reminder.id ? "Deleting..." : "Delete"}
+                                {deletingReminderId === reminder.id ? "Suppression…" : "Supprimer"}
                               </button>
                             </li>
                           ))}
@@ -829,7 +835,7 @@ export default function TasksPage() {
                           type="datetime-local"
                           value={newReminderTimes[task.id ?? ""] ?? ""}
                           onChange={(e) => handleReminderTimeChange(task.id ?? "", e.target.value)}
-                          aria-label="Reminder time"
+                          aria-label="Date et heure du rappel"
                           className="border border-input rounded-md px-2 py-1 bg-background"
                         />
                         <button
@@ -838,7 +844,7 @@ export default function TasksPage() {
                           disabled={creatingReminderForId === task.id}
                           className="sn-text-btn"
                         >
-                          {creatingReminderForId === task.id ? "Saving..." : "Add reminder"}
+                          {creatingReminderForId === task.id ? "Ajout…" : "Ajouter un rappel"}
                         </button>
                       </div>
                       {reminderError && <p className="text-xs">{reminderError}</p>}
@@ -850,7 +856,7 @@ export default function TasksPage() {
                   <>
                     <div className="flex flex-wrap gap-2 items-center text-sm">
                       <label className="flex flex-col">
-                        <span>Title</span>
+                        <span>Titre</span>
                         <input
                           type="text"
                           value={editTitle}
@@ -860,20 +866,20 @@ export default function TasksPage() {
                       </label>
 
                       <label className="flex flex-col">
-                        <span>Status</span>
+                        <span>Statut</span>
                         <select
                           value={editStatus}
                           onChange={(e) => setEditStatus(e.target.value as TaskStatus)}
                           className="border border-border rounded px-2 py-1 bg-background"
                         >
-                          <option value="todo">Todo</option>
-                          <option value="doing">Doing</option>
-                          <option value="done">Done</option>
+                          <option value="todo">À faire</option>
+                          <option value="doing">En cours</option>
+                          <option value="done">Terminée</option>
                         </select>
                       </label>
 
                       <label className="flex flex-col">
-                        <span>Workspace</span>
+                        <span>Dossier</span>
                         <select
                           value={editWorkspaceId}
                           onChange={(e) => setEditWorkspaceId(e.target.value)}
@@ -889,7 +895,7 @@ export default function TasksPage() {
                       </label>
 
                       <label className="flex flex-col">
-                        <span>Due date</span>
+                        <span>Rappel</span>
                         <input
                           type="datetime-local"
                           value={editDueDate}
@@ -905,14 +911,14 @@ export default function TasksPage() {
                         disabled={savingEdit}
                         className="border border-border rounded px-2 py-1 bg-background"
                       >
-                        {savingEdit ? "Saving..." : "Save"}
+                        {savingEdit ? "Enregistrement…" : "Enregistrer"}
                       </button>
                       <button
                         type="button"
                         onClick={cancelEditing}
                         className="border border-border rounded px-2 py-1 bg-background"
                       >
-                        Cancel
+                        Annuler
                       </button>
                     </div>
                     {editError && <p className="text-sm mt-1">{editError}</p>}
@@ -953,7 +959,7 @@ export default function TasksPage() {
                           <div className="sn-card-title line-clamp-2">{task.title}</div>
                           <div className="sn-card-meta">
                             <span className="sn-badge">{workspaceName}</span>
-                            <span className="sn-badge">{status}</span>
+                            <span className="sn-badge">{statusLabel(status)}</span>
                             {(!!dueLabel || !!nextReminder) && (
                               <span className="sn-badge">
                                 {dueLabel
@@ -968,8 +974,8 @@ export default function TasksPage() {
                             type="button"
                             onClick={() => toggleFavorite(task)}
                             className="sn-icon-btn"
-                            aria-label={task.favorite ? "Unfavorite" : "Favorite"}
-                            title={task.favorite ? "Unfavorite" : "Favorite"}
+                            aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                            title={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                           >
                             {task.favorite ? "★" : "☆"}
                           </button>
@@ -987,7 +993,7 @@ export default function TasksPage() {
                         </label>
                         <div className="sn-card-actions sn-card-actions-secondary">
                           <button type="button" onClick={() => startEditing(task)} className="sn-text-btn">
-                            Edit
+                            Modifier
                           </button>
                           <button
                             type="button"
@@ -995,7 +1001,7 @@ export default function TasksPage() {
                             disabled={deletingId === task.id}
                             className="sn-text-btn text-destructive disabled:opacity-50"
                           >
-                            {deletingId === task.id ? "Deleting..." : "Delete"}
+                            {deletingId === task.id ? "Suppression…" : "Supprimer"}
                           </button>
                         </div>
                       </div>
@@ -1003,11 +1009,11 @@ export default function TasksPage() {
 
                     {/* Reminders panel */}
                     <div className="mt-3 space-y-1 text-sm">
-                      <div className="font-semibold">Reminders</div>
-                      {remindersLoading && <p>Loading reminders...</p>}
-                      {remindersError && <p>Error loading reminders.</p>}
+                      <div className="font-semibold">Rappels</div>
+                      {remindersLoading && <p>Chargement des rappels…</p>}
+                      {remindersError && <p>Impossible de charger les rappels.</p>}
 
-                      {!remindersLoading && taskReminders.length === 0 && <p>No reminders.</p>}
+                      {!remindersLoading && taskReminders.length === 0 && <p>Aucun rappel pour cette tâche.</p>}
 
                       {!remindersLoading && taskReminders.length > 0 && (
                         <ul className="space-y-1">
@@ -1015,7 +1021,7 @@ export default function TasksPage() {
                             <li key={reminder.id} className="flex items-center gap-2">
                               <span>
                                 {new Date(reminder.reminderTime).toLocaleString()} {" "}
-                                {reminder.sent ? "(sent)" : "(pending)"}
+                                {reminder.sent ? "(envoyé)" : "(en attente)"}
                               </span>
                               <button
                                 type="button"
@@ -1023,7 +1029,7 @@ export default function TasksPage() {
                                 disabled={deletingReminderId === reminder.id}
                                 className="sn-text-btn text-destructive disabled:opacity-50"
                               >
-                                {deletingReminderId === reminder.id ? "Deleting..." : "Delete"}
+                                {deletingReminderId === reminder.id ? "Suppression…" : "Supprimer"}
                               </button>
                             </li>
                           ))}
@@ -1035,7 +1041,7 @@ export default function TasksPage() {
                           type="datetime-local"
                           value={newReminderTimes[task.id ?? ""] ?? ""}
                           onChange={(e) => handleReminderTimeChange(task.id ?? "", e.target.value)}
-                          aria-label="Reminder time"
+                          aria-label="Date et heure du rappel"
                           className="border border-input rounded-md px-2 py-1 bg-background"
                         />
                         <button
@@ -1044,7 +1050,7 @@ export default function TasksPage() {
                           disabled={creatingReminderForId === task.id}
                           className="sn-text-btn"
                         >
-                          {creatingReminderForId === task.id ? "Saving..." : "Add reminder"}
+                          {creatingReminderForId === task.id ? "Ajout…" : "Ajouter un rappel"}
                         </button>
                       </div>
                       {reminderError && <p className="text-xs">{reminderError}</p>}
@@ -1056,7 +1062,7 @@ export default function TasksPage() {
                   <>
                     <div className="flex flex-wrap gap-2 items-center text-sm">
                       <label className="flex flex-col">
-                        <span>Title</span>
+                        <span>Titre</span>
                         <input
                           type="text"
                           value={editTitle}
@@ -1066,20 +1072,20 @@ export default function TasksPage() {
                       </label>
 
                       <label className="flex flex-col">
-                        <span>Status</span>
+                        <span>Statut</span>
                         <select
                           value={editStatus}
                           onChange={(e) => setEditStatus(e.target.value as TaskStatus)}
                           className="border border-border rounded px-2 py-1 bg-background"
                         >
-                          <option value="todo">Todo</option>
-                          <option value="doing">Doing</option>
-                          <option value="done">Done</option>
+                          <option value="todo">À faire</option>
+                          <option value="doing">En cours</option>
+                          <option value="done">Terminée</option>
                         </select>
                       </label>
 
                       <label className="flex flex-col">
-                        <span>Workspace</span>
+                        <span>Dossier</span>
                         <select
                           value={editWorkspaceId}
                           onChange={(e) => setEditWorkspaceId(e.target.value)}
@@ -1095,7 +1101,7 @@ export default function TasksPage() {
                       </label>
 
                       <label className="flex flex-col">
-                        <span>Due date</span>
+                        <span>Rappel</span>
                         <input
                           type="datetime-local"
                           value={editDueDate}
@@ -1111,14 +1117,14 @@ export default function TasksPage() {
                         disabled={savingEdit}
                         className="border border-border rounded px-2 py-1 bg-background"
                       >
-                        {savingEdit ? "Saving..." : "Save"}
+                        {savingEdit ? "Enregistrement…" : "Enregistrer"}
                       </button>
                       <button
                         type="button"
                         onClick={cancelEditing}
                         className="border border-border rounded px-2 py-1 bg-background"
                       >
-                        Cancel
+                        Annuler
                       </button>
                     </div>
                     {editError && <p className="text-sm mt-1">{editError}</p>}
@@ -1143,7 +1149,7 @@ export default function TasksPage() {
               onDrop={(e) => handleDrop(e, colStatus)}
             >
               <div className="flex items-center justify-between mb-2">
-                <h2 className="font-semibold capitalize">{colStatus}</h2>
+                <h2 className="font-semibold">{statusLabel(colStatus)}</h2>
                 <span className="text-xs text-muted-foreground">{tasksByStatus[colStatus].length}</span>
               </div>
 
@@ -1165,7 +1171,7 @@ export default function TasksPage() {
                         <div className="min-w-0">
                           <div className="text-sm font-medium truncate">{task.title}</div>
                           {dueLabel && (
-                            <div className="text-xs text-muted-foreground mt-0.5">Due: {dueLabel}</div>
+                            <div className="text-xs text-muted-foreground mt-0.5">Rappel : {dueLabel}</div>
                           )}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
@@ -1178,13 +1184,13 @@ export default function TasksPage() {
                             Terminé
                           </label>
                           <button type="button" onClick={() => startEditing(task)} className="sn-text-btn">
-                            Edit
+                            Modifier
                           </button>
                           <button
                             type="button"
                             onClick={() => toggleFavorite(task)}
                             className="sn-text-btn"
-                            aria-label={task.favorite ? "Unfavorite" : "Favorite"}
+                            aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                           >
                             {task.favorite ? "★" : "☆"}
                           </button>
@@ -1193,7 +1199,7 @@ export default function TasksPage() {
                             onClick={() => handleDeleteTask(task)}
                             className="sn-text-btn text-destructive"
                           >
-                            Delete
+                            Supprimer
                           </button>
                         </div>
                       </div>
@@ -1202,7 +1208,7 @@ export default function TasksPage() {
                 })}
 
                 {tasksByStatus[colStatus].length === 0 && (
-                  <div className="text-sm text-muted-foreground">Dépose une tâche ici</div>
+                  <div className="text-sm text-muted-foreground">Glisse une tâche ici</div>
                 )}
               </div>
             </div>

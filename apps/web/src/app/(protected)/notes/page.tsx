@@ -36,7 +36,7 @@ export default function NotesPage() {
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === "pro";
   const freeLimitMessage =
-    "Limite Free atteinte. Passe en Pro pour débloquer plus de notes et favoris.";
+    "Limite Free atteinte. Tu peux passer en Pro pour créer plus de notes et utiliser les favoris sans limite.";
 
   const { data: notes, loading, error } = useUserNotes({ workspaceId });
   const { data: allNotesForLimit } = useUserNotes({ limit: 16 });
@@ -108,7 +108,7 @@ export default function NotesPage() {
   const handleCreateNote = async () => {
     const user = auth.currentUser;
     if (!user) {
-      setCreateError("Tu dois être connecté pour créer une note.");
+      setCreateError("Connecte-toi pour créer ta première note.");
       return;
     }
 
@@ -286,7 +286,7 @@ export default function NotesPage() {
     <div className="space-y-8">
       <section className="border border-border rounded-lg bg-card">
         <div className="p-4 flex items-center justify-between gap-3">
-          <h1 className="text-xl font-semibold">Notes</h1>
+          <h1 className="text-xl font-semibold">Tes notes</h1>
           <button
             type="button"
             onClick={() => setCreateOpen((v) => !v)}
@@ -294,7 +294,7 @@ export default function NotesPage() {
             aria-expanded={createOpen ? "true" : "false"}
             aria-controls="create-note-panel"
           >
-            {createOpen ? "Fermer" : "Nouvelle note"}
+            {createOpen ? "Fermer" : "Capturer une idée"}
           </button>
         </div>
 
@@ -305,7 +305,7 @@ export default function NotesPage() {
                 <div className="min-w-0">
                   <div className="text-sm font-semibold">Astuce</div>
                   <div className="text-sm text-muted-foreground">
-                    Clique sur “Nouvelle note” pour capturer une idée. Tu pourras ensuite l’épingler en favori ⭐.
+                    Un titre clair suffit. Tu peux compléter le contenu plus tard et épingler l’essentiel en favori ⭐.
                   </div>
                 </div>
                 <button
@@ -313,7 +313,7 @@ export default function NotesPage() {
                   onClick={() => userId && setOnboardingFlag(userId, "notes_microguide_v1", true)}
                   className="sn-text-btn shrink-0"
                 >
-                  Compris
+                  OK, compris
                 </button>
               </div>
             </div>
@@ -362,7 +362,7 @@ export default function NotesPage() {
                   onClick={handleCreateNote}
                   className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {creating ? "Création…" : "Ajouter"}
+                  {creating ? "Création…" : "Créer la note"}
                 </button>
               </div>
             </div>
@@ -376,7 +376,7 @@ export default function NotesPage() {
                 value={noteContent}
                 onChange={(e) => setNoteContent(e.target.value)}
                 className="w-full min-h-[96px] md:min-h-[110px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="Écris ta note…"
+                placeholder="Quelques lignes pour te rappeler l’essentiel…"
               />
             </div>
 
@@ -390,7 +390,7 @@ export default function NotesPage() {
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold mb-2">Toutes les notes</h2>
+        <h2 className="text-lg font-semibold mb-2">Tes notes récentes</h2>
         {loading && (
           <div className="sn-empty">
             <div className="mx-auto sn-spinner" />
@@ -404,14 +404,16 @@ export default function NotesPage() {
             href="/upgrade"
             className="mt-2 inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
           >
-            Passer Pro
+            Débloquer Pro
           </Link>
         )}
 
         {!loading && !error && activeNotes.length === 0 && (
           <div className="sn-empty">
-            <div className="sn-empty-title">Aucune note</div>
-            <div className="sn-empty-desc">Crée ta première note avec le bouton “Nouvelle note”.</div>
+            <div className="sn-empty-title">Aucune note pour le moment</div>
+            <div className="sn-empty-desc">
+              Commence simple : capture une idée, une liste ou un résumé. Clique sur “Capturer une idée” pour démarrer.
+            </div>
           </div>
         )}
 
@@ -647,7 +649,9 @@ export default function NotesPage() {
 
       <section>
         <h2 className="text-lg font-semibold mb-2">Terminées</h2>
-        {!loading && !error && completedNotes.length === 0 && <p>Aucune note terminée.</p>}
+        {!loading && !error && completedNotes.length === 0 && (
+          <p className="text-sm text-muted-foreground">Rien à archiver ici pour l’instant.</p>
+        )}
 
         <ul className="space-y-2">
           {completedNotes.map((note) => (

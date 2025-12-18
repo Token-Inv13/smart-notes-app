@@ -25,7 +25,7 @@ export default function UpgradeSuccessPage() {
           href="/upgrade"
           className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium"
         >
-          Voir Passer Pro
+          Voir Pro
         </Link>
         <Link
           href="/dashboard"

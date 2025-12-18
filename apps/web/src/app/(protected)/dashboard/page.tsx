@@ -54,7 +54,7 @@ export default function DashboardPage() {
 
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === 'pro';
-  const freeLimitMessage = 'Limite Free atteinte. Passe en Pro pour débloquer plus de favoris.';
+  const freeLimitMessage = 'Limite Free atteinte. Passe en Pro pour épingler plus de favoris.';
 
   const { data: favoriteNotesForLimit } = useUserNotes({ favoriteOnly: true, limit: 11 });
   const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
@@ -348,9 +348,9 @@ export default function DashboardPage() {
       {shouldShowWelcome && (
         <section className="sn-card p-6">
           <div className="space-y-3">
-            <div className="text-sm font-semibold">Bienvenue sur Smart Notes</div>
+            <div className="text-sm font-semibold">Bienvenue 👋</div>
             <div className="text-sm text-muted-foreground">
-              En moins d’une minute : crée ta première note ou ta première tâche. On a aussi ajouté un exemple pour te
+              Commence en moins d’une minute : capture une note ou planifie une tâche. Un exemple a été ajouté pour te
               guider.
             </div>
 
@@ -365,13 +365,13 @@ export default function DashboardPage() {
                 href={notesCreateHref}
                 className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
               >
-                Créer une note
+                Capturer une note
               </Link>
               <Link
                 href={tasksCreateHref}
                 className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-input text-sm font-medium hover:bg-accent"
               >
-                Créer une tâche
+                Planifier une tâche
               </Link>
             </div>
           </div>
@@ -379,7 +379,7 @@ export default function DashboardPage() {
       )}
 
       <section>
-        <h2 className="text-lg font-semibold mb-2">Notes favorites</h2>
+        <h2 className="text-lg font-semibold mb-2">Tes notes importantes</h2>
         {notesLoading && (
           <div className="sn-empty">
             <div className="mx-auto sn-spinner" />
@@ -401,15 +401,15 @@ export default function DashboardPage() {
               href="/upgrade"
               className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
             >
-              Passer Pro
+              Débloquer Pro
             </Link>
           )}
         </div>
       )}
         {!notesLoading && !notesError && activeFavoriteNotes.length === 0 && (
           <div className="sn-empty">
-            <div className="sn-empty-title">Aucune note favorite</div>
-            <div className="sn-empty-desc">Ajoute des favoris depuis la page Notes.</div>
+            <div className="sn-empty-title">Aucun favori pour l’instant</div>
+            <div className="sn-empty-desc">Depuis Notes, épingle les éléments à garder sous la main ⭐.</div>
           </div>
         )}
         {!notesLoading && !notesError && activeFavoriteNotes.length > 0 && (
@@ -529,7 +529,7 @@ export default function DashboardPage() {
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold mb-2">Tâches favorites</h2>
+        <h2 className="text-lg font-semibold mb-2">Tes tâches importantes</h2>
         {tasksLoading && (
           <div className="sn-empty">
             <div className="mx-auto sn-spinner" />
@@ -551,15 +551,15 @@ export default function DashboardPage() {
               href="/upgrade"
               className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
             >
-              Passer Pro
+              Débloquer Pro
             </Link>
           )}
         </div>
       )}
         {!tasksLoading && !tasksError && activeFavoriteTasks.length === 0 && (
           <div className="sn-empty">
-            <div className="sn-empty-title">Aucune tâche favorite</div>
-            <div className="sn-empty-desc">Ajoute des favoris depuis la page Tâches.</div>
+            <div className="sn-empty-title">Aucun favori pour l’instant</div>
+            <div className="sn-empty-desc">Depuis Tâches, épingle les priorités ⭐ pour les retrouver ici.</div>
           </div>
         )}
         {!tasksLoading && !tasksError && activeFavoriteTasks.length > 0 && (
