@@ -14,6 +14,9 @@ export default function SettingsPage() {
   const [toggleMessage, setToggleMessage] = useState<string | null>(null);
   const [fcmStatus, setFcmStatus] = useState<string | null>(null);
 
+  const [notesViewMode, setNotesViewMode] = useState<"list" | "grid">("list");
+  const [tasksViewMode, setTasksViewMode] = useState<"list" | "grid" | "kanban">("list");
+
   const [savingPlan, setSavingPlan] = useState(false);
   const [planMessage, setPlanMessage] = useState<string | null>(null);
 
@@ -27,6 +30,40 @@ export default function SettingsPage() {
   useEffect(() => {
     setDisplayNameDraft(user?.displayName ?? "");
   }, [user?.displayName]);
+
+  useEffect(() => {
+    try {
+      const rawNotes = window.localStorage.getItem("notesViewMode");
+      if (rawNotes === "list" || rawNotes === "grid") {
+        setNotesViewMode(rawNotes);
+      }
+
+      const rawTasks = window.localStorage.getItem("tasksViewMode");
+      if (rawTasks === "list" || rawTasks === "grid" || rawTasks === "kanban") {
+        setTasksViewMode(rawTasks);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const setAndPersistNotesViewMode = (next: "list" | "grid") => {
+    setNotesViewMode(next);
+    try {
+      window.localStorage.setItem("notesViewMode", next);
+    } catch {
+      // ignore
+    }
+  };
+
+  const setAndPersistTasksViewMode = (next: "list" | "grid" | "kanban") => {
+    setTasksViewMode(next);
+    try {
+      window.localStorage.setItem("tasksViewMode", next);
+    } catch {
+      // ignore
+    }
+  };
 
   const handleToggleTaskReminders = async () => {
     if (!user) return;
@@ -253,6 +290,39 @@ export default function SettingsPage() {
             </div>
 
             {appearanceMessage && <p className="text-sm">{appearanceMessage}</p>}
+          </section>
+
+          <section className="border border-border rounded-lg p-4 bg-card space-y-3">
+            <h2 className="text-lg font-semibold">Affichage</h2>
+
+            <div className="space-y-1">
+              <div className="text-sm font-medium">Notes</div>
+              <select
+                value={notesViewMode}
+                onChange={(e) => setAndPersistNotesViewMode(e.target.value as "list" | "grid")}
+                className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                aria-label="Affichage des notes"
+              >
+                <option value="list">Liste</option>
+                <option value="grid">Vignettes</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-sm font-medium">Tâches</div>
+              <select
+                value={tasksViewMode}
+                onChange={(e) =>
+                  setAndPersistTasksViewMode(e.target.value as "list" | "grid" | "kanban")
+                }
+                className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                aria-label="Affichage des tâches"
+              >
+                <option value="list">Liste</option>
+                <option value="grid">Vignettes</option>
+                <option value="kanban">Kanban</option>
+              </select>
+            </div>
           </section>
 
           <section className="border border-border rounded-lg p-4 bg-card space-y-2">

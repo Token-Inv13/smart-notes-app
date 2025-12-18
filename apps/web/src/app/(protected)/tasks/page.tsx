@@ -104,15 +104,6 @@ export default function TasksPage() {
     }
   }, []);
 
-  const setAndPersistViewMode = (next: "list" | "grid" | "kanban") => {
-    setViewMode(next);
-    try {
-      window.localStorage.setItem("tasksViewMode", next);
-    } catch {
-      // ignore
-    }
-  };
-
   // Keep workspaceFilter and default new workspace in sync with ?workspaceId=... from the sidebar.
   useEffect(() => {
     const nextFilter = workspaceIdParam ?? "all";
@@ -522,35 +513,6 @@ export default function TasksPage() {
     <div className="space-y-4">
       <header className="flex flex-col gap-2 mb-4">
         <h1 className="text-xl font-semibold">Tasks</h1>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setAndPersistViewMode("list")}
-            className={`border border-border rounded px-3 py-1 bg-background ${
-              viewMode === "list" ? "font-semibold" : ""
-            }`}
-          >
-            Liste
-          </button>
-          <button
-            type="button"
-            onClick={() => setAndPersistViewMode("grid")}
-            className={`border border-border rounded px-3 py-1 bg-background ${
-              viewMode === "grid" ? "font-semibold" : ""
-            }`}
-          >
-            Vignettes
-          </button>
-          <button
-            type="button"
-            onClick={() => setAndPersistViewMode("kanban")}
-            className={`border border-border rounded px-3 py-1 bg-background ${
-              viewMode === "kanban" ? "font-semibold" : ""
-            }`}
-          >
-            Kanban
-          </button>
-        </div>
         <div className="flex flex-wrap gap-2">
           <label className="flex items-center gap-2">
             <span>Status:</span>

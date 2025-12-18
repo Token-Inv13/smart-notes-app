@@ -85,15 +85,6 @@ export default function NotesPage() {
     }
   }, []);
 
-  const setAndPersistViewMode = (next: "list" | "grid") => {
-    setViewMode(next);
-    try {
-      window.localStorage.setItem("notesViewMode", next);
-    } catch {
-      // ignore
-    }
-  };
-
   const activeNotes = useMemo(() => sortedNotes.filter((n) => n.completed !== true), [sortedNotes]);
   const completedNotes = useMemo(() => sortedNotes.filter((n) => n.completed === true), [sortedNotes]);
 
@@ -360,29 +351,7 @@ export default function NotesPage() {
       </section>
 
       <section>
-        <div className="flex items-center justify-between gap-3 mb-2">
-          <h2 className="text-lg font-semibold">Toutes les notes</h2>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setAndPersistViewMode("list")}
-              className={`border border-border rounded px-3 py-1 bg-background text-sm ${
-                viewMode === "list" ? "font-semibold" : ""
-              }`}
-            >
-              Liste
-            </button>
-            <button
-              type="button"
-              onClick={() => setAndPersistViewMode("grid")}
-              className={`border border-border rounded px-3 py-1 bg-background text-sm ${
-                viewMode === "grid" ? "font-semibold" : ""
-              }`}
-            >
-              Vignettes
-            </button>
-          </div>
-        </div>
+        <h2 className="text-lg font-semibold mb-2">Toutes les notes</h2>
         {loading && <p>Loading…</p>}
         {createError && <p className="mt-2 text-sm text-destructive">{createError}</p>}
         {showUpgradeCta && (
