@@ -174,9 +174,43 @@ body {
     transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
   }
 
+  .sn-card--note {
+    background-image: linear-gradient(
+      to bottom right,
+      hsl(var(--primary) / 0.06),
+      transparent 55%
+    );
+  }
+
+  .sn-card--task {
+    background-image: linear-gradient(
+      to bottom right,
+      hsl(var(--info) / 0.06),
+      transparent 55%
+    );
+  }
+
+  .sn-card--favorite {
+    border-color: hsl(var(--primary) / 0.28);
+    background-image: radial-gradient(
+        600px circle at 0% 0%,
+        hsl(var(--primary) / 0.10),
+        transparent 45%
+      ),
+      linear-gradient(to bottom right, hsl(var(--primary) / 0.05), transparent 60%);
+  }
+
+  .sn-card--muted {
+    background-image: linear-gradient(to bottom, hsl(var(--muted) / 0.6), transparent 70%);
+  }
+
   .sn-card:hover {
     box-shadow: var(--shadow-elevated);
     transform: translateY(-1px);
+  }
+
+  .sn-card:hover {
+    border-color: hsl(var(--ring) / 0.25);
   }
 
   .sn-card:focus-within {
@@ -201,6 +235,12 @@ body {
 
   .sn-card-actions {
     @apply flex items-center gap-2;
+  }
+
+  @media (max-width: 640px) {
+    .sn-card-actions {
+      gap: 0.75rem;
+    }
   }
 
   .sn-card-actions-secondary {

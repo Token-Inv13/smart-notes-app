@@ -372,7 +372,10 @@ export default function NotesPage() {
               const workspaceName = workspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";
 
               return (
-                <li key={note.id} className="sn-card p-4">
+                <li
+                  key={note.id}
+                  className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4`}
+                >
                   {!isEditing ? (
                     <div className="space-y-3">
                       <div className="sn-card-header">
@@ -486,7 +489,7 @@ export default function NotesPage() {
               return (
                 <div
                   key={note.id}
-                  className="sn-card p-4 min-w-0"
+                  className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4 min-w-0`}
                 >
                   {!isEditing ? (
                     <div className="flex flex-col gap-3">
@@ -598,7 +601,7 @@ export default function NotesPage() {
 
         <ul className="space-y-2">
           {completedNotes.map((note) => (
-            <li key={note.id} className="sn-card p-4">
+            <li key={note.id} className="sn-card sn-card--note sn-card--muted p-4">
               <div className="space-y-3">
                 <div className="sn-card-header">
                   <div className="min-w-0">

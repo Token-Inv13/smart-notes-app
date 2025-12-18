@@ -294,7 +294,10 @@ export default function DashboardPage() {
           {activeFavoriteNotes.map((note) => {
             const isEditing = !!note.id && note.id === editingNoteId;
             return (
-              <li key={note.id} className="sn-card p-4">
+              <li
+                key={note.id}
+                className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4`}
+              >
                 {!isEditing ? (
                   <div className="space-y-3">
                     <div className="sn-card-header">
@@ -424,7 +427,10 @@ export default function DashboardPage() {
             const isEditing = !!task.id && task.id === editingTaskId;
             const dueLabel = formatFrDateTime(task.dueDate ?? null);
             return (
-              <li key={task.id} className="sn-card p-4">
+              <li
+                key={task.id}
+                className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4`}
+              >
                 {!isEditing ? (
                   <div className="space-y-3">
                     <div className="sn-card-header">

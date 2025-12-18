@@ -677,7 +677,7 @@ export default function TasksPage() {
               <li
                 key={task.id}
                 id={task.id ? `task-${task.id}` : undefined}
-                className={`sn-card p-4 ${
+                className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 ${
                   task.id && task.id === highlightedTaskId ? "border-primary" : ""
                 }`}
               >
@@ -885,7 +885,7 @@ export default function TasksPage() {
               <div
                 key={task.id}
                 id={task.id ? `task-${task.id}` : undefined}
-                className={`sn-card p-4 min-w-0 ${
+                className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 min-w-0 ${
                   task.id && task.id === highlightedTaskId ? "border-primary" : ""
                 }`}
               >
@@ -1082,7 +1082,7 @@ export default function TasksPage() {
           ).map((colStatus) => (
             <div
               key={colStatus}
-              className="sn-card p-3 min-h-[240px]"
+              className="sn-card sn-card--task p-3 min-h-[240px]"
               onDragOver={allowDrop}
               onDrop={(e) => handleDrop(e, colStatus)}
             >
@@ -1121,11 +1121,7 @@ export default function TasksPage() {
                             />
                             Terminé
                           </label>
-                          <button
-                            type="button"
-                            onClick={() => startEditing(task)}
-                            className="sn-text-btn"
-                          >
+                          <button type="button" onClick={() => startEditing(task)} className="sn-text-btn">
                             Edit
                           </button>
                           <button
@@ -1163,7 +1159,7 @@ export default function TasksPage() {
           <h2 className="text-lg font-semibold mt-6 mb-2">Terminées</h2>
           <ul className="space-y-2">
             {completedTasks.map((task) => (
-              <li key={task.id} className="sn-card p-4">
+              <li key={task.id} className={`sn-card sn-card--task sn-card--muted p-4 ${task.favorite ? " sn-card--favorite" : ""}`}>
                 <div className="sn-card-header">
                   <div className="min-w-0">
                     <div className="sn-card-title truncate">{task.title}</div>
