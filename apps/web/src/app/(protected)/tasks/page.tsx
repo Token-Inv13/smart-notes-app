@@ -677,50 +677,64 @@ export default function TasksPage() {
               <li
                 key={task.id}
                 id={task.id ? `task-${task.id}` : undefined}
-                className={`border rounded px-3 py-2 ${
-                  task.id && task.id === highlightedTaskId ? "border-primary" : "border-border"
+                className={`sn-card p-4 ${
+                  task.id && task.id === highlightedTaskId ? "border-primary" : ""
                 }`}
               >
                 {!isEditing && (
                   <>
-                    <div className="font-medium">{task.title}</div>
-                    <div className="text-sm text-muted-foreground flex flex-wrap gap-2">
-                      <span>Status: {status}</span>
-                      <span>Workspace: {workspaceName}</span>
-                      {dueLabel && <span>Due: {dueLabel}</span>}
-                    </div>
-                    <div className="mt-2 flex gap-2 text-sm">
-                      <label className="flex items-center gap-1 text-xs">
-                        <input
-                          type="checkbox"
-                          checked={status === "done"}
-                          onChange={(e) => toggleDone(task, e.target.checked)}
-                        />
-                        Terminé
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => startEditing(task)}
-                        className="border border-border rounded px-2 py-1 bg-background"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => toggleFavorite(task)}
-                        className="border border-border rounded px-2 py-1 bg-background"
-                        aria-label={task.favorite ? "Unfavorite" : "Favorite"}
-                      >
-                        {task.favorite ? "★" : "☆"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteTask(task)}
-                        disabled={deletingId === task.id}
-                        className="border border-border rounded px-2 py-1 bg-background"
-                      >
-                        {deletingId === task.id ? "Deleting..." : "Delete"}
-                      </button>
+                    <div className="space-y-3">
+                      <div className="sn-card-header">
+                        <div className="min-w-0">
+                          <div className="sn-card-title truncate">{task.title}</div>
+                          <div className="sn-card-meta">
+                            <span className="sn-badge">{workspaceName}</span>
+                            <span className="sn-badge">{status}</span>
+                            {dueLabel && <span className="sn-badge">Rappel: {dueLabel}</span>}
+                          </div>
+                        </div>
+
+                        <div className="sn-card-actions sn-card-actions-secondary shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => toggleFavorite(task)}
+                            className="sn-icon-btn"
+                            aria-label={task.favorite ? "Unfavorite" : "Favorite"}
+                            title={task.favorite ? "Unfavorite" : "Favorite"}
+                          >
+                            {task.favorite ? "★" : "☆"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="text-xs flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={status === "done"}
+                            onChange={(e) => toggleDone(task, e.target.checked)}
+                          />
+                          <span className="text-muted-foreground">Terminé</span>
+                        </label>
+
+                        <div className="sn-card-actions sn-card-actions-secondary">
+                          <button
+                            type="button"
+                            onClick={() => startEditing(task)}
+                            className="sn-text-btn"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTask(task)}
+                            disabled={deletingId === task.id}
+                            className="sn-text-btn text-destructive disabled:opacity-50"
+                          >
+                            {deletingId === task.id ? "Deleting..." : "Delete"}
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Reminders panel */}
@@ -745,7 +759,7 @@ export default function TasksPage() {
                                 type="button"
                                 onClick={() => handleDeleteReminder(reminder)}
                                 disabled={deletingReminderId === reminder.id}
-                                className="border border-border rounded px-2 py-0.5 bg-background"
+                                className="sn-text-btn text-destructive disabled:opacity-50"
                               >
                                 {deletingReminderId === reminder.id ? "Deleting..." : "Delete"}
                               </button>
@@ -760,13 +774,13 @@ export default function TasksPage() {
                           value={newReminderTimes[task.id ?? ""] ?? ""}
                           onChange={(e) => handleReminderTimeChange(task.id ?? "", e.target.value)}
                           aria-label="Reminder time"
-                          className="border border-border rounded px-2 py-1 bg-background"
+                          className="border border-input rounded-md px-2 py-1 bg-background"
                         />
                         <button
                           type="button"
                           onClick={() => handleCreateReminder(task)}
                           disabled={creatingReminderForId === task.id}
-                          className="border border-border rounded px-2 py-1 bg-background"
+                          className="sn-text-btn"
                         >
                           {creatingReminderForId === task.id ? "Saving..." : "Add reminder"}
                         </button>
@@ -871,64 +885,63 @@ export default function TasksPage() {
               <div
                 key={task.id}
                 id={task.id ? `task-${task.id}` : undefined}
-                className={`border rounded-md p-3 bg-card min-w-0 ${
-                  task.id && task.id === highlightedTaskId ? "border-primary" : "border-border"
+                className={`sn-card p-4 min-w-0 ${
+                  task.id && task.id === highlightedTaskId ? "border-primary" : ""
                 }`}
               >
                 {!isEditing && (
                   <>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="font-medium leading-snug line-clamp-2">{task.title}</div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <span className="text-xs px-2 py-0.5 rounded-full border border-border bg-background">
-                            {workspaceName}
-                          </span>
-                          <span className="text-xs px-2 py-0.5 rounded-full border border-border bg-background">
-                            {status}
-                          </span>
-                          {(!!dueLabel || !!nextReminder) && (
-                            <span className="text-xs px-2 py-0.5 rounded-full border border-border bg-background">
-                              {dueLabel ? `Rappel: ${dueLabel}` : `Rappel: ${new Date(nextReminder!.reminderTime).toLocaleString()}`}
-                            </span>
-                          )}
+                    <div className="flex flex-col gap-3">
+                      <div className="sn-card-header">
+                        <div className="min-w-0">
+                          <div className="sn-card-title line-clamp-2">{task.title}</div>
+                          <div className="sn-card-meta">
+                            <span className="sn-badge">{workspaceName}</span>
+                            <span className="sn-badge">{status}</span>
+                            {(!!dueLabel || !!nextReminder) && (
+                              <span className="sn-badge">
+                                {dueLabel
+                                  ? `Rappel: ${dueLabel}`
+                                  : `Rappel: ${new Date(nextReminder!.reminderTime).toLocaleString()}`}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="sn-card-actions sn-card-actions-secondary shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => toggleFavorite(task)}
+                            className="sn-icon-btn"
+                            aria-label={task.favorite ? "Unfavorite" : "Favorite"}
+                            title={task.favorite ? "Unfavorite" : "Favorite"}
+                          >
+                            {task.favorite ? "★" : "☆"}
+                          </button>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => toggleFavorite(task)}
-                        className="text-xs underline shrink-0"
-                        aria-label={task.favorite ? "Unfavorite" : "Favorite"}
-                      >
-                        {task.favorite ? "★" : "☆"}
-                      </button>
-                    </div>
 
-                    <div className="mt-3 flex items-center justify-between gap-2 text-sm">
-                      <label className="flex items-center gap-1 text-xs">
-                        <input
-                          type="checkbox"
-                          checked={status === "done"}
-                          onChange={(e) => toggleDone(task, e.target.checked)}
-                        />
-                        Terminé
-                      </label>
-                      <div className="flex items-center gap-3">
-                        <button
-                          type="button"
-                          onClick={() => startEditing(task)}
-                          className="text-xs underline"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteTask(task)}
-                          disabled={deletingId === task.id}
-                          className="text-xs underline text-destructive disabled:opacity-50"
-                        >
-                          {deletingId === task.id ? "Deleting..." : "Delete"}
-                        </button>
+                      <div className="mt-auto flex items-center justify-between gap-3">
+                        <label className="text-xs flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={status === "done"}
+                            onChange={(e) => toggleDone(task, e.target.checked)}
+                          />
+                          <span className="text-muted-foreground">Terminé</span>
+                        </label>
+                        <div className="sn-card-actions sn-card-actions-secondary">
+                          <button type="button" onClick={() => startEditing(task)} className="sn-text-btn">
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTask(task)}
+                            disabled={deletingId === task.id}
+                            className="sn-text-btn text-destructive disabled:opacity-50"
+                          >
+                            {deletingId === task.id ? "Deleting..." : "Delete"}
+                          </button>
+                        </div>
                       </div>
                     </div>
 
@@ -952,7 +965,7 @@ export default function TasksPage() {
                                 type="button"
                                 onClick={() => handleDeleteReminder(reminder)}
                                 disabled={deletingReminderId === reminder.id}
-                                className="border border-border rounded px-2 py-0.5 bg-background"
+                                className="sn-text-btn text-destructive disabled:opacity-50"
                               >
                                 {deletingReminderId === reminder.id ? "Deleting..." : "Delete"}
                               </button>
@@ -967,13 +980,13 @@ export default function TasksPage() {
                           value={newReminderTimes[task.id ?? ""] ?? ""}
                           onChange={(e) => handleReminderTimeChange(task.id ?? "", e.target.value)}
                           aria-label="Reminder time"
-                          className="border border-border rounded px-2 py-1 bg-background"
+                          className="border border-input rounded-md px-2 py-1 bg-background"
                         />
                         <button
                           type="button"
                           onClick={() => handleCreateReminder(task)}
                           disabled={creatingReminderForId === task.id}
-                          className="border border-border rounded px-2 py-1 bg-background"
+                          className="sn-text-btn"
                         >
                           {creatingReminderForId === task.id ? "Saving..." : "Add reminder"}
                         </button>
@@ -1063,101 +1076,103 @@ export default function TasksPage() {
 
       {!loading && !error && viewMode === "kanban" && (
         <section className="grid gap-4 md:grid-cols-3">
-          {(statusFilter === "all" ? (["todo", "doing", "done"] as TaskStatus[]) : ([statusFilter] as TaskStatus[])).map(
-            (colStatus) => (
-              <div
-                key={colStatus}
-                className="border border-border rounded-lg bg-card p-3 min-h-[240px]"
-                onDragOver={allowDrop}
-                onDrop={(e) => handleDrop(e, colStatus)}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <h2 className="font-semibold capitalize">{colStatus}</h2>
-                  <span className="text-xs text-muted-foreground">{tasksByStatus[colStatus].length}</span>
-                </div>
+          {(statusFilter === "all"
+            ? (["todo", "doing", "done"] as TaskStatus[])
+            : ([statusFilter] as TaskStatus[])
+          ).map((colStatus) => (
+            <div
+              key={colStatus}
+              className="sn-card p-3 min-h-[240px]"
+              onDragOver={allowDrop}
+              onDrop={(e) => handleDrop(e, colStatus)}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="font-semibold capitalize">{colStatus}</h2>
+                <span className="text-xs text-muted-foreground">{tasksByStatus[colStatus].length}</span>
+              </div>
 
-                <div className="space-y-2">
-                  {tasksByStatus[colStatus].map((task) => {
-                    const dueLabel = formatTimestampToLocalString(task.dueDate ?? null);
-                    const isMoving = movingTaskId === task.id;
+              <div className="space-y-2">
+                {tasksByStatus[colStatus].map((task) => {
+                  const dueLabel = formatTimestampToLocalString(task.dueDate ?? null);
+                  const isMoving = movingTaskId === task.id;
 
-                    return (
-                      <div
-                        key={task.id}
-                        draggable={!isMoving}
-                        onDragStart={(e) => task.id && handleDragStart(e, task.id)}
-                        className={`border border-border rounded-md bg-background p-2 cursor-move ${
-                          isMoving ? "opacity-50" : ""
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium truncate">{task.title}</div>
-                            {dueLabel && (
-                              <div className="text-xs text-muted-foreground mt-0.5">Due: {dueLabel}</div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <label className="text-xs flex items-center gap-1">
-                              <input
-                                type="checkbox"
-                                checked={((task.status as TaskStatus | undefined) ?? "todo") === "done"}
-                                onChange={(e) => toggleDone(task, e.target.checked)}
-                              />
-                              Terminé
-                            </label>
-                            <button
-                              type="button"
-                              onClick={() => startEditing(task)}
-                              className="text-xs underline"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => toggleFavorite(task)}
-                              className="text-xs underline"
-                              aria-label={task.favorite ? "Unfavorite" : "Favorite"}
-                            >
-                              {task.favorite ? "★" : "☆"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteTask(task)}
-                              className="text-xs underline text-destructive"
-                            >
-                              Delete
-                            </button>
-                          </div>
+                  return (
+                    <div
+                      key={task.id}
+                      draggable={!isMoving}
+                      onDragStart={(e) => task.id && handleDragStart(e, task.id)}
+                      className={`border border-border rounded-md bg-background p-2 cursor-move transition-shadow ${
+                        isMoving ? "opacity-50" : ""
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium truncate">{task.title}</div>
+                          {dueLabel && (
+                            <div className="text-xs text-muted-foreground mt-0.5">Due: {dueLabel}</div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <label className="text-xs flex items-center gap-1">
+                            <input
+                              type="checkbox"
+                              checked={((task.status as TaskStatus | undefined) ?? "todo") === "done"}
+                              onChange={(e) => toggleDone(task, e.target.checked)}
+                            />
+                            Terminé
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => startEditing(task)}
+                            className="sn-text-btn"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleFavorite(task)}
+                            className="sn-text-btn"
+                            aria-label={task.favorite ? "Unfavorite" : "Favorite"}
+                          >
+                            {task.favorite ? "★" : "☆"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTask(task)}
+                            className="sn-text-btn text-destructive"
+                          >
+                            Delete
+                          </button>
                         </div>
                       </div>
-                    );
-                  })}
+                    </div>
+                  );
+                })}
 
-                  {tasksByStatus[colStatus].length === 0 && (
-                    <div className="text-sm text-muted-foreground">Dépose une tâche ici</div>
-                  )}
-                </div>
+                {tasksByStatus[colStatus].length === 0 && (
+                  <div className="text-sm text-muted-foreground">Dépose une tâche ici</div>
+                )}
               </div>
-            ),
-          )}
+            </div>
+          ))}
         </section>
       )}
 
       {!loading && !error && completedTasks.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-lg font-semibold">Terminées</h2>
+        <section>
+          <h2 className="text-lg font-semibold mt-6 mb-2">Terminées</h2>
           <ul className="space-y-2">
             {completedTasks.map((task) => (
-              <li key={task.id} className="border border-border rounded px-3 py-2 bg-card">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="font-medium truncate">{task.title}</div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <button
-                      type="button"
-                      onClick={() => toggleDone(task, false)}
-                      className="text-xs underline"
-                    >
+              <li key={task.id} className="sn-card p-4">
+                <div className="sn-card-header">
+                  <div className="min-w-0">
+                    <div className="sn-card-title truncate">{task.title}</div>
+                    <div className="sn-card-meta">
+                      <span className="sn-badge">Terminée</span>
+                    </div>
+                  </div>
+                  <div className="sn-card-actions sn-card-actions-secondary shrink-0">
+                    <button type="button" onClick={() => toggleDone(task, false)} className="sn-text-btn">
                       Restaurer
                     </button>
                   </div>

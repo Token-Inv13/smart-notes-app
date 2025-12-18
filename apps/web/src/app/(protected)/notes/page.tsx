@@ -372,57 +372,60 @@ export default function NotesPage() {
               const workspaceName = workspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";
 
               return (
-                <li key={note.id} className="border border-border rounded-md p-3 bg-card">
+                <li key={note.id} className="sn-card p-4">
                   {!isEditing ? (
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <div className="font-medium truncate">{note.title}</div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                          <span className="text-xs px-2 py-0.5 rounded-full border border-border bg-background">
-                            {workspaceName}
-                          </span>
-                          {note.favorite && (
-                            <span className="text-xs px-2 py-0.5 rounded-full border border-border bg-background">
-                              Favori
-                            </span>
-                          )}
+                    <div className="space-y-3">
+                      <div className="sn-card-header">
+                        <div className="min-w-0">
+                          <div className="sn-card-title truncate">{note.title}</div>
+                          <div className="sn-card-meta">
+                            <span className="sn-badge">{workspaceName}</span>
+                            {note.favorite && <span className="sn-badge">Favori</span>}
+                          </div>
                         </div>
-                        <div className="text-sm text-muted-foreground whitespace-pre-wrap break-words mt-2">
-                          {note.content ?? ""}
+
+                        <div className="sn-card-actions sn-card-actions-secondary shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => toggleFavorite(note)}
+                            className="sn-icon-btn"
+                            aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                            title={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                          >
+                            {note.favorite ? "★" : "☆"}
+                          </button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <label className="text-xs flex items-center gap-1">
+
+                      <div className="sn-card-body line-clamp-4">{note.content ?? ""}</div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="text-xs flex items-center gap-2">
                           <input
                             type="checkbox"
                             checked={note.completed === true}
                             onChange={(e) => toggleCompleted(note, e.target.checked)}
                           />
-                          Terminé
+                          <span className="text-muted-foreground">Terminé</span>
                         </label>
-                        <button
-                          type="button"
-                          onClick={() => toggleFavorite(note)}
-                          className="text-xs underline"
-                          aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                        >
-                          {note.favorite ? "★" : "☆"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => startEditing(note)}
-                          className="text-xs underline"
-                        >
-                          Modifier
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(note)}
-                          disabled={deletingId === note.id}
-                          className="text-xs underline text-destructive disabled:opacity-50"
-                        >
-                          {deletingId === note.id ? "Suppression…" : "Supprimer"}
-                        </button>
+
+                        <div className="sn-card-actions sn-card-actions-secondary">
+                          <button
+                            type="button"
+                            onClick={() => startEditing(note)}
+                            className="sn-text-btn"
+                          >
+                            Modifier
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(note)}
+                            disabled={deletingId === note.id}
+                            className="sn-text-btn text-destructive disabled:opacity-50"
+                          >
+                            {deletingId === note.id ? "Suppression…" : "Supprimer"}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ) : (
@@ -483,47 +486,48 @@ export default function NotesPage() {
               return (
                 <div
                   key={note.id}
-                  className="border border-border rounded-md p-3 bg-card min-w-0"
+                  className="sn-card p-4 min-w-0"
                 >
                   {!isEditing ? (
                     <div className="flex flex-col gap-3">
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="sn-card-header">
                         <div className="min-w-0">
-                          <div className="font-medium leading-snug line-clamp-2">{note.title}</div>
-                          <div className="mt-2 flex flex-wrap items-center gap-2">
-                            <span className="text-xs px-2 py-0.5 rounded-full border border-border bg-background">
-                              {workspaceName}
-                            </span>
+                          <div className="sn-card-title line-clamp-2">{note.title}</div>
+                          <div className="sn-card-meta">
+                            <span className="sn-badge">{workspaceName}</span>
+                            {note.favorite && <span className="sn-badge">Favori</span>}
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => toggleFavorite(note)}
-                          className="text-xs underline shrink-0"
-                          aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                        >
-                          {note.favorite ? "★" : "☆"}
-                        </button>
+
+                        <div className="sn-card-actions sn-card-actions-secondary shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => toggleFavorite(note)}
+                            className="sn-icon-btn"
+                            aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                            title={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                          >
+                            {note.favorite ? "★" : "☆"}
+                          </button>
+                        </div>
                       </div>
 
-                      <div className="text-sm text-muted-foreground whitespace-pre-wrap break-words line-clamp-4">
-                        {note.content ?? ""}
-                      </div>
+                      <div className="sn-card-body line-clamp-5">{note.content ?? ""}</div>
 
-                      <div className="mt-auto flex items-center justify-between gap-2">
-                        <label className="text-xs flex items-center gap-1">
+                      <div className="mt-auto flex items-center justify-between gap-3">
+                        <label className="text-xs flex items-center gap-2">
                           <input
                             type="checkbox"
                             checked={note.completed === true}
                             onChange={(e) => toggleCompleted(note, e.target.checked)}
                           />
-                          Terminé
+                          <span className="text-muted-foreground">Terminé</span>
                         </label>
-                        <div className="flex items-center gap-3">
+                        <div className="sn-card-actions sn-card-actions-secondary">
                           <button
                             type="button"
                             onClick={() => startEditing(note)}
-                            className="text-xs underline"
+                            className="sn-text-btn"
                           >
                             Modifier
                           </button>
@@ -531,7 +535,7 @@ export default function NotesPage() {
                             type="button"
                             onClick={() => handleDelete(note)}
                             disabled={deletingId === note.id}
-                            className="text-xs underline text-destructive disabled:opacity-50"
+                            className="sn-text-btn text-destructive disabled:opacity-50"
                           >
                             {deletingId === note.id ? "Suppression…" : "Supprimer"}
                           </button>
@@ -594,23 +598,27 @@ export default function NotesPage() {
 
         <ul className="space-y-2">
           {completedNotes.map((note) => (
-            <li key={note.id} className="border border-border rounded-md p-3 bg-card">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="font-medium truncate">{note.title}</div>
-                  <div className="text-sm text-muted-foreground whitespace-pre-wrap break-words mt-1">
-                    {note.content}
+            <li key={note.id} className="sn-card p-4">
+              <div className="space-y-3">
+                <div className="sn-card-header">
+                  <div className="min-w-0">
+                    <div className="sn-card-title truncate">{note.title}</div>
+                    <div className="sn-card-meta">
+                      <span className="sn-badge">Terminée</span>
+                    </div>
+                  </div>
+                  <div className="sn-card-actions sn-card-actions-secondary shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => toggleCompleted(note, false)}
+                      className="sn-text-btn"
+                    >
+                      Restaurer
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => toggleCompleted(note, false)}
-                    className="text-xs underline"
-                  >
-                    Restaurer
-                  </button>
-                </div>
+
+                <div className="sn-card-body line-clamp-4">{note.content}</div>
               </div>
             </li>
           ))}

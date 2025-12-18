@@ -294,43 +294,53 @@ export default function DashboardPage() {
           {activeFavoriteNotes.map((note) => {
             const isEditing = !!note.id && note.id === editingNoteId;
             return (
-              <li key={note.id} className="border border-border rounded-md p-2">
+              <li key={note.id} className="sn-card p-4">
                 {!isEditing ? (
-                  <div className="flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => note.id && router.push(`/notes/${encodeURIComponent(note.id)}${suffix}`)}
-                      className="min-w-0 text-left text-sm font-medium truncate cursor-pointer hover:underline"
-                      aria-label={`Ouvrir la note ${note.title}`}
-                      disabled={!note.id}
-                    >
-                      <span className="truncate">{note.title}</span>
-                      {note.workspaceId && typeof note.workspaceId === 'string' && (
-                        <span className="ml-2 text-xs text-muted-foreground whitespace-nowrap">
-                          {workspaceNameById.get(note.workspaceId) ?? note.workspaceId}
-                        </span>
-                      )}
-                    </button>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => toggleNoteFavorite(note)}
-                        className="text-xs underline"
-                        aria-label={note.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
-                      >
-                        {note.favorite ? '★' : '☆'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => startEditNote(note)}
-                        className="text-xs underline"
-                      >
+                  <div className="space-y-3">
+                    <div className="sn-card-header">
+                      <div className="min-w-0">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            note.id && router.push(`/notes/${encodeURIComponent(note.id)}${suffix}`)
+                          }
+                          className="min-w-0 text-left"
+                          aria-label={`Ouvrir la note ${note.title}`}
+                          disabled={!note.id}
+                        >
+                          <div className="sn-card-title truncate">{note.title}</div>
+                          <div className="sn-card-meta">
+                            {note.workspaceId && typeof note.workspaceId === "string" && (
+                              <span className="sn-badge">
+                                {workspaceNameById.get(note.workspaceId) ?? note.workspaceId}
+                              </span>
+                            )}
+                            {note.favorite && <span className="sn-badge">Favori</span>}
+                          </div>
+                        </button>
+                      </div>
+
+                      <div className="sn-card-actions sn-card-actions-secondary shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => toggleNoteFavorite(note)}
+                          className="sn-icon-btn"
+                          aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                          title={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                        >
+                          {note.favorite ? "★" : "☆"}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="sn-card-actions sn-card-actions-secondary">
+                      <button type="button" onClick={() => startEditNote(note)} className="sn-text-btn">
                         Modifier
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDeleteNote(note)}
-                        className="text-xs underline text-destructive"
+                        className="sn-text-btn text-destructive"
                       >
                         Supprimer
                       </button>
@@ -370,6 +380,19 @@ export default function DashboardPage() {
                         Annuler
                       </button>
                     </div>
+
+                    <div className="sn-card-actions sn-card-actions-secondary">
+                      <button type="button" onClick={() => toggleNoteFavorite(note)} className="sn-text-btn">
+                        {note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteNote(note)}
+                        className="sn-text-btn text-destructive"
+                      >
+                        Supprimer
+                      </button>
+                    </div>
                   </div>
                 )}
               </li>
@@ -401,46 +424,54 @@ export default function DashboardPage() {
             const isEditing = !!task.id && task.id === editingTaskId;
             const dueLabel = formatFrDateTime(task.dueDate ?? null);
             return (
-              <li key={task.id} className="border border-border rounded-md p-2">
+              <li key={task.id} className="sn-card p-4">
                 {!isEditing ? (
-                  <div className="flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => task.id && router.push(`/tasks/${encodeURIComponent(task.id)}${suffix}`)}
-                      className="min-w-0 text-left text-sm font-medium truncate cursor-pointer hover:underline"
-                      aria-label={`Ouvrir la tâche ${task.title}`}
-                      disabled={!task.id}
-                    >
-                      <span className="truncate">{task.title}</span>
-                      {task.workspaceId && typeof task.workspaceId === 'string' && (
-                        <span className="ml-2 text-xs text-muted-foreground whitespace-nowrap">
-                          {workspaceNameById.get(task.workspaceId) ?? task.workspaceId}
-                        </span>
-                      )}
-                      <span className="ml-2 text-xs text-muted-foreground whitespace-nowrap">
-                        {dueLabel || 'Aucun rappel'}
-                      </span>
-                    </button>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => toggleTaskFavorite(task)}
-                        className="text-xs underline"
-                        aria-label={task.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
-                      >
-                        {task.favorite ? '★' : '☆'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => startEditTask(task)}
-                        className="text-xs underline"
-                      >
+                  <div className="space-y-3">
+                    <div className="sn-card-header">
+                      <div className="min-w-0">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            task.id && router.push(`/tasks/${encodeURIComponent(task.id)}${suffix}`)
+                          }
+                          className="min-w-0 text-left"
+                          aria-label={`Ouvrir la tâche ${task.title}`}
+                          disabled={!task.id}
+                        >
+                          <div className="sn-card-title truncate">{task.title}</div>
+                          <div className="sn-card-meta">
+                            {task.workspaceId && typeof task.workspaceId === "string" && (
+                              <span className="sn-badge">
+                                {workspaceNameById.get(task.workspaceId) ?? task.workspaceId}
+                              </span>
+                            )}
+                            <span className="sn-badge">{dueLabel || "Aucun rappel"}</span>
+                            {task.favorite && <span className="sn-badge">Favori</span>}
+                          </div>
+                        </button>
+                      </div>
+
+                      <div className="sn-card-actions sn-card-actions-secondary shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => toggleTaskFavorite(task)}
+                          className="sn-icon-btn"
+                          aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                          title={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                        >
+                          {task.favorite ? "★" : "☆"}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="sn-card-actions sn-card-actions-secondary">
+                      <button type="button" onClick={() => startEditTask(task)} className="sn-text-btn">
                         Modifier
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDeleteTask(task)}
-                        className="text-xs underline text-destructive"
+                        className="sn-text-btn text-destructive"
                       >
                         Supprimer
                       </button>
@@ -478,6 +509,19 @@ export default function DashboardPage() {
                         className="px-3 py-1 rounded-md border border-input text-xs disabled:opacity-50"
                       >
                         Annuler
+                      </button>
+                    </div>
+
+                    <div className="sn-card-actions sn-card-actions-secondary">
+                      <button type="button" onClick={() => toggleTaskFavorite(task)} className="sn-text-btn">
+                        {task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTask(task)}
+                        className="sn-text-btn text-destructive"
+                      >
+                        Supprimer
                       </button>
                     </div>
                   </div>
