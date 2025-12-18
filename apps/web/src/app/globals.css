@@ -136,6 +136,11 @@ body {
     box-shadow: 0 0 0 3px hsl(var(--ring) / 0.25);
   }
 
+  button:active,
+  a:active {
+    transform: translateY(0px);
+  }
+
   input,
   textarea,
   select {
@@ -213,6 +218,11 @@ body {
     border-color: hsl(var(--ring) / 0.25);
   }
 
+  .sn-card:active {
+    transform: translateY(0px);
+    box-shadow: var(--shadow-ambient);
+  }
+
   .sn-card:focus-within {
     border-color: hsl(var(--ring) / 0.55);
   }
@@ -244,7 +254,7 @@ body {
   }
 
   .sn-card-actions-secondary {
-    opacity: 0.75;
+    opacity: 0.68;
     transition: opacity 160ms ease;
   }
 
@@ -269,8 +279,42 @@ body {
     transform: translateY(-1px);
   }
 
+  .sn-icon-btn:active {
+    transform: translateY(0px) scale(0.98);
+  }
+
   .sn-text-btn {
     @apply text-xs underline;
     text-underline-offset: 3px;
+  }
+
+  .sn-text-btn:hover {
+    opacity: 0.92;
+  }
+
+  .sn-animate-in {
+    animation: sn-fade-up 180ms ease-out both;
+  }
+}
+
+@keyframes sn-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

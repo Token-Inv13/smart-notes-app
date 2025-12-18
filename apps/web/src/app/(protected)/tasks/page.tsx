@@ -562,7 +562,7 @@ export default function TasksPage() {
         </div>
 
         {createOpen && (
-          <div className="px-4 pb-4" id="create-task-panel">
+          <div className="px-4 pb-4 sn-animate-in" id="create-task-panel">
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 items-end">
               <div className="space-y-1 lg:col-span-2">
                 <label className="text-sm font-medium" htmlFor="task-new-title">

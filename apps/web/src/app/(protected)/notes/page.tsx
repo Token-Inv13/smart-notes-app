@@ -282,7 +282,7 @@ export default function NotesPage() {
         </div>
 
         {createOpen && (
-          <div className="px-4 pb-4" id="create-note-panel">
+          <div className="px-4 pb-4 sn-animate-in" id="create-note-panel">
             <div className="grid grid-cols-1 md:grid-cols-2 md:grid-rows-1 md:items-end gap-3">
               <div className="space-y-1">
                 <label className="text-sm font-medium" htmlFor="note-title">
