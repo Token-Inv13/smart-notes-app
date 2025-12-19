@@ -52,6 +52,7 @@ export default function TaskDetailModal(props: any) {
   const [, setDeleting] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+  const [exportFeedback, setExportFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,6 +102,57 @@ export default function TaskDetailModal(props: any) {
     };
   }, [taskId]);
 
+  const handleExport = async () => {
+    if (!task?.id) return;
+
+    setEditError(null);
+    setExportFeedback(null);
+
+    const sanitize = (raw: string) => {
+      const base = raw
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .toLowerCase();
+      return base || "sans-titre";
+    };
+
+    const workspaceName = workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? null;
+    const status = (task.status as TaskStatus | undefined) ?? "todo";
+
+    const lines: string[] = [];
+    lines.push(`# ${task.title ?? ""}`);
+    lines.push(`Statut: ${statusLabel(status)}`);
+    if (task.dueDate) lines.push(`Échéance: ${formatFrDateTime(task.dueDate)}`);
+    if (workspaceName) lines.push(`Workspace: ${workspaceName}`);
+    lines.push("");
+    if (task.description) {
+      lines.push(task.description);
+      lines.push("");
+    }
+
+    const md = `${lines.join("\n")}\n`;
+    const filename = `smartnotes-task-${sanitize(task.title ?? "")}.md`;
+
+    try {
+      const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setExportFeedback("Export téléchargé.");
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "Erreur lors de l’export.");
+    }
+  };
+
   const handleShare = async () => {
     if (!task?.id) return;
 
@@ -140,6 +192,7 @@ export default function TaskDetailModal(props: any) {
     setEditDueDate(formatTimestampForInput(task.dueDate ?? null));
     setEditError(null);
     setShareFeedback(null);
+    setExportFeedback(null);
   }, [task]);
 
   const dueLabel = useMemo(() => formatFrDateTime(task?.dueDate ?? null), [task?.dueDate]);
@@ -283,12 +336,14 @@ export default function TaskDetailModal(props: any) {
       {!loading && !error && task && (
         <div className="space-y-4">
           {shareFeedback && <div className="sn-alert">{shareFeedback}</div>}
+          {exportFeedback && <div className="sn-alert">{exportFeedback}</div>}
           <div className="flex items-center justify-end gap-2">
             {mode === "view" ? (
               <ItemActionsMenu
                 onEdit={startEdit}
                 onToggleArchive={handleToggleArchive}
                 onShare={handleShare}
+                onExport={handleExport}
                 archived={task.archived === true}
                 onDelete={handleDelete}
               />

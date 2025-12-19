@@ -41,6 +41,7 @@ export default function NoteDetailModal(props: any) {
   const [, setDeleting] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+  const [exportFeedback, setExportFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,6 +91,52 @@ export default function NoteDetailModal(props: any) {
     };
   }, [noteId]);
 
+  const handleExport = async () => {
+    if (!note?.id) return;
+
+    setEditError(null);
+    setExportFeedback(null);
+
+    const sanitize = (raw: string) => {
+      const base = raw
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .toLowerCase();
+      return base || "sans-titre";
+    };
+
+    const workspaceName = workspaces.find((ws) => ws.id === note.workspaceId)?.name ?? null;
+
+    const lines: string[] = [];
+    lines.push(`# ${note.title ?? ""}`);
+    if (workspaceName) lines.push(`Workspace: ${workspaceName}`);
+    if (note.updatedAt) lines.push(`Dernière mise à jour: ${formatFrDateTime(note.updatedAt)}`);
+    lines.push("");
+    lines.push(note.content ?? "");
+
+    const md = `${lines.join("\n")}\n`;
+    const filename = `smartnotes-note-${sanitize(note.title ?? "")}.md`;
+
+    try {
+      const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setExportFeedback("Export téléchargé.");
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "Erreur lors de l’export.");
+    }
+  };
+
   const handleShare = async () => {
     if (!note?.id) return;
 
@@ -128,6 +175,7 @@ export default function NoteDetailModal(props: any) {
     setEditWorkspaceId(typeof note.workspaceId === "string" ? note.workspaceId : "");
     setEditError(null);
     setShareFeedback(null);
+    setExportFeedback(null);
   }, [note]);
 
   const createdLabel = useMemo(() => formatFrDateTime(note?.createdAt ?? null), [note?.createdAt]);
@@ -263,12 +311,14 @@ export default function NoteDetailModal(props: any) {
       {!loading && !error && note && (
         <div className="space-y-4">
           {shareFeedback && <div className="sn-alert">{shareFeedback}</div>}
+          {exportFeedback && <div className="sn-alert">{exportFeedback}</div>}
           <div className="flex items-center justify-end gap-2">
             {mode === "view" ? (
               <ItemActionsMenu
                 onEdit={startEdit}
                 onToggleArchive={handleToggleArchive}
                 onShare={handleShare}
+                onExport={handleExport}
                 archived={note.archived === true}
                 onDelete={handleDelete}
               />

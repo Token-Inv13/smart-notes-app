@@ -8,6 +8,7 @@ interface ItemActionsMenuProps {
   onEdit: () => void;
   onToggleArchive: () => void;
   onShare: () => void;
+  onExport: () => void;
   onDelete: () => void;
   archived?: boolean;
   disabledHint?: string;
@@ -17,6 +18,7 @@ export default function ItemActionsMenu({
   onEdit,
   onToggleArchive,
   onShare,
+  onExport,
   onDelete,
   archived,
   disabledHint,
@@ -24,7 +26,7 @@ export default function ItemActionsMenu({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  const hint = disabledHint ?? "Disponible prochainement";
+  void disabledHint;
 
   useEffect(() => {
     if (!open) return;
@@ -57,6 +59,7 @@ export default function ItemActionsMenu({
     if (action === "edit") onEdit();
     if (action === "archive") onToggleArchive();
     if (action === "share") onShare();
+    if (action === "export") onExport();
     if (action === "delete") onDelete();
     setOpen(false);
   };
@@ -108,10 +111,9 @@ export default function ItemActionsMenu({
 
           <button
             type="button"
-            className="w-full text-left px-3 py-2 text-sm rounded text-muted-foreground opacity-60 cursor-not-allowed"
+            className="w-full text-left px-3 py-2 text-sm rounded hover:bg-accent"
             role="menuitem"
-            disabled
-            title={hint}
+            onClick={() => run("export")}
           >
             Exporter
           </button>
