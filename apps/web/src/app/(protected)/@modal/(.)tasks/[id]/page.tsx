@@ -9,6 +9,7 @@ import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { formatTimestampForInput, parseLocalDateTimeToTimestamp } from "@/lib/datetime";
 import type { TaskDoc } from "@/types/firestore";
 import Modal from "../../../Modal";
+import ItemActionsMenu from "../../../ItemActionsMenu";
 
 function formatFrDateTime(ts?: TaskDoc["dueDate"] | null) {
   if (!ts) return "";
@@ -48,7 +49,7 @@ export default function TaskDetailModal(props: any) {
   const [editWorkspaceId, setEditWorkspaceId] = useState("");
   const [editDueDate, setEditDueDate] = useState("");
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [, setDeleting] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -225,24 +226,7 @@ export default function TaskDetailModal(props: any) {
         <div className="space-y-4">
           <div className="flex items-center justify-end gap-2">
             {mode === "view" ? (
-              <>
-                <button
-                  type="button"
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  className="px-3 py-2 rounded-md border border-input text-sm text-destructive disabled:opacity-50"
-                >
-                  {deleting ? "Suppression…" : "Supprimer"}
-                </button>
-                <button
-                  type="button"
-                  onClick={startEdit}
-                  disabled={deleting}
-                  className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-                >
-                  Modifier
-                </button>
-              </>
+              <ItemActionsMenu onEdit={startEdit} onDelete={handleDelete} />
             ) : (
               <>
                 <button
