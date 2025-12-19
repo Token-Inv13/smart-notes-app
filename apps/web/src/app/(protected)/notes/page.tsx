@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { z } from "zod";
 import { FirebaseError } from "firebase/app";
 import {
@@ -26,6 +26,7 @@ const newNoteSchema = z.object({
 });
 
 export default function NotesPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId") || undefined;
   const createParam = searchParams.get("create");
@@ -291,7 +292,6 @@ export default function NotesPage() {
             type="button"
             onClick={() => setCreateOpen((v) => !v)}
             className="inline-flex items-center justify-center px-3 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
-            aria-expanded={createOpen}
             aria-controls="create-note-panel"
           >
             {createOpen ? "Fermer" : "Capturer une idée"}
@@ -424,11 +424,17 @@ export default function NotesPage() {
             {activeNotes.map((note) => {
               const isEditing = !!note.id && note.id === editingId;
               const workspaceName = workspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";
+              const hrefSuffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
 
               return (
                 <li
                   key={note.id}
                   className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4`}
+                  onClick={() => {
+                    if (isEditing) return;
+                    if (!note.id) return;
+                    router.push(`/notes/${note.id}${hrefSuffix}`);
+                  }}
                 >
                   {!isEditing ? (
                     <div className="space-y-3">
@@ -444,7 +450,10 @@ export default function NotesPage() {
                         <div className="sn-card-actions sn-card-actions-secondary shrink-0">
                           <button
                             type="button"
-                            onClick={() => toggleFavorite(note)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFavorite(note);
+                            }}
                             className="sn-icon-btn"
                             aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                             title={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
@@ -461,6 +470,7 @@ export default function NotesPage() {
                           <input
                             type="checkbox"
                             checked={note.completed === true}
+                            onClick={(e) => e.stopPropagation()}
                             onChange={(e) => toggleCompleted(note, e.target.checked)}
                           />
                           <span className="text-muted-foreground">Terminé</span>
@@ -469,14 +479,20 @@ export default function NotesPage() {
                         <div className="sn-card-actions sn-card-actions-secondary">
                           <button
                             type="button"
-                            onClick={() => startEditing(note)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startEditing(note);
+                            }}
                             className="sn-text-btn"
                           >
                             Modifier
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDelete(note)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(note);
+                            }}
                             disabled={deletingId === note.id}
                             className="sn-text-btn text-destructive disabled:opacity-50"
                           >
@@ -539,11 +555,17 @@ export default function NotesPage() {
             {activeNotes.map((note) => {
               const isEditing = !!note.id && note.id === editingId;
               const workspaceName = workspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";
+              const hrefSuffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
 
               return (
                 <div
                   key={note.id}
                   className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4 min-w-0`}
+                  onClick={() => {
+                    if (isEditing) return;
+                    if (!note.id) return;
+                    router.push(`/notes/${note.id}${hrefSuffix}`);
+                  }}
                 >
                   {!isEditing ? (
                     <div className="flex flex-col gap-3">
@@ -559,7 +581,10 @@ export default function NotesPage() {
                         <div className="sn-card-actions sn-card-actions-secondary shrink-0">
                           <button
                             type="button"
-                            onClick={() => toggleFavorite(note)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFavorite(note);
+                            }}
                             className="sn-icon-btn"
                             aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                             title={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
@@ -576,6 +601,7 @@ export default function NotesPage() {
                           <input
                             type="checkbox"
                             checked={note.completed === true}
+                            onClick={(e) => e.stopPropagation()}
                             onChange={(e) => toggleCompleted(note, e.target.checked)}
                           />
                           <span className="text-muted-foreground">Terminé</span>
@@ -583,14 +609,20 @@ export default function NotesPage() {
                         <div className="sn-card-actions sn-card-actions-secondary">
                           <button
                             type="button"
-                            onClick={() => startEditing(note)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startEditing(note);
+                            }}
                             className="sn-text-btn"
                           >
                             Modifier
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDelete(note)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(note);
+                            }}
                             disabled={deletingId === note.id}
                             className="sn-text-btn text-destructive disabled:opacity-50"
                           >

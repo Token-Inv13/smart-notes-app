@@ -21,7 +21,7 @@ import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useUserTaskReminders } from "@/hooks/useUserTaskReminders";
 import { formatTimestampForInput, formatTimestampToLocalString, parseLocalDateTimeToTimestamp } from "@/lib/datetime";
 import type { TaskDoc, TaskReminderDoc } from "@/types/firestore";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
 
@@ -37,6 +37,7 @@ const newTaskSchema = z.object({
 });
 
 export default function TasksPage() {
+  const router = useRouter();
   const { data: tasks, loading, error } = useUserTasks();
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === "pro";
@@ -577,7 +578,6 @@ export default function TasksPage() {
             type="button"
             onClick={() => setCreateOpen((v) => !v)}
             className="inline-flex items-center justify-center px-3 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
-            aria-expanded={createOpen}
             aria-controls="create-task-panel"
           >
             {createOpen ? "Fermer" : "Planifier une tâche"}
@@ -730,6 +730,8 @@ export default function TasksPage() {
               workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
             const dueLabel = formatTimestampToLocalString(task.dueDate ?? null);
 
+            const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
+
             const taskReminders = reminders.filter((r) => r.taskId === task.id);
 
             return (
@@ -739,6 +741,11 @@ export default function TasksPage() {
                 className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 ${
                   task.id && task.id === highlightedTaskId ? "border-primary" : ""
                 }`}
+                onClick={() => {
+                  if (isEditing) return;
+                  if (!task.id) return;
+                  router.push(`/tasks/${task.id}${hrefSuffix}`);
+                }}
               >
                 {!isEditing && (
                   <>
@@ -756,7 +763,10 @@ export default function TasksPage() {
                         <div className="sn-card-actions sn-card-actions-secondary shrink-0">
                           <button
                             type="button"
-                            onClick={() => toggleFavorite(task)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFavorite(task);
+                            }}
                             className="sn-icon-btn"
                             aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                             title={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
@@ -771,6 +781,7 @@ export default function TasksPage() {
                           <input
                             type="checkbox"
                             checked={status === "done"}
+                            onClick={(e) => e.stopPropagation()}
                             onChange={(e) => toggleDone(task, e.target.checked)}
                           />
                           <span className="text-muted-foreground">Terminé</span>
@@ -779,14 +790,20 @@ export default function TasksPage() {
                         <div className="sn-card-actions sn-card-actions-secondary">
                           <button
                             type="button"
-                            onClick={() => startEditing(task)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startEditing(task);
+                            }}
                             className="sn-text-btn"
                           >
                             Modifier
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDeleteTask(task)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteTask(task);
+                            }}
                             disabled={deletingId === task.id}
                             className="sn-text-btn text-destructive disabled:opacity-50"
                           >
@@ -797,7 +814,7 @@ export default function TasksPage() {
                     </div>
 
                     {/* Reminders panel */}
-                    <div className="mt-3 space-y-1 text-sm">
+                    <div className="mt-3 space-y-1 text-sm" onClick={(e) => e.stopPropagation()}>
                       <div className="font-semibold">Rappels</div>
                       {remindersLoading && <p>Chargement des rappels…</p>}
                       {remindersError && <p>Impossible de charger les rappels.</p>}

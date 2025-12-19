@@ -8,9 +8,10 @@ export const dynamic = "force-dynamic";
 
 interface ProtectedLayoutProps {
   children: ReactNode;
+  modal: ReactNode;
 }
 
-export default async function ProtectedLayout({ children }: ProtectedLayoutProps) {
+export default async function ProtectedLayout({ children, modal }: ProtectedLayoutProps) {
   const sessionCookie = (await cookies()).get("session")?.value;
   if (!sessionCookie) {
     redirect("/login");
@@ -21,5 +22,10 @@ export default async function ProtectedLayout({ children }: ProtectedLayoutProps
     redirect("/login");
   }
 
-  return <SidebarShell>{children}</SidebarShell>;
+  return (
+    <SidebarShell>
+      {children}
+      {modal}
+    </SidebarShell>
+  );
 }
