@@ -185,6 +185,31 @@ export default function TaskDetailModal(props: any) {
     }
   };
 
+  const handleToggleArchive = async () => {
+    if (!task?.id) return;
+
+    const user = auth.currentUser;
+    if (!user || user.uid !== task.userId) {
+      setEditError("Impossible d’archiver cette tâche.");
+      return;
+    }
+
+    setSaving(true);
+    setEditError(null);
+    try {
+      await updateDoc(doc(db, "tasks", task.id), {
+        archived: !(task.archived === true),
+        updatedAt: serverTimestamp(),
+      });
+      router.back();
+    } catch (e) {
+      console.error("Error archiving task (modal)", e);
+      setEditError(e instanceof Error ? e.message : "Erreur lors de l’archivage de la tâche.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (!task?.id) return;
 
@@ -226,7 +251,12 @@ export default function TaskDetailModal(props: any) {
         <div className="space-y-4">
           <div className="flex items-center justify-end gap-2">
             {mode === "view" ? (
-              <ItemActionsMenu onEdit={startEdit} onDelete={handleDelete} />
+              <ItemActionsMenu
+                onEdit={startEdit}
+                onToggleArchive={handleToggleArchive}
+                archived={task.archived === true}
+                onDelete={handleDelete}
+              />
             ) : (
               <>
                 <button

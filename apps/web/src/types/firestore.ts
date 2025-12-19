@@ -32,6 +32,7 @@ export interface NoteDoc {
   content: string;
   favorite?: boolean;
   completed?: boolean;
+  archived?: boolean;
   tags?: string[];
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
@@ -48,6 +49,7 @@ export interface TaskDoc {
   dueDate?: Timestamp | null;
   favorite?: boolean;
   completed?: boolean;
+  archived?: boolean;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
   [key: string]: unknown;

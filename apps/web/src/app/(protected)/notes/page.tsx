@@ -32,6 +32,7 @@ export default function NotesPage() {
   const { data: workspaces } = useUserWorkspaces();
 
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+  const [archiveView, setArchiveView] = useState<"active" | "archived">("active");
 
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === "pro";
@@ -96,8 +97,19 @@ export default function NotesPage() {
     }
   }, []);
 
-  const activeNotes = useMemo(() => sortedNotes.filter((n) => n.completed !== true), [sortedNotes]);
-  const completedNotes = useMemo(() => sortedNotes.filter((n) => n.completed === true), [sortedNotes]);
+  const archivePredicate = useMemo(
+    () => (n: NoteDoc) => (archiveView === "archived" ? n.archived === true : n.archived !== true),
+    [archiveView],
+  );
+
+  const activeNotes = useMemo(
+    () => sortedNotes.filter((n) => n.completed !== true).filter(archivePredicate),
+    [sortedNotes, archivePredicate],
+  );
+  const completedNotes = useMemo(
+    () => sortedNotes.filter((n) => n.completed === true).filter(archivePredicate),
+    [sortedNotes, archivePredicate],
+  );
 
   const handleCreateNote = async () => {
     const user = auth.currentUser;
@@ -132,6 +144,7 @@ export default function NotesPage() {
         content: validation.data.content ?? "",
         favorite: false,
         completed: false,
+        archived: false,
         createdAt: serverTimestamp() as unknown as NoteDoc["createdAt"],
         updatedAt: serverTimestamp() as unknown as NoteDoc["updatedAt"],
       };
@@ -300,7 +313,25 @@ export default function NotesPage() {
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold mb-2">Tes notes récentes</h2>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+          <h2 className="text-lg font-semibold">Tes notes récentes</h2>
+          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setArchiveView("active")}
+              className={`px-3 py-1 text-sm ${archiveView === "active" ? "bg-accent" : ""}`}
+            >
+              Actifs
+            </button>
+            <button
+              type="button"
+              onClick={() => setArchiveView("archived")}
+              className={`px-3 py-1 text-sm ${archiveView === "archived" ? "bg-accent" : ""}`}
+            >
+              Archivés
+            </button>
+          </div>
+        </div>
         {loading && (
           <div className="sn-empty sn-animate-in">
             <div className="space-y-3">
@@ -322,10 +353,14 @@ export default function NotesPage() {
 
         {!loading && !error && activeNotes.length === 0 && (
           <div className="sn-empty">
-            <div className="sn-empty-title">Aucune note pour le moment</div>
-            <div className="sn-empty-desc">
-              Commence simple : capture une idée, une liste ou un résumé. Clique sur “Capturer une idée” pour démarrer.
+            <div className="sn-empty-title">
+              {archiveView === "archived" ? "Aucune note archivée" : "Aucune note pour le moment"}
             </div>
+            {archiveView !== "archived" && (
+              <div className="sn-empty-desc">
+                Commence simple : capture une idée, une liste ou un résumé. Clique sur “Capturer une idée” pour démarrer.
+              </div>
+            )}
           </div>
         )}
         {error && <div className="sn-alert sn-alert--error">Impossible de charger les notes pour le moment.</div>}
@@ -455,7 +490,9 @@ export default function NotesPage() {
       <section>
         <h2 className="text-lg font-semibold mb-2">Terminées</h2>
         {!loading && !error && completedNotes.length === 0 && (
-          <p className="text-sm text-muted-foreground">Rien à archiver ici pour l’instant.</p>
+          <p className="text-sm text-muted-foreground">
+            {archiveView === "archived" ? "Aucune note archivée terminée." : "Aucune note terminée pour l’instant."}
+          </p>
         )}
 
         <ul className="space-y-2">

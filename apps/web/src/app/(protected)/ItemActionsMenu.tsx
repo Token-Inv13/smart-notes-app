@@ -6,11 +6,19 @@ type MenuAction = "edit" | "archive" | "share" | "export" | "delete";
 
 interface ItemActionsMenuProps {
   onEdit: () => void;
+  onToggleArchive: () => void;
   onDelete: () => void;
+  archived?: boolean;
   disabledHint?: string;
 }
 
-export default function ItemActionsMenu({ onEdit, onDelete, disabledHint }: ItemActionsMenuProps) {
+export default function ItemActionsMenu({
+  onEdit,
+  onToggleArchive,
+  onDelete,
+  archived,
+  disabledHint,
+}: ItemActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -45,6 +53,7 @@ export default function ItemActionsMenu({ onEdit, onDelete, disabledHint }: Item
 
   const run = (action: MenuAction) => {
     if (action === "edit") onEdit();
+    if (action === "archive") onToggleArchive();
     if (action === "delete") onDelete();
     setOpen(false);
   };
@@ -78,12 +87,11 @@ export default function ItemActionsMenu({ onEdit, onDelete, disabledHint }: Item
 
           <button
             type="button"
-            className="w-full text-left px-3 py-2 text-sm rounded text-muted-foreground opacity-60 cursor-not-allowed"
+            className="w-full text-left px-3 py-2 text-sm rounded hover:bg-accent"
             role="menuitem"
-            disabled
-            title={hint}
+            onClick={() => run("archive")}
           >
-            Archiver
+            {archived ? "Restaurer" : "Archiver"}
           </button>
 
           <button

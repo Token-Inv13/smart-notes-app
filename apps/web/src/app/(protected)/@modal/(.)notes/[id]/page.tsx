@@ -165,6 +165,31 @@ export default function NoteDetailModal(props: any) {
     }
   };
 
+  const handleToggleArchive = async () => {
+    if (!note?.id) return;
+
+    const user = auth.currentUser;
+    if (!user || user.uid !== note.userId) {
+      setEditError("Impossible d’archiver cette note.");
+      return;
+    }
+
+    setSaving(true);
+    setEditError(null);
+    try {
+      await updateDoc(doc(db, "notes", note.id), {
+        archived: !(note.archived === true),
+        updatedAt: serverTimestamp(),
+      });
+      router.back();
+    } catch (e) {
+      console.error("Error archiving note (modal)", e);
+      setEditError(e instanceof Error ? e.message : "Erreur lors de l’archivage de la note.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (!note?.id) return;
 
@@ -206,7 +231,12 @@ export default function NoteDetailModal(props: any) {
         <div className="space-y-4">
           <div className="flex items-center justify-end gap-2">
             {mode === "view" ? (
-              <ItemActionsMenu onEdit={startEdit} onDelete={handleDelete} />
+              <ItemActionsMenu
+                onEdit={startEdit}
+                onToggleArchive={handleToggleArchive}
+                archived={note.archived === true}
+                onDelete={handleDelete}
+              />
             ) : (
               <>
                 <button

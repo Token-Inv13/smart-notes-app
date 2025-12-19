@@ -64,8 +64,8 @@ export default function DashboardPage() {
     error: tasksError,
   } = useUserTasks({ workspaceId, favoriteOnly: true, limit: 20 });
 
-  const activeFavoriteNotes = notes.filter((n) => n.completed !== true);
-  const activeFavoriteTasks = tasks.filter((t) => (t.status ?? 'todo') !== 'done');
+  const activeFavoriteNotes = notes.filter((n) => n.completed !== true && n.archived !== true);
+  const activeFavoriteTasks = tasks.filter((t) => (t.status ?? 'todo') !== 'done' && t.archived !== true);
 
   const userId = auth.currentUser?.uid;
   const hasAnyContent = (anyNotes?.length ?? 0) > 0 || (anyTasks?.length ?? 0) > 0;
@@ -110,6 +110,7 @@ export default function DashboardPage() {
             "Tu peux commencer en écrivant une note rapide ici.\n\nAstuce : utilise les favoris ⭐ pour retrouver l’essentiel.",
           favorite: true,
           completed: false,
+          archived: false,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -121,6 +122,7 @@ export default function DashboardPage() {
           status: 'todo',
           dueDate: null,
           favorite: true,
+          archived: false,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });

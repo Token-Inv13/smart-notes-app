@@ -60,6 +60,7 @@ export default function TasksPage() {
 
   const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>("all");
   const [workspaceFilter, setWorkspaceFilter] = useState<WorkspaceFilter>("all");
+  const [archiveView, setArchiveView] = useState<"active" | "archived">("active");
 
   const [viewMode, setViewMode] = useState<"list" | "grid" | "kanban">("list");
   const [movingTaskId, setMovingTaskId] = useState<string | null>(null);
@@ -134,6 +135,8 @@ export default function TasksPage() {
   const filteredTasks = useMemo(() => {
     let result = tasks;
 
+    result = result.filter((t) => (archiveView === "archived" ? t.archived === true : t.archived !== true));
+
     if (statusFilter !== "all") {
       result = result.filter((task) => {
         const status = (task.status ?? "todo") as TaskStatus;
@@ -165,7 +168,7 @@ export default function TasksPage() {
         const bUpdated = b.updatedAt ? b.updatedAt.toMillis() : 0;
         return bUpdated - aUpdated; // updatedAt desc
       });
-  }, [tasks, statusFilter, workspaceFilter]);
+  }, [tasks, statusFilter, workspaceFilter, archiveView]);
 
   const activeTasks = useMemo(
     () => filteredTasks.filter((t) => ((t.status as TaskStatus | undefined) ?? "todo") !== "done"),
@@ -176,6 +179,9 @@ export default function TasksPage() {
     () => {
       // Completed list should respect workspace filter, but ignore statusFilter.
       let result = tasks;
+
+      result = result.filter((t) => (archiveView === "archived" ? t.archived === true : t.archived !== true));
+
       if (workspaceFilter !== "all") {
         result = result.filter((task) => task.workspaceId === workspaceFilter);
       }
@@ -188,7 +194,7 @@ export default function TasksPage() {
           return bUpdated - aUpdated;
         });
     },
-    [tasks, workspaceFilter],
+    [tasks, workspaceFilter, archiveView],
   );
 
   const handleCreateTask = async () => {
@@ -236,6 +242,7 @@ export default function TasksPage() {
         workspaceId: newWorkspaceId,
         dueDate: dueTimestamp,
         favorite: false,
+        archived: false,
         createdAt: serverTimestamp() as unknown as TaskDoc["createdAt"],
         updatedAt: serverTimestamp() as unknown as TaskDoc["updatedAt"],
       };
@@ -447,6 +454,23 @@ export default function TasksPage() {
       <header className="flex flex-col gap-2 mb-4">
         <h1 className="text-xl font-semibold">Tes tâches</h1>
         <div className="flex flex-wrap gap-2">
+          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setArchiveView("active")}
+              className={`px-3 py-1 text-sm ${archiveView === "active" ? "bg-accent" : ""}`}
+            >
+              Actifs
+            </button>
+            <button
+              type="button"
+              onClick={() => setArchiveView("archived")}
+              className={`px-3 py-1 text-sm ${archiveView === "archived" ? "bg-accent" : ""}`}
+            >
+              Archivés
+            </button>
+          </div>
+
           <label className="flex items-center gap-2">
             <span>Statut :</span>
             <select
@@ -625,8 +649,12 @@ export default function TasksPage() {
 
       {!loading && !error && activeTasks.length === 0 && (
         <div className="sn-empty">
-          <div className="sn-empty-title">Aucune tâche pour le moment</div>
-          <div className="sn-empty-desc">Planifie ta première tâche avec “Planifier une tâche”.</div>
+          <div className="sn-empty-title">
+            {archiveView === "archived" ? "Aucune tâche archivée" : "Aucune tâche pour le moment"}
+          </div>
+          {archiveView !== "archived" && (
+            <div className="sn-empty-desc">Planifie ta première tâche avec “Planifier une tâche”.</div>
+          )}
         </div>
       )}
 
