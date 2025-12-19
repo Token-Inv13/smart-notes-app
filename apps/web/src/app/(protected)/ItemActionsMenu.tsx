@@ -7,6 +7,7 @@ type MenuAction = "edit" | "archive" | "share" | "export" | "delete";
 interface ItemActionsMenuProps {
   onEdit: () => void;
   onToggleArchive: () => void;
+  onShare: () => void;
   onDelete: () => void;
   archived?: boolean;
   disabledHint?: string;
@@ -15,6 +16,7 @@ interface ItemActionsMenuProps {
 export default function ItemActionsMenu({
   onEdit,
   onToggleArchive,
+  onShare,
   onDelete,
   archived,
   disabledHint,
@@ -54,6 +56,7 @@ export default function ItemActionsMenu({
   const run = (action: MenuAction) => {
     if (action === "edit") onEdit();
     if (action === "archive") onToggleArchive();
+    if (action === "share") onShare();
     if (action === "delete") onDelete();
     setOpen(false);
   };
@@ -96,10 +99,9 @@ export default function ItemActionsMenu({
 
           <button
             type="button"
-            className="w-full text-left px-3 py-2 text-sm rounded text-muted-foreground opacity-60 cursor-not-allowed"
+            className="w-full text-left px-3 py-2 text-sm rounded hover:bg-accent"
             role="menuitem"
-            disabled
-            title={hint}
+            onClick={() => run("share")}
           >
             Partager
           </button>

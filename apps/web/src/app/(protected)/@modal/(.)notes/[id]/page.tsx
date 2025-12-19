@@ -40,6 +40,7 @@ export default function NoteDetailModal(props: any) {
   const [saving, setSaving] = useState(false);
   const [, setDeleting] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,12 +90,44 @@ export default function NoteDetailModal(props: any) {
     };
   }, [noteId]);
 
+  const handleShare = async () => {
+    if (!note?.id) return;
+
+    setEditError(null);
+    setShareFeedback(null);
+
+    const origin =
+      typeof window !== "undefined" && window.location?.origin
+        ? window.location.origin
+        : "https://app.tachesnotes.com";
+    const url = `${origin}/notes/${encodeURIComponent(note.id)}`;
+
+    try {
+      if (typeof navigator !== "undefined" && typeof (navigator as any).share === "function") {
+        await (navigator as any).share({ title: note.title ?? "Note", url });
+        setShareFeedback("Partage ouvert.");
+        return;
+      }
+
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        setShareFeedback("Lien copié.");
+        return;
+      }
+
+      throw new Error("Partage non supporté sur cet appareil.");
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "Erreur lors du partage.");
+    }
+  };
+
   useEffect(() => {
     if (!note) return;
     setEditTitle(note.title ?? "");
     setEditContent(note.content ?? "");
     setEditWorkspaceId(typeof note.workspaceId === "string" ? note.workspaceId : "");
     setEditError(null);
+    setShareFeedback(null);
   }, [note]);
 
   const createdLabel = useMemo(() => formatFrDateTime(note?.createdAt ?? null), [note?.createdAt]);
@@ -229,11 +262,13 @@ export default function NoteDetailModal(props: any) {
 
       {!loading && !error && note && (
         <div className="space-y-4">
+          {shareFeedback && <div className="sn-alert">{shareFeedback}</div>}
           <div className="flex items-center justify-end gap-2">
             {mode === "view" ? (
               <ItemActionsMenu
                 onEdit={startEdit}
                 onToggleArchive={handleToggleArchive}
+                onShare={handleShare}
                 archived={note.archived === true}
                 onDelete={handleDelete}
               />
