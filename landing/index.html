@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Smart Notes — App de notes et tâches avec rappels (Free & Pro)</title>
+    <meta name="description" content="Smart Notes : une app simple pour gérer tes notes et tâches, organisée par dossiers. Passe Pro (1,99 €/mois) pour l’illimité + les rappels. Paiement Stripe." />
+
+    <link rel="canonical" href="https://www.tachesnotes.com/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Smart Notes" />
+    <meta property="og:title" content="Smart Notes — App de notes et tâches avec rappels" />
+    <meta property="og:description" content="Une app simple pour notes & tâches, organisée par dossiers. Pro = illimité + rappels (1,99 €/mois). Paiement Stripe." />
+    <meta property="og:url" content="https://www.tachesnotes.com/" />
+    <meta property="og:image" content="https://www.tachesnotes.com/og-image.svg" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Smart Notes — App de notes et tâches avec rappels" />
+    <meta name="twitter:description" content="Une app simple pour notes & tâches, organisée par dossiers. Pro = illimité + rappels (1,99 €/mois)." />
+    <meta name="twitter:image" content="https://www.tachesnotes.com/og-image.svg" />
+
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.svg" />
+
+    <script>
+      window.plausible =
+        window.plausible ||
+        function () {
+          (window.plausible.q = window.plausible.q || []).push(arguments);
+        };
+    </script>
+    <script defer data-domain="www.tachesnotes.com" src="https://plausible.io/js/script.js"></script>
+    <link rel="preload" href="/styles.css" as="style" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+
+  <body>
+    <header class="site-header" id="top">
+      <div class="container header__inner">
+        <a class="brand" href="#top" aria-label="Smart Notes">
+          <img src="/logo.svg" width="160" height="40" alt="Smart Notes" class="brand__logo" />
+        </a>
+
+        <nav class="header__nav" aria-label="Navigation">
+          <a href="#benefits">Bénéfices</a>
+          <a href="#pricing">Tarifs</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+
+        <div class="header__cta">
+          <a class="btn btn--primary" href="#pricing">Passer Pro</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero" aria-label="Introduction">
+        <div class="container hero__grid">
+          <div class="hero__content">
+            <p class="kicker">Notes. Tâches. Dossiers. Sans friction.</p>
+            <h1 class="hero__title">Tout ton quotidien, en 1 endroit.</h1>
+            <p class="hero__meta">1,99 €/mois • Annulable à tout moment • Paiement Stripe</p>
+            <p class="hero__subtitle">
+              Smart Notes t’aide à capturer l’essentiel, suivre tes priorités et retrouver tes idées — sans complexité.
+            </p>
+
+            <div class="hero__cta">
+              <a class="btn btn--secondary btn--lg" href="https://app.tachesnotes.com" target="_blank" rel="noopener noreferrer" data-cta="start" data-cta-location="hero">Commencer gratuitement</a>
+              <a class="btn btn--primary btn--lg" href="https://app.tachesnotes.com/upgrade" target="_blank" rel="noopener noreferrer" data-cta="pro" data-cta-location="hero">Passer Pro — 1,99 €/mois</a>
+            </div>
+
+            <div class="hero__trust" aria-label="Réassurance">
+              <div class="pill">Rapide à prendre en main</div>
+              <div class="pill">Mobile-friendly</div>
+              <div class="pill">Pro = illimité + rappels</div>
+            </div>
+          </div>
+
+          <div class="hero__preview" aria-hidden="true">
+            <div class="card preview">
+              <div class="preview__header">
+                <div class="dot dot--blue"></div>
+                <div class="dot dot--cyan"></div>
+                <div class="dot dot--slate"></div>
+                <div class="preview__title">Aperçu</div>
+              </div>
+              <div class="preview__body">
+                <div class="preview__row">
+                  <div class="badge">Dossier: Travail</div>
+                  <div class="badge badge--fav">Favori</div>
+                </div>
+                <div class="preview__h">Préparer le plan de la semaine</div>
+                <div class="preview__p">
+                  - 3 priorités
+                  <br />- 1 tâche rapide
+                  <br />- 1 rappel
+                </div>
+                <div class="preview__divider"></div>
+                <div class="preview__row">
+                  <div class="chip">Tâche: En cours</div>
+                  <div class="chip">Rappel: demain 09:00</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card preview preview--alt">
+              <div class="preview__body">
+                <div class="preview__k">Simple, mais puissant</div>
+                <div class="preview__p">
+                  Notes + tâches + favoris + dossiers.
+                  <br />Ton système, sans effort.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="benefits" aria-label="Bénéfices">
+        <div class="container">
+          <div class="section__head">
+            <h2>Ce que tu gagnes</h2>
+            <p>Un espace clair pour avancer sans te disperser.</p>
+          </div>
+
+          <div class="grid3">
+            <div class="card feature">
+              <div class="feature__icon">✍️</div>
+              <h3>Notes instantanées</h3>
+              <p>Capture une idée, une liste ou un résumé. Retrouve tout en un clin d’œil.</p>
+            </div>
+            <div class="card feature">
+              <div class="feature__icon">✅</div>
+              <h3>Tâches actionnables</h3>
+              <p>Statuts simples (à faire / en cours / terminé) + favoris pour tes priorités.</p>
+            </div>
+            <div class="card feature">
+              <div class="feature__icon">📁</div>
+              <h3>Dossiers (workspaces)</h3>
+              <p>Organise par contexte : perso, travail, projets. Un filtre clair, sans frictions.</p>
+            </div>
+          </div>
+
+          <div class="callout card">
+            <div>
+              <div class="callout__title">Le mode Pro déverrouille l’illimité + les rappels.</div>
+              <div class="callout__desc">Idéal si tu veux centraliser ton quotidien et ne rien oublier.</div>
+            </div>
+            <a class="btn btn--primary" href="#pricing">Voir l’offre Pro</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section--soft" id="preview" aria-label="Aperçu">
+        <div class="container">
+          <div class="section__head">
+            <h2>Aperçu / exemple d’usage</h2>
+            <p>Une journée type : tu poses, tu avances, tu retrouves.</p>
+          </div>
+
+          <div class="example">
+            <div class="card example__panel">
+              <div class="example__title">Exemple d’une journée</div>
+              <ul class="example__list">
+                <li><strong>Matin</strong> : note rapide + 3 priorités</li>
+                <li><strong>Midi</strong> : une tâche passe “en cours”</li>
+                <li><strong>Fin de journée</strong> : un rappel t’évite d’oublier</li>
+              </ul>
+              <div class="example__hint">Le tout rangé par dossier (perso / travail), sans effort.</div>
+            </div>
+            <div class="card example__panel">
+              <div class="example__title">Ce que tu retrouves</div>
+              <div class="example__chips">
+                <span class="tag">Dossier: Travail</span>
+                <span class="tag">Favori</span>
+                <span class="tag">À faire</span>
+                <span class="tag">Rappel</span>
+              </div>
+              <div class="example__hint">Clair, lisible, utilisable sur mobile.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="pricing" aria-label="Tarifs">
+        <div class="container">
+          <div class="section__head">
+            <h2>Free vs Pro</h2>
+            <p>Commence gratuitement, passe Pro quand tu sens la limite.</p>
+          </div>
+
+          <div class="pricing">
+            <div class="card plan">
+              <div class="plan__head">
+                <div class="plan__name">Free</div>
+                <div class="plan__price">0 €</div>
+                <div class="plan__note">Pour tester et s’organiser simplement.</div>
+              </div>
+              <ul class="plan__list">
+                <li>15 notes max</li>
+                <li>15 tâches max</li>
+                <li>10 notes favorites max</li>
+                <li>15 tâches favorites max</li>
+                <li>Rappels désactivés</li>
+              </ul>
+              <a class="btn btn--secondary" href="https://app.tachesnotes.com" target="_blank" rel="noopener noreferrer" data-cta="start" data-cta-location="pricing_free">Commencer gratuitement</a>
+            </div>
+
+            <div class="card plan plan--pro" aria-label="Offre Pro">
+              <div class="plan__badge">Recommandé</div>
+              <div class="plan__head">
+                <div class="plan__name">Pro</div>
+                <div class="plan__price">1,99 €<span>/mois</span></div>
+                <div class="plan__note">Pour un usage quotidien, sans limites.</div>
+              </div>
+              <ul class="plan__list">
+                <li>Notes & tâches illimitées</li>
+                <li>Favoris illimités</li>
+                <li>Rappels activés</li>
+                <li>Accès au portail d’abonnement</li>
+              </ul>
+              <a class="btn btn--primary" href="https://app.tachesnotes.com/upgrade" target="_blank" rel="noopener noreferrer" data-cta="pro" data-cta-location="pricing_pro">Passer Pro</a>
+              <div class="plan__subhint">Annulable à tout moment — accès immédiat.</div>
+              <div class="plan__fineprint">Annulable à tout moment.</div>
+              <div class="plan__fineprint">Paiement 100% sécurisé via Stripe.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section--soft" id="why" aria-label="Pourquoi Smart Notes">
+        <div class="container">
+          <div class="section__head">
+            <h2>Pourquoi Smart Notes</h2>
+            <p>Conçu pour un usage réel : rapide, clair, et évolutif.</p>
+          </div>
+
+          <div class="grid3">
+            <div class="card feature">
+              <div class="feature__icon">⚡</div>
+              <h3>Simple, sans friction</h3>
+              <p>Capture en quelques secondes. Retrouve vite ce dont tu as besoin.</p>
+            </div>
+            <div class="card feature">
+              <div class="feature__icon">🗂️</div>
+              <h3>Organisé par dossiers</h3>
+              <p>Classe par contexte : perso, travail, projets. Tu restes focus.</p>
+            </div>
+            <div class="card feature">
+              <div class="feature__icon">🔓</div>
+              <h3>Pro quand tu en as besoin</h3>
+              <p>Quand tu atteins la limite : illimité + rappels, sans changer tes habitudes.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="faq" aria-label="Questions fréquentes">
+        <div class="container">
+          <div class="faq">
+            <div class="faq__head">
+              <h2>FAQ</h2>
+              <p>Réponses rapides avant de te lancer.</p>
+            </div>
+
+            <div class="faq__grid">
+              <div class="card faq__item">
+                <h3>Puis-je tester gratuitement ?</h3>
+                <p>Oui. Tu peux utiliser l’offre Free immédiatement, sans carte bancaire.</p>
+              </div>
+
+              <div class="card faq__item">
+                <h3>Que débloque l’offre Pro ?</h3>
+                <p>Les limites sautent (notes, tâches, favoris) et tu actives les rappels.</p>
+              </div>
+
+              <div class="card faq__item">
+                <h3>Puis-je annuler quand je veux ?</h3>
+                <p>Oui. Ton abonnement est annulable à tout moment depuis le portail Stripe.</p>
+              </div>
+
+              <div class="card faq__item">
+                <h3>Mes données sont-elles sécurisées ?</h3>
+                <p>Oui. L’accès est protégé par ton compte, et le paiement est géré par Stripe.</p>
+              </div>
+            </div>
+
+            <div class="faq__trust">
+              <h3>Confiance & données</h3>
+              <ul>
+                <li>Connexion via Google (Firebase Auth)</li>
+                <li>Données stockées dans Firebase/Firestore</li>
+                <li>Paiement géré par Stripe (aucune CB stockée chez nous)</li>
+              </ul>
+            </div>
+
+            <p class="faq__support">
+              Contact support : <a href="mailto:demande-service@tachesnotes.com">demande-service@tachesnotes.com</a>
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="cta" aria-label="Appel à l’action">
+        <div class="container">
+          <div class="cta card">
+            <div class="cta__content">
+              <h2>Garde tes idées, sans te disperser.</h2>
+              <p>Commence en Free en 2 minutes. Pro si tu veux l’illimité + les rappels.</p>
+              <div class="cta__actions">
+                <a class="btn btn--secondary btn--lg" href="https://app.tachesnotes.com" target="_blank" rel="noopener noreferrer" data-cta="start" data-cta-location="final">Commencer gratuitement</a>
+                <a class="btn btn--primary btn--lg" href="https://app.tachesnotes.com/upgrade" target="_blank" rel="noopener noreferrer" data-cta="pro" data-cta-location="final">Passer Pro</a>
+              </div>
+              <p class="cta__hint">Annulable à tout moment — accès immédiat — paiement sécurisé via Stripe.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="footer" aria-label="Pied de page">
+        <div class="container footer__inner">
+          <div class="footer__brand">
+            <img src="/logo.svg" width="160" height="40" alt="Smart Notes" class="footer__logo" />
+            <div class="footer__copy">Notes & tâches — simplement.</div>
+          </div>
+          <div class="footer__cols">
+            <div class="footer__col">
+              <div class="footer__title">Liens</div>
+              <a href="#pricing">Tarifs</a>
+              <a href="#faq">FAQ</a>
+              <a href="#top">Haut de page</a>
+            </div>
+            <div class="footer__col">
+              <div class="footer__title">Contact</div>
+              <a href="mailto:demande-service@tachesnotes.com">demande-service@tachesnotes.com</a>
+            </div>
+          </div>
+          <div class="footer__legal">© <span id="y"></span> Smart Notes.</div>
+        </div>
+      </footer>
+    </main>
+
+    <script>
+      document.getElementById('y').textContent = new Date().getFullYear();
+
+      document.querySelectorAll('a[data-cta]').forEach((el) => {
+        el.addEventListener('click', () => {
+          const cta = el.getAttribute('data-cta') || 'unknown';
+          const location = el.getAttribute('data-cta-location') || 'unknown';
+          window.plausible('CTA Click', { props: { cta, location } });
+        });
+      });
+    </script>
+
+    <div class="mobile-cta" aria-label="Actions rapides">
+      <div class="mobile-cta__inner">
+        <a class="btn btn--primary mobile-cta__btn" href="https://app.tachesnotes.com/upgrade" target="_blank" rel="noopener noreferrer" data-cta="pro" data-cta-location="mobile_sticky">Passer Pro — 1,99 €/mois</a>
+        <a class="btn btn--outline mobile-cta__btn" href="https://app.tachesnotes.com" target="_blank" rel="noopener noreferrer" data-cta="start" data-cta-location="mobile_sticky">Commencer gratuit</a>
+      </div>
+    </div>
+  </body>
+</html>

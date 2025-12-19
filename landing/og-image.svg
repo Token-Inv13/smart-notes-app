@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220"/>
+      <stop offset="1" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#06b6d4"/>
+    </linearGradient>
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <circle cx="220" cy="120" r="240" fill="#2563eb" opacity="0.10"/>
+  <circle cx="1020" cy="80" r="260" fill="#06b6d4" opacity="0.08"/>
+  <circle cx="780" cy="610" r="340" fill="#94a3b8" opacity="0.08"/>
+
+  <g filter="url(#shadow)">
+    <rect x="92" y="114" width="1016" height="402" rx="28" fill="#0f172a" opacity="0.92" stroke="#334155" stroke-opacity="0.45"/>
+  </g>
+
+  <g transform="translate(150,180)">
+    <rect x="0" y="0" width="112" height="112" rx="28" fill="url(#g)"/>
+    <path d="M32 60l18 18 42-42" fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <g transform="translate(290,190)" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" fill="#e5e7eb">
+    <text x="0" y="0" font-size="52" font-weight="800">Smart Notes</text>
+    <text x="0" y="54" font-size="26" font-weight="600" fill="#94a3b8">Notes & tâches — simplement.</text>
+    <text x="0" y="110" font-size="24" font-weight="600" fill="#cbd5e1">Pro : illimité + rappels • 1,99 €/mois</text>
+  </g>
+</svg>
