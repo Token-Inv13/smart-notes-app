@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { z } from "zod";
 import { auth, db } from "@/lib/firebase";
+import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import type { NoteDoc } from "@/types/firestore";
 import Modal from "../../../Modal";
 
@@ -15,16 +15,27 @@ function formatFrDateTime(ts?: NoteDoc["updatedAt"] | NoteDoc["createdAt"] | nul
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export default function NoteDetailModal(props: any) {
-  const searchParams = useSearchParams();
-  const workspaceId = searchParams.get("workspaceId");
-  const suffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
+const editNoteSchema = z.object({
+  title: z.string().min(1, "Le titre est requis."),
+  content: z.string().optional(),
+  workspaceId: z.string().min(1, "Sélectionne un dossier (workspace)."),
+});
 
+export default function NoteDetailModal(props: any) {
   const noteId: string | undefined = props?.params?.id;
+
+  const { data: workspaces } = useUserWorkspaces();
 
   const [note, setNote] = useState<NoteDoc | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [mode, setMode] = useState<"view" | "edit">("view");
+  const [editTitle, setEditTitle] = useState("");
+  const [editContent, setEditContent] = useState("");
+  const [editWorkspaceId, setEditWorkspaceId] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,6 +69,7 @@ export default function NoteDetailModal(props: any) {
 
         if (!cancelled) {
           setNote({ id: snap.id, ...(data as any) });
+          setMode("view");
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Erreur lors du chargement.";
@@ -73,8 +85,81 @@ export default function NoteDetailModal(props: any) {
     };
   }, [noteId]);
 
+  useEffect(() => {
+    if (!note) return;
+    setEditTitle(note.title ?? "");
+    setEditContent(note.content ?? "");
+    setEditWorkspaceId(typeof note.workspaceId === "string" ? note.workspaceId : "");
+    setEditError(null);
+  }, [note]);
+
   const createdLabel = useMemo(() => formatFrDateTime(note?.createdAt ?? null), [note?.createdAt]);
   const updatedLabel = useMemo(() => formatFrDateTime(note?.updatedAt ?? null), [note?.updatedAt]);
+
+  const startEdit = () => {
+    if (!note) return;
+    setMode("edit");
+    setEditError(null);
+  };
+
+  const cancelEdit = () => {
+    if (!note) return;
+    setMode("view");
+    setEditTitle(note.title ?? "");
+    setEditContent(note.content ?? "");
+    setEditWorkspaceId(typeof note.workspaceId === "string" ? note.workspaceId : "");
+    setEditError(null);
+  };
+
+  const handleSave = async () => {
+    if (!note?.id) return;
+
+    const user = auth.currentUser;
+    if (!user || user.uid !== note.userId) {
+      setEditError("Impossible de modifier cette note.");
+      return;
+    }
+
+    const validation = editNoteSchema.safeParse({
+      title: editTitle,
+      content: editContent,
+      workspaceId: editWorkspaceId,
+    });
+
+    if (!validation.success) {
+      setEditError(validation.error.issues[0]?.message ?? "Données invalides.");
+      return;
+    }
+
+    setSaving(true);
+    setEditError(null);
+
+    try {
+      await updateDoc(doc(db, "notes", note.id), {
+        title: validation.data.title,
+        content: validation.data.content ?? "",
+        workspaceId: validation.data.workspaceId,
+        updatedAt: serverTimestamp(),
+      });
+
+      setNote((prev) =>
+        prev
+          ? {
+              ...prev,
+              title: validation.data.title,
+              content: validation.data.content ?? "",
+              workspaceId: validation.data.workspaceId,
+            }
+          : prev,
+      );
+      setMode("view");
+    } catch (e) {
+      console.error("Error updating note (modal)", e);
+      setEditError(e instanceof Error ? e.message : "Erreur lors de la modification de la note.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <Modal title="Détail de la note">
@@ -91,38 +176,113 @@ export default function NoteDetailModal(props: any) {
       {!loading && !error && note && (
         <div className="space-y-4">
           <div className="flex items-center justify-end gap-2">
-            <Link
-              href={`/notes${suffix}`}
-              className="px-3 py-2 rounded-md border border-input text-sm"
-            >
-              Modifier
-            </Link>
+            {mode === "view" ? (
+              <button
+                type="button"
+                onClick={startEdit}
+                className="px-3 py-2 rounded-md border border-input text-sm"
+              >
+                Modifier
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={cancelEdit}
+                  disabled={saving}
+                  className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+                >
+                  {saving ? "Enregistrement…" : "Enregistrer"}
+                </button>
+              </>
+            )}
           </div>
 
           <div className="sn-card p-4 space-y-3">
-            <div className="space-y-1">
-              <div className="text-sm font-medium">Titre</div>
-              <div className="text-sm">{note.title}</div>
-            </div>
+            {mode === "view" ? (
+              <>
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">Titre</div>
+                  <div className="text-sm">{note.title}</div>
+                </div>
 
-            <div className="space-y-1">
-              <div className="text-sm font-medium">Contenu</div>
-              <textarea
-                readOnly
-                value={note.content ?? ""}
-                aria-label="Contenu de la note"
-                className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-              />
-            </div>
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">Contenu</div>
+                  <textarea
+                    readOnly
+                    value={note.content ?? ""}
+                    aria-label="Contenu de la note"
+                    className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium" htmlFor="note-modal-title">
+                    Titre
+                  </label>
+                  <input
+                    id="note-modal-title"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                  />
+                </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-              <div>
-                <span className="font-medium">Créée le:</span> {createdLabel}
+                <div className="space-y-1">
+                  <label className="text-sm font-medium" htmlFor="note-modal-workspace">
+                    Dossier
+                  </label>
+                  <select
+                    id="note-modal-workspace"
+                    value={editWorkspaceId}
+                    onChange={(e) => setEditWorkspaceId(e.target.value)}
+                    className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                  >
+                    <option value="">—</option>
+                    {workspaces.map((ws) => (
+                      <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
+                        {ws.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium" htmlFor="note-modal-content">
+                    Contenu
+                  </label>
+                  <textarea
+                    id="note-modal-content"
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                  />
+                </div>
+
+                {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
+              </>
+            )}
+
+            {mode === "view" && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span className="font-medium">Créée le:</span> {createdLabel}
+                </div>
+                <div>
+                  <span className="font-medium">Dernière mise à jour:</span> {updatedLabel}
+                </div>
               </div>
-              <div>
-                <span className="font-medium">Dernière mise à jour:</span> {updatedLabel}
-              </div>
-            </div>
+            )}
           </div>
         </div>
       )}
