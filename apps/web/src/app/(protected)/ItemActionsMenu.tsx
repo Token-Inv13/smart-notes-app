@@ -2,31 +2,29 @@
 
 import { useEffect, useRef, useState } from "react";
 
-type MenuAction = "edit" | "archive" | "share" | "export" | "delete";
+type MenuAction = "edit" | "archive" | "share" | "export_pdf" | "export_md" | "delete";
 
 interface ItemActionsMenuProps {
   onEdit: () => void;
   onToggleArchive: () => void;
   onShare: () => void;
-  onExport: () => void;
+  onExportPdf: () => void;
+  onExportMarkdown: () => void;
   onDelete: () => void;
   archived?: boolean;
-  disabledHint?: string;
 }
 
 export default function ItemActionsMenu({
   onEdit,
   onToggleArchive,
   onShare,
-  onExport,
+  onExportPdf,
+  onExportMarkdown,
   onDelete,
   archived,
-  disabledHint,
 }: ItemActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
-
-  void disabledHint;
 
   useEffect(() => {
     if (!open) return;
@@ -59,7 +57,8 @@ export default function ItemActionsMenu({
     if (action === "edit") onEdit();
     if (action === "archive") onToggleArchive();
     if (action === "share") onShare();
-    if (action === "export") onExport();
+    if (action === "export_pdf") onExportPdf();
+    if (action === "export_md") onExportMarkdown();
     if (action === "delete") onDelete();
     setOpen(false);
   };
@@ -113,9 +112,18 @@ export default function ItemActionsMenu({
             type="button"
             className="w-full text-left px-3 py-2 text-sm rounded hover:bg-accent"
             role="menuitem"
-            onClick={() => run("export")}
+            onClick={() => run("export_pdf")}
           >
-            Exporter
+            Exporter PDF
+          </button>
+
+          <button
+            type="button"
+            className="w-full text-left px-3 py-2 text-sm rounded hover:bg-accent"
+            role="menuitem"
+            onClick={() => run("export_md")}
+          >
+            Exporter Markdown
           </button>
 
           <div className="my-1 border-t border-border" />

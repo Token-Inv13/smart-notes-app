@@ -91,6 +91,166 @@ export default function NoteDetailModal(props: any) {
     };
   }, [noteId]);
 
+  const handleExportPdf = async () => {
+    if (!note?.id) return;
+
+    setEditError(null);
+    setExportFeedback(null);
+
+    const sanitize = (raw: string) => {
+      const base = raw
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .toLowerCase();
+      return base || "sans-titre";
+    };
+
+    try {
+      const [{ jsPDF }] = await Promise.all([import("jspdf")]);
+
+      const doc = new jsPDF({ unit: "pt", format: "a4" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      const marginX = 48;
+      const marginTop = 48;
+      const marginBottom = 56;
+      const headerH = 64;
+      const contentTop = marginTop + headerH;
+
+      const exportDate = new Date();
+      const exportDateLabel = exportDate.toLocaleString("fr-FR", {
+        year: "numeric",
+        month: "long",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      const workspaceName = workspaces.find((ws) => ws.id === note.workspaceId)?.name ?? null;
+
+      const svgToPngDataUrl = async (svgText: string) => {
+        const svgDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgText)}`;
+        const img = new Image();
+        img.decoding = "async";
+        img.src = svgDataUrl;
+
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error("Impossible de charger le logo."));
+        });
+
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width || 160;
+        canvas.height = img.height || 40;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("Canvas non supporté.");
+        ctx.drawImage(img, 0, 0);
+        return canvas.toDataURL("image/png");
+      };
+
+      const drawHeader = async (pageTitle: string) => {
+        const y = marginTop;
+
+        try {
+          const res = await fetch("/logo.svg");
+          const svg = await res.text();
+          const png = await svgToPngDataUrl(svg);
+          doc.addImage(png, "PNG", marginX, y, 120, 30);
+        } catch {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(14);
+          doc.text("Smart Notes", marginX, y + 20);
+        }
+
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(1);
+        doc.line(marginX, y + 40, pageWidth - marginX, y + 40);
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(18);
+        doc.setTextColor(15, 23, 42);
+        doc.text(pageTitle, marginX, y + 62);
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(100, 116, 139);
+        doc.text(`Export du ${exportDateLabel}`, pageWidth - marginX, y + 62, { align: "right" });
+      };
+
+      const addSectionTitle = (title: string, y: number) => {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.setTextColor(15, 23, 42);
+        doc.text(title, marginX, y);
+        doc.setDrawColor(226, 232, 240);
+        doc.line(marginX, y + 6, pageWidth - marginX, y + 6);
+        return y + 22;
+      };
+
+      const ensureSpace = async (y: number, needed: number) => {
+        if (y + needed <= pageHeight - marginBottom) return y;
+        doc.addPage();
+        await drawHeader(note.title ?? "Note");
+        return contentTop;
+      };
+
+      const addWrapped = async (text: string, y: number, fontSize: number) => {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(fontSize);
+        doc.setTextColor(51, 65, 85);
+        const maxWidth = pageWidth - marginX * 2;
+        const lineHeight = fontSize + 4;
+
+        const paragraphs = String(text ?? "").split("\n");
+        for (const p of paragraphs) {
+          const lines = doc.splitTextToSize(p.length ? p : " ", maxWidth) as string[];
+          for (const line of lines) {
+            y = await ensureSpace(y, lineHeight);
+            doc.text(line, marginX, y);
+            y += lineHeight;
+          }
+          y += 6;
+        }
+        return y;
+      };
+
+      await drawHeader(note.title ?? "Note");
+
+      let y = contentTop;
+      y = await ensureSpace(y, 40);
+
+      y = addSectionTitle("Détails", y);
+      if (workspaceName) y = await addWrapped(`Workspace: ${workspaceName}`, y, 11);
+      if (note.createdAt) y = await addWrapped(`Créée le: ${formatFrDateTime(note.createdAt)}`, y, 11);
+      if (note.updatedAt) y = await addWrapped(`Dernière mise à jour: ${formatFrDateTime(note.updatedAt)}`, y, 11);
+
+      y += 8;
+      y = await ensureSpace(y, 30);
+      y = addSectionTitle("Contenu", y);
+      y = await addWrapped(note.content ?? "", y, 11);
+
+      const pages = doc.getNumberOfPages();
+      for (let i = 1; i <= pages; i += 1) {
+        doc.setPage(i);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(100, 116, 139);
+        doc.text("Exporté depuis Smart Notes — app.tachesnotes.com", marginX, pageHeight - 28);
+        doc.text(String(i), pageWidth - marginX, pageHeight - 28, { align: "right" });
+      }
+
+      const filename = `smartnotes-note-${sanitize(note.title ?? "")}.pdf`;
+      doc.save(filename);
+
+      setExportFeedback("PDF téléchargé.");
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "Erreur lors de l’export PDF.");
+    }
+  };
+
   const handleExport = async () => {
     if (!note?.id) return;
 
@@ -318,7 +478,8 @@ export default function NoteDetailModal(props: any) {
                 onEdit={startEdit}
                 onToggleArchive={handleToggleArchive}
                 onShare={handleShare}
-                onExport={handleExport}
+                onExportPdf={handleExportPdf}
+                onExportMarkdown={handleExport}
                 archived={note.archived === true}
                 onDelete={handleDelete}
               />
