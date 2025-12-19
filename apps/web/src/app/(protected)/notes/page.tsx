@@ -7,7 +7,6 @@ import { FirebaseError } from "firebase/app";
 import {
   addDoc,
   collection,
-  deleteDoc,
   doc,
   serverTimestamp,
   updateDoc,
@@ -71,13 +70,7 @@ export default function NotesPage() {
     setNoteWorkspaceId(workspaceId ?? "");
   }, [workspaceId, createOpen]);
 
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editContent, setEditContent] = useState("");
-  const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
-
-  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const showUpgradeCta =
     !!createError?.includes("Limite Free atteinte") || !!editError?.includes("Limite Free atteinte");
@@ -174,89 +167,6 @@ export default function NotesPage() {
       if (e instanceof FirebaseError) {
         setEditError(`${e.code}: ${e.message}`);
       }
-    }
-  };
-
-  const startEditing = (note: NoteDoc) => {
-    setEditingId(note.id ?? null);
-    setEditTitle(note.title);
-    setEditContent(note.content ?? "");
-    setEditError(null);
-  };
-
-  const cancelEditing = () => {
-    setEditingId(null);
-    setEditTitle("");
-    setEditContent("");
-    setEditError(null);
-  };
-
-  const handleSave = async (note: NoteDoc) => {
-    if (!note.id) return;
-
-    const user = auth.currentUser;
-    if (!user || user.uid !== note.userId) {
-      setEditError("Impossible de modifier cette note.");
-      return;
-    }
-
-    setEditError(null);
-    const validation = newNoteSchema.safeParse({ title: editTitle, content: editContent });
-    if (!validation.success) {
-      setEditError(validation.error.issues[0]?.message ?? "Données invalides.");
-      return;
-    }
-
-    setSaving(true);
-    try {
-      await updateDoc(doc(db, "notes", note.id), {
-        title: validation.data.title,
-        content: validation.data.content ?? "",
-        workspaceId: typeof note.workspaceId === "string" ? note.workspaceId : null,
-        favorite: note.favorite === true,
-        completed: note.completed === true,
-        updatedAt: serverTimestamp(),
-      });
-      cancelEditing();
-    } catch (e) {
-      console.error("Error updating note", e);
-      if (e instanceof FirebaseError) {
-        setEditError(`${e.code}: ${e.message}`);
-      } else if (e instanceof Error) {
-        setEditError(e.message);
-      } else {
-        setEditError("Erreur lors de la modification de la note.");
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDelete = async (note: NoteDoc) => {
-    if (!note.id) return;
-
-    const user = auth.currentUser;
-    if (!user || user.uid !== note.userId) return;
-
-    if (!confirm("Supprimer cette note ?")) return;
-
-    setDeletingId(note.id);
-    try {
-      await deleteDoc(doc(db, "notes", note.id));
-      if (editingId === note.id) {
-        cancelEditing();
-      }
-    } catch (e) {
-      console.error("Error deleting note", e);
-      if (e instanceof FirebaseError) {
-        setEditError(`${e.code}: ${e.message}`);
-      } else if (e instanceof Error) {
-        setEditError(e.message);
-      } else {
-        setEditError("Erreur lors de la suppression de la note.");
-      }
-    } finally {
-      setDeletingId(null);
     }
   };
 
@@ -422,7 +332,6 @@ export default function NotesPage() {
         {!loading && !error && viewMode === "list" && activeNotes.length > 0 && (
           <ul className="space-y-2">
             {activeNotes.map((note) => {
-              const isEditing = !!note.id && note.id === editingId;
               const workspaceName = workspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";
               const hrefSuffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
 
@@ -431,119 +340,50 @@ export default function NotesPage() {
                   key={note.id}
                   className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4`}
                   onClick={() => {
-                    if (isEditing) return;
                     if (!note.id) return;
                     router.push(`/notes/${note.id}${hrefSuffix}`);
                   }}
                 >
-                  {!isEditing ? (
-                    <div className="space-y-3">
-                      <div className="sn-card-header">
-                        <div className="min-w-0">
-                          <div className="sn-card-title truncate">{note.title}</div>
-                          <div className="sn-card-meta">
-                            <span className="sn-badge">{workspaceName}</span>
-                            {note.favorite && <span className="sn-badge">Favori</span>}
-                          </div>
-                        </div>
-
-                        <div className="sn-card-actions sn-card-actions-secondary shrink-0">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleFavorite(note);
-                            }}
-                            className="sn-icon-btn"
-                            aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                            title={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                          >
-                            {note.favorite ? "★" : "☆"}
-                          </button>
+                  <div className="space-y-3">
+                    <div className="sn-card-header">
+                      <div className="min-w-0">
+                        <div className="sn-card-title truncate">{note.title}</div>
+                        <div className="sn-card-meta">
+                          <span className="sn-badge">{workspaceName}</span>
+                          {note.favorite && <span className="sn-badge">Favori</span>}
                         </div>
                       </div>
 
-                      <div className="sn-card-body line-clamp-4">{note.content ?? ""}</div>
-
-                      <div className="flex items-center justify-between gap-3">
-                        <label className="text-xs flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={note.completed === true}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => toggleCompleted(note, e.target.checked)}
-                          />
-                          <span className="text-muted-foreground">Terminé</span>
-                        </label>
-
-                        <div className="sn-card-actions sn-card-actions-secondary">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              startEditing(note);
-                            }}
-                            className="sn-text-btn"
-                          >
-                            Modifier
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDelete(note);
-                            }}
-                            disabled={deletingId === note.id}
-                            className="sn-text-btn text-destructive disabled:opacity-50"
-                          >
-                            {deletingId === note.id ? "Suppression…" : "Supprimer"}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <input
-                        value={editTitle}
-                        onChange={(e) => setEditTitle(e.target.value)}
-                        aria-label="Titre de la note"
-                        placeholder="Titre"
-                        className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                      />
-                      <textarea
-                        value={editContent}
-                        onChange={(e) => setEditContent(e.target.value)}
-                        aria-label="Contenu de la note"
-                        placeholder="Contenu"
-                        className="w-full min-h-[120px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                      />
-
-                      {editError && (
-                        <div className="sn-alert sn-alert--error" role="status" aria-live="polite">
-                          {editError}
-                        </div>
-                      )}
-
-                      <div className="flex items-center gap-2">
+                      <div className="sn-card-actions sn-card-actions-secondary shrink-0">
                         <button
                           type="button"
-                          disabled={saving}
-                          onClick={() => handleSave(note)}
-                          className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(note);
+                          }}
+                          className="sn-icon-btn"
+                          aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                          title={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                         >
-                          {saving ? "Enregistrement…" : "Enregistrer"}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={saving}
-                          onClick={cancelEditing}
-                          className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-                        >
-                          Annuler
+                          {note.favorite ? "★" : "☆"}
                         </button>
                       </div>
                     </div>
-                  )}
+
+                    <div className="sn-card-body line-clamp-4">{note.content ?? ""}</div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <label className="text-xs flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={note.completed === true}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => toggleCompleted(note, e.target.checked)}
+                        />
+                        <span className="text-muted-foreground">Terminé</span>
+                      </label>
+                    </div>
+                  </div>
                 </li>
               );
             })}
@@ -553,7 +393,6 @@ export default function NotesPage() {
         {viewMode === "grid" && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {activeNotes.map((note) => {
-              const isEditing = !!note.id && note.id === editingId;
               const workspaceName = workspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";
               const hrefSuffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
 
@@ -562,118 +401,50 @@ export default function NotesPage() {
                   key={note.id}
                   className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4 min-w-0`}
                   onClick={() => {
-                    if (isEditing) return;
                     if (!note.id) return;
                     router.push(`/notes/${note.id}${hrefSuffix}`);
                   }}
                 >
-                  {!isEditing ? (
-                    <div className="flex flex-col gap-3">
-                      <div className="sn-card-header">
-                        <div className="min-w-0">
-                          <div className="sn-card-title line-clamp-2">{note.title}</div>
-                          <div className="sn-card-meta">
-                            <span className="sn-badge">{workspaceName}</span>
-                            {note.favorite && <span className="sn-badge">Favori</span>}
-                          </div>
-                        </div>
-
-                        <div className="sn-card-actions sn-card-actions-secondary shrink-0">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleFavorite(note);
-                            }}
-                            className="sn-icon-btn"
-                            aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                            title={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                          >
-                            {note.favorite ? "★" : "☆"}
-                          </button>
+                  <div className="flex flex-col gap-3">
+                    <div className="sn-card-header">
+                      <div className="min-w-0">
+                        <div className="sn-card-title line-clamp-2">{note.title}</div>
+                        <div className="sn-card-meta">
+                          <span className="sn-badge">{workspaceName}</span>
+                          {note.favorite && <span className="sn-badge">Favori</span>}
                         </div>
                       </div>
 
-                      <div className="sn-card-body line-clamp-5">{note.content ?? ""}</div>
-
-                      <div className="mt-auto flex items-center justify-between gap-3">
-                        <label className="text-xs flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={note.completed === true}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => toggleCompleted(note, e.target.checked)}
-                          />
-                          <span className="text-muted-foreground">Terminé</span>
-                        </label>
-                        <div className="sn-card-actions sn-card-actions-secondary">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              startEditing(note);
-                            }}
-                            className="sn-text-btn"
-                          >
-                            Modifier
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDelete(note);
-                            }}
-                            disabled={deletingId === note.id}
-                            className="sn-text-btn text-destructive disabled:opacity-50"
-                          >
-                            {deletingId === note.id ? "Suppression…" : "Supprimer"}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <input
-                        value={editTitle}
-                        onChange={(e) => setEditTitle(e.target.value)}
-                        aria-label="Titre de la note"
-                        placeholder="Titre"
-                        className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                      />
-                      <textarea
-                        value={editContent}
-                        onChange={(e) => setEditContent(e.target.value)}
-                        aria-label="Contenu de la note"
-                        placeholder="Contenu"
-                        className="w-full min-h-[120px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                      />
-
-                      {editError && (
-                        <div className="sn-alert sn-alert--error" role="status" aria-live="polite">
-                          {editError}
-                        </div>
-                      )}
-
-                      <div className="flex items-center gap-2">
+                      <div className="sn-card-actions sn-card-actions-secondary shrink-0">
                         <button
                           type="button"
-                          disabled={saving}
-                          onClick={() => handleSave(note)}
-                          className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(note);
+                          }}
+                          className="sn-icon-btn"
+                          aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                          title={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                         >
-                          {saving ? "Enregistrement…" : "Enregistrer"}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={saving}
-                          onClick={cancelEditing}
-                          className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-                        >
-                          Annuler
+                          {note.favorite ? "★" : "☆"}
                         </button>
                       </div>
                     </div>
-                  )}
+
+                    <div className="sn-card-body line-clamp-5">{note.content ?? ""}</div>
+
+                    <div className="mt-auto flex items-center justify-between gap-3">
+                      <label className="text-xs flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={note.completed === true}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => toggleCompleted(note, e.target.checked)}
+                        />
+                        <span className="text-muted-foreground">Terminé</span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
               );
             })}
