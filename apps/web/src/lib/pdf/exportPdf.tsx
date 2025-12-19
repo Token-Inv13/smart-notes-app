@@ -93,9 +93,11 @@ async function buildPdfFromElement(element: HTMLElement) {
 
   const pageWidthMm = 210;
   const pageHeightMm = 297;
+  const footerReserveMm = 14;
+  const printableHeightMm = pageHeightMm - footerReserveMm;
 
   const mmPerPx = pageWidthMm / canvas.width;
-  const sliceHeightPx = Math.floor(pageHeightMm / mmPerPx);
+  const sliceHeightPx = Math.floor(printableHeightMm / mmPerPx);
 
   let pageIndex = 0;
   for (let sy = 0; sy < canvas.height; sy += sliceHeightPx) {
@@ -129,7 +131,7 @@ async function buildPdfFromElement(element: HTMLElement) {
   for (let i = 1; i <= pageCount; i += 1) {
     doc.setPage(i);
 
-    const footerY = pageHeight - 10;
+    const footerY = pageHeight - 6;
     doc.text("Exporté depuis Smart Notes — app.tachesnotes.com", 20, footerY);
     doc.text(`${i}/${pageCount}`, pageWidth - 20, footerY, { align: "right" });
   }

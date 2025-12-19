@@ -60,7 +60,7 @@ export default function TaskPdfTemplate(props: Props) {
 
         .sn-pdf .logo {
           flex-shrink: 0;
-          width: 44mm;
+          width: 62mm;
           height: auto;
           display: block;
           object-fit: contain;
