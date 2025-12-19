@@ -1,4 +1,5 @@
 import React from "react";
+import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import type { NoteDoc, TaskDoc } from "@/types/firestore";
 import NotePdfTemplate from "./templates/NotePdfTemplate";
@@ -30,18 +31,40 @@ function statusLabelFr(s?: TaskDoc["status"] | null) {
 async function renderOffscreen(node: React.ReactNode) {
   const host = document.createElement("div");
   host.style.position = "fixed";
-  host.style.left = "-10000px";
+  host.style.left = "0";
   host.style.top = "0";
   host.style.width = "210mm";
   host.style.background = "white";
-  host.style.zIndex = "-1";
+  host.style.pointerEvents = "none";
+  host.style.zIndex = "-9999";
   document.body.appendChild(host);
 
   const root = createRoot(host);
-  root.render(node);
+  flushSync(() => {
+    root.render(node);
+  });
 
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+  // Wait for fonts (best-effort)
+  try {
+    await (document as any).fonts?.ready;
+  } catch {
+    // ignore
+  }
+
+  // Wait for images inside template (logo)
+  const imgs = Array.from(host.querySelectorAll("img"));
+  await Promise.all(
+    imgs.map(
+      (img) =>
+        new Promise<void>((resolve) => {
+          if ((img as HTMLImageElement).complete) return resolve();
+          img.addEventListener("load", () => resolve(), { once: true });
+          img.addEventListener("error", () => resolve(), { once: true });
+        })
+    )
+  );
 
   return {
     element: host,
@@ -56,24 +79,43 @@ async function renderOffscreen(node: React.ReactNode) {
 }
 
 async function buildPdfFromElement(element: HTMLElement) {
-  const [{ jsPDF }] = await Promise.all([import("jspdf")]);
+  const [{ jsPDF }, { default: html2canvas }] = await Promise.all([import("jspdf"), import("html2canvas")]);
 
   const doc = new jsPDF({ unit: "mm", format: "a4" });
 
-  // Render HTML -> PDF. jsPDF.html relies on html2canvas being installed.
-  await doc.html(element, {
-    x: 0,
-    y: 0,
-    width: 210,
-    windowWidth: element.scrollWidth,
-    autoPaging: "text",
-    html2canvas: {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: "#ffffff",
-      logging: false,
-    },
+  const canvas = await html2canvas(element, {
+    scale: 2,
+    useCORS: true,
+    backgroundColor: "#ffffff",
+    logging: false,
+    windowWidth: element.scrollWidth || 794,
   });
+
+  const pageWidthMm = 210;
+  const pageHeightMm = 297;
+
+  const mmPerPx = pageWidthMm / canvas.width;
+  const sliceHeightPx = Math.floor(pageHeightMm / mmPerPx);
+
+  let pageIndex = 0;
+  for (let sy = 0; sy < canvas.height; sy += sliceHeightPx) {
+    const sh = Math.min(sliceHeightPx, canvas.height - sy);
+    const pageCanvas = document.createElement("canvas");
+    pageCanvas.width = canvas.width;
+    pageCanvas.height = sh;
+
+    const ctx = pageCanvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas non supporté.");
+
+    ctx.drawImage(canvas, 0, sy, canvas.width, sh, 0, 0, canvas.width, sh);
+
+    const imgData = pageCanvas.toDataURL("image/png");
+    const imgHeightMm = sh * mmPerPx;
+
+    if (pageIndex > 0) doc.addPage();
+    doc.addImage(imgData, "PNG", 0, 0, pageWidthMm, imgHeightMm);
+    pageIndex += 1;
+  }
 
   const pageCount = doc.getNumberOfPages();
   const pageWidth = doc.internal.pageSize.getWidth();
