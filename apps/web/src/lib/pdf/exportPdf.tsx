@@ -28,6 +28,30 @@ function statusLabelFr(s?: TaskDoc["status"] | null) {
   return "À faire";
 }
 
+function sanitizeExportBody(raw: string) {
+  const lines = String(raw ?? "").split("\n");
+  const cleaned: string[] = [];
+
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t) {
+      cleaned.push(line);
+      continue;
+    }
+
+    if (/^texte pr[êe]t [àa] copier\s*:?$/i.test(t)) continue;
+    if (/^bouton\s+"?partager smart notes"?/i.test(t)) continue;
+    if (/^partage\s+dans\s+l['’]app/i.test(t)) continue;
+    if (/^cr[ée]e?\s+avec\s+smart\s+notes/i.test(t)) continue;
+    if (/^export[ée]\s+depuis\s+smart\s+notes/i.test(t)) continue;
+    if (/^bonus$/i.test(t)) continue;
+
+    cleaned.push(line);
+  }
+
+  return cleaned.join("\n").replace(/\n{4,}/g, "\n\n\n").trim();
+}
+
 async function renderOffscreen(node: React.ReactNode) {
   const host = document.createElement("div");
   host.style.position = "fixed";
@@ -93,7 +117,7 @@ async function buildPdfFromElement(element: HTMLElement) {
 
   const pageWidthMm = 210;
   const pageHeightMm = 297;
-  const footerReserveMm = 14;
+  const footerReserveMm = 22;
   const printableHeightMm = pageHeightMm - footerReserveMm;
 
   const mmPerPx = pageWidthMm / canvas.width;
@@ -155,7 +179,7 @@ export async function exportNotePdf(note: NoteDoc, workspaceName: string | null)
       workspaceName={workspaceName}
       createdAtLabel={formatFrDateTime(note.createdAt)}
       updatedAtLabel={formatFrDateTime(note.updatedAt)}
-      content={note.content ?? ""}
+      content={sanitizeExportBody(note.content ?? "")}
       exportDateLabel={exportDateLabel}
     />
   );
@@ -186,7 +210,7 @@ export async function exportTaskPdf(task: TaskDoc, workspaceName: string | null)
       dueDateLabel={formatFrDateTime(task.dueDate)}
       createdAtLabel={formatFrDateTime((task as any).createdAt)}
       updatedAtLabel={formatFrDateTime((task as any).updatedAt)}
-      description={(task as any).description ?? ""}
+      description={sanitizeExportBody((task as any).description ?? "")}
       exportDateLabel={exportDateLabel}
     />
   );

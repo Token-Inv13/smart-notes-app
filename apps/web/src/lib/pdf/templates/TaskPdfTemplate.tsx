@@ -58,12 +58,42 @@ export default function TaskPdfTemplate(props: Props) {
           min-width: 0;
         }
 
-        .sn-pdf .logo {
+        .sn-pdf .logo-wrap {
           flex-shrink: 0;
+          width: 12mm;
+          height: 12mm;
+          overflow: hidden;
+          border-radius: 3mm;
+        }
+
+        .sn-pdf .logo {
           width: 62mm;
-          height: auto;
+          height: 12mm;
           display: block;
           object-fit: contain;
+          object-position: left center;
+        }
+
+        .sn-pdf .brand-text {
+          display: flex;
+          flex-direction: column;
+          line-height: 1.1;
+          min-width: 0;
+        }
+
+        .sn-pdf .brand-name {
+          font-size: 12pt;
+          font-weight: 700;
+          color: #0f172a;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .sn-pdf .brand-sub {
+          font-size: 9.5pt;
+          color: #64748b;
+          white-space: nowrap;
         }
 
         .sn-pdf .meta {
@@ -139,7 +169,13 @@ export default function TaskPdfTemplate(props: Props) {
       <div className="page">
         <div className="header">
           <div className="brand">
-            <img className="logo" src="/logo.svg" alt="Smart Notes" />
+            <div className="logo-wrap">
+              <img className="logo" src="/logo.svg" alt="Smart Notes" />
+            </div>
+            <div className="brand-text">
+              <div className="brand-name">Smart Notes</div>
+              <div className="brand-sub">app.tachesnotes.com</div>
+            </div>
           </div>
           <div className="meta">Exporté le {exportDateLabel}</div>
         </div>
