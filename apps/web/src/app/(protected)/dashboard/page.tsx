@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { z } from 'zod';
 import {
   addDoc,
@@ -41,7 +41,6 @@ const newTaskSchema = z.object({
 });
 
 export default function DashboardPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get('workspaceId') || undefined;
   const suffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : '';
@@ -419,37 +418,40 @@ export default function DashboardPage() {
               return (
                 <li
                   key={note.id}
-                  className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4`}
+                  className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4 relative ${
+                    !isEditing && note.id ? "cursor-pointer" : ""
+                  }`}
                 >
                   {!isEditing ? (
                     <div className="space-y-3">
+                      {note.id && (
+                        <Link
+                          href={`/notes/${encodeURIComponent(note.id)}${suffix}`}
+                          aria-label={`Ouvrir la note ${note.title}`}
+                          className="absolute inset-0"
+                        />
+                      )}
                       <div className="sn-card-header">
-                        <div className="min-w-0">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              note.id && router.push(`/notes/${encodeURIComponent(note.id)}${suffix}`)
-                            }
-                            className="min-w-0 text-left"
-                            aria-label={`Ouvrir la note ${note.title}`}
-                            disabled={!note.id}
-                          >
-                            <div className="sn-card-title truncate">{note.title}</div>
-                            <div className="sn-card-meta">
-                              {note.workspaceId && typeof note.workspaceId === "string" && (
-                                <span className="sn-badge">
-                                  {workspaceNameById.get(note.workspaceId) ?? note.workspaceId}
-                                </span>
-                              )}
-                              {note.favorite && <span className="sn-badge">Favori</span>}
-                            </div>
-                          </button>
+                        <div className="min-w-0 relative z-10">
+                          <div className="sn-card-title truncate">{note.title}</div>
+                          <div className="sn-card-meta">
+                            {note.workspaceId && typeof note.workspaceId === "string" && (
+                              <span className="sn-badge">
+                                {workspaceNameById.get(note.workspaceId) ?? note.workspaceId}
+                              </span>
+                            )}
+                            {note.favorite && <span className="sn-badge">Favori</span>}
+                          </div>
                         </div>
 
-                        <div className="sn-card-actions sn-card-actions-secondary shrink-0">
+                        <div className="sn-card-actions sn-card-actions-secondary shrink-0 relative z-20">
                           <button
                             type="button"
-                            onClick={() => toggleNoteFavorite(note)}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              toggleNoteFavorite(note);
+                            }}
                             className="sn-icon-btn"
                             aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                             title={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
@@ -459,13 +461,25 @@ export default function DashboardPage() {
                         </div>
                       </div>
 
-                      <div className="sn-card-actions sn-card-actions-secondary">
-                        <button type="button" onClick={() => startEditNote(note)} className="sn-text-btn">
+                      <div className="sn-card-actions sn-card-actions-secondary relative z-20">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            startEditNote(note);
+                          }}
+                          className="sn-text-btn"
+                        >
                           Modifier
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteNote(note)}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleDeleteNote(note);
+                          }}
                           className="sn-text-btn text-destructive"
                         >
                           Supprimer
@@ -570,38 +584,41 @@ export default function DashboardPage() {
               return (
                 <li
                   key={task.id}
-                  className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4`}
+                  className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 relative ${
+                    !isEditing && task.id ? "cursor-pointer" : ""
+                  }`}
                 >
                   {!isEditing ? (
                     <div className="space-y-3">
+                      {task.id && (
+                        <Link
+                          href={`/tasks/${encodeURIComponent(task.id)}${suffix}`}
+                          aria-label={`Ouvrir la tâche ${task.title}`}
+                          className="absolute inset-0"
+                        />
+                      )}
                       <div className="sn-card-header">
-                        <div className="min-w-0">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              task.id && router.push(`/tasks/${encodeURIComponent(task.id)}${suffix}`)
-                            }
-                            className="min-w-0 text-left"
-                            aria-label={`Ouvrir la tâche ${task.title}`}
-                            disabled={!task.id}
-                          >
-                            <div className="sn-card-title truncate">{task.title}</div>
-                            <div className="sn-card-meta">
-                              {task.workspaceId && typeof task.workspaceId === "string" && (
-                                <span className="sn-badge">
-                                  {workspaceNameById.get(task.workspaceId) ?? task.workspaceId}
-                                </span>
-                              )}
-                              <span className="sn-badge">{dueLabel || "Aucun rappel"}</span>
-                              {task.favorite && <span className="sn-badge">Favori</span>}
-                            </div>
-                          </button>
+                        <div className="min-w-0 relative z-10">
+                          <div className="sn-card-title truncate">{task.title}</div>
+                          <div className="sn-card-meta">
+                            {task.workspaceId && typeof task.workspaceId === "string" && (
+                              <span className="sn-badge">
+                                {workspaceNameById.get(task.workspaceId) ?? task.workspaceId}
+                              </span>
+                            )}
+                            <span className="sn-badge">{dueLabel || "Aucun rappel"}</span>
+                            {task.favorite && <span className="sn-badge">Favori</span>}
+                          </div>
                         </div>
 
-                        <div className="sn-card-actions sn-card-actions-secondary shrink-0">
+                        <div className="sn-card-actions sn-card-actions-secondary shrink-0 relative z-20">
                           <button
                             type="button"
-                            onClick={() => toggleTaskFavorite(task)}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              toggleTaskFavorite(task);
+                            }}
                             className="sn-icon-btn"
                             aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                             title={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
@@ -611,13 +628,25 @@ export default function DashboardPage() {
                         </div>
                       </div>
 
-                      <div className="sn-card-actions sn-card-actions-secondary">
-                        <button type="button" onClick={() => startEditTask(task)} className="sn-text-btn">
+                      <div className="sn-card-actions sn-card-actions-secondary relative z-20">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            startEditTask(task);
+                          }}
+                          className="sn-text-btn"
+                        >
                           Modifier
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteTask(task)}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleDeleteTask(task);
+                          }}
                           className="sn-text-btn text-destructive"
                         >
                           Supprimer

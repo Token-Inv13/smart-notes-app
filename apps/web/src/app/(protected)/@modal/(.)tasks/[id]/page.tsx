@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { auth, db } from "@/lib/firebase";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
@@ -32,6 +33,7 @@ const editTaskSchema = z.object({
 });
 
 export default function TaskDetailModal(props: any) {
+  const router = useRouter();
   const taskId: string | undefined = props?.params?.id;
 
   const { data: workspaces } = useUserWorkspaces();
@@ -46,6 +48,7 @@ export default function TaskDetailModal(props: any) {
   const [editWorkspaceId, setEditWorkspaceId] = useState("");
   const [editDueDate, setEditDueDate] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -181,6 +184,31 @@ export default function TaskDetailModal(props: any) {
     }
   };
 
+  const handleDelete = async () => {
+    if (!task?.id) return;
+
+    const user = auth.currentUser;
+    if (!user || user.uid !== task.userId) {
+      setEditError("Impossible de supprimer cette tâche.");
+      return;
+    }
+
+    if (!confirm("Supprimer cette tâche ?")) return;
+
+    setDeleting(true);
+    setEditError(null);
+
+    try {
+      await deleteDoc(doc(db, "tasks", task.id));
+      router.back();
+    } catch (e) {
+      console.error("Error deleting task (modal)", e);
+      setEditError(e instanceof Error ? e.message : "Erreur lors de la suppression de la tâche.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <Modal title="Détail de la tâche">
       {loading && (
@@ -197,13 +225,24 @@ export default function TaskDetailModal(props: any) {
         <div className="space-y-4">
           <div className="flex items-center justify-end gap-2">
             {mode === "view" ? (
-              <button
-                type="button"
-                onClick={startEdit}
-                className="px-3 py-2 rounded-md border border-input text-sm"
-              >
-                Modifier
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="px-3 py-2 rounded-md border border-input text-sm text-destructive disabled:opacity-50"
+                >
+                  {deleting ? "Suppression…" : "Supprimer"}
+                </button>
+                <button
+                  type="button"
+                  onClick={startEdit}
+                  disabled={deleting}
+                  className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+                >
+                  Modifier
+                </button>
+              </>
             ) : (
               <>
                 <button

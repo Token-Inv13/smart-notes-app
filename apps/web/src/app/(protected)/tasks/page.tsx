@@ -19,7 +19,7 @@ import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useUserTaskReminders } from "@/hooks/useUserTaskReminders";
-import { formatTimestampForInput, formatTimestampToLocalString, parseLocalDateTimeToTimestamp } from "@/lib/datetime";
+import { formatTimestampToLocalString, parseLocalDateTimeToTimestamp } from "@/lib/datetime";
 import type { TaskDoc, TaskReminderDoc } from "@/types/firestore";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -75,17 +75,7 @@ export default function TasksPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
 
-  // Edit state
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editStatus, setEditStatus] = useState<TaskStatus>("todo");
-  const [editWorkspaceId, setEditWorkspaceId] = useState<string>("");
-  const [editDueDate, setEditDueDate] = useState<string>("");
-  const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
-
-  // Delete state
-  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Reminders state
   const [newReminderTimes, setNewReminderTimes] = useState<Record<string, string>>({});
@@ -327,7 +317,7 @@ export default function TasksPage() {
     e.dataTransfer.dropEffect = "move";
   };
 
-  const tasksByStatus = useMemo(() => {
+  const groupedTasks = useMemo(() => {
     const groups: Record<TaskStatus, TaskDoc[]> = {
       todo: [],
       doing: [],
@@ -341,87 +331,6 @@ export default function TasksPage() {
 
     return groups;
   }, [filteredTasks]);
-
-  const startEditing = (task: TaskDoc) => {
-    setEditingId(task.id ?? null);
-    setEditTitle(task.title);
-    setEditStatus((task.status as TaskStatus | undefined) ?? "todo");
-    setEditWorkspaceId(task.workspaceId ?? "");
-    setEditDueDate(formatTimestampForInput(task.dueDate ?? null));
-    setEditError(null);
-  };
-
-  const cancelEditing = () => {
-    setEditingId(null);
-    setEditTitle("");
-    setEditStatus("todo");
-    setEditWorkspaceId("");
-    setEditDueDate("");
-    setEditError(null);
-  };
-
-  const handleSaveEdit = async (task: TaskDoc) => {
-    if (!task.id) return;
-    const user = auth.currentUser;
-    if (!user || user.uid !== task.userId) {
-      setEditError("Cannot update this task.");
-      return;
-    }
-
-    setEditError(null);
-
-    const validation = newTaskSchema.safeParse({
-      title: editTitle,
-      status: editStatus,
-      workspaceId: editWorkspaceId || undefined,
-      dueDate: editDueDate || undefined,
-    });
-
-    if (!validation.success) {
-      setEditError(validation.error.issues[0]?.message ?? "Données invalides.");
-      return;
-    }
-
-    const { title, status, workspaceId, dueDate } = validation.data;
-    const dueTimestamp = dueDate ? parseLocalDateTimeToTimestamp(dueDate) : null;
-
-    setSavingEdit(true);
-    try {
-      await updateDoc(doc(db, "tasks", task.id), {
-        title,
-        status,
-        workspaceId: workspaceId ?? null,
-        dueDate: dueTimestamp,
-        favorite: task.favorite === true,
-        updatedAt: serverTimestamp(),
-      });
-      cancelEditing();
-    } catch (e) {
-      console.error("Error updating task", e);
-      setEditError("Erreur lors de la modification de la tâche.");
-    } finally {
-      setSavingEdit(false);
-    }
-  };
-
-  const handleDeleteTask = async (task: TaskDoc) => {
-    if (!task.id) return;
-    const user = auth.currentUser;
-    if (!user || user.uid !== task.userId) {
-      return;
-    }
-
-    if (!confirm("Supprimer cette tâche ?")) return;
-
-    setDeletingId(task.id);
-    try {
-      await deleteDoc(doc(db, "tasks", task.id));
-    } catch (e) {
-      console.error("Error deleting task", e);
-    } finally {
-      setDeletingId(null);
-    }
-  };
 
   const toggleFavorite = async (task: TaskDoc) => {
     if (!task.id) return;
@@ -724,7 +633,6 @@ export default function TasksPage() {
       {!loading && !error && viewMode === "list" && activeTasks.length > 0 && (
         <ul className="space-y-2">
           {activeTasks.map((task) => {
-            const isEditing = editingId === task.id;
             const status = (task.status as TaskStatus | undefined) ?? "todo";
             const workspaceName =
               workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
@@ -742,202 +650,102 @@ export default function TasksPage() {
                   task.id && task.id === highlightedTaskId ? "border-primary" : ""
                 }`}
                 onClick={() => {
-                  if (isEditing) return;
                   if (!task.id) return;
                   router.push(`/tasks/${task.id}${hrefSuffix}`);
                 }}
               >
-                {!isEditing && (
-                  <>
-                    <div className="space-y-3">
-                      <div className="sn-card-header">
-                        <div className="min-w-0">
-                          <div className="sn-card-title truncate">{task.title}</div>
-                          <div className="sn-card-meta">
-                            <span className="sn-badge">{workspaceName}</span>
-                            <span className="sn-badge">{statusLabel(status)}</span>
-                            {dueLabel && <span className="sn-badge">Rappel: {dueLabel}</span>}
-                          </div>
-                        </div>
-
-                        <div className="sn-card-actions sn-card-actions-secondary shrink-0">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleFavorite(task);
-                            }}
-                            className="sn-icon-btn"
-                            aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                            title={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                          >
-                            {task.favorite ? "★" : "☆"}
-                          </button>
+                <>
+                  <div className="space-y-3">
+                    <div className="sn-card-header">
+                      <div className="min-w-0">
+                        <div className="sn-card-title truncate">{task.title}</div>
+                        <div className="sn-card-meta">
+                          <span className="sn-badge">{workspaceName}</span>
+                          <span className="sn-badge">{statusLabel(status)}</span>
+                          {dueLabel && <span className="sn-badge">Rappel: {dueLabel}</span>}
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between gap-3">
-                        <label className="text-xs flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={status === "done"}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => toggleDone(task, e.target.checked)}
-                          />
-                          <span className="text-muted-foreground">Terminé</span>
-                        </label>
-
-                        <div className="sn-card-actions sn-card-actions-secondary">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              startEditing(task);
-                            }}
-                            className="sn-text-btn"
-                          >
-                            Modifier
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteTask(task);
-                            }}
-                            disabled={deletingId === task.id}
-                            className="sn-text-btn text-destructive disabled:opacity-50"
-                          >
-                            {deletingId === task.id ? "Suppression…" : "Supprimer"}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Reminders panel */}
-                    <div className="mt-3 space-y-1 text-sm" onClick={(e) => e.stopPropagation()}>
-                      <div className="font-semibold">Rappels</div>
-                      {remindersLoading && <p>Chargement des rappels…</p>}
-                      {remindersError && <p>Impossible de charger les rappels.</p>}
-
-                      {!remindersLoading && taskReminders.length === 0 && (
-                        <p>Aucun rappel pour cette tâche.</p>
-                      )}
-
-                      {!remindersLoading && taskReminders.length > 0 && (
-                        <ul className="space-y-1">
-                          {taskReminders.map((reminder) => (
-                            <li key={reminder.id} className="flex items-center gap-2">
-                              <span>
-                                {new Date(reminder.reminderTime).toLocaleString()} {" "}
-                                {reminder.sent ? "(envoyé)" : "(en attente)"}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteReminder(reminder)}
-                                disabled={deletingReminderId === reminder.id}
-                                className="sn-text-btn text-destructive disabled:opacity-50"
-                              >
-                                {deletingReminderId === reminder.id ? "Suppression…" : "Supprimer"}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-
-                      <div className="flex flex-wrap gap-2 items-center">
-                        <input
-                          type="datetime-local"
-                          value={newReminderTimes[task.id ?? ""] ?? ""}
-                          onChange={(e) => handleReminderTimeChange(task.id ?? "", e.target.value)}
-                          aria-label="Date et heure du rappel"
-                          className="border border-input rounded-md px-2 py-1 bg-background"
-                        />
+                      <div className="sn-card-actions sn-card-actions-secondary shrink-0">
                         <button
                           type="button"
-                          onClick={() => handleCreateReminder(task)}
-                          disabled={creatingReminderForId === task.id}
-                          className="sn-text-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(task);
+                          }}
+                          className="sn-icon-btn"
+                          aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                          title={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                         >
-                          {creatingReminderForId === task.id ? "Ajout…" : "Ajouter un rappel"}
+                          {task.favorite ? "★" : "☆"}
                         </button>
                       </div>
-                      {reminderError && <div className="sn-alert sn-alert--error">{reminderError}</div>}
                     </div>
-                  </>
-                )}
 
-                {isEditing && (
-                  <>
-                    <div className="flex flex-wrap gap-2 items-center text-sm">
-                      <label className="flex flex-col">
-                        <span>Titre</span>
+                    <div className="flex items-center justify-between gap-3">
+                      <label className="text-xs flex items-center gap-2">
                         <input
-                          type="text"
-                          value={editTitle}
-                          onChange={(e) => setEditTitle(e.target.value)}
-                          className="border border-border rounded px-2 py-1 bg-background"
+                          type="checkbox"
+                          checked={status === "done"}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => toggleDone(task, e.target.checked)}
                         />
-                      </label>
-
-                      <label className="flex flex-col">
-                        <span>Statut</span>
-                        <select
-                          value={editStatus}
-                          onChange={(e) => setEditStatus(e.target.value as TaskStatus)}
-                          className="border border-border rounded px-2 py-1 bg-background"
-                        >
-                          <option value="todo">À faire</option>
-                          <option value="doing">En cours</option>
-                          <option value="done">Terminée</option>
-                        </select>
-                      </label>
-
-                      <label className="flex flex-col">
-                        <span>Dossier</span>
-                        <select
-                          value={editWorkspaceId}
-                          onChange={(e) => setEditWorkspaceId(e.target.value)}
-                          className="border border-border rounded px-2 py-1 bg-background"
-                        >
-                          <option value="">—</option>
-                          {workspaces.map((ws) => (
-                            <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
-                              {ws.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <label className="flex flex-col">
-                        <span>Rappel</span>
-                        <input
-                          type="datetime-local"
-                          value={editDueDate}
-                          onChange={(e) => setEditDueDate(e.target.value)}
-                          className="border border-border rounded px-2 py-1 bg-background"
-                        />
+                        <span className="text-muted-foreground">Terminé</span>
                       </label>
                     </div>
-                    <div className="mt-2 flex gap-2 text-sm">
+                  </div>
+
+                  {/* Reminders panel */}
+                  <div className="mt-3 space-y-1 text-sm" onClick={(e) => e.stopPropagation()}>
+                    <div className="font-semibold">Rappels</div>
+                    {remindersLoading && <p>Chargement des rappels…</p>}
+                    {remindersError && <p>Impossible de charger les rappels.</p>}
+
+                    {!remindersLoading && taskReminders.length === 0 && (
+                      <p>Aucun rappel pour cette tâche.</p>
+                    )}
+
+                    {!remindersLoading && taskReminders.length > 0 && (
+                      <ul className="space-y-1">
+                        {taskReminders.map((reminder) => (
+                          <li key={reminder.id} className="flex items-center gap-2">
+                            <span>
+                              {new Date(reminder.reminderTime).toLocaleString()} {" "}
+                              {reminder.sent ? "(envoyé)" : "(en attente)"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteReminder(reminder)}
+                              disabled={deletingReminderId === reminder.id}
+                              className="sn-text-btn text-destructive disabled:opacity-50"
+                            >
+                              {deletingReminderId === reminder.id ? "Suppression…" : "Supprimer"}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <input
+                        type="datetime-local"
+                        value={newReminderTimes[task.id ?? ""] ?? ""}
+                        onChange={(e) => handleReminderTimeChange(task.id ?? "", e.target.value)}
+                        aria-label="Date et heure du rappel"
+                        className="border border-input rounded-md px-2 py-1 bg-background"
+                      />
                       <button
                         type="button"
-                        onClick={() => handleSaveEdit(task)}
-                        disabled={savingEdit}
-                        className="border border-border rounded px-2 py-1 bg-background"
+                        onClick={() => handleCreateReminder(task)}
+                        disabled={creatingReminderForId === task.id}
+                        className="sn-text-btn"
                       >
-                        {savingEdit ? "Enregistrement…" : "Enregistrer"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={cancelEditing}
-                        className="border border-border rounded px-2 py-1 bg-background"
-                      >
-                        Annuler
+                        {creatingReminderForId === task.id ? "Ajout…" : "Ajouter un rappel"}
                       </button>
                     </div>
-                    {editError && <div className="mt-2 sn-alert sn-alert--error">{editError}</div>}
-                  </>
-                )}
+                    {reminderError && <div className="sn-alert sn-alert--error">{reminderError}</div>}
+                  </div>
+                </>
               </li>
             );
           })}
@@ -947,7 +755,6 @@ export default function TasksPage() {
       {!loading && !error && viewMode === "grid" && activeTasks.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {activeTasks.map((task) => {
-            const isEditing = editingId === task.id;
             const status = (task.status as TaskStatus | undefined) ?? "todo";
             const workspaceName =
               workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
@@ -966,204 +773,105 @@ export default function TasksPage() {
                   task.id && task.id === highlightedTaskId ? "border-primary" : ""
                 }`}
                 onClick={() => {
-                  if (isEditing) return;
                   if (!task.id) return;
                   router.push(`/tasks/${task.id}${hrefSuffix}`);
                 }}
               >
-                {!isEditing && (
-                  <>
-                    <div className="flex flex-col gap-3">
-                      <div className="sn-card-header">
-                        <div className="min-w-0">
-                          <div className="sn-card-title line-clamp-2">{task.title}</div>
-                          <div className="sn-card-meta">
-                            <span className="sn-badge">{workspaceName}</span>
-                            <span className="sn-badge">{statusLabel(status)}</span>
-                            {(!!dueLabel || !!nextReminder) && (
-                              <span className="sn-badge">
-                                {dueLabel
-                                  ? `Rappel: ${dueLabel}`
-                                  : `Rappel: ${new Date(nextReminder!.reminderTime).toLocaleString()}`}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="sn-card-actions sn-card-actions-secondary shrink-0">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleFavorite(task);
-                            }}
-                            className="sn-icon-btn"
-                            aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                            title={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                          >
-                            {task.favorite ? "★" : "☆"}
-                          </button>
+                <>
+                  <div className="flex flex-col gap-3">
+                    <div className="sn-card-header">
+                      <div className="min-w-0">
+                        <div className="sn-card-title line-clamp-2">{task.title}</div>
+                        <div className="sn-card-meta">
+                          <span className="sn-badge">{workspaceName}</span>
+                          <span className="sn-badge">{statusLabel(status)}</span>
+                          {(!!dueLabel || !!nextReminder) && (
+                            <span className="sn-badge">
+                              {dueLabel
+                                ? `Rappel: ${dueLabel}`
+                                : `Rappel: ${new Date(nextReminder!.reminderTime).toLocaleString()}`}
+                            </span>
+                          )}
                         </div>
                       </div>
-
-                      <div className="mt-auto flex items-center justify-between gap-3">
-                        <label className="text-xs flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={status === "done"}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => toggleDone(task, e.target.checked)}
-                          />
-                          <span className="text-muted-foreground">Terminé</span>
-                        </label>
-                        <div className="sn-card-actions sn-card-actions-secondary">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              startEditing(task);
-                            }}
-                            className="sn-text-btn"
-                          >
-                            Modifier
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteTask(task);
-                            }}
-                            disabled={deletingId === task.id}
-                            className="sn-text-btn text-destructive disabled:opacity-50"
-                          >
-                            {deletingId === task.id ? "Suppression…" : "Supprimer"}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Reminders panel */}
-                    <div className="mt-3 space-y-1 text-sm" onClick={(e) => e.stopPropagation()}>
-                      <div className="font-semibold">Rappels</div>
-                      {remindersLoading && <p>Chargement des rappels…</p>}
-                      {remindersError && <p>Impossible de charger les rappels.</p>}
-
-                      {!remindersLoading && taskReminders.length === 0 && <p>Aucun rappel pour cette tâche.</p>}
-
-                      {!remindersLoading && taskReminders.length > 0 && (
-                        <ul className="space-y-1">
-                          {taskReminders.map((reminder) => (
-                            <li key={reminder.id} className="flex items-center gap-2">
-                              <span>
-                                {new Date(reminder.reminderTime).toLocaleString()} {" "}
-                                {reminder.sent ? "(envoyé)" : "(en attente)"}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteReminder(reminder)}
-                                disabled={deletingReminderId === reminder.id}
-                                className="sn-text-btn text-destructive disabled:opacity-50"
-                              >
-                                {deletingReminderId === reminder.id ? "Suppression…" : "Supprimer"}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-
-                      <div className="flex flex-wrap gap-2 items-center">
-                        <input
-                          type="datetime-local"
-                          value={newReminderTimes[task.id ?? ""] ?? ""}
-                          onChange={(e) => handleReminderTimeChange(task.id ?? "", e.target.value)}
-                          aria-label="Date et heure du rappel"
-                          className="border border-input rounded-md px-2 py-1 bg-background"
-                        />
+                      <div className="sn-card-actions sn-card-actions-secondary shrink-0">
                         <button
                           type="button"
-                          onClick={() => handleCreateReminder(task)}
-                          disabled={creatingReminderForId === task.id}
-                          className="sn-text-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(task);
+                          }}
+                          className="sn-icon-btn"
+                          aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                          title={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                         >
-                          {creatingReminderForId === task.id ? "Ajout…" : "Ajouter un rappel"}
+                          {task.favorite ? "★" : "☆"}
                         </button>
                       </div>
-                      {reminderError && <div className="sn-alert sn-alert--error">{reminderError}</div>}
                     </div>
-                  </>
-                )}
 
-                {isEditing && (
-                  <>
-                    <div className="flex flex-wrap gap-2 items-center text-sm">
-                      <label className="flex flex-col">
-                        <span>Titre</span>
+                    <div className="mt-auto flex items-center justify-between gap-3">
+                      <label className="text-xs flex items-center gap-2">
                         <input
-                          type="text"
-                          value={editTitle}
-                          onChange={(e) => setEditTitle(e.target.value)}
-                          className="border border-border rounded px-2 py-1 bg-background"
+                          type="checkbox"
+                          checked={status === "done"}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => toggleDone(task, e.target.checked)}
                         />
-                      </label>
-
-                      <label className="flex flex-col">
-                        <span>Statut</span>
-                        <select
-                          value={editStatus}
-                          onChange={(e) => setEditStatus(e.target.value as TaskStatus)}
-                          className="border border-border rounded px-2 py-1 bg-background"
-                        >
-                          <option value="todo">À faire</option>
-                          <option value="doing">En cours</option>
-                          <option value="done">Terminée</option>
-                        </select>
-                      </label>
-
-                      <label className="flex flex-col">
-                        <span>Dossier</span>
-                        <select
-                          value={editWorkspaceId}
-                          onChange={(e) => setEditWorkspaceId(e.target.value)}
-                          className="border border-border rounded px-2 py-1 bg-background"
-                        >
-                          <option value="">—</option>
-                          {workspaces.map((ws) => (
-                            <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
-                              {ws.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <label className="flex flex-col">
-                        <span>Rappel</span>
-                        <input
-                          type="datetime-local"
-                          value={editDueDate}
-                          onChange={(e) => setEditDueDate(e.target.value)}
-                          className="border border-border rounded px-2 py-1 bg-background"
-                        />
+                        <span className="text-muted-foreground">Terminé</span>
                       </label>
                     </div>
-                    <div className="mt-2 flex gap-2 text-sm">
+                  </div>
+
+                  {/* Reminders panel */}
+                  <div className="mt-3 space-y-1 text-sm" onClick={(e) => e.stopPropagation()}>
+                    <div className="font-semibold">Rappels</div>
+                    {remindersLoading && <p>Chargement des rappels…</p>}
+                    {remindersError && <p>Impossible de charger les rappels.</p>}
+
+                    {!remindersLoading && taskReminders.length === 0 && <p>Aucun rappel pour cette tâche.</p>}
+
+                    {!remindersLoading && taskReminders.length > 0 && (
+                      <ul className="space-y-1">
+                        {taskReminders.map((reminder) => (
+                          <li key={reminder.id} className="flex items-center gap-2">
+                            <span>
+                              {new Date(reminder.reminderTime).toLocaleString()} {" "}
+                              {reminder.sent ? "(envoyé)" : "(en attente)"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteReminder(reminder)}
+                              disabled={deletingReminderId === reminder.id}
+                              className="sn-text-btn text-destructive disabled:opacity-50"
+                            >
+                              {deletingReminderId === reminder.id ? "Suppression…" : "Supprimer"}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <input
+                        type="datetime-local"
+                        value={newReminderTimes[task.id ?? ""] ?? ""}
+                        onChange={(e) => handleReminderTimeChange(task.id ?? "", e.target.value)}
+                        aria-label="Date et heure du rappel"
+                        className="border border-input rounded-md px-2 py-1 bg-background"
+                      />
                       <button
                         type="button"
-                        onClick={() => handleSaveEdit(task)}
-                        disabled={savingEdit}
-                        className="border border-border rounded px-2 py-1 bg-background"
+                        onClick={() => handleCreateReminder(task)}
+                        disabled={creatingReminderForId === task.id}
+                        className="sn-text-btn"
                       >
-                        {savingEdit ? "Enregistrement…" : "Enregistrer"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={cancelEditing}
-                        className="border border-border rounded px-2 py-1 bg-background"
-                      >
-                        Annuler
+                        {creatingReminderForId === task.id ? "Ajout…" : "Ajouter un rappel"}
                       </button>
                     </div>
-                    {editError && <div className="mt-2 sn-alert sn-alert--error">{editError}</div>}
-                  </>
-                )}
+                    {reminderError && <div className="sn-alert sn-alert--error">{reminderError}</div>}
+                  </div>
+                </>
               </div>
             );
           })}
@@ -1184,11 +892,11 @@ export default function TasksPage() {
             >
               <div className="flex items-center justify-between mb-2">
                 <h2 className="font-semibold">{statusLabel(colStatus)}</h2>
-                <span className="text-xs text-muted-foreground">{tasksByStatus[colStatus].length}</span>
+                <span className="text-xs text-muted-foreground">{groupedTasks[colStatus].length}</span>
               </div>
 
               <div className="space-y-2">
-                {tasksByStatus[colStatus].map((task) => {
+                {groupedTasks[colStatus].map((task) => {
                   const dueLabel = formatTimestampToLocalString(task.dueDate ?? null);
                   const isMoving = movingTaskId === task.id;
 
@@ -1217,9 +925,6 @@ export default function TasksPage() {
                             />
                             Terminé
                           </label>
-                          <button type="button" onClick={() => startEditing(task)} className="sn-text-btn">
-                            Modifier
-                          </button>
                           <button
                             type="button"
                             onClick={() => toggleFavorite(task)}
@@ -1228,20 +933,13 @@ export default function TasksPage() {
                           >
                             {task.favorite ? "★" : "☆"}
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteTask(task)}
-                            className="sn-text-btn text-destructive"
-                          >
-                            Supprimer
-                          </button>
                         </div>
                       </div>
                     </div>
                   );
                 })}
 
-                {tasksByStatus[colStatus].length === 0 && (
+                {groupedTasks[colStatus].length === 0 && (
                   <div className="text-sm text-muted-foreground">Glisse une tâche ici</div>
                 )}
               </div>
