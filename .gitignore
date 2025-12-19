@@ -17,6 +17,8 @@ dist-ssr
 # Next.js (apps/web)
 apps/web/.next/
 
+*.tsbuildinfo
+
 # PWA generated artifacts (apps/web)
 apps/web/public/sw.js
 apps/web/public/workbox-*.js
