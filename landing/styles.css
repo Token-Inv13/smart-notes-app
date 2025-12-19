@@ -46,7 +46,8 @@ a:hover{text-decoration:none}
 .header__nav a{color:rgba(15,23,42,.78);font-weight:650;font-size:13px}
 .header__nav a:hover{color:rgba(15,23,42,.96)}
 @media (max-width: 820px){.header__nav{display:none}}
-.brand__logo{display:block;height:40px;width:auto}
+.brand{display:flex;align-items:center;min-width:0;flex-shrink:0}
+.brand__logo{display:block;height:40px;width:auto;max-width:220px}
 .header__cta{display:flex;align-items:center;gap:10px}
 
 .hero{padding:64px 0 34px}
