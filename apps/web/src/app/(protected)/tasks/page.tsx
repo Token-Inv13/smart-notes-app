@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { doc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserSettings } from "@/hooks/useUserSettings";
@@ -21,7 +21,6 @@ import { useUserTaskReminders } from "@/hooks/useUserTaskReminders";
 import { formatTimestampToLocalString } from "@/lib/datetime";
 import type { TaskDoc, TaskReminderDoc } from "@/types/firestore";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
 
 type TaskStatus = "todo" | "doing" | "done";
@@ -41,7 +40,6 @@ export default function TasksPage() {
     return "Terminée";
   };
 
-  const { data: allTasksForLimit } = useUserTasks({ limit: 16 });
   const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
   const { data: workspaces } = useUserWorkspaces();
   const {
@@ -64,7 +62,6 @@ export default function TasksPage() {
   const [creatingReminderForId, setCreatingReminderForId] = useState<string | null>(null);
   const [reminderError, setReminderError] = useState<string | null>(null);
 
-  const showUpgradeCta = !!editError?.includes("Limite Free atteinte");
   const [deletingReminderId, setDeletingReminderId] = useState<string | null>(null);
 
   const searchParams = useSearchParams();
@@ -451,6 +448,8 @@ export default function TasksPage() {
           </div>
         </div>
       )}
+
+      {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
 
       {error && <div className="sn-alert sn-alert--error">Impossible de charger les tâches pour le moment.</div>}
 

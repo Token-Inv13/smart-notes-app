@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { FirebaseError } from "firebase/app";
 import {
   doc,
   serverTimestamp,
