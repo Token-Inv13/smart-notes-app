@@ -67,11 +67,10 @@ export default function TaskPdfTemplate(props: Props) {
         }
 
         .sn-pdf .logo {
-          width: 62mm;
+          width: 12mm;
           height: 12mm;
           display: block;
           object-fit: contain;
-          object-position: left center;
         }
 
         .sn-pdf .brand-text {
@@ -170,7 +169,7 @@ export default function TaskPdfTemplate(props: Props) {
         <div className="header">
           <div className="brand">
             <div className="logo-wrap">
-              <img className="logo" src="/logo.svg" alt="Smart Notes" />
+              <img className="logo" src="/logo-icon.svg" alt="Smart Notes" />
             </div>
             <div className="brand-text">
               <div className="brand-name">Smart Notes</div>
