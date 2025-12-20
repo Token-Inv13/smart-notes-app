@@ -79,12 +79,12 @@ export default function DashboardPage() {
   }, [workspaceId, workspaces]);
 
   const notesCreateHref = preferredWorkspaceId
-    ? `/notes?workspaceId=${encodeURIComponent(preferredWorkspaceId)}&create=1`
-    : '/notes?create=1';
+    ? `/notes/new?workspaceId=${encodeURIComponent(preferredWorkspaceId)}`
+    : '/notes/new';
 
   const tasksCreateHref = preferredWorkspaceId
-    ? `/tasks?workspaceId=${encodeURIComponent(preferredWorkspaceId)}&create=1`
-    : '/tasks?create=1';
+    ? `/tasks/new?workspaceId=${encodeURIComponent(preferredWorkspaceId)}`
+    : '/tasks/new';
 
   useEffect(() => {
     if (!userId) return;

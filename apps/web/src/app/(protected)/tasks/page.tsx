@@ -12,14 +12,13 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { z } from "zod";
-import { collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { doc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useUserTaskReminders } from "@/hooks/useUserTaskReminders";
-import { formatTimestampToLocalString, parseLocalDateTimeToTimestamp } from "@/lib/datetime";
+import { formatTimestampToLocalString } from "@/lib/datetime";
 import type { TaskDoc, TaskReminderDoc } from "@/types/firestore";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -28,13 +27,6 @@ import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
 type TaskStatus = "todo" | "doing" | "done";
 type TaskStatusFilter = "all" | TaskStatus;
 type WorkspaceFilter = "all" | string;
-
-const newTaskSchema = z.object({
-  title: z.string().min(1, "Le titre est requis."),
-  status: z.union([z.literal("todo"), z.literal("doing"), z.literal("done")]),
-  workspaceId: z.string().optional(),
-  dueDate: z.string().optional(),
-});
 
 export default function TasksPage() {
   const router = useRouter();
@@ -65,17 +57,6 @@ export default function TasksPage() {
   const [viewMode, setViewMode] = useState<"list" | "grid" | "kanban">("list");
   const [movingTaskId, setMovingTaskId] = useState<string | null>(null);
 
-  // New task form state
-  const [newTitle, setNewTitle] = useState("");
-  const [newStatus, setNewStatus] = useState<TaskStatus>("todo");
-  const [newWorkspaceId, setNewWorkspaceId] = useState<string>("");
-  const [newDueDate, setNewDueDate] = useState<string>("");
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [createSuccess, setCreateSuccess] = useState<string | null>(null);
-
-  const [createOpen, setCreateOpen] = useState(false);
-
   const [editError, setEditError] = useState<string | null>(null);
 
   // Reminders state
@@ -83,30 +64,24 @@ export default function TasksPage() {
   const [creatingReminderForId, setCreatingReminderForId] = useState<string | null>(null);
   const [reminderError, setReminderError] = useState<string | null>(null);
 
-  const showUpgradeCta =
-    !!createError?.includes("Limite Free atteinte") || !!editError?.includes("Limite Free atteinte");
+  const showUpgradeCta = !!editError?.includes("Limite Free atteinte");
   const [deletingReminderId, setDeletingReminderId] = useState<string | null>(null);
 
   const searchParams = useSearchParams();
   const highlightedTaskId = searchParams.get("taskId");
   const workspaceIdParam = searchParams.get("workspaceId");
   const createParam = searchParams.get("create");
-  const workspaceRequired = !workspaceIdParam;
 
   const userId = auth.currentUser?.uid;
   const showMicroGuide = !!userId && !getOnboardingFlag(userId, "tasks_microguide_v1");
 
   useEffect(() => {
     if (createParam !== "1") return;
-    setCreateOpen(true);
-  }, [createParam]);
-
-  useEffect(() => {
-    if (!userId) return;
-    if (!createOpen) return;
-    if (getOnboardingFlag(userId, "tasks_microguide_v1")) return;
-    setOnboardingFlag(userId, "tasks_microguide_v1", true);
-  }, [userId, createOpen]);
+    const href = workspaceIdParam
+      ? `/tasks/new?workspaceId=${encodeURIComponent(workspaceIdParam)}`
+      : "/tasks/new";
+    router.replace(href);
+  }, [createParam, router, workspaceIdParam]);
 
   useEffect(() => {
     try {
@@ -119,15 +94,11 @@ export default function TasksPage() {
     }
   }, []);
 
-  // Keep workspaceFilter and default new workspace in sync with ?workspaceId=... from the sidebar.
+  // Keep workspaceFilter in sync with ?workspaceId=... from the sidebar.
   useEffect(() => {
     const nextFilter = workspaceIdParam ?? "all";
     if (workspaceFilter !== nextFilter) {
       setWorkspaceFilter(nextFilter as WorkspaceFilter);
-    }
-
-    if (workspaceIdParam && !newWorkspaceId) {
-      setNewWorkspaceId(workspaceIdParam);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceIdParam]);
@@ -196,70 +167,6 @@ export default function TasksPage() {
     },
     [tasks, workspaceFilter, archiveView],
   );
-
-  const handleCreateTask = async () => {
-    const user = auth.currentUser;
-    if (!user) {
-      setCreateError("Connecte-toi pour créer ta première tâche.");
-      return;
-    }
-
-    if (!isPro && allTasksForLimit.length >= 15) {
-      setCreateError(freeLimitMessage);
-      return;
-    }
-
-    if (workspaceRequired && !newWorkspaceId) {
-      setCreateError("Sélectionne un dossier (workspace) dans la sidebar avant de créer une tâche.");
-      return;
-    }
-
-    setCreateError(null);
-    setCreateSuccess(null);
-
-    const validation = newTaskSchema.safeParse({
-      title: newTitle,
-      status: newStatus,
-      workspaceId: newWorkspaceId || undefined,
-      dueDate: newDueDate || undefined,
-    });
-
-    if (!validation.success) {
-      setCreateError(validation.error.issues[0]?.message ?? "Données invalides.");
-      return;
-    }
-
-    const { title, status, dueDate } = validation.data;
-
-    const dueTimestamp = dueDate ? parseLocalDateTimeToTimestamp(dueDate) : null;
-
-    setCreating(true);
-    try {
-      const payload: Omit<TaskDoc, "id"> = {
-        userId: user.uid,
-        title,
-        status,
-        workspaceId: newWorkspaceId,
-        dueDate: dueTimestamp,
-        favorite: false,
-        archived: false,
-        createdAt: serverTimestamp() as unknown as TaskDoc["createdAt"],
-        updatedAt: serverTimestamp() as unknown as TaskDoc["updatedAt"],
-      };
-      await addDoc(collection(db, "tasks"), payload);
-
-      setNewTitle("");
-      setNewStatus("todo");
-      setNewWorkspaceId("");
-      setNewDueDate("");
-      setCreateSuccess("Tâche créée.");
-    } catch (e) {
-      console.error("Error creating task", e);
-      setCreateError("Erreur lors de la création de la tâche.");
-    } finally {
-      setCreating(false);
-    }
-  };
 
   const handleMoveTask = async (task: TaskDoc, nextStatus: TaskStatus) => {
     if (!task.id) return;
@@ -432,15 +339,6 @@ export default function TasksPage() {
     }
   };
 
-  const canCreate = newTaskSchema.safeParse({
-    title: newTitle,
-    status: newStatus,
-    workspaceId: newWorkspaceId || undefined,
-    dueDate: newDueDate || undefined,
-  }).success;
-
-  const createWorkspaceMissing = workspaceRequired && !newWorkspaceId;
-
   useEffect(() => {
     if (!highlightedTaskId) return;
     const el = document.getElementById(`task-${highlightedTaskId}`);
@@ -509,15 +407,19 @@ export default function TasksPage() {
           <h1 className="text-xl font-semibold">Tes tâches</h1>
           <button
             type="button"
-            onClick={() => setCreateOpen((v) => !v)}
+            onClick={() => {
+              const href = workspaceIdParam
+                ? `/tasks/new?workspaceId=${encodeURIComponent(workspaceIdParam)}`
+                : "/tasks/new";
+              router.push(href);
+            }}
             className="inline-flex items-center justify-center px-3 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
-            aria-controls="create-task-panel"
           >
-            {createOpen ? "Fermer" : "Planifier une tâche"}
+            Planifier une tâche
           </button>
         </div>
 
-        {showMicroGuide && !createOpen && (
+        {showMicroGuide && (
           <div className="px-4 pb-4">
             <div className="sn-card sn-card--muted p-4">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -536,101 +438,6 @@ export default function TasksPage() {
                 </button>
               </div>
             </div>
-          </div>
-        )}
-
-        {createOpen && (
-          <div className="px-4 pb-4 sn-animate-in" id="create-task-panel">
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 items-end">
-              <div className="space-y-1 lg:col-span-2">
-                <label className="text-sm font-medium" htmlFor="task-new-title">
-                  Titre
-                </label>
-                <input
-                  id="task-new-title"
-                  type="text"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                  placeholder="Ex : Payer le loyer"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium" htmlFor="task-new-status">
-                  Statut
-                </label>
-                <select
-                  id="task-new-status"
-                  value={newStatus}
-                  onChange={(e) => setNewStatus(e.target.value as TaskStatus)}
-                  className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                >
-                  <option value="todo">À faire</option>
-                  <option value="doing">En cours</option>
-                  <option value="done">Terminée</option>
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium" htmlFor="task-new-due">
-                  Rappel
-                </label>
-                <input
-                  id="task-new-due"
-                  type="datetime-local"
-                  value={newDueDate}
-                  onChange={(e) => setNewDueDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                />
-              </div>
-            </div>
-
-            <div className="mt-3 grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 items-end">
-              <div className="space-y-1">
-                <label className="text-sm font-medium" htmlFor="task-new-workspace">
-                  Dossier
-                </label>
-                <select
-                  id="task-new-workspace"
-                  value={newWorkspaceId}
-                  onChange={(e) => setNewWorkspaceId(e.target.value)}
-                  className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                >
-                  <option value="">—</option>
-                  {workspaces.map((ws) => (
-                    <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
-                      {ws.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleCreateTask}
-                disabled={creating || !canCreate || createWorkspaceMissing}
-                className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50"
-              >
-                {creating ? "Création…" : "Créer la tâche"}
-              </button>
-            </div>
-
-            {createWorkspaceMissing && (
-              <p className="mt-2 text-sm text-muted-foreground">
-                Choisis un dossier dans la sidebar pour organiser tes tâches.
-              </p>
-            )}
-            {createError && <div className="mt-2 sn-alert sn-alert--error">{createError}</div>}
-            {showUpgradeCta && (
-              <Link
-                href="/upgrade"
-                className="mt-2 inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
-              >
-                Débloquer Pro
-              </Link>
-            )}
-            {createSuccess && <div className="mt-2 sn-alert sn-alert--success">{createSuccess}</div>}
           </div>
         )}
       </section>
