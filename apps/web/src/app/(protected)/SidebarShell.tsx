@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { PanelLeft, Menu, X } from "lucide-react";
 import SidebarWorkspaces from "./SidebarWorkspaces";
+import PwaInstallCta from "./_components/PwaInstallCta";
 
 const STORAGE_KEY = "sidebarCollapsed";
 
@@ -119,7 +120,10 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
           </div>
         </div>
 
-        <main className="flex-1 p-4 min-w-0">{children}</main>
+        <main className="flex-1 p-4 min-w-0">
+          <PwaInstallCta />
+          {children}
+        </main>
       </div>
     </div>
   );
