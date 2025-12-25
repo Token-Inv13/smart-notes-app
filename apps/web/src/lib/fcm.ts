@@ -38,8 +38,19 @@ export async function getFcmToken(): Promise<string | null> {
     return null;
   }
 
+  let serviceWorkerRegistration: ServiceWorkerRegistration | undefined;
+  if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+    try {
+      serviceWorkerRegistration = await navigator.serviceWorker.ready;
+    } catch (e) {
+      console.warn('Service worker is not ready; push notifications may not work in this environment.', e);
+    }
+  } else {
+    console.warn('Service workers are not supported in this environment; push notifications will not work.');
+  }
+
   try {
-    const token = await getToken(messaging, { vapidKey });
+    const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration });
     return token || null;
   } catch (error) {
     console.error('Error retrieving FCM token', error);

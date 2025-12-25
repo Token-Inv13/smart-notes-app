@@ -11,6 +11,7 @@ const nextConfig = withPWA({
   register: true,
   skipWaiting: true,
   disable: process.env.NODE_ENV === 'development',
+  swSrc: 'src/sw.ts',
   runtimeCaching: [
     {
       urlPattern: ({ request }) => request.mode === 'navigate',
