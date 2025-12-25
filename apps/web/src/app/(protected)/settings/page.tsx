@@ -13,6 +13,7 @@ export default function SettingsPage() {
   const [toggling, setToggling] = useState(false);
   const [toggleMessage, setToggleMessage] = useState<string | null>(null);
   const [fcmStatus, setFcmStatus] = useState<string | null>(null);
+  const [enablingPush, setEnablingPush] = useState(false);
 
   const [notesViewMode, setNotesViewMode] = useState<"list" | "grid">("list");
   const [tasksViewMode, setTasksViewMode] = useState<"list" | "grid" | "kanban">("list");
@@ -86,6 +87,10 @@ export default function SettingsPage() {
         "settings.notifications.taskReminders": nextValue,
       });
       setToggleMessage("Task reminders updated.");
+
+      if (nextValue) {
+        setFcmStatus(null);
+      }
     } catch (e) {
       console.error("Error updating task reminders", e);
       setToggleMessage("Error updating task reminders.");
@@ -200,14 +205,31 @@ export default function SettingsPage() {
 
   const handleEnablePushNotifications = async () => {
     setFcmStatus("Activation des notifications push…");
+    setEnablingPush(true);
     try {
       await registerFcmToken();
-      setFcmStatus("Notifications push activées (si la permission a été accordée).");
+
+      const permission = typeof window !== "undefined" && "Notification" in window ? Notification.permission : "denied";
+      if (permission === "granted") {
+        setFcmStatus("✅ Notifications activées");
+      } else if (permission === "denied") {
+        setFcmStatus("⚠️ Permission refusée. Tu peux réactiver les notifications depuis les paramètres de ton navigateur.");
+      } else {
+        setFcmStatus("Permission non accordée.");
+      }
     } catch (e) {
       console.error("Error enabling push notifications", e);
       setFcmStatus("Impossible d’activer les notifications push pour le moment.");
+    } finally {
+      setEnablingPush(false);
     }
   };
+
+  const notificationPermission: NotificationPermission | "unsupported" = (() => {
+    if (typeof window === "undefined") return "unsupported";
+    if (!("Notification" in window)) return "unsupported";
+    return Notification.permission;
+  })();
 
   return (
     <div className="space-y-4">
@@ -346,6 +368,19 @@ export default function SettingsPage() {
               </span>
             </div>
 
+            <div className="text-sm">
+              <span className="font-medium">État des notifications:</span>{" "}
+              <span>
+                {notificationPermission === "granted"
+                  ? "✅ Notifications activées"
+                  : notificationPermission === "denied"
+                    ? "⚠️ Permission refusée"
+                    : notificationPermission === "default"
+                      ? "— À activer"
+                      : "❌ Navigateur non compatible"}
+              </span>
+            </div>
+
             <div className="space-y-1">
               <button
                 type="button"
@@ -358,16 +393,40 @@ export default function SettingsPage() {
               {toggleMessage && <p className="text-sm">{toggleMessage}</p>}
             </div>
 
-            <div className="space-y-1">
-              <button
-                type="button"
-                onClick={handleEnablePushNotifications}
-                className="border border-border rounded px-3 py-1 bg-background"
-              >
-                Activer notifications push
-              </button>
-              {fcmStatus && <p className="text-sm">{fcmStatus}</p>}
-            </div>
+            {user.settings?.notifications?.taskReminders && notificationPermission !== "granted" && (
+              <div className="space-y-2">
+                {notificationPermission === "denied" && (
+                  <div className="sn-alert sn-alert--info">
+                    Tu peux réactiver les notifications depuis les paramètres de ton navigateur.
+                  </div>
+                )}
+
+                {notificationPermission === "default" && (
+                  <div className="sn-alert sn-alert--info">🔔 Pour recevoir les rappels, active les notifications.</div>
+                )}
+
+                {notificationPermission === "unsupported" && (
+                  <div className="sn-alert sn-alert--info">❌ Navigateur non compatible avec les notifications.</div>
+                )}
+
+                {notificationPermission !== "unsupported" && notificationPermission !== "denied" && (
+                  <button
+                    type="button"
+                    onClick={handleEnablePushNotifications}
+                    disabled={enablingPush}
+                    className="border border-border rounded px-3 py-1 bg-background"
+                  >
+                    {enablingPush ? "Activation…" : "Activer les notifications"}
+                  </button>
+                )}
+
+                {fcmStatus && <p className="text-sm">{fcmStatus}</p>}
+              </div>
+            )}
+
+            {user.settings?.notifications?.taskReminders && notificationPermission === "granted" && fcmStatus && (
+              <p className="text-sm">{fcmStatus}</p>
+            )}
           </section>
 
           <section className="border border-border rounded-lg p-4 bg-card space-y-2">
