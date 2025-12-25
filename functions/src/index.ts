@@ -62,12 +62,13 @@ export const checkAndSendReminders = functions.pubsub
         // Prepare notification message
         const message = {
           notification: {
-            title: 'Task Due Soon',
-            body: `"${task?.title}" is due in 1 hour`
+            title: '⏰ Rappel de tâche',
+            body: task?.title ? String(task.title) : 'Tu as une tâche à vérifier.'
           },
           data: {
             taskId: reminder.taskId,
-            dueDate: reminder.dueDate
+            dueDate: reminder.dueDate,
+            url: `/tasks/${reminder.taskId}`
           }
         };
         

@@ -55,9 +55,9 @@ onBackgroundMessage(messaging, (payload) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const data = event.notification.data as { taskId?: string } | undefined;
+  const data = event.notification.data as { url?: string; taskId?: string } | undefined;
   const taskId = data?.taskId;
-  const targetUrl = taskId ? `/tasks?taskId=${taskId}` : '/tasks';
+  const targetUrl = data?.url || (taskId ? `/tasks/${taskId}` : '/tasks');
 
   event.waitUntil(
     (async () => {

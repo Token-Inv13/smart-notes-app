@@ -19,6 +19,7 @@ import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useUserTaskReminders } from "@/hooks/useUserTaskReminders";
 import { formatTimestampToLocalString } from "@/lib/datetime";
+import { registerFcmToken } from "@/lib/fcm";
 import type { TaskDoc, TaskReminderDoc } from "@/types/firestore";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
@@ -61,6 +62,8 @@ export default function TasksPage() {
   const [newReminderTimes, setNewReminderTimes] = useState<Record<string, string>>({});
   const [creatingReminderForId, setCreatingReminderForId] = useState<string | null>(null);
   const [reminderError, setReminderError] = useState<string | null>(null);
+  const [pushStatus, setPushStatus] = useState<string | null>(null);
+  const [enablingPush, setEnablingPush] = useState(false);
 
   const [deletingReminderId, setDeletingReminderId] = useState<string | null>(null);
 
@@ -269,6 +272,33 @@ export default function TasksPage() {
 
   const handleReminderTimeChange = (taskId: string, value: string) => {
     setNewReminderTimes((prev) => ({ ...prev, [taskId]: value }));
+  };
+
+  const notificationPermission: NotificationPermission | "unsupported" = (() => {
+    if (typeof window === "undefined") return "unsupported";
+    if (!("Notification" in window)) return "unsupported";
+    return Notification.permission;
+  })();
+
+  const handleEnableNotifications = async () => {
+    setPushStatus("Activation des notifications…");
+    setEnablingPush(true);
+    try {
+      await registerFcmToken();
+      const nextPermission = ("Notification" in window ? Notification.permission : "denied") as NotificationPermission;
+      if (nextPermission === "granted") {
+        setPushStatus("✅ Notifications activées");
+      } else if (nextPermission === "denied") {
+        setPushStatus("⚠️ Permission refusée. Tu peux réactiver depuis les paramètres du navigateur.");
+      } else {
+        setPushStatus("Permission non accordée.");
+      }
+    } catch (e) {
+      console.error("Error enabling notifications", e);
+      setPushStatus("Impossible d’activer les notifications pour le moment.");
+    } finally {
+      setEnablingPush(false);
+    }
   };
 
   const handleCreateReminder = async (task: TaskDoc) => {
@@ -577,6 +607,41 @@ export default function TasksPage() {
                         {creatingReminderForId === task.id ? "Ajout…" : "Ajouter un rappel"}
                       </button>
                     </div>
+
+                    {notificationPermission !== "granted" && (
+                      <div className="mt-2 space-y-2">
+                        {notificationPermission === "unsupported" && (
+                          <div className="sn-alert sn-alert--info">
+                            ❌ Navigateur non compatible avec les notifications.
+                          </div>
+                        )}
+
+                        {notificationPermission === "denied" && (
+                          <div className="sn-alert sn-alert--info">
+                            ⚠️ Permission refusée. Tu peux réactiver les notifications depuis les paramètres de ton navigateur.
+                          </div>
+                        )}
+
+                        {notificationPermission === "default" && (
+                          <div className="sn-alert sn-alert--info">
+                            🔔 Pour recevoir les rappels, active les notifications.
+                          </div>
+                        )}
+
+                        {notificationPermission !== "unsupported" && notificationPermission !== "denied" && (
+                          <button
+                            type="button"
+                            onClick={handleEnableNotifications}
+                            disabled={enablingPush}
+                            className="sn-text-btn"
+                          >
+                            {enablingPush ? "Activation…" : "Activer les notifications"}
+                          </button>
+                        )}
+
+                        {pushStatus && <div className="text-xs text-muted-foreground">{pushStatus}</div>}
+                      </div>
+                    )}
                     {reminderError && <div className="sn-alert sn-alert--error">{reminderError}</div>}
                   </div>
                 </>
