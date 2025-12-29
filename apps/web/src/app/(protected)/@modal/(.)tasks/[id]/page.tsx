@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import { deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
@@ -36,7 +36,8 @@ const editTaskSchema = z.object({
 
 export default function TaskDetailModal(props: any) {
   const router = useRouter();
-  const taskId: string | undefined = props?.params?.id;
+  const params = use(props?.params as Promise<{ id: string }>);
+  const taskId: string | undefined = params?.id;
 
   const { data: workspaces } = useUserWorkspaces();
 

@@ -19,6 +19,7 @@ function getAdminApp(): admin.app.App {
   const normalizePrivateKey = (value: string) => {
     let normalized = value.trim();
     normalized = normalized.replace(/^"|"$/g, '');
+    normalized = normalized.replace(/^'|'$/g, '');
     normalized = normalized.replace(/,$/, '');
     normalized = normalized.replace(/\r\n/g, '\n');
     normalized = normalized.replace(/\\n/g, '\n');

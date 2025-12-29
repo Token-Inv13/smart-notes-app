@@ -5,18 +5,20 @@ const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 admin.initializeApp();
 exports.checkAndSendReminders = functions.pubsub
-    .schedule('every 5 minutes')
+    .schedule('every 1 minutes')
     .onRun(async (context) => {
     const now = new Date();
-    const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60000);
+    const nowIso = now.toISOString();
     try {
         const db = admin.firestore();
         const remindersSnapshot = await db
             .collection('taskReminders')
             .where('sent', '==', false)
-            .where('reminderTime', '>=', now.toISOString())
-            .where('reminderTime', '<=', fiveMinutesFromNow.toISOString())
+            .where('reminderTime', '<=', nowIso)
+            .orderBy('reminderTime', 'asc')
+            .limit(200)
             .get();
+        console.log(`checkAndSendReminders: now=${nowIso} reminders=${remindersSnapshot.size}`);
         const reminderPromises = remindersSnapshot.docs.map(async (doc) => {
             var _a, _b;
             const reminder = doc.data();
@@ -35,6 +37,11 @@ exports.checkAndSendReminders = functions.pubsub
             }
             const userData = userDoc.data();
             const fcmTokens = (userData === null || userData === void 0 ? void 0 : userData.fcmTokens) || {};
+            const tokens = Object.keys(fcmTokens);
+            if (tokens.length === 0) {
+                console.log(`No FCM tokens for user ${reminder.userId}, skipping reminder ${doc.id}`);
+                return;
+            }
             // Check if notifications are enabled
             if (!((_b = (_a = userData === null || userData === void 0 ? void 0 : userData.settings) === null || _a === void 0 ? void 0 : _a.notifications) === null || _b === void 0 ? void 0 : _b.taskReminders)) {
                 console.log(`Notifications disabled for user ${reminder.userId}`);
@@ -43,21 +50,23 @@ exports.checkAndSendReminders = functions.pubsub
             // Prepare notification message
             const message = {
                 notification: {
-                    title: 'Task Due Soon',
-                    body: `"${task === null || task === void 0 ? void 0 : task.title}" is due in 1 hour`
+                    title: '⏰ Rappel de tâche',
+                    body: (task === null || task === void 0 ? void 0 : task.title) ? String(task.title) : 'Tu as une tâche à vérifier.'
                 },
                 data: {
                     taskId: reminder.taskId,
-                    dueDate: reminder.dueDate
+                    dueDate: reminder.dueDate,
+                    url: `/tasks/${reminder.taskId}`
                 }
             };
             // Send notifications to all user's devices
-            const sendPromises = Object.keys(fcmTokens).map(async (token) => {
+            const sendPromises = tokens.map(async (token) => {
                 try {
                     await admin.messaging().send(Object.assign(Object.assign({}, message), { token }));
                 }
                 catch (error) {
                     const messagingError = error;
+                    console.warn(`Failed sending reminder ${doc.id} to token (user=${reminder.userId}) code=${messagingError.code}`);
                     if (messagingError.code === 'messaging/invalid-registration-token' ||
                         messagingError.code === 'messaging/registration-token-not-registered') {
                         // Remove invalid token
