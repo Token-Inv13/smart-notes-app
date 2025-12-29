@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { listenToForegroundMessages } from "@/lib/fcm";
 
 type ThemeMode = "light" | "dark";
 
@@ -41,6 +42,8 @@ function readLocalAppearance(): { mode: ThemeMode; background: BackgroundPreset 
 
 export default function ThemeClientProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
+    listenToForegroundMessages();
+
     const local = readLocalAppearance();
     applyTheme(local.mode);
     applyBackground(local.background);

@@ -65,8 +65,39 @@ export function listenToForegroundMessages() {
     if (!messaging) return;
 
     onMessage(messaging, (payload) => {
-      console.log('Received foreground message', payload);
-      // TODO: hook this into a UI toast/notification system
+      const title = payload.notification?.title || 'Notification';
+      const body = payload.notification?.body || '';
+      const data = payload.data as { url?: string; taskId?: string } | undefined;
+      const url = data?.url || (data?.taskId ? `/tasks/${data.taskId}` : undefined);
+
+      if (typeof Notification === 'undefined') {
+        console.log('Received foreground message', payload);
+        return;
+      }
+
+      if (Notification.permission !== 'granted') {
+        console.log('Received foreground message (no permission)', payload);
+        return;
+      }
+
+      try {
+        const n = new Notification(title, {
+          body,
+          data: { url },
+        });
+
+        n.onclick = () => {
+          try {
+            if (url) {
+              window.open(url, '_blank', 'noopener,noreferrer');
+            }
+          } catch {
+            // ignore
+          }
+        };
+      } catch (e) {
+        console.log('Received foreground message (notification failed)', payload, e);
+      }
     });
   });
 }

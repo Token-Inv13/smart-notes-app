@@ -17,19 +17,24 @@ interface MessagingError {
 }
 
 export const checkAndSendReminders = functions.pubsub
-  .schedule('every 5 minutes')
+  .schedule('every 1 minutes')
   .onRun(async (context) => {
     const now = new Date();
-    const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60000);
+    const nowIso = now.toISOString();
 
     try {
       const db = admin.firestore();
       const remindersSnapshot = await db
         .collection('taskReminders')
         .where('sent', '==', false)
-        .where('reminderTime', '>=', now.toISOString())
-        .where('reminderTime', '<=', fiveMinutesFromNow.toISOString())
+        .where('reminderTime', '<=', nowIso)
+        .orderBy('reminderTime', 'asc')
+        .limit(200)
         .get();
+
+      console.log(
+        `checkAndSendReminders: now=${nowIso} reminders=${remindersSnapshot.size}`,
+      );
 
       const reminderPromises = remindersSnapshot.docs.map(async (doc) => {
         const reminder = doc.data() as TaskReminder;
@@ -52,6 +57,12 @@ export const checkAndSendReminders = functions.pubsub
         
         const userData = userDoc.data();
         const fcmTokens = userData?.fcmTokens || {};
+
+        const tokens = Object.keys(fcmTokens);
+        if (tokens.length === 0) {
+          console.log(`No FCM tokens for user ${reminder.userId}, skipping reminder ${doc.id}`);
+          return;
+        }
         
         // Check if notifications are enabled
         if (!userData?.settings?.notifications?.taskReminders) {
@@ -73,7 +84,7 @@ export const checkAndSendReminders = functions.pubsub
         };
         
         // Send notifications to all user's devices
-        const sendPromises = Object.keys(fcmTokens).map(async (token) => {
+        const sendPromises = tokens.map(async (token) => {
           try {
             await admin.messaging().send({
               ...message,
@@ -81,6 +92,9 @@ export const checkAndSendReminders = functions.pubsub
             });
           } catch (error) {
             const messagingError = error as MessagingError;
+            console.warn(
+              `Failed sending reminder ${doc.id} to token (user=${reminder.userId}) code=${messagingError.code}`,
+            );
             if (
               messagingError.code === 'messaging/invalid-registration-token' ||
               messagingError.code === 'messaging/registration-token-not-registered'
