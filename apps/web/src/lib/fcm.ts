@@ -124,6 +124,7 @@ export async function registerFcmToken() {
         uid: user.uid,
         email: user.email ?? null,
         fcmTokens: { [token]: true },
+        settings: { notifications: { taskReminders: true } },
       }, { merge: true });
       console.log(`Registered FCM token for new user document ${user.uid}`);
       return;
@@ -132,14 +133,20 @@ export async function registerFcmToken() {
     const data = snap.data() as { fcmTokens?: Record<string, boolean> };
     const existingTokens = data.fcmTokens ?? {};
 
-    if (existingTokens[token]) {
-      console.log('FCM token already registered for this user');
-      return;
+    const updatePayload: Record<string, unknown> = {
+      'settings.notifications.taskReminders': true,
+    };
+
+    if (!existingTokens[token]) {
+      updatePayload[`fcmTokens.${token}`] = true;
     }
 
-    await updateDoc(userRef, {
-      [`fcmTokens.${token}`]: true,
-    });
+    await updateDoc(userRef, updatePayload);
+
+    if (existingTokens[token]) {
+      console.log('FCM token already registered for this user; reminders enabled');
+      return;
+    }
 
     console.log(`Registered FCM token ${token} for user ${user.uid}`);
   } catch (error) {
