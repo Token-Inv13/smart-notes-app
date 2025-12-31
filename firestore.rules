@@ -97,7 +97,9 @@ service cloud.firestore {
       // Only allow updates to the 'sent' field
       allow update: if request.auth != null && 
                       request.auth.uid == resource.data.userId &&
-                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sent']);
+                      request.resource.data.userId == resource.data.userId &&
+                      request.resource.data.taskId == resource.data.taskId &&
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dueDate', 'reminderTime', 'sent']);
       allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
     }
     
