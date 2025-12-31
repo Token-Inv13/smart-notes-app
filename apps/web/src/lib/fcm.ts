@@ -166,19 +166,18 @@ export async function registerFcmToken() {
       await updateDoc(userRef, {
         'settings.notifications.taskReminders': true,
       });
-    } else {
-      await updateDoc(userRef, {
-        [`fcmTokens.${token}`]: true,
-        'settings.notifications.taskReminders': true,
-      });
-    }
-
-    if (existingTokens[token]) {
       console.log('FCM token already registered for this user; reminders enabled');
       return;
     }
 
-    console.log(`Registered FCM token ${token} for user ${user.uid}`);
+    // Avoid using the raw token in a field path (tokens can contain '.', ':', etc.).
+    // Instead, update the whole map.
+    await updateDoc(userRef, {
+      fcmTokens: { ...existingTokens, [token]: true },
+      'settings.notifications.taskReminders': true,
+    });
+
+    console.log(`Registered FCM token for user ${user.uid}`);
   } catch (error) {
     console.error('Error registering FCM token in Firestore', error);
   }
