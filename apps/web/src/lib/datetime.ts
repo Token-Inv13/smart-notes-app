@@ -30,7 +30,14 @@ export function formatTimestampToLocalString(ts: Timestamp | null | undefined): 
 export function formatTimestampForInput(ts: Timestamp | null | undefined): string {
   if (!ts) return '';
   const date = ts.toDate();
-  // YYYY-MM-DDTHH:MM for datetime-local
-  const iso = date.toISOString();
-  return iso.slice(0, 16);
+
+  // datetime-local expects a *local* date/time string (no timezone).
+  // Using toISOString() would convert to UTC and shift the displayed time.
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const yyyy = date.getFullYear();
+  const mm = pad(date.getMonth() + 1);
+  const dd = pad(date.getDate());
+  const hh = pad(date.getHours());
+  const min = pad(date.getMinutes());
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
 }
