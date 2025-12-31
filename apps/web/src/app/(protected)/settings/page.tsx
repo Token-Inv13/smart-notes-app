@@ -66,6 +66,8 @@ export default function SettingsPage() {
     }
   };
 
+  const hasFcmTokens = Object.keys(user?.fcmTokens ?? {}).length > 0;
+
   const handleToggleTaskReminders = async () => {
     if (!user) return;
 
@@ -90,6 +92,8 @@ export default function SettingsPage() {
 
       if (nextValue) {
         setFcmStatus(null);
+        // Ensure this device is registered for push notifications.
+        await registerFcmToken();
       }
     } catch (e) {
       console.error("Error updating task reminders", e);
@@ -230,6 +234,11 @@ export default function SettingsPage() {
     if (!("Notification" in window)) return "unsupported";
     return Notification.permission;
   })();
+
+  const shouldShowRegisterDeviceCta =
+    !!user?.settings?.notifications?.taskReminders &&
+    notificationPermission === "granted" &&
+    !hasFcmTokens;
 
   return (
     <div className="space-y-4">
@@ -392,6 +401,23 @@ export default function SettingsPage() {
               </button>
               {toggleMessage && <p className="text-sm">{toggleMessage}</p>}
             </div>
+
+            {shouldShowRegisterDeviceCta && (
+              <div className="space-y-2">
+                <div className="sn-alert sn-alert--info">
+                  ⚠️ Notifications autorisées, mais aucun appareil n’est enregistré. Clique ci-dessous pour enregistrer ce navigateur.
+                </div>
+                <button
+                  type="button"
+                  onClick={handleEnablePushNotifications}
+                  disabled={enablingPush}
+                  className="border border-border rounded px-3 py-1 bg-background"
+                >
+                  {enablingPush ? "Enregistrement…" : "Enregistrer cet appareil"}
+                </button>
+                {fcmStatus && <p className="text-sm">{fcmStatus}</p>}
+              </div>
+            )}
 
             {user.settings?.notifications?.taskReminders && notificationPermission !== "granted" && (
               <div className="space-y-2">
