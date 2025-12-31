@@ -56,6 +56,16 @@ export async function getFcmToken(): Promise<string | null> {
   let serviceWorkerRegistration: ServiceWorkerRegistration | undefined;
   if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
     try {
+      // Ensure the Firebase Messaging service worker exists and is registered.
+      // Without this, Firebase may try to register `/firebase-messaging-sw.js` and fail (404).
+      try {
+        serviceWorkerRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
+          scope: '/firebase-cloud-messaging-push-scope',
+        });
+      } catch (e) {
+        console.warn('Failed to register Firebase Messaging SW; will try waiting for an existing SW.', e);
+      }
+
       // Avoid hanging forever in environments where the SW is not installed/activated.
       serviceWorkerRegistration = await withTimeout(
         navigator.serviceWorker.ready,
