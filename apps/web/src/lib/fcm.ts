@@ -20,6 +20,31 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: str
   }
 }
 
+async function waitForServiceWorkerActivation(
+  registration: ServiceWorkerRegistration,
+  timeoutMs = 5000,
+): Promise<ServiceWorkerRegistration> {
+  const sw = registration.active ?? registration.waiting ?? registration.installing;
+  if (!sw) return registration;
+  if (sw.state === 'activated') return registration;
+
+  await withTimeout(
+    new Promise<void>((resolve) => {
+      const onStateChange = () => {
+        if (sw.state === 'activated') {
+          sw.removeEventListener('statechange', onStateChange);
+          resolve();
+        }
+      };
+      sw.addEventListener('statechange', onStateChange);
+    }),
+    timeoutMs,
+    'service worker activation',
+  );
+
+  return registration;
+}
+
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return 'denied';
@@ -60,18 +85,14 @@ export async function getFcmToken(): Promise<string | null> {
       // Without this, Firebase may try to register `/firebase-messaging-sw.js` and fail (404).
       try {
         serviceWorkerRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
+          // Firebase Messaging uses this scope by default for web push.
           scope: '/firebase-cloud-messaging-push-scope',
         });
+
+        serviceWorkerRegistration = await waitForServiceWorkerActivation(serviceWorkerRegistration, 5000);
       } catch (e) {
         console.warn('Failed to register Firebase Messaging SW; will try waiting for an existing SW.', e);
       }
-
-      // Avoid hanging forever in environments where the SW is not installed/activated.
-      serviceWorkerRegistration = await withTimeout(
-        navigator.serviceWorker.ready,
-        5000,
-        'navigator.serviceWorker.ready',
-      );
     } catch (e) {
       console.warn(
         'Service worker is not ready (or timed out); trying to proceed without explicit SW registration.',
