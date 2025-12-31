@@ -58,7 +58,19 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
     return 'denied';
   }
 
-  return Notification.requestPermission();
+  try {
+    // Some browsers can keep the permission promise pending if the prompt is blocked/hidden.
+    const next = await withTimeout(
+      Promise.resolve(Notification.requestPermission()),
+      15000,
+      'Notification.requestPermission',
+    );
+    return next;
+  } catch (e) {
+    console.warn('Notification permission request did not resolve in time', e);
+    // Keep "default" so the UI can ask the user to retry.
+    return 'default';
+  }
 }
 
 export async function getFcmToken(): Promise<string | null> {
@@ -110,7 +122,11 @@ export async function getFcmToken(): Promise<string | null> {
   }
 
   try {
-    const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration });
+    const token = await withTimeout(
+      getToken(messaging, { vapidKey, serviceWorkerRegistration }),
+      15000,
+      'firebase.messaging.getToken',
+    );
     return token || null;
   } catch (error) {
     console.error('Error retrieving FCM token', error);
