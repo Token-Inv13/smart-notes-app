@@ -133,15 +133,16 @@ export async function registerFcmToken() {
     const data = snap.data() as { fcmTokens?: Record<string, boolean> };
     const existingTokens = data.fcmTokens ?? {};
 
-    const updatePayload: Record<string, unknown> = {
-      'settings.notifications.taskReminders': true,
-    };
-
-    if (!existingTokens[token]) {
-      updatePayload[`fcmTokens.${token}`] = true;
+    if (existingTokens[token]) {
+      await updateDoc(userRef, {
+        'settings.notifications.taskReminders': true,
+      });
+    } else {
+      await updateDoc(userRef, {
+        [`fcmTokens.${token}`]: true,
+        'settings.notifications.taskReminders': true,
+      });
     }
-
-    await updateDoc(userRef, updatePayload);
 
     if (existingTokens[token]) {
       console.log('FCM token already registered for this user; reminders enabled');
