@@ -5,6 +5,21 @@ import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { getMessagingInstance } from './firebase';
 import { auth, db } from './firebase';
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return 'denied';
@@ -41,9 +56,23 @@ export async function getFcmToken(): Promise<string | null> {
   let serviceWorkerRegistration: ServiceWorkerRegistration | undefined;
   if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
     try {
-      serviceWorkerRegistration = await navigator.serviceWorker.ready;
+      // Avoid hanging forever in environments where the SW is not installed/activated.
+      serviceWorkerRegistration = await withTimeout(
+        navigator.serviceWorker.ready,
+        5000,
+        'navigator.serviceWorker.ready',
+      );
     } catch (e) {
-      console.warn('Service worker is not ready; push notifications may not work in this environment.', e);
+      console.warn(
+        'Service worker is not ready (or timed out); trying to proceed without explicit SW registration.',
+        e,
+      );
+
+      try {
+        serviceWorkerRegistration = (await navigator.serviceWorker.getRegistration()) ?? undefined;
+      } catch (err) {
+        console.warn('Failed to get service worker registration', err);
+      }
     }
   } else {
     console.warn('Service workers are not supported in this environment; push notifications will not work.');
