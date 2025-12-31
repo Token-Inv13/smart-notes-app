@@ -96,7 +96,21 @@ export default function TaskCreateForm({ initialWorkspaceId, onCreated }: Props)
         createdAt: serverTimestamp() as unknown as TaskDoc["createdAt"],
         updatedAt: serverTimestamp() as unknown as TaskDoc["updatedAt"],
       };
-      await addDoc(collection(db, "tasks"), payload);
+      const taskRef = await addDoc(collection(db, "tasks"), payload);
+
+      if (validation.data.dueDate) {
+        const reminderDate = new Date(validation.data.dueDate);
+        if (!Number.isNaN(reminderDate.getTime())) {
+          await addDoc(collection(db, "taskReminders"), {
+            userId: user.uid,
+            taskId: taskRef.id,
+            dueDate: dueTimestamp ? dueTimestamp.toDate().toISOString() : "",
+            reminderTime: reminderDate.toISOString(),
+            sent: false,
+            createdAt: serverTimestamp(),
+          });
+        }
+      }
 
       setNewTitle("");
       setNewStatus("todo");

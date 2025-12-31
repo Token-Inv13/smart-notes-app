@@ -1,7 +1,18 @@
 "use client";
 
 import { use, useEffect, useMemo, useState } from "react";
-import { deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { auth, db } from "@/lib/firebase";
@@ -266,6 +277,45 @@ export default function TaskDetailModal(props: any) {
         dueDate: dueTimestamp,
         updatedAt: serverTimestamp(),
       });
+
+      const remindersRef = collection(db, "taskReminders");
+      const remindersSnap = await getDocs(
+        query(
+          remindersRef,
+          where("userId", "==", user.uid),
+          where("taskId", "==", task.id),
+        ),
+      );
+
+      const existingDocs = remindersSnap.docs;
+
+      if (!validation.data.dueDate) {
+        await Promise.all(existingDocs.map((d) => deleteDoc(d.ref)));
+      } else {
+        const reminderDate = new Date(validation.data.dueDate);
+        if (!Number.isNaN(reminderDate.getTime())) {
+          const primary = existingDocs[0] ?? null;
+          if (primary) {
+            await updateDoc(primary.ref, {
+              dueDate: dueTimestamp ? dueTimestamp.toDate().toISOString() : "",
+              reminderTime: reminderDate.toISOString(),
+              sent: false,
+            });
+            if (existingDocs.length > 1) {
+              await Promise.all(existingDocs.slice(1).map((d) => deleteDoc(d.ref)));
+            }
+          } else {
+            await addDoc(remindersRef, {
+              userId: user.uid,
+              taskId: task.id,
+              dueDate: dueTimestamp ? dueTimestamp.toDate().toISOString() : "",
+              reminderTime: reminderDate.toISOString(),
+              sent: false,
+              createdAt: serverTimestamp(),
+            });
+          }
+        }
+      }
 
       setTask((prev) =>
         prev

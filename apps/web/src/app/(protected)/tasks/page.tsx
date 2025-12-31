@@ -12,15 +12,14 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useUserTaskReminders } from "@/hooks/useUserTaskReminders";
-import { formatTimestampToLocalString } from "@/lib/datetime";
 import { registerFcmToken } from "@/lib/fcm";
-import type { TaskDoc, TaskReminderDoc } from "@/types/firestore";
+import type { TaskDoc } from "@/types/firestore";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
 
@@ -45,8 +44,6 @@ export default function TasksPage() {
   const { data: workspaces } = useUserWorkspaces();
   const {
     reminders,
-    loading: remindersLoading,
-    error: remindersError,
   } = useUserTaskReminders();
 
   const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>("all");
@@ -57,15 +54,8 @@ export default function TasksPage() {
   const [movingTaskId, setMovingTaskId] = useState<string | null>(null);
 
   const [editError, setEditError] = useState<string | null>(null);
-
-  // Reminders state
-  const [newReminderTimes, setNewReminderTimes] = useState<Record<string, string>>({});
-  const [creatingReminderForId, setCreatingReminderForId] = useState<string | null>(null);
-  const [reminderError, setReminderError] = useState<string | null>(null);
   const [pushStatus, setPushStatus] = useState<string | null>(null);
   const [enablingPush, setEnablingPush] = useState(false);
-
-  const [deletingReminderId, setDeletingReminderId] = useState<string | null>(null);
 
   const searchParams = useSearchParams();
   const highlightedTaskId = searchParams.get("taskId");
@@ -270,10 +260,6 @@ export default function TasksPage() {
     }
   };
 
-  const handleReminderTimeChange = (taskId: string, value: string) => {
-    setNewReminderTimes((prev) => ({ ...prev, [taskId]: value }));
-  };
-
   const notificationPermission: NotificationPermission | "unsupported" = (() => {
     if (typeof window === "undefined") return "unsupported";
     if (!("Notification" in window)) return "unsupported";
@@ -301,71 +287,6 @@ export default function TasksPage() {
     }
   };
 
-  const handleCreateReminder = async (task: TaskDoc) => {
-    if (!task.id) return;
-    const user = auth.currentUser;
-    if (!user) {
-      setReminderError("Connecte-toi pour ajouter un rappel.");
-      return;
-    }
-
-    const value = newReminderTimes[task.id] ?? "";
-    if (!value) {
-      setReminderError("Choisis une date et une heure de rappel.");
-      return;
-    }
-
-    setReminderError(null);
-    setCreatingReminderForId(task.id);
-
-    try {
-      const date = new Date(value);
-      if (Number.isNaN(date.getTime())) {
-        setReminderError("Date/heure de rappel invalide.");
-        setCreatingReminderForId(null);
-        return;
-      }
-
-      const reminderTimeISO = date.toISOString();
-      const dueDateISO = task.dueDate ? task.dueDate.toDate().toISOString() : "";
-
-      await addDoc(collection(db, "taskReminders"), {
-        userId: user.uid,
-        taskId: task.id,
-        dueDate: dueDateISO,
-        reminderTime: reminderTimeISO,
-        sent: false,
-        createdAt: serverTimestamp(),
-      });
-
-      setNewReminderTimes((prev) => ({ ...prev, [task.id!]: "" }));
-    } catch (e) {
-      console.error("Error creating reminder", e);
-      setReminderError("Erreur lors de la création du rappel.");
-    } finally {
-      setCreatingReminderForId(null);
-    }
-  };
-
-  const handleDeleteReminder = async (reminder: TaskReminderDoc) => {
-    if (!reminder.id) return;
-    const user = auth.currentUser;
-    if (!user || user.uid !== reminder.userId) {
-      return;
-    }
-
-    if (!confirm("Supprimer ce rappel ?")) return;
-
-    setDeletingReminderId(reminder.id);
-    try {
-      await deleteDoc(doc(db, "taskReminders", reminder.id));
-    } catch (e) {
-      console.error("Error deleting reminder", e);
-    } finally {
-      setDeletingReminderId(null);
-    }
-  };
-
   useEffect(() => {
     if (!highlightedTaskId) return;
     const el = document.getElementById(`task-${highlightedTaskId}`);
@@ -378,6 +299,36 @@ export default function TasksPage() {
     <div className="space-y-4">
       <header className="flex flex-col gap-2 mb-4">
         <h1 className="text-xl font-semibold">Tes tâches</h1>
+        {notificationPermission !== "granted" && (
+          <div className="space-y-2">
+            {notificationPermission === "unsupported" && (
+              <div className="sn-alert sn-alert--info">❌ Navigateur non compatible avec les notifications.</div>
+            )}
+
+            {notificationPermission === "denied" && (
+              <div className="sn-alert sn-alert--info">
+                ⚠️ Permission refusée. Tu peux réactiver les notifications depuis les paramètres de ton navigateur.
+              </div>
+            )}
+
+            {notificationPermission === "default" && (
+              <div className="sn-alert sn-alert--info">🔔 Pour recevoir les rappels, active les notifications.</div>
+            )}
+
+            {notificationPermission !== "unsupported" && notificationPermission !== "denied" && (
+              <button
+                type="button"
+                onClick={handleEnableNotifications}
+                disabled={enablingPush}
+                className="sn-text-btn"
+              >
+                {enablingPush ? "Activation…" : "Activer les notifications"}
+              </button>
+            )}
+
+            {pushStatus && <div className="text-xs text-muted-foreground">{pushStatus}</div>}
+          </div>
+        )}
         <div className="flex flex-wrap gap-2">
           <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
             <button
@@ -500,11 +451,13 @@ export default function TasksPage() {
             const status = (task.status as TaskStatus | undefined) ?? "todo";
             const workspaceName =
               workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
-            const dueLabel = formatTimestampToLocalString(task.dueDate ?? null);
+            const taskReminders = reminders.filter((r) => r.taskId === task.id);
+            const nextReminder = taskReminders
+              .slice()
+              .sort((a, b) => new Date(a.reminderTime).getTime() - new Date(b.reminderTime).getTime())[0];
+            const reminderLabel = nextReminder ? new Date(nextReminder.reminderTime).toLocaleString() : null;
 
             const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
-
-            const taskReminders = reminders.filter((r) => r.taskId === task.id);
 
             return (
               <li
@@ -526,7 +479,11 @@ export default function TasksPage() {
                         <div className="sn-card-meta">
                           <span className="sn-badge">{workspaceName}</span>
                           <span className="sn-badge">{statusLabel(status)}</span>
-                          {dueLabel && <span className="sn-badge">Rappel: {dueLabel}</span>}
+                          {reminderLabel ? (
+                            <span className="sn-badge">Rappel: {reminderLabel}</span>
+                          ) : (
+                            <span className="sn-badge">Aucun rappel</span>
+                          )}
                         </div>
                       </div>
 
@@ -558,92 +515,6 @@ export default function TasksPage() {
                       </label>
                     </div>
                   </div>
-
-                  {/* Reminders panel */}
-                  <div className="mt-3 space-y-1 text-sm" onClick={(e) => e.stopPropagation()}>
-                    <div className="font-semibold">Rappels</div>
-                    {remindersLoading && <p>Chargement des rappels…</p>}
-                    {remindersError && <p>Impossible de charger les rappels.</p>}
-
-                    {!remindersLoading && taskReminders.length === 0 && (
-                      <p>Aucun rappel pour cette tâche.</p>
-                    )}
-
-                    {!remindersLoading && taskReminders.length > 0 && (
-                      <ul className="space-y-1">
-                        {taskReminders.map((reminder) => (
-                          <li key={reminder.id} className="flex items-center gap-2">
-                            <span>
-                              {new Date(reminder.reminderTime).toLocaleString()} {" "}
-                              {reminder.sent ? "(envoyé)" : "(en attente)"}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteReminder(reminder)}
-                              disabled={deletingReminderId === reminder.id}
-                              className="sn-text-btn text-destructive disabled:opacity-50"
-                            >
-                              {deletingReminderId === reminder.id ? "Suppression…" : "Supprimer"}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-
-                    <div className="flex flex-wrap gap-2 items-center">
-                      <input
-                        type="datetime-local"
-                        value={newReminderTimes[task.id ?? ""] ?? ""}
-                        onChange={(e) => handleReminderTimeChange(task.id ?? "", e.target.value)}
-                        aria-label="Date et heure du rappel"
-                        className="border border-input rounded-md px-2 py-1 bg-background"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleCreateReminder(task)}
-                        disabled={creatingReminderForId === task.id}
-                        className="sn-text-btn"
-                      >
-                        {creatingReminderForId === task.id ? "Ajout…" : "Ajouter un rappel"}
-                      </button>
-                    </div>
-
-                    {notificationPermission !== "granted" && (
-                      <div className="mt-2 space-y-2">
-                        {notificationPermission === "unsupported" && (
-                          <div className="sn-alert sn-alert--info">
-                            ❌ Navigateur non compatible avec les notifications.
-                          </div>
-                        )}
-
-                        {notificationPermission === "denied" && (
-                          <div className="sn-alert sn-alert--info">
-                            ⚠️ Permission refusée. Tu peux réactiver les notifications depuis les paramètres de ton navigateur.
-                          </div>
-                        )}
-
-                        {notificationPermission === "default" && (
-                          <div className="sn-alert sn-alert--info">
-                            🔔 Pour recevoir les rappels, active les notifications.
-                          </div>
-                        )}
-
-                        {notificationPermission !== "unsupported" && notificationPermission !== "denied" && (
-                          <button
-                            type="button"
-                            onClick={handleEnableNotifications}
-                            disabled={enablingPush}
-                            className="sn-text-btn"
-                          >
-                            {enablingPush ? "Activation…" : "Activer les notifications"}
-                          </button>
-                        )}
-
-                        {pushStatus && <div className="text-xs text-muted-foreground">{pushStatus}</div>}
-                      </div>
-                    )}
-                    {reminderError && <div className="sn-alert sn-alert--error">{reminderError}</div>}
-                  </div>
                 </>
               </li>
             );
@@ -657,12 +528,12 @@ export default function TasksPage() {
             const status = (task.status as TaskStatus | undefined) ?? "todo";
             const workspaceName =
               workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
-            const dueLabel = formatTimestampToLocalString(task.dueDate ?? null);
             const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
             const taskReminders = reminders.filter((r) => r.taskId === task.id);
             const nextReminder = taskReminders
               .slice()
               .sort((a, b) => new Date(a.reminderTime).getTime() - new Date(b.reminderTime).getTime())[0];
+            const reminderLabel = nextReminder ? new Date(nextReminder.reminderTime).toLocaleString() : null;
 
             return (
               <div
@@ -684,12 +555,10 @@ export default function TasksPage() {
                         <div className="sn-card-meta">
                           <span className="sn-badge">{workspaceName}</span>
                           <span className="sn-badge">{statusLabel(status)}</span>
-                          {(!!dueLabel || !!nextReminder) && (
-                            <span className="sn-badge">
-                              {dueLabel
-                                ? `Rappel: ${dueLabel}`
-                                : `Rappel: ${new Date(nextReminder!.reminderTime).toLocaleString()}`}
-                            </span>
+                          {reminderLabel ? (
+                            <span className="sn-badge">Rappel: {reminderLabel}</span>
+                          ) : (
+                            <span className="sn-badge">Aucun rappel</span>
                           )}
                         </div>
                       </div>
@@ -721,55 +590,6 @@ export default function TasksPage() {
                       </label>
                     </div>
                   </div>
-
-                  {/* Reminders panel */}
-                  <div className="mt-3 space-y-1 text-sm" onClick={(e) => e.stopPropagation()}>
-                    <div className="font-semibold">Rappels</div>
-                    {remindersLoading && <p>Chargement des rappels…</p>}
-                    {remindersError && <p>Impossible de charger les rappels.</p>}
-
-                    {!remindersLoading && taskReminders.length === 0 && <p>Aucun rappel pour cette tâche.</p>}
-
-                    {!remindersLoading && taskReminders.length > 0 && (
-                      <ul className="space-y-1">
-                        {taskReminders.map((reminder) => (
-                          <li key={reminder.id} className="flex items-center gap-2">
-                            <span>
-                              {new Date(reminder.reminderTime).toLocaleString()} {" "}
-                              {reminder.sent ? "(envoyé)" : "(en attente)"}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteReminder(reminder)}
-                              disabled={deletingReminderId === reminder.id}
-                              className="sn-text-btn text-destructive disabled:opacity-50"
-                            >
-                              {deletingReminderId === reminder.id ? "Suppression…" : "Supprimer"}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-
-                    <div className="flex flex-wrap gap-2 items-center">
-                      <input
-                        type="datetime-local"
-                        value={newReminderTimes[task.id ?? ""] ?? ""}
-                        onChange={(e) => handleReminderTimeChange(task.id ?? "", e.target.value)}
-                        aria-label="Date et heure du rappel"
-                        className="border border-input rounded-md px-2 py-1 bg-background"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleCreateReminder(task)}
-                        disabled={creatingReminderForId === task.id}
-                        className="sn-text-btn"
-                      >
-                        {creatingReminderForId === task.id ? "Ajout…" : "Ajouter un rappel"}
-                      </button>
-                    </div>
-                    {reminderError && <div className="sn-alert sn-alert--error">{reminderError}</div>}
-                  </div>
                 </>
               </div>
             );
@@ -796,7 +616,11 @@ export default function TasksPage() {
 
               <div className="space-y-2">
                 {groupedTasks[colStatus].map((task) => {
-                  const dueLabel = formatTimestampToLocalString(task.dueDate ?? null);
+                  const taskReminders = reminders.filter((r) => r.taskId === task.id);
+                  const nextReminder = taskReminders
+                    .slice()
+                    .sort((a, b) => new Date(a.reminderTime).getTime() - new Date(b.reminderTime).getTime())[0];
+                  const reminderLabel = nextReminder ? new Date(nextReminder.reminderTime).toLocaleString() : null;
                   const isMoving = movingTaskId === task.id;
 
                   return (
@@ -811,9 +635,9 @@ export default function TasksPage() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <div className="text-sm font-medium truncate">{task.title}</div>
-                          {dueLabel && (
-                            <div className="text-xs text-muted-foreground mt-0.5">Rappel : {dueLabel}</div>
-                          )}
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {reminderLabel ? `Rappel : ${reminderLabel}` : "Aucun rappel"}
+                          </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <label className="text-xs flex items-center gap-1">
