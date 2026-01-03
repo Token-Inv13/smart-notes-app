@@ -1,7 +1,5 @@
 /// <reference lib="webworker" />
 
-import { initializeApp } from 'firebase/app';
-import { getMessaging, onBackgroundMessage } from 'firebase/messaging/sw';
 import { clientsClaim } from 'workbox-core';
 import { precacheAndRoute } from 'workbox-precaching';
 import { registerRoute } from 'workbox-routing';
@@ -27,30 +25,6 @@ registerRoute(
   ({ url }) => url.pathname.startsWith('/icons/'),
   new StaleWhileRevalidate({ cacheName: 'icons-cache' }),
 );
-
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
-};
-
-const firebaseApp = initializeApp(firebaseConfig);
-const messaging = getMessaging(firebaseApp);
-
-onBackgroundMessage(messaging, (payload) => {
-  const title = payload.notification?.title || 'Notification';
-  const body = payload.notification?.body || '';
-
-  const notificationOptions: NotificationOptions = {
-    body,
-    data: payload.data || {},
-  };
-
-  self.registration.showNotification(title, notificationOptions);
-});
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
