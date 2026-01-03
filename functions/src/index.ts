@@ -1,6 +1,6 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
-import nodemailer from 'nodemailer';
+import * as nodemailer from 'nodemailer';
 
 admin.initializeApp();
 
@@ -27,24 +27,77 @@ type SmtpEnv = {
   appBaseUrl: string;
 };
 
-function getSmtpEnv(): SmtpEnv | null {
+type SmtpEnvResolved = {
+  env: SmtpEnv;
+  source: {
+    host: 'functions.config' | 'process.env';
+    port: 'functions.config' | 'process.env';
+    user: 'functions.config' | 'process.env';
+    pass: 'functions.config' | 'process.env';
+    from: 'functions.config' | 'process.env';
+    appBaseUrl: 'functions.config' | 'process.env';
+  };
+};
+
+function getSmtpEnv(): SmtpEnvResolved | null {
   const cfg = functions.config() as any;
 
-  const host = (cfg?.smtp?.host as string | undefined) ?? process.env.SMTP_HOST;
-  const portRaw = (cfg?.smtp?.port as string | undefined) ?? process.env.SMTP_PORT;
-  const user = (cfg?.smtp?.user as string | undefined) ?? process.env.SMTP_USER;
-  const pass = (cfg?.smtp?.pass as string | undefined) ?? process.env.SMTP_PASS;
-  const from = (cfg?.smtp?.from as string | undefined) ?? process.env.SMTP_FROM;
-  const appBaseUrl = (cfg?.app?.base_url as string | undefined) ?? process.env.APP_BASE_URL;
+  const hostCfg = cfg?.smtp?.host as string | undefined;
+  const portCfg = cfg?.smtp?.port as string | undefined;
+  const userCfg = cfg?.smtp?.user as string | undefined;
+  const passCfg = cfg?.smtp?.pass as string | undefined;
+  const fromCfg = cfg?.smtp?.from as string | undefined;
+  const appBaseUrlCfg = cfg?.app?.base_url as string | undefined;
+
+  const hostEnv = process.env.SMTP_HOST;
+  const portEnv = process.env.SMTP_PORT;
+  const userEnv = process.env.SMTP_USER;
+  const passEnv = process.env.SMTP_PASS;
+  const fromEnv = process.env.SMTP_FROM;
+  const appBaseUrlEnv = process.env.APP_BASE_URL;
+
+  const host = hostCfg ?? hostEnv;
+  const portRaw = portCfg ?? portEnv;
+  const user = userCfg ?? userEnv;
+  const pass = passCfg ?? passEnv;
+  const from = fromCfg ?? fromEnv;
+  const appBaseUrl = appBaseUrlCfg ?? appBaseUrlEnv;
+
+  const source = {
+    host: hostCfg ? 'functions.config' : 'process.env',
+    port: portCfg ? 'functions.config' : 'process.env',
+    user: userCfg ? 'functions.config' : 'process.env',
+    pass: passCfg ? 'functions.config' : 'process.env',
+    from: fromCfg ? 'functions.config' : 'process.env',
+    appBaseUrl: appBaseUrlCfg ? 'functions.config' : 'process.env',
+  } as const;
 
   if (!host || !portRaw || !user || !pass || !from || !appBaseUrl) {
+    console.error('SMTP config missing', {
+      hasHost: !!host,
+      hasPort: !!portRaw,
+      hasUser: !!user,
+      hasPass: !!pass,
+      hasFrom: !!from,
+      hasAppBaseUrl: !!appBaseUrl,
+      source,
+    });
     return null;
   }
 
   const port = Number(portRaw);
-  if (!Number.isFinite(port)) return null;
+  if (!Number.isFinite(port)) {
+    console.error('SMTP config invalid port', { portRaw, source });
+    return null;
+  }
 
-  return { host, port, user, pass, from, appBaseUrl };
+  return { env: { host, port, user, pass, from, appBaseUrl }, source };
+}
+
+function getEmailTestSecret(): string | null {
+  const cfg = functions.config() as any;
+  const secret = (cfg?.email_test?.secret as string | undefined) ?? process.env.EMAIL_TEST_SECRET;
+  return secret ?? null;
 }
 
 async function sendReminderEmail(params: {
@@ -53,15 +106,34 @@ async function sendReminderEmail(params: {
   reminderTimeIso: string;
   taskId: string;
 }): Promise<void> {
-  const env = getSmtpEnv();
-  if (!env) {
+  const resolved = getSmtpEnv();
+  if (!resolved) {
     throw new Error('SMTP env is not configured');
   }
+
+  const { env, source } = resolved;
+
+  console.log('SMTP config detected', {
+    host: env.host,
+    port: env.port,
+    secure: env.port === 465,
+    user: env.user,
+    from: env.from,
+    appBaseUrl: env.appBaseUrl,
+    source,
+  });
 
   const transporter = nodemailer.createTransport({
     host: env.host,
     port: env.port,
+    // Hostinger commonly uses:
+    // - 465 with implicit TLS (secure=true)
+    // - 587 with STARTTLS (secure=false)
     secure: env.port === 465,
+    requireTLS: env.port === 587,
+    tls: {
+      minVersion: 'TLSv1.2',
+    },
     auth: {
       user: env.user,
       pass: env.pass,
@@ -87,12 +159,49 @@ async function sendReminderEmail(params: {
     </div>
   `;
 
-  await transporter.sendMail({
-    from: env.from,
-    to: params.to,
-    subject,
-    html,
-  });
+  try {
+    // Verify connection/auth early for clearer errors.
+    await transporter.verify();
+  } catch (e) {
+    console.error('SMTP verify failed', {
+      host: env.host,
+      port: env.port,
+      secure: env.port === 465,
+      user: env.user,
+      to: params.to,
+      error: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : e,
+    });
+    throw e;
+  }
+
+  try {
+    const info = await transporter.sendMail({
+      from: env.from,
+      to: params.to,
+      replyTo: env.from,
+      subject,
+      html,
+    });
+
+    console.log('Email reminder sent', {
+      to: params.to,
+      messageId: (info as any)?.messageId,
+      accepted: (info as any)?.accepted,
+      rejected: (info as any)?.rejected,
+      response: (info as any)?.response,
+    });
+  } catch (e) {
+    console.error('SMTP sendMail failed', {
+      host: env.host,
+      port: env.port,
+      secure: env.port === 465,
+      user: env.user,
+      from: env.from,
+      to: params.to,
+      error: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : e,
+    });
+    throw e;
+  }
 }
 
 function escapeHtml(input: string): string {
@@ -266,3 +375,135 @@ export const cleanupOldReminders = functions.pubsub
       console.error('Error cleaning up old reminders:', error instanceof Error ? error.message : 'Unknown error');
     }
   });
+
+export const testSendReminderEmail = functions.https.onRequest(async (req, res) => {
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed. Use POST.' });
+    return;
+  }
+
+  const secret = getEmailTestSecret();
+  if (!secret) {
+    res.status(500).json({ error: 'Email test secret is not configured.' });
+    return;
+  }
+
+  const provided = (req.get('x-email-test-secret') || '').trim();
+  if (!provided || provided !== secret) {
+    res.status(401).json({ error: 'Unauthorized.' });
+    return;
+  }
+
+  const body = (req.body ?? {}) as any;
+  const reminderId = typeof body.reminderId === 'string' ? body.reminderId : null;
+  const userId = typeof body.userId === 'string' ? body.userId : null;
+  const toOverride = typeof body.to === 'string' ? body.to : null;
+
+  const db = admin.firestore();
+
+  try {
+    const effectiveReminderId = reminderId;
+
+    if (!effectiveReminderId && userId) {
+      const snap = await db
+        .collection('taskReminders')
+        .where('userId', '==', userId)
+        .where('sent', '==', false)
+        .limit(1)
+        .get();
+
+      const doc = snap.docs[0] ?? null;
+      if (!doc) {
+        res.status(404).json({ error: 'No pending reminder found for this user.' });
+        return;
+      }
+
+      const reminderRef = doc.ref;
+      const reminder = doc.data() as TaskReminder;
+
+      const taskSnap = await db.collection('tasks').doc(reminder.taskId).get();
+      const taskTitle = taskSnap.exists ? String(taskSnap.data()?.title ?? 'Tâche') : 'Tâche';
+
+      const userSnap = await db.collection('users').doc(reminder.userId).get();
+      const userEmail = userSnap.exists && typeof userSnap.data()?.email === 'string' ? (userSnap.data() as any).email : null;
+
+      const to = toOverride ?? userEmail;
+      if (!to) {
+        res.status(400).json({ error: 'No recipient email available. Provide body.to or ensure user.email exists.' });
+        return;
+      }
+
+      await sendReminderEmail({
+        to,
+        taskTitle,
+        reminderTimeIso: reminder.reminderTime,
+        taskId: reminder.taskId,
+      });
+
+      await reminderRef.update({ sent: true, deliveryChannel: 'email' });
+
+      res.status(200).json({ ok: true, reminderId: reminderRef.id, to, deliveryChannel: 'email' });
+      return;
+    }
+
+    if (effectiveReminderId) {
+      const reminderRef = db.collection('taskReminders').doc(effectiveReminderId);
+      const reminderSnap = await reminderRef.get();
+      if (!reminderSnap.exists) {
+        res.status(404).json({ error: 'Reminder not found.' });
+        return;
+      }
+
+      const reminder = reminderSnap.data() as TaskReminder;
+
+      const taskSnap = await db.collection('tasks').doc(reminder.taskId).get();
+      const taskTitle = taskSnap.exists ? String(taskSnap.data()?.title ?? 'Tâche') : 'Tâche';
+
+      const userSnap = await db.collection('users').doc(reminder.userId).get();
+      const userEmail = userSnap.exists && typeof userSnap.data()?.email === 'string' ? (userSnap.data() as any).email : null;
+
+      const to = toOverride ?? userEmail;
+      if (!to) {
+        res.status(400).json({ error: 'No recipient email available. Provide body.to or ensure user.email exists.' });
+        return;
+      }
+
+      await sendReminderEmail({
+        to,
+        taskTitle,
+        reminderTimeIso: reminder.reminderTime,
+        taskId: reminder.taskId,
+      });
+
+      await reminderRef.update({ sent: true, deliveryChannel: 'email' });
+
+      res.status(200).json({ ok: true, reminderId: effectiveReminderId, to, deliveryChannel: 'email' });
+      return;
+    }
+
+    // Direct send mode (no Firestore reminder update)
+    const to = toOverride;
+    const taskId = typeof body.taskId === 'string' ? body.taskId : null;
+    const taskTitle = typeof body.taskTitle === 'string' ? body.taskTitle : 'Tâche';
+    const reminderTimeIso = typeof body.reminderTimeIso === 'string' ? body.reminderTimeIso : new Date().toISOString();
+
+    if (!to) {
+      res.status(400).json({ error: 'Missing body.to' });
+      return;
+    }
+
+    await sendReminderEmail({
+      to,
+      taskTitle,
+      reminderTimeIso,
+      taskId: taskId ?? 'unknown',
+    });
+
+    res.status(200).json({ ok: true, to, taskId: taskId ?? null });
+  } catch (e) {
+    console.error('testSendReminderEmail failed', e);
+    res.status(500).json({
+      error: e instanceof Error ? e.message : 'Unknown error',
+    });
+  }
+});
