@@ -4,10 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "node -e \"console.error('Legacy root Vite frontend is disabled. Use: pnpm web:dev'); process.exit(1)\"",
+    "build": "node -e \"console.error('Legacy root Vite frontend is disabled. Use: pnpm web:build'); process.exit(1)\"",
+    "preview": "node -e \"console.error('Legacy root Vite frontend is disabled. Use: pnpm web:start'); process.exit(1)\"",
+    "web:dev": "pnpm --filter web dev",
+    "web:build": "pnpm --filter web build",
+    "web:start": "pnpm --filter web start",
+    "web:lint": "pnpm --filter web lint",
+    "web:typecheck": "pnpm --filter web typecheck",
     "lint": "eslint .",
-    "preview": "vite preview",
     "emulators": "firebase emulators:start --import=./emulator-data --export-on-exit",
     "emulators:export": "firebase emulators:export ./emulator-data"
   },
