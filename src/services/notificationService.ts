@@ -43,15 +43,15 @@ export class NotificationService {
     const settings: UserSettings = userDoc.data() as UserSettings;
     if (!settings.notifications?.taskReminders) return;
 
-    // Calculate reminder time (1 hour before due date)
-    const reminderTime = new Date(dueDate.getTime() - 60 * 60 * 1000);
+    // Reminder is triggered at the explicit time chosen by the user (no offset logic).
+    const reminderTime = dueDate;
 
     // Store the reminder in Firestore
     const remindersRef = collection(db, 'taskReminders');
     await setDoc(doc(remindersRef), {
       userId,
       taskId,
-      dueDate: dueDate.toISOString(),
+      dueDate: reminderTime.toISOString(),
       reminderTime: reminderTime.toISOString(),
       sent: false
     });
