@@ -45,6 +45,35 @@ messaging.onBackgroundMessage((payload) => {
     data,
   });
 });
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  const data = event.notification?.data || {};
+  const targetUrl = (typeof data.url === 'string' && data.url) ? data.url : '/';
+
+  event.waitUntil(
+    (async () => {
+      const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      const existingClient = allClients.find((client) => 'focus' in client);
+
+      if (existingClient && 'focus' in existingClient) {
+        try {
+          if ('navigate' in existingClient && typeof existingClient.navigate === 'function') {
+            await existingClient.navigate(targetUrl);
+          }
+        } catch (_) {
+          // ignore
+        }
+
+        await existingClient.focus();
+        return;
+      }
+
+      await self.clients.openWindow(targetUrl);
+    })(),
+  );
+});
 `;
 
   return new NextResponse(sw, {
