@@ -69,8 +69,13 @@ export default function TaskDetailModal(props: any) {
   const [snoozing, setSnoozing] = useState(false);
   const [snoozeFeedback, setSnoozeFeedback] = useState<string | null>(null);
 
-  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
+  const isDirtyRef = useRef(false);
   const lastSavedSnapshotRef = useRef<string>("");
+
+  useEffect(() => {
+    isDirtyRef.current = isDirty;
+  }, [isDirty]);
 
   useEffect(() => {
     let cancelled = false;
@@ -233,6 +238,7 @@ export default function TaskDetailModal(props: any) {
       workspaceId: typeof task.workspaceId === "string" ? task.workspaceId : "",
       dueDate: formatTimestampForInput(task.dueDate ?? null),
     });
+    setIsDirty(false);
   }, [task]);
 
   const dueLabel = useMemo(() => formatFrDateTime(task?.dueDate ?? null), [task?.dueDate]);
@@ -300,6 +306,7 @@ export default function TaskDetailModal(props: any) {
     if (!task) return;
     setMode("edit");
     setEditError(null);
+    setIsDirty(false);
   };
 
   const cancelEdit = () => {
@@ -310,6 +317,7 @@ export default function TaskDetailModal(props: any) {
     setEditWorkspaceId(typeof task.workspaceId === "string" ? task.workspaceId : "");
     setEditDueDate(formatTimestampForInput(task.dueDate ?? null));
     setEditError(null);
+    setIsDirty(false);
   };
 
   const saveEdits = async (opts?: { setView?: boolean }): Promise<boolean> => {
@@ -342,6 +350,7 @@ export default function TaskDetailModal(props: any) {
 
     if (lastSavedSnapshotRef.current === nextSnapshot) {
       if (opts?.setView) setMode("view");
+      setIsDirty(false);
       return true;
     }
 
@@ -413,6 +422,7 @@ export default function TaskDetailModal(props: any) {
       );
 
       lastSavedSnapshotRef.current = nextSnapshot;
+      setIsDirty(false);
       if (opts?.setView) setMode("view");
       return true;
     } catch (e) {
@@ -431,25 +441,21 @@ export default function TaskDetailModal(props: any) {
   useEffect(() => {
     if (mode !== "edit") return;
 
-    const currentSnapshot = JSON.stringify({
-      title: editTitle,
-      status: editStatus,
-      workspaceId: editWorkspaceId,
-      dueDate: editDueDate,
-    });
-
-    if (currentSnapshot === lastSavedSnapshotRef.current) return;
-
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-    autosaveTimerRef.current = setTimeout(() => {
+    const flush = () => {
+      if (!isDirtyRef.current) return;
       void saveEdits({ setView: false });
-    }, 800);
+    };
+
+    window.addEventListener("beforeunload", flush);
+    window.addEventListener("pagehide", flush);
 
     return () => {
-      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-      autosaveTimerRef.current = null;
+      window.removeEventListener("beforeunload", flush);
+      window.removeEventListener("pagehide", flush);
+      flush();
     };
-  }, [mode, editTitle, editStatus, editWorkspaceId, editDueDate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   const handleToggleArchive = async () => {
     if (!task?.id) return;
@@ -507,13 +513,8 @@ export default function TaskDetailModal(props: any) {
       onBeforeClose={async () => {
         if (mode !== "edit") return true;
 
-        if (autosaveTimerRef.current) {
-          clearTimeout(autosaveTimerRef.current);
-          autosaveTimerRef.current = null;
-        }
-
-        const ok = await saveEdits({ setView: false });
-        return ok;
+        if (!isDirtyRef.current) return true;
+        return await saveEdits({ setView: false });
       }}
     >
       {loading && (
@@ -631,7 +632,17 @@ export default function TaskDetailModal(props: any) {
                   <input
                     id="task-modal-title"
                     value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
+                    onChange={(e) => {
+                      const nextTitle = e.target.value;
+                      setEditTitle(nextTitle);
+                      const snap = JSON.stringify({
+                        title: nextTitle,
+                        status: editStatus,
+                        workspaceId: editWorkspaceId,
+                        dueDate: editDueDate,
+                      });
+                      setIsDirty(snap !== lastSavedSnapshotRef.current);
+                    }}
                     className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                   />
                 </div>
@@ -644,7 +655,17 @@ export default function TaskDetailModal(props: any) {
                     <select
                       id="task-modal-status"
                       value={editStatus}
-                      onChange={(e) => setEditStatus(e.target.value as TaskStatus)}
+                      onChange={(e) => {
+                        const nextStatus = e.target.value as TaskStatus;
+                        setEditStatus(nextStatus);
+                        const snap = JSON.stringify({
+                          title: editTitle,
+                          status: nextStatus,
+                          workspaceId: editWorkspaceId,
+                          dueDate: editDueDate,
+                        });
+                        setIsDirty(snap !== lastSavedSnapshotRef.current);
+                      }}
                       className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                     >
                       <option value="todo">À faire</option>
@@ -661,7 +682,17 @@ export default function TaskDetailModal(props: any) {
                       id="task-modal-due"
                       type="datetime-local"
                       value={editDueDate}
-                      onChange={(e) => setEditDueDate(e.target.value)}
+                      onChange={(e) => {
+                        const nextDueDate = e.target.value;
+                        setEditDueDate(nextDueDate);
+                        const snap = JSON.stringify({
+                          title: editTitle,
+                          status: editStatus,
+                          workspaceId: editWorkspaceId,
+                          dueDate: nextDueDate,
+                        });
+                        setIsDirty(snap !== lastSavedSnapshotRef.current);
+                      }}
                       className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                     />
                   </div>
@@ -674,7 +705,17 @@ export default function TaskDetailModal(props: any) {
                   <select
                     id="task-modal-workspace"
                     value={editWorkspaceId}
-                    onChange={(e) => setEditWorkspaceId(e.target.value)}
+                    onChange={(e) => {
+                      const nextWorkspaceId = e.target.value;
+                      setEditWorkspaceId(nextWorkspaceId);
+                      const snap = JSON.stringify({
+                        title: editTitle,
+                        status: editStatus,
+                        workspaceId: nextWorkspaceId,
+                        dueDate: editDueDate,
+                      });
+                      setIsDirty(snap !== lastSavedSnapshotRef.current);
+                    }}
                     className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                   >
                     <option value="">—</option>

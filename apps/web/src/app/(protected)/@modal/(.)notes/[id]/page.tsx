@@ -44,8 +44,13 @@ export default function NoteDetailModal(props: any) {
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
   const [exportFeedback, setExportFeedback] = useState<string | null>(null);
 
-  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
+  const isDirtyRef = useRef(false);
   const lastSavedSnapshotRef = useRef<string>("");
+
+  useEffect(() => {
+    isDirtyRef.current = isDirty;
+  }, [isDirty]);
 
   useEffect(() => {
     let cancelled = false;
@@ -201,6 +206,7 @@ export default function NoteDetailModal(props: any) {
       content: note.content ?? "",
       workspaceId: typeof note.workspaceId === "string" ? note.workspaceId : "",
     });
+    setIsDirty(false);
   }, [note]);
 
   const createdLabel = useMemo(() => formatFrDateTime(note?.createdAt ?? null), [note?.createdAt]);
@@ -210,6 +216,7 @@ export default function NoteDetailModal(props: any) {
     if (!note) return;
     setMode("edit");
     setEditError(null);
+    setIsDirty(false);
   };
 
   const cancelEdit = () => {
@@ -219,6 +226,7 @@ export default function NoteDetailModal(props: any) {
     setEditContent(note.content ?? "");
     setEditWorkspaceId(typeof note.workspaceId === "string" ? note.workspaceId : "");
     setEditError(null);
+    setIsDirty(false);
   };
 
   const saveEdits = async (opts?: { setView?: boolean }): Promise<boolean> => {
@@ -249,6 +257,7 @@ export default function NoteDetailModal(props: any) {
 
     if (lastSavedSnapshotRef.current === nextSnapshot) {
       if (opts?.setView) setMode("view");
+      setIsDirty(false);
       return true;
     }
 
@@ -264,6 +273,7 @@ export default function NoteDetailModal(props: any) {
       });
 
       lastSavedSnapshotRef.current = nextSnapshot;
+      setIsDirty(false);
 
       setNote((prev) =>
         prev
@@ -293,24 +303,21 @@ export default function NoteDetailModal(props: any) {
   useEffect(() => {
     if (mode !== "edit") return;
 
-    const currentSnapshot = JSON.stringify({
-      title: editTitle,
-      content: editContent,
-      workspaceId: editWorkspaceId,
-    });
-
-    if (currentSnapshot === lastSavedSnapshotRef.current) return;
-
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-    autosaveTimerRef.current = setTimeout(() => {
+    const flush = () => {
+      if (!isDirtyRef.current) return;
       void saveEdits({ setView: false });
-    }, 800);
+    };
+
+    window.addEventListener("beforeunload", flush);
+    window.addEventListener("pagehide", flush);
 
     return () => {
-      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-      autosaveTimerRef.current = null;
+      window.removeEventListener("beforeunload", flush);
+      window.removeEventListener("pagehide", flush);
+      flush();
     };
-  }, [mode, editTitle, editContent, editWorkspaceId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   const handleToggleArchive = async () => {
     if (!note?.id) return;
@@ -368,13 +375,8 @@ export default function NoteDetailModal(props: any) {
       onBeforeClose={async () => {
         if (mode !== "edit") return true;
 
-        if (autosaveTimerRef.current) {
-          clearTimeout(autosaveTimerRef.current);
-          autosaveTimerRef.current = null;
-        }
-
-        const ok = await saveEdits({ setView: false });
-        return ok;
+        if (!isDirtyRef.current) return true;
+        return await saveEdits({ setView: false });
       }}
     >
       {loading && (
@@ -451,7 +453,16 @@ export default function NoteDetailModal(props: any) {
                   <input
                     id="note-modal-title"
                     value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
+                    onChange={(e) => {
+                      const nextTitle = e.target.value;
+                      setEditTitle(nextTitle);
+                      const snap = JSON.stringify({
+                        title: nextTitle,
+                        content: editContent,
+                        workspaceId: editWorkspaceId,
+                      });
+                      setIsDirty(snap !== lastSavedSnapshotRef.current);
+                    }}
                     className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                   />
                 </div>
@@ -463,7 +474,16 @@ export default function NoteDetailModal(props: any) {
                   <select
                     id="note-modal-workspace"
                     value={editWorkspaceId}
-                    onChange={(e) => setEditWorkspaceId(e.target.value)}
+                    onChange={(e) => {
+                      const nextWorkspaceId = e.target.value;
+                      setEditWorkspaceId(nextWorkspaceId);
+                      const snap = JSON.stringify({
+                        title: editTitle,
+                        content: editContent,
+                        workspaceId: nextWorkspaceId,
+                      });
+                      setIsDirty(snap !== lastSavedSnapshotRef.current);
+                    }}
                     className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                   >
                     <option value="">—</option>
@@ -482,7 +502,16 @@ export default function NoteDetailModal(props: any) {
                   <textarea
                     id="note-modal-content"
                     value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
+                    onChange={(e) => {
+                      const nextContent = e.target.value;
+                      setEditContent(nextContent);
+                      const snap = JSON.stringify({
+                        title: editTitle,
+                        content: nextContent,
+                        workspaceId: editWorkspaceId,
+                      });
+                      setIsDirty(snap !== lastSavedSnapshotRef.current);
+                    }}
                     className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                   />
                 </div>
