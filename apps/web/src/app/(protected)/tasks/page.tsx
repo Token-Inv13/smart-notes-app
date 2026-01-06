@@ -11,16 +11,17 @@
  * All writes must respect Firestore rules: user can only modify their own tasks.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
+import { useUserNotes } from "@/hooks/useUserNotes";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useUserTaskReminders } from "@/hooks/useUserTaskReminders";
 import { registerFcmToken } from "@/lib/fcm";
 import type { TaskDoc } from "@/types/firestore";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
 
 type TaskStatus = "todo" | "doing" | "done";
@@ -29,6 +30,7 @@ type WorkspaceFilter = "all" | string;
 
 export default function TasksPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const { data: tasks, loading, error } = useUserTasks();
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === "pro";
@@ -62,8 +64,12 @@ export default function TasksPage() {
   const workspaceIdParam = searchParams.get("workspaceId");
   const createParam = searchParams.get("create");
 
+  const tabsTouchStartRef = useRef<{ x: number; y: number } | null>(null);
+
   const userId = auth.currentUser?.uid;
   const showMicroGuide = !!userId && !getOnboardingFlag(userId, "tasks_microguide_v1");
+
+  const { data: notesForCounter } = useUserNotes({ workspaceId: workspaceIdParam ?? undefined });
 
   useEffect(() => {
     if (createParam !== "1") return;
@@ -156,6 +162,59 @@ export default function TasksPage() {
         });
     },
     [tasks, workspaceFilter, archiveView],
+  );
+
+  const visibleTasksCount = useMemo(
+    () => activeTasks.length + completedTasks.length,
+    [activeTasks.length, completedTasks.length],
+  );
+  const visibleNotesCount = useMemo(
+    () => notesForCounter.filter((n) => n.archived !== true).length,
+    [notesForCounter],
+  );
+
+  const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
+  const tabs = (
+    <div
+      className="mb-4"
+      onTouchStart={(e) => {
+        const t = e.touches[0];
+        if (!t) return;
+        tabsTouchStartRef.current = { x: t.clientX, y: t.clientY };
+      }}
+      onTouchEnd={(e) => {
+        const start = tabsTouchStartRef.current;
+        tabsTouchStartRef.current = null;
+        const t = e.changedTouches[0];
+        if (!start || !t) return;
+
+        const dx = t.clientX - start.x;
+        const dy = t.clientY - start.y;
+        if (Math.abs(dx) < 60) return;
+        if (Math.abs(dx) < Math.abs(dy)) return;
+
+        if (dx > 0) {
+          router.push(`/notes${hrefSuffix}`);
+        }
+      }}
+    >
+      <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
+        <button
+          type="button"
+          onClick={() => router.push(`/notes${hrefSuffix}`)}
+          className={`px-3 py-1 text-sm ${pathname.startsWith("/notes") ? "bg-accent font-semibold" : ""}`}
+        >
+          Notes ({visibleNotesCount})
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push(`/tasks${hrefSuffix}`)}
+          className={`px-3 py-1 text-sm ${pathname.startsWith("/tasks") ? "bg-accent font-semibold" : ""}`}
+        >
+          Tâches ({visibleTasksCount})
+        </button>
+      </div>
+    </div>
   );
 
   const handleMoveTask = async (task: TaskDoc, nextStatus: TaskStatus) => {
@@ -297,6 +356,7 @@ export default function TasksPage() {
 
   return (
     <div className="space-y-4">
+      {tabs}
       <header className="flex flex-col gap-2 mb-4">
         <h1 className="text-xl font-semibold">Tes tâches</h1>
         {notificationPermission !== "granted" && (

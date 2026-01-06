@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FirebaseError } from "firebase/app";
 import {
   doc,
@@ -10,6 +10,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserNotes } from "@/hooks/useUserNotes";
+import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import type { NoteDoc } from "@/types/firestore";
@@ -18,10 +19,13 @@ import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
 
 export default function NotesPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId") || undefined;
   const createParam = searchParams.get("create");
   const { data: workspaces } = useUserWorkspaces();
+
+  const tabsTouchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [archiveView, setArchiveView] = useState<"active" | "archived">("active");
@@ -33,6 +37,7 @@ export default function NotesPage() {
 
   const { data: notes, loading, error } = useUserNotes({ workspaceId });
   const { data: favoriteNotesForLimit } = useUserNotes({ favoriteOnly: true, limit: 11 });
+  const { data: tasksForCounter } = useUserTasks({ workspaceId });
 
   const userId = auth.currentUser?.uid;
   const showMicroGuide = !!userId && !getOnboardingFlag(userId, "notes_microguide_v1");
@@ -82,6 +87,56 @@ export default function NotesPage() {
     [sortedNotes, archivePredicate],
   );
 
+  const visibleNotesCount = activeNotes.length + completedNotes.length;
+  const visibleTasksCount = useMemo(
+    () => tasksForCounter.filter((t) => t.archived !== true).length,
+    [tasksForCounter],
+  );
+
+  const hrefSuffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
+  const tabs = (
+    <div
+      className="mb-4"
+      onTouchStart={(e) => {
+        const t = e.touches[0];
+        if (!t) return;
+        tabsTouchStartRef.current = { x: t.clientX, y: t.clientY };
+      }}
+      onTouchEnd={(e) => {
+        const start = tabsTouchStartRef.current;
+        tabsTouchStartRef.current = null;
+        const t = e.changedTouches[0];
+        if (!start || !t) return;
+
+        const dx = t.clientX - start.x;
+        const dy = t.clientY - start.y;
+        if (Math.abs(dx) < 60) return;
+        if (Math.abs(dx) < Math.abs(dy)) return;
+
+        if (dx < 0) {
+          router.push(`/tasks${hrefSuffix}`);
+        }
+      }}
+    >
+      <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
+        <button
+          type="button"
+          onClick={() => router.push(`/notes${hrefSuffix}`)}
+          className={`px-3 py-1 text-sm ${pathname.startsWith("/notes") ? "bg-accent font-semibold" : ""}`}
+        >
+          Notes ({visibleNotesCount})
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push(`/tasks${hrefSuffix}`)}
+          className={`px-3 py-1 text-sm ${pathname.startsWith("/tasks") ? "bg-accent font-semibold" : ""}`}
+        >
+          Tâches ({visibleTasksCount})
+        </button>
+      </div>
+    </div>
+  );
+
   const toggleCompleted = async (note: NoteDoc, nextCompleted: boolean) => {
     if (!note.id) return;
     const user = auth.currentUser;
@@ -125,6 +180,7 @@ export default function NotesPage() {
 
   return (
     <div className="space-y-8">
+      {tabs}
       <section className="border border-border rounded-lg bg-card">
         <div className="p-4 flex items-center justify-between gap-3">
           <h1 className="text-xl font-semibold">Tes notes</h1>
