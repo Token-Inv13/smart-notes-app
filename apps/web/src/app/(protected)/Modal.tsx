@@ -6,13 +6,23 @@ import { useRouter } from "next/navigation";
 interface ModalProps {
   title?: string;
   children: React.ReactNode;
+  onBeforeClose?: () => void | boolean | Promise<void | boolean>;
 }
 
-export default function Modal({ title, children }: ModalProps) {
+export default function Modal({ title, children, onBeforeClose }: ModalProps) {
   const router = useRouter();
   const panelRef = useRef<HTMLDivElement | null>(null);
 
-  const close = () => {
+  const close = async () => {
+    if (onBeforeClose) {
+      try {
+        const result = await onBeforeClose();
+        if (result === false) return;
+      } catch {
+        return;
+      }
+    }
+
     if (typeof window !== "undefined" && window.history.length <= 1) {
       router.push("/dashboard");
       return;
@@ -24,7 +34,7 @@ export default function Modal({ title, children }: ModalProps) {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        close();
+        void close();
       }
     };
 
@@ -39,7 +49,7 @@ export default function Modal({ title, children }: ModalProps) {
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) close();
+        if (e.target === e.currentTarget) void close();
       }}
       role="dialog"
       aria-modal="true"
@@ -57,7 +67,7 @@ export default function Modal({ title, children }: ModalProps) {
           </div>
           <button
             type="button"
-            onClick={close}
+            onClick={() => void close()}
             className="sn-icon-btn"
             aria-label="Fermer"
             title="Fermer"

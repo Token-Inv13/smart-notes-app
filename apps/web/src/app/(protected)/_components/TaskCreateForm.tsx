@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
@@ -40,9 +40,65 @@ export default function TaskCreateForm({ initialWorkspaceId, onCreated }: Props)
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedDraftRef = useRef<string>("");
+  const DRAFT_KEY = "smartnotes:draft:new-task";
+
   useEffect(() => {
     setNewWorkspaceId(initialWorkspaceId ?? "");
   }, [initialWorkspaceId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const raw = window.sessionStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        title?: string;
+        status?: TaskStatus;
+        workspaceId?: string;
+        dueDate?: string;
+      };
+
+      setNewTitle((prev) => prev || (typeof parsed.title === "string" ? parsed.title : ""));
+      setNewStatus((prev) => prev || (parsed.status === "todo" || parsed.status === "doing" || parsed.status === "done" ? parsed.status : prev));
+      setNewWorkspaceId((prev) => prev || (typeof parsed.workspaceId === "string" ? parsed.workspaceId : ""));
+      setNewDueDate((prev) => prev || (typeof parsed.dueDate === "string" ? parsed.dueDate : ""));
+      lastSavedDraftRef.current = raw;
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const draft = JSON.stringify({
+      title: newTitle,
+      status: newStatus,
+      workspaceId: newWorkspaceId,
+      dueDate: newDueDate,
+    });
+
+    if (draft === lastSavedDraftRef.current) return;
+
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(() => {
+      try {
+        window.sessionStorage.setItem(DRAFT_KEY, draft);
+        lastSavedDraftRef.current = draft;
+      } catch {
+        // ignore
+      }
+    }, 800);
+
+    return () => {
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+      draftTimerRef.current = null;
+    };
+  }, [newTitle, newStatus, newWorkspaceId, newDueDate]);
 
   const canCreate = useMemo(
     () =>
@@ -110,6 +166,12 @@ export default function TaskCreateForm({ initialWorkspaceId, onCreated }: Props)
             createdAt: serverTimestamp(),
           });
         }
+      }
+
+      try {
+        if (typeof window !== "undefined") window.sessionStorage.removeItem(DRAFT_KEY);
+      } catch {
+        // ignore
       }
 
       setNewTitle("");

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { FirebaseError } from "firebase/app";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
@@ -36,9 +36,58 @@ export default function NoteCreateForm({ initialWorkspaceId, onCreated }: Props)
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedDraftRef = useRef<string>("");
+  const DRAFT_KEY = "smartnotes:draft:new-note";
+
   useEffect(() => {
     setNoteWorkspaceId(initialWorkspaceId ?? "");
   }, [initialWorkspaceId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const raw = window.sessionStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { title?: string; content?: string; workspaceId?: string };
+
+      setNoteTitle((prev) => prev || (typeof parsed.title === "string" ? parsed.title : ""));
+      setNoteContent((prev) => prev || (typeof parsed.content === "string" ? parsed.content : ""));
+      setNoteWorkspaceId((prev) => prev || (typeof parsed.workspaceId === "string" ? parsed.workspaceId : ""));
+      lastSavedDraftRef.current = raw;
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const draft = JSON.stringify({
+      title: noteTitle,
+      content: noteContent,
+      workspaceId: noteWorkspaceId,
+    });
+
+    if (draft === lastSavedDraftRef.current) return;
+
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(() => {
+      try {
+        window.sessionStorage.setItem(DRAFT_KEY, draft);
+        lastSavedDraftRef.current = draft;
+      } catch {
+        // ignore
+      }
+    }, 800);
+
+    return () => {
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+      draftTimerRef.current = null;
+    };
+  }, [noteTitle, noteContent, noteWorkspaceId]);
 
   const handleCreateNote = async () => {
     const user = auth.currentUser;
@@ -77,6 +126,12 @@ export default function NoteCreateForm({ initialWorkspaceId, onCreated }: Props)
         updatedAt: serverTimestamp() as unknown as NoteDoc["updatedAt"],
       };
       await addDoc(collection(db, "notes"), payload);
+
+      try {
+        if (typeof window !== "undefined") window.sessionStorage.removeItem(DRAFT_KEY);
+      } catch {
+        // ignore
+      }
 
       setNoteTitle("");
       setNoteContent("");

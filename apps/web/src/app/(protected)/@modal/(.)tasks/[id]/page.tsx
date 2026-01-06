@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import {
   addDoc,
   collection,
@@ -68,6 +68,9 @@ export default function TaskDetailModal(props: any) {
   const [exportFeedback, setExportFeedback] = useState<string | null>(null);
   const [snoozing, setSnoozing] = useState(false);
   const [snoozeFeedback, setSnoozeFeedback] = useState<string | null>(null);
+
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedSnapshotRef = useRef<string>("");
 
   useEffect(() => {
     let cancelled = false;
@@ -223,6 +226,13 @@ export default function TaskDetailModal(props: any) {
     setEditError(null);
     setShareFeedback(null);
     setExportFeedback(null);
+
+    lastSavedSnapshotRef.current = JSON.stringify({
+      title: task.title ?? "",
+      status: ((task.status as TaskStatus | undefined) ?? "todo") as TaskStatus,
+      workspaceId: typeof task.workspaceId === "string" ? task.workspaceId : "",
+      dueDate: formatTimestampForInput(task.dueDate ?? null),
+    });
   }, [task]);
 
   const dueLabel = useMemo(() => formatFrDateTime(task?.dueDate ?? null), [task?.dueDate]);
@@ -302,13 +312,13 @@ export default function TaskDetailModal(props: any) {
     setEditError(null);
   };
 
-  const handleSave = async () => {
-    if (!task?.id) return;
+  const saveEdits = async (opts?: { setView?: boolean }): Promise<boolean> => {
+    if (!task?.id) return false;
 
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) {
       setEditError("Impossible de modifier cette tâche.");
-      return;
+      return false;
     }
 
     const validation = editTaskSchema.safeParse({
@@ -320,7 +330,19 @@ export default function TaskDetailModal(props: any) {
 
     if (!validation.success) {
       setEditError(validation.error.issues[0]?.message ?? "Données invalides.");
-      return;
+      return false;
+    }
+
+    const nextSnapshot = JSON.stringify({
+      title: validation.data.title,
+      status: validation.data.status,
+      workspaceId: validation.data.workspaceId,
+      dueDate: editDueDate,
+    });
+
+    if (lastSavedSnapshotRef.current === nextSnapshot) {
+      if (opts?.setView) setMode("view");
+      return true;
     }
 
     const dueTimestamp = validation.data.dueDate
@@ -390,14 +412,44 @@ export default function TaskDetailModal(props: any) {
           : prev,
       );
 
-      setMode("view");
+      lastSavedSnapshotRef.current = nextSnapshot;
+      if (opts?.setView) setMode("view");
+      return true;
     } catch (e) {
       console.error("Error updating task (modal)", e);
       setEditError(e instanceof Error ? e.message : "Erreur lors de la modification de la tâche.");
+      return false;
     } finally {
       setSaving(false);
     }
   };
+
+  const handleSave = async () => {
+    await saveEdits({ setView: true });
+  };
+
+  useEffect(() => {
+    if (mode !== "edit") return;
+
+    const currentSnapshot = JSON.stringify({
+      title: editTitle,
+      status: editStatus,
+      workspaceId: editWorkspaceId,
+      dueDate: editDueDate,
+    });
+
+    if (currentSnapshot === lastSavedSnapshotRef.current) return;
+
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      void saveEdits({ setView: false });
+    }, 800);
+
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    };
+  }, [mode, editTitle, editStatus, editWorkspaceId, editDueDate]);
 
   const handleToggleArchive = async () => {
     if (!task?.id) return;
@@ -450,7 +502,20 @@ export default function TaskDetailModal(props: any) {
   };
 
   return (
-    <Modal title="Détail de la tâche">
+    <Modal
+      title="Détail de la tâche"
+      onBeforeClose={async () => {
+        if (mode !== "edit") return true;
+
+        if (autosaveTimerRef.current) {
+          clearTimeout(autosaveTimerRef.current);
+          autosaveTimerRef.current = null;
+        }
+
+        const ok = await saveEdits({ setView: false });
+        return ok;
+      }}
+    >
       {loading && (
         <div className="sn-skeleton-card space-y-3">
           <div className="sn-skeleton-title w-56" />

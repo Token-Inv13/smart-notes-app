@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
@@ -43,6 +43,9 @@ export default function NoteDetailModal(props: any) {
   const [editError, setEditError] = useState<string | null>(null);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
   const [exportFeedback, setExportFeedback] = useState<string | null>(null);
+
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedSnapshotRef = useRef<string>("");
 
   useEffect(() => {
     let cancelled = false;
@@ -192,6 +195,12 @@ export default function NoteDetailModal(props: any) {
     setEditError(null);
     setShareFeedback(null);
     setExportFeedback(null);
+
+    lastSavedSnapshotRef.current = JSON.stringify({
+      title: note.title ?? "",
+      content: note.content ?? "",
+      workspaceId: typeof note.workspaceId === "string" ? note.workspaceId : "",
+    });
   }, [note]);
 
   const createdLabel = useMemo(() => formatFrDateTime(note?.createdAt ?? null), [note?.createdAt]);
@@ -212,13 +221,13 @@ export default function NoteDetailModal(props: any) {
     setEditError(null);
   };
 
-  const handleSave = async () => {
-    if (!note?.id) return;
+  const saveEdits = async (opts?: { setView?: boolean }): Promise<boolean> => {
+    if (!note?.id) return false;
 
     const user = auth.currentUser;
     if (!user || user.uid !== note.userId) {
       setEditError("Impossible de modifier cette note.");
-      return;
+      return false;
     }
 
     const validation = editNoteSchema.safeParse({
@@ -229,7 +238,18 @@ export default function NoteDetailModal(props: any) {
 
     if (!validation.success) {
       setEditError(validation.error.issues[0]?.message ?? "Données invalides.");
-      return;
+      return false;
+    }
+
+    const nextSnapshot = JSON.stringify({
+      title: validation.data.title,
+      content: validation.data.content ?? "",
+      workspaceId: validation.data.workspaceId,
+    });
+
+    if (lastSavedSnapshotRef.current === nextSnapshot) {
+      if (opts?.setView) setMode("view");
+      return true;
     }
 
     setSaving(true);
@@ -243,6 +263,8 @@ export default function NoteDetailModal(props: any) {
         updatedAt: serverTimestamp(),
       });
 
+      lastSavedSnapshotRef.current = nextSnapshot;
+
       setNote((prev) =>
         prev
           ? {
@@ -253,14 +275,42 @@ export default function NoteDetailModal(props: any) {
             }
           : prev,
       );
-      setMode("view");
+      if (opts?.setView) setMode("view");
+      return true;
     } catch (e) {
       console.error("Error updating note (modal)", e);
       setEditError(e instanceof Error ? e.message : "Erreur lors de la modification de la note.");
+      return false;
     } finally {
       setSaving(false);
     }
   };
+
+  const handleSave = async () => {
+    await saveEdits({ setView: true });
+  };
+
+  useEffect(() => {
+    if (mode !== "edit") return;
+
+    const currentSnapshot = JSON.stringify({
+      title: editTitle,
+      content: editContent,
+      workspaceId: editWorkspaceId,
+    });
+
+    if (currentSnapshot === lastSavedSnapshotRef.current) return;
+
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      void saveEdits({ setView: false });
+    }, 800);
+
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    };
+  }, [mode, editTitle, editContent, editWorkspaceId]);
 
   const handleToggleArchive = async () => {
     if (!note?.id) return;
@@ -313,7 +363,20 @@ export default function NoteDetailModal(props: any) {
   };
 
   return (
-    <Modal title="Détail de la note">
+    <Modal
+      title="Détail de la note"
+      onBeforeClose={async () => {
+        if (mode !== "edit") return true;
+
+        if (autosaveTimerRef.current) {
+          clearTimeout(autosaveTimerRef.current);
+          autosaveTimerRef.current = null;
+        }
+
+        const ok = await saveEdits({ setView: false });
+        return ok;
+      }}
+    >
       {loading && (
         <div className="sn-skeleton-card space-y-3">
           <div className="sn-skeleton-title w-56" />
