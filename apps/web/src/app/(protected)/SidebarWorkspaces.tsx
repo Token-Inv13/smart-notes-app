@@ -129,12 +129,21 @@ export default function SidebarWorkspaces({
   const longPressTimeoutRef = useRef<number | null>(null);
   const draggingPointerTypeRef = useRef<"mouse" | "touch" | "pen" | null>(null);
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const pendingDragRef = useRef<{
+    wsId: string;
+    pointerId: number;
+    pointerType: "mouse" | "touch" | "pen";
+    startX: number;
+    startY: number;
+    target: HTMLElement | null;
+  } | null>(null);
 
   const cancelWorkspaceDrag = () => {
     setDraggingId(null);
     setDragOverId(null);
     dragStartIndexRef.current = null;
     pointerIdRef.current = null;
+    pendingDragRef.current = null;
     longPressStartRef.current = null;
     draggingPointerTypeRef.current = null;
     setLocalWorkspaces(baseSortedWorkspaces);
@@ -146,7 +155,6 @@ export default function SidebarWorkspaces({
       longPressTimeoutRef.current = null;
     }
     cancelWorkspaceDrag();
-    draggingPointerTypeRef.current = null;
   };
 
   useEffect(() => {
@@ -193,29 +201,48 @@ export default function SidebarWorkspaces({
 
   const handleWorkspacePointerDown = (wsId: string) => (e: ReactPointerEvent) => {
     if (collapsed) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
     if (longPressTimeoutRef.current !== null) {
       window.clearTimeout(longPressTimeoutRef.current);
       longPressTimeoutRef.current = null;
     }
 
+    pendingDragRef.current = {
+      wsId,
+      pointerId: e.pointerId,
+      pointerType: (e.pointerType === "pen" ? "pen" : e.pointerType === "touch" ? "touch" : "mouse") as
+        | "mouse"
+        | "touch"
+        | "pen",
+      startX: e.clientX,
+      startY: e.clientY,
+      target: e.currentTarget as HTMLElement,
+    };
+
     if (e.pointerType === "touch") {
       longPressStartRef.current = { x: e.clientX, y: e.clientY };
       longPressTimeoutRef.current = window.setTimeout(() => {
+        const pending = pendingDragRef.current;
+        if (!pending || pending.wsId !== wsId) return;
+
         const user = auth.currentUser;
-        const ws = localWorkspaces.find((w) => w.id === wsId);
+        const ws = localWorkspaces.find((w) => w.id === pending.wsId);
         if (!user || !ws || user.uid !== ws.ownerId) return;
 
-        const index = findWorkspaceIndex(wsId, localWorkspaces);
+        const index = findWorkspaceIndex(pending.wsId, localWorkspaces);
         if (index < 0) return;
 
         draggingPointerTypeRef.current = "touch";
-        pointerIdRef.current = e.pointerId;
+        pointerIdRef.current = pending.pointerId;
         dragStartIndexRef.current = index;
-        setDraggingId(wsId);
-        setDragOverId(wsId);
+        setDraggingId(pending.wsId);
+        setDragOverId(pending.wsId);
 
         try {
-          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          pending.target?.setPointerCapture(pending.pointerId);
         } catch {
           // ignore
         }
@@ -223,24 +250,27 @@ export default function SidebarWorkspaces({
 
       return;
     }
+  };
 
-    if (e.button !== 0) return;
+  const startDragFromPending = () => {
+    const pending = pendingDragRef.current;
+    if (!pending) return;
 
     const user = auth.currentUser;
-    const ws = localWorkspaces.find((w) => w.id === wsId);
+    const ws = localWorkspaces.find((w) => w.id === pending.wsId);
     if (!user || !ws || user.uid !== ws.ownerId) return;
 
-    const index = findWorkspaceIndex(wsId, localWorkspaces);
+    const index = findWorkspaceIndex(pending.wsId, localWorkspaces);
     if (index < 0) return;
 
-    draggingPointerTypeRef.current = e.pointerType === "pen" ? "pen" : "mouse";
-    pointerIdRef.current = e.pointerId;
+    draggingPointerTypeRef.current = pending.pointerType;
+    pointerIdRef.current = pending.pointerId;
     dragStartIndexRef.current = index;
-    setDraggingId(wsId);
-    setDragOverId(wsId);
+    setDraggingId(pending.wsId);
+    setDragOverId(pending.wsId);
 
     try {
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      pending.target?.setPointerCapture(pending.pointerId);
     } catch {
       // ignore
     }
@@ -254,6 +284,18 @@ export default function SidebarWorkspaces({
         window.clearTimeout(longPressTimeoutRef.current);
         longPressTimeoutRef.current = null;
         longPressStartRef.current = null;
+        pendingDragRef.current = null;
+      }
+      return;
+    }
+
+    if (!draggingId && e.pointerType !== "touch" && pendingDragRef.current) {
+      const pending = pendingDragRef.current;
+      if (pending.pointerId !== e.pointerId) return;
+      const dx = Math.abs(e.clientX - pending.startX);
+      const dy = Math.abs(e.clientY - pending.startY);
+      if (dx > 4 || dy > 4) {
+        startDragFromPending();
       }
       return;
     }
@@ -280,13 +322,20 @@ export default function SidebarWorkspaces({
     });
   };
 
-  const handleWorkspacePointerUp = async () => {
+  const handleWorkspacePointerUp = async (e?: ReactPointerEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+
     if (longPressTimeoutRef.current !== null) {
       window.clearTimeout(longPressTimeoutRef.current);
       longPressTimeoutRef.current = null;
     }
 
-    if (!draggingId) return;
+    if (!draggingId) {
+      pendingDragRef.current = null;
+      longPressStartRef.current = null;
+      return;
+    }
 
     const finalList = localWorkspaces;
     const from = dragStartIndexRef.current ?? -1;
@@ -610,6 +659,10 @@ export default function SidebarWorkspaces({
                           className={`shrink-0 text-muted-foreground hover:text-foreground ${
                             draggingId ? "cursor-grabbing" : "cursor-grab"
                           }`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
                           onPointerDown={ws.id ? handleWorkspacePointerDown(ws.id) : undefined}
                           onPointerMove={handleWorkspacePointerMove}
                           onPointerUp={handleWorkspacePointerUp}
