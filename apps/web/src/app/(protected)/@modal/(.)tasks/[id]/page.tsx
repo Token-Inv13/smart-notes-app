@@ -66,6 +66,8 @@ export default function TaskDetailModal(props: any) {
   const [editError, setEditError] = useState<string | null>(null);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
   const [exportFeedback, setExportFeedback] = useState<string | null>(null);
+  const [snoozing, setSnoozing] = useState(false);
+  const [snoozeFeedback, setSnoozeFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -224,6 +226,65 @@ export default function TaskDetailModal(props: any) {
   }, [task]);
 
   const dueLabel = useMemo(() => formatFrDateTime(task?.dueDate ?? null), [task?.dueDate]);
+
+  const handleSnooze = async (preset: '10m' | '1h' | 'tomorrow') => {
+    if (!task?.id) return;
+
+    const user = auth.currentUser;
+    if (!user || user.uid !== task.userId) {
+      setEditError("Impossible de modifier cette tâche.");
+      return;
+    }
+
+    setSnoozing(true);
+    setEditError(null);
+    setSnoozeFeedback(null);
+
+    try {
+      const remindersRef = collection(db, 'taskReminders');
+      const remindersSnap = await getDocs(
+        query(
+          remindersRef,
+          where('userId', '==', user.uid),
+          where('taskId', '==', task.id),
+        ),
+      );
+
+      const reminderDoc = remindersSnap.docs[0] ?? null;
+      if (!reminderDoc) {
+        setEditError('Aucun rappel existant pour cette tâche.');
+        return;
+      }
+
+      const reminder = reminderDoc.data() as { reminderTime?: string };
+      const baseDate = (() => {
+        const fromReminder = typeof reminder.reminderTime === 'string' ? new Date(reminder.reminderTime) : null;
+        if (fromReminder && !Number.isNaN(fromReminder.getTime())) return fromReminder;
+        if (task.dueDate) return task.dueDate.toDate();
+        return new Date();
+      })();
+
+      const now = new Date();
+      const effectiveBaseDate = baseDate.getTime() < now.getTime() ? now : baseDate;
+
+      const nextDate = new Date(effectiveBaseDate.getTime());
+      if (preset === '10m') nextDate.setMinutes(nextDate.getMinutes() + 10);
+      if (preset === '1h') nextDate.setHours(nextDate.getHours() + 1);
+      if (preset === 'tomorrow') nextDate.setDate(nextDate.getDate() + 1);
+
+      await updateDoc(reminderDoc.ref, {
+        reminderTime: nextDate.toISOString(),
+        sent: false,
+      });
+
+      setSnoozeFeedback('Rappel reprogrammé.');
+    } catch (e) {
+      console.error('Error snoozing reminder', e);
+      setEditError(e instanceof Error ? e.message : 'Erreur lors du snooze du rappel.');
+    } finally {
+      setSnoozing(false);
+    }
+  };
 
   const startEdit = () => {
     if (!task) return;
@@ -404,6 +465,7 @@ export default function TaskDetailModal(props: any) {
         <div className="space-y-4">
           {shareFeedback && <div className="sn-alert">{shareFeedback}</div>}
           {exportFeedback && <div className="sn-alert">{exportFeedback}</div>}
+          {snoozeFeedback && <div className="sn-alert">{snoozeFeedback}</div>}
           <div className="flex items-center justify-end gap-2">
             {mode === "view" ? (
               <ItemActionsMenu
@@ -461,6 +523,37 @@ export default function TaskDetailModal(props: any) {
                   </div>
                   <div>
                     <span className="font-medium">Rappel:</span> {dueLabel || "Aucun rappel"}
+                    {dueLabel && (
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-sm">Rappeler plus tard</summary>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleSnooze('10m')}
+                            disabled={snoozing}
+                            className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+                          >
+                            +10 minutes
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSnooze('1h')}
+                            disabled={snoozing}
+                            className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+                          >
+                            +1 heure
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSnooze('tomorrow')}
+                            disabled={snoozing}
+                            className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+                          >
+                            Demain
+                          </button>
+                        </div>
+                      </details>
+                    )}
                   </div>
                 </div>
               </>
