@@ -9,6 +9,7 @@ import {
   Folder,
   Plus,
   PanelLeft,
+  GripVertical,
 } from "lucide-react";
 import { z } from "zod";
 import {
@@ -125,13 +126,27 @@ export default function SidebarWorkspaces({
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const dragStartIndexRef = useRef<number | null>(null);
   const pointerIdRef = useRef<number | null>(null);
+  const longPressTimeoutRef = useRef<number | null>(null);
+  const draggingPointerTypeRef = useRef<"mouse" | "touch" | "pen" | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const cancelWorkspaceDrag = () => {
     setDraggingId(null);
     setDragOverId(null);
     dragStartIndexRef.current = null;
     pointerIdRef.current = null;
+    longPressStartRef.current = null;
+    draggingPointerTypeRef.current = null;
     setLocalWorkspaces(baseSortedWorkspaces);
+  };
+
+  const handleWorkspacePointerCancel = () => {
+    if (longPressTimeoutRef.current !== null) {
+      window.clearTimeout(longPressTimeoutRef.current);
+      longPressTimeoutRef.current = null;
+    }
+    cancelWorkspaceDrag();
+    draggingPointerTypeRef.current = null;
   };
 
   useEffect(() => {
@@ -141,7 +156,19 @@ export default function SidebarWorkspaces({
     setDragOverId(null);
     dragStartIndexRef.current = null;
     pointerIdRef.current = null;
+    draggingPointerTypeRef.current = null;
   }, [collapsed, draggingId]);
+
+  useEffect(() => {
+    if (!draggingId) return;
+    if (draggingPointerTypeRef.current !== "touch") return;
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [draggingId]);
 
   useEffect(() => {
     if (draggingId) return;
@@ -166,18 +193,47 @@ export default function SidebarWorkspaces({
 
   const handleWorkspacePointerDown = (wsId: string) => (e: ReactPointerEvent) => {
     if (collapsed) return;
-    if (e.button !== 0 && e.pointerType !== "touch") return;
+    if (longPressTimeoutRef.current !== null) {
+      window.clearTimeout(longPressTimeoutRef.current);
+      longPressTimeoutRef.current = null;
+    }
+
+    if (e.pointerType === "touch") {
+      longPressStartRef.current = { x: e.clientX, y: e.clientY };
+      longPressTimeoutRef.current = window.setTimeout(() => {
+        const user = auth.currentUser;
+        const ws = localWorkspaces.find((w) => w.id === wsId);
+        if (!user || !ws || user.uid !== ws.ownerId) return;
+
+        const index = findWorkspaceIndex(wsId, localWorkspaces);
+        if (index < 0) return;
+
+        draggingPointerTypeRef.current = "touch";
+        pointerIdRef.current = e.pointerId;
+        dragStartIndexRef.current = index;
+        setDraggingId(wsId);
+        setDragOverId(wsId);
+
+        try {
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        } catch {
+          // ignore
+        }
+      }, 350);
+
+      return;
+    }
+
+    if (e.button !== 0) return;
 
     const user = auth.currentUser;
     const ws = localWorkspaces.find((w) => w.id === wsId);
     if (!user || !ws || user.uid !== ws.ownerId) return;
 
-    const targetEl = e.target as HTMLElement | null;
-    if (targetEl?.closest?.("button, input, select, textarea")) return;
-
     const index = findWorkspaceIndex(wsId, localWorkspaces);
     if (index < 0) return;
 
+    draggingPointerTypeRef.current = e.pointerType === "pen" ? "pen" : "mouse";
     pointerIdRef.current = e.pointerId;
     dragStartIndexRef.current = index;
     setDraggingId(wsId);
@@ -191,6 +247,17 @@ export default function SidebarWorkspaces({
   };
 
   const handleWorkspacePointerMove = (e: ReactPointerEvent) => {
+    if (!draggingId && e.pointerType === "touch" && longPressTimeoutRef.current !== null && longPressStartRef.current) {
+      const dx = Math.abs(e.clientX - longPressStartRef.current.x);
+      const dy = Math.abs(e.clientY - longPressStartRef.current.y);
+      if (dx > 8 || dy > 8) {
+        window.clearTimeout(longPressTimeoutRef.current);
+        longPressTimeoutRef.current = null;
+        longPressStartRef.current = null;
+      }
+      return;
+    }
+
     if (!draggingId) return;
     if (pointerIdRef.current !== null && e.pointerId !== pointerIdRef.current) return;
 
@@ -214,6 +281,11 @@ export default function SidebarWorkspaces({
   };
 
   const handleWorkspacePointerUp = async () => {
+    if (longPressTimeoutRef.current !== null) {
+      window.clearTimeout(longPressTimeoutRef.current);
+      longPressTimeoutRef.current = null;
+    }
+
     if (!draggingId) return;
 
     const finalList = localWorkspaces;
@@ -523,18 +595,28 @@ export default function SidebarWorkspaces({
                     key={ws.id ?? ws.name}
                     data-ws-row="true"
                     data-ws-id={ws.id ?? ""}
-                    onPointerDown={ws.id ? handleWorkspacePointerDown(ws.id) : undefined}
-                    onPointerMove={handleWorkspacePointerMove}
-                    onPointerUp={handleWorkspacePointerUp}
-                    onPointerCancel={cancelWorkspaceDrag}
                     className={`border rounded p-2 select-none ${
-                      isDragging ? "opacity-75" : ""
+                      isDragging ? "opacity-60 shadow-lg" : ""
                     } ${isOver && draggingId && !isDragging ? "ring-1 ring-primary" : ""} ${
                       isSelected ? "border-primary bg-accent" : "border-border bg-card"
                     } ${draggingId ? "touch-none" : ""}`}
                   >
                     {!isRenaming ? (
                       <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          aria-label="Réordonner"
+                          title="Réordonner"
+                          className={`shrink-0 text-muted-foreground hover:text-foreground ${
+                            draggingId ? "cursor-grabbing" : "cursor-grab"
+                          }`}
+                          onPointerDown={ws.id ? handleWorkspacePointerDown(ws.id) : undefined}
+                          onPointerMove={handleWorkspacePointerMove}
+                          onPointerUp={handleWorkspacePointerUp}
+                          onPointerCancel={handleWorkspacePointerCancel}
+                        >
+                          <GripVertical className="h-4 w-4" />
+                        </button>
                         <button
                           type="button"
                           onClick={() => navigateWithWorkspace(ws.id ?? null)}
@@ -599,6 +681,8 @@ export default function SidebarWorkspaces({
                         </div>
                       </div>
                     )}
+
+                    {isOver && draggingId && !isDragging && <div className="mt-2 h-0.5 bg-primary rounded" />}
                   </div>
                 );
               })}
