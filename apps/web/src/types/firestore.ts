@@ -59,6 +59,7 @@ export interface WorkspaceDoc {
   id?: string;
   ownerId: string;
   name: string;
+  order?: number;
   members?: string[];
   createdAt?: string;
   updatedAt?: string;

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   LayoutDashboard,
@@ -106,11 +107,157 @@ export default function SidebarWorkspaces({
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const sortedWorkspaces = useMemo(() => {
+  const baseSortedWorkspaces = useMemo(() => {
     return workspaces
       .slice()
-      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      .sort((a, b) => {
+        const ao = typeof a.order === "number" ? a.order : null;
+        const bo = typeof b.order === "number" ? b.order : null;
+        if (ao !== null && bo !== null && ao !== bo) return ao - bo;
+        if (ao !== null && bo === null) return -1;
+        if (ao === null && bo !== null) return 1;
+        return (a.name || "").localeCompare(b.name || "");
+      });
   }, [workspaces]);
+
+  const [localWorkspaces, setLocalWorkspaces] = useState<WorkspaceDoc[]>(baseSortedWorkspaces);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const dragStartIndexRef = useRef<number | null>(null);
+  const pointerIdRef = useRef<number | null>(null);
+
+  const cancelWorkspaceDrag = () => {
+    setDraggingId(null);
+    setDragOverId(null);
+    dragStartIndexRef.current = null;
+    pointerIdRef.current = null;
+    setLocalWorkspaces(baseSortedWorkspaces);
+  };
+
+  useEffect(() => {
+    if (!collapsed) return;
+    if (!draggingId) return;
+    setDraggingId(null);
+    setDragOverId(null);
+    dragStartIndexRef.current = null;
+    pointerIdRef.current = null;
+  }, [collapsed, draggingId]);
+
+  useEffect(() => {
+    if (draggingId) return;
+    setLocalWorkspaces(baseSortedWorkspaces);
+  }, [baseSortedWorkspaces, draggingId]);
+
+  const sortedWorkspaces = draggingId ? localWorkspaces : baseSortedWorkspaces;
+
+  const moveInArray = <T,>(arr: T[], from: number, to: number) => {
+    if (from === to) return arr;
+    const next = arr.slice();
+    const [item] = next.splice(from, 1);
+    if (item === undefined) return arr;
+    next.splice(to, 0, item);
+    return next;
+  };
+
+  const findWorkspaceIndex = (id: string | null, list: WorkspaceDoc[]) => {
+    if (!id) return -1;
+    return list.findIndex((w) => w.id === id);
+  };
+
+  const handleWorkspacePointerDown = (wsId: string) => (e: ReactPointerEvent) => {
+    if (collapsed) return;
+    if (e.button !== 0 && e.pointerType !== "touch") return;
+
+    const user = auth.currentUser;
+    const ws = localWorkspaces.find((w) => w.id === wsId);
+    if (!user || !ws || user.uid !== ws.ownerId) return;
+
+    const targetEl = e.target as HTMLElement | null;
+    if (targetEl?.closest?.("button, input, select, textarea")) return;
+
+    const index = findWorkspaceIndex(wsId, localWorkspaces);
+    if (index < 0) return;
+
+    pointerIdRef.current = e.pointerId;
+    dragStartIndexRef.current = index;
+    setDraggingId(wsId);
+    setDragOverId(wsId);
+
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleWorkspacePointerMove = (e: ReactPointerEvent) => {
+    if (!draggingId) return;
+    if (pointerIdRef.current !== null && e.pointerId !== pointerIdRef.current) return;
+
+    if (e.pointerType === "touch") {
+      e.preventDefault();
+    }
+
+    const target = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+    const row = target?.closest?.("[data-ws-row='true']") as HTMLElement | null;
+    const overId = row?.getAttribute?.("data-ws-id") ?? null;
+
+    if (!overId || overId === dragOverId) return;
+    setDragOverId(overId);
+
+    setLocalWorkspaces((prev) => {
+      const from = findWorkspaceIndex(draggingId, prev);
+      const to = findWorkspaceIndex(overId, prev);
+      if (from < 0 || to < 0) return prev;
+      return moveInArray(prev, from, to);
+    });
+  };
+
+  const handleWorkspacePointerUp = async () => {
+    if (!draggingId) return;
+
+    const finalList = localWorkspaces;
+    const from = dragStartIndexRef.current ?? -1;
+    const to = findWorkspaceIndex(draggingId, finalList);
+
+    const ws = finalList.find((w) => w.id === draggingId);
+
+    setDraggingId(null);
+    setDragOverId(null);
+    dragStartIndexRef.current = null;
+    pointerIdRef.current = null;
+
+    if (!ws?.id) return;
+    if (from < 0 || to < 0 || from === to) return;
+
+    const prev = finalList[to - 1];
+    const next = finalList[to + 1];
+
+    const prevOrder = typeof prev?.order === "number" ? prev.order : null;
+    const nextOrder = typeof next?.order === "number" ? next.order : null;
+
+    const nextValue = (() => {
+      if (prevOrder !== null && nextOrder !== null) {
+        if (prevOrder === nextOrder) return prevOrder + 1;
+        return prevOrder + (nextOrder - prevOrder) / 2;
+      }
+      if (prevOrder !== null && nextOrder === null) return prevOrder + 1;
+      if (prevOrder === null && nextOrder !== null) return nextOrder - 1;
+      return to;
+    })();
+
+    if (typeof ws.order === "number" && ws.order === nextValue) return;
+
+    try {
+      await updateDoc(doc(db, "workspaces", ws.id), {
+        order: nextValue,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error("Error reordering workspace", e);
+      setLocalWorkspaces(baseSortedWorkspaces);
+    }
+  };
 
   const navigateWithWorkspace = (workspaceId: string | null) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -162,9 +309,20 @@ export default function SidebarWorkspaces({
 
     setCreating(true);
     try {
+      const nextOrder = (() => {
+        const max = baseSortedWorkspaces.reduce<number | null>((acc, w) => {
+          const value = typeof w.order === "number" ? w.order : null;
+          if (value === null) return acc;
+          if (acc === null) return value;
+          return Math.max(acc, value);
+        }, null);
+        return (max ?? baseSortedWorkspaces.length) + 1;
+      })();
+
       const payload: Omit<WorkspaceDoc, "id"> = {
         ownerId: user.uid,
         name: validation.data.name,
+        order: nextOrder,
         members: [],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -357,11 +515,23 @@ export default function SidebarWorkspaces({
               {sortedWorkspaces.map((ws) => {
                 const isSelected = ws.id && ws.id === currentWorkspaceId;
                 const isRenaming = ws.id && ws.id === renamingId;
+                const isDragging = !!ws.id && ws.id === draggingId;
+                const isOver = !!ws.id && ws.id === dragOverId;
 
                 return (
                   <div
                     key={ws.id ?? ws.name}
-                    className={`border rounded p-2 ${isSelected ? "border-primary bg-accent" : "border-border bg-card"}`}
+                    data-ws-row="true"
+                    data-ws-id={ws.id ?? ""}
+                    onPointerDown={ws.id ? handleWorkspacePointerDown(ws.id) : undefined}
+                    onPointerMove={handleWorkspacePointerMove}
+                    onPointerUp={handleWorkspacePointerUp}
+                    onPointerCancel={cancelWorkspaceDrag}
+                    className={`border rounded p-2 select-none ${
+                      isDragging ? "opacity-75" : ""
+                    } ${isOver && draggingId && !isDragging ? "ring-1 ring-primary" : ""} ${
+                      isSelected ? "border-primary bg-accent" : "border-border bg-card"
+                    } ${draggingId ? "touch-none" : ""}`}
                   >
                     {!isRenaming ? (
                       <div className="flex items-center justify-between gap-2">
@@ -370,6 +540,7 @@ export default function SidebarWorkspaces({
                           onClick={() => navigateWithWorkspace(ws.id ?? null)}
                           className={`text-left text-sm truncate ${isSelected ? "font-semibold" : ""}`}
                           aria-label={`Ouvrir le dossier ${ws.name}`}
+                          disabled={!!draggingId}
                         >
                           {ws.name}
                         </button>
