@@ -35,18 +35,27 @@ interface SidebarWorkspacesProps {
   collapsed?: boolean;
   onNavigate?: () => void;
   onRequestExpand?: () => void;
+  workspaces?: WorkspaceDoc[];
+  loading?: boolean;
+  error?: Error | null;
 }
 
 export default function SidebarWorkspaces({
   collapsed = false,
   onNavigate,
   onRequestExpand,
+  workspaces: workspacesProp,
+  loading: loadingProp,
+  error: errorProp,
 }: SidebarWorkspacesProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const { data: workspaces, loading, error } = useUserWorkspaces();
+  const hook = useUserWorkspaces();
+  const workspaces = workspacesProp ?? hook.data;
+  const loading = loadingProp ?? hook.loading;
+  const error = errorProp ?? hook.error;
 
   const currentWorkspaceId = searchParams.get("workspaceId");
 
@@ -71,7 +80,7 @@ export default function SidebarWorkspaces({
 
   const iconButtonClass = (active: boolean) =>
     `h-10 w-10 inline-flex items-center justify-center rounded-md border border-border bg-background hover:bg-accent ${
-      active ? " bg-accent" : ""
+      active ? " bg-accent border-primary" : ""
     }`;
 
   const isNavActive = (href: "/dashboard" | "/notes" | "/tasks" | "/settings") => {
@@ -398,7 +407,10 @@ export default function SidebarWorkspaces({
                 const isRenaming = ws.id && ws.id === renamingId;
 
                 return (
-                  <div key={ws.id ?? ws.name} className="border border-border rounded p-2 bg-card">
+                  <div
+                    key={ws.id ?? ws.name}
+                    className={`border rounded p-2 ${isSelected ? "border-primary bg-accent" : "border-border bg-card"}`}
+                  >
                     {!isRenaming ? (
                       <div className="flex items-center justify-between gap-2">
                         <button

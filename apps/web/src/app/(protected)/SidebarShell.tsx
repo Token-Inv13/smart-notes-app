@@ -1,13 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { PanelLeft, Menu, X } from "lucide-react";
 import SidebarWorkspaces from "./SidebarWorkspaces";
 import PwaInstallCta from "./_components/PwaInstallCta";
+import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 
 const STORAGE_KEY = "sidebarCollapsed";
 
 export default function SidebarShell({ children }: { children: React.ReactNode }) {
+  const searchParams = useSearchParams();
+  const workspaceId = searchParams.get("workspaceId");
+  const { data: workspaces, loading: workspacesLoading, error: workspacesError } = useUserWorkspaces();
+
+  const currentWorkspaceName = (() => {
+    if (!workspaceId) return null;
+    return workspaces.find((w) => w.id === workspaceId)?.name ?? workspaceId;
+  })();
+
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -66,6 +77,9 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
             <SidebarWorkspaces
               collapsed={collapsed}
               onRequestExpand={collapsed ? () => setCollapsed(false) : undefined}
+              workspaces={workspaces}
+              loading={workspacesLoading}
+              error={workspacesError}
             />
           </div>
         </div>
@@ -93,7 +107,13 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
               </button>
             </div>
             <div className="p-3 overflow-y-auto h-[calc(100%-52px)]">
-              <SidebarWorkspaces collapsed={false} onNavigate={closeMobile} />
+              <SidebarWorkspaces
+                collapsed={false}
+                onNavigate={closeMobile}
+                workspaces={workspaces}
+                loading={workspacesLoading}
+                error={workspacesError}
+              />
             </div>
           </div>
         </div>
@@ -118,10 +138,18 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
             />
             <div className="text-sm font-medium truncate">Smart Notes</div>
           </div>
+          {currentWorkspaceName && (
+            <div className="ml-auto text-xs text-muted-foreground truncate max-w-[45%]">
+              📁 {currentWorkspaceName}
+            </div>
+          )}
         </div>
 
         <main className="flex-1 p-4 min-w-0">
           <PwaInstallCta />
+          {currentWorkspaceName && (
+            <div className="mb-4 text-sm text-muted-foreground truncate">📁 {currentWorkspaceName}</div>
+          )}
           {children}
         </main>
       </div>
