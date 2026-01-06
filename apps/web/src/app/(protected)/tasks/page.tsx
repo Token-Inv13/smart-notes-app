@@ -48,9 +48,9 @@ export default function TasksPage() {
     reminders,
   } = useUserTaskReminders();
 
-  const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>("all");
+  const [statusFilter] = useState<TaskStatusFilter>("all");
   const [workspaceFilter, setWorkspaceFilter] = useState<WorkspaceFilter>("all");
-  const [archiveView, setArchiveView] = useState<"active" | "archived">("active");
+  const [archiveView] = useState<"active" | "archived">("active");
 
   const [viewMode, setViewMode] = useState<"list" | "grid" | "kanban">("list");
   const [movingTaskId, setMovingTaskId] = useState<string | null>(null);
@@ -389,54 +389,6 @@ export default function TasksPage() {
             {pushStatus && <div className="text-xs text-muted-foreground">{pushStatus}</div>}
           </div>
         )}
-        <div className="flex flex-wrap gap-2">
-          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setArchiveView("active")}
-              className={`px-3 py-1 text-sm ${archiveView === "active" ? "bg-accent" : ""}`}
-            >
-              Actifs
-            </button>
-            <button
-              type="button"
-              onClick={() => setArchiveView("archived")}
-              className={`px-3 py-1 text-sm ${archiveView === "archived" ? "bg-accent" : ""}`}
-            >
-              Archivés
-            </button>
-          </div>
-
-          <label className="flex items-center gap-2">
-            <span>Statut :</span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as TaskStatusFilter)}
-              className="border border-border rounded px-2 py-1 bg-background"
-            >
-              <option value="all">Tous</option>
-              <option value="todo">À faire</option>
-              <option value="doing">En cours</option>
-              <option value="done">Terminées</option>
-            </select>
-          </label>
-
-          <label className="flex items-center gap-2">
-            <span>Dossier :</span>
-            <select
-              value={workspaceFilter}
-              onChange={(e) => setWorkspaceFilter(e.target.value as WorkspaceFilter)}
-              className="border border-border rounded px-2 py-1 bg-background"
-            >
-              <option value="all">Tous</option>
-              {workspaces.map((ws) => (
-                <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
-                  {ws.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
       </header>
 
       {/* New Task form */}
