@@ -54,8 +54,8 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
       {/* Desktop sidebar */}
       <aside className={`hidden md:flex ${sidebarWidthClass} border-r border-border`}>
         <div className="w-full flex flex-col">
-          <div className="p-3 flex items-center justify-between gap-2">
-            <div className="min-w-0 flex items-center gap-2">
+          <div className={collapsed ? "p-3 flex flex-col items-center gap-2" : "p-3 flex items-center justify-between gap-2"}>
+            <div className={collapsed ? "flex flex-col items-center gap-2" : "min-w-0 flex items-center gap-2"}>
               <img
                 src="/favicon.svg"
                 alt="Smart Notes"
