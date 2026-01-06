@@ -4,8 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   LayoutDashboard,
-  NotebookPen,
-  CheckSquare,
   Settings,
   Folder,
   Plus,
@@ -68,13 +66,20 @@ export default function SidebarWorkspaces({
     }
   }, []);
 
+  useEffect(() => {
+    const next = pathname.startsWith("/tasks") ? "tasks" : pathname.startsWith("/notes") ? "notes" : null;
+    if (!next) return;
+    if (lastSection === next) return;
+    setLastSection(next);
+    try {
+      window.localStorage.setItem("lastSection", next);
+    } catch {
+      // ignore
+    }
+  }, [pathname, lastSection]);
+
   const navButtonClass = (active: boolean) =>
     `w-full inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent ${
-      active ? " bg-accent font-semibold" : ""
-    }`;
-
-  const navButtonClassCompact = (active: boolean) =>
-    `inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent ${
       active ? " bg-accent font-semibold" : ""
     }`;
 
@@ -138,24 +143,6 @@ export default function SidebarWorkspaces({
     params.delete("workspaceId");
     const qs = params.toString();
     router.push(qs ? `/dashboard?${qs}` : "/dashboard");
-    onNavigate?.();
-  };
-
-  const navigateToNotes = () => {
-    const params = new URLSearchParams(searchParams.toString());
-    const qs = params.toString();
-    setLastSection("notes");
-    window.localStorage.setItem("lastSection", "notes");
-    router.push(qs ? `/notes?${qs}` : "/notes");
-    onNavigate?.();
-  };
-
-  const navigateToTasks = () => {
-    const params = new URLSearchParams(searchParams.toString());
-    const qs = params.toString();
-    setLastSection("tasks");
-    window.localStorage.setItem("lastSection", "tasks");
-    router.push(qs ? `/tasks?${qs}` : "/tasks");
     onNavigate?.();
   };
 
@@ -281,24 +268,6 @@ export default function SidebarWorkspaces({
             >
               <LayoutDashboard className="h-4 w-4" />
             </button>
-            <button
-              type="button"
-              onClick={navigateToNotes}
-              className={iconButtonClass(isNavActive("/notes"))}
-              aria-label="Notes"
-              title="Notes"
-            >
-              <NotebookPen className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={navigateToTasks}
-              className={iconButtonClass(isNavActive("/tasks"))}
-              aria-label="Tâches"
-              title="Tâches"
-            >
-              <CheckSquare className="h-4 w-4" />
-            </button>
           </div>
 
           <div className="border-t border-border pt-3">
@@ -367,23 +336,6 @@ export default function SidebarWorkspaces({
             >
               Ouvrir le dashboard
             </button>
-
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={navigateToNotes}
-                className={navButtonClassCompact(isNavActive("/notes"))}
-              >
-                Notes
-              </button>
-              <button
-                type="button"
-                onClick={navigateToTasks}
-                className={navButtonClassCompact(isNavActive("/tasks"))}
-              >
-                Tâches
-              </button>
-            </div>
           </div>
           <div>
             <div className="text-sm font-semibold mb-2">Dossiers</div>
