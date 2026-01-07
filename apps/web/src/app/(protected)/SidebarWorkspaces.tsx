@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   LayoutDashboard,
@@ -11,6 +10,25 @@ import {
   PanelLeft,
   GripVertical,
 } from "lucide-react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragCancelEvent,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { z } from "zod";
 import {
   addDoc,
@@ -122,262 +140,213 @@ export default function SidebarWorkspaces({
   }, [workspaces]);
 
   const [localWorkspaces, setLocalWorkspaces] = useState<WorkspaceDoc[]>(baseSortedWorkspaces);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const dragStartIndexRef = useRef<number | null>(null);
-  const pointerIdRef = useRef<number | null>(null);
-  const longPressTimeoutRef = useRef<number | null>(null);
-  const draggingPointerTypeRef = useRef<"mouse" | "touch" | "pen" | null>(null);
-  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
-  const pendingDragRef = useRef<{
-    wsId: string;
-    pointerId: number;
-    pointerType: "mouse" | "touch" | "pen";
-    startX: number;
-    startY: number;
-    target: HTMLElement | null;
-  } | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [touchDragging, setTouchDragging] = useState(false);
 
-  const cancelWorkspaceDrag = () => {
-    setDraggingId(null);
-    setDragOverId(null);
-    dragStartIndexRef.current = null;
-    pointerIdRef.current = null;
-    pendingDragRef.current = null;
-    longPressStartRef.current = null;
-    draggingPointerTypeRef.current = null;
+  useEffect(() => {
+    if (activeId) return;
     setLocalWorkspaces(baseSortedWorkspaces);
-  };
-
-  const handleWorkspacePointerCancel = () => {
-    if (longPressTimeoutRef.current !== null) {
-      window.clearTimeout(longPressTimeoutRef.current);
-      longPressTimeoutRef.current = null;
-    }
-    cancelWorkspaceDrag();
-  };
+  }, [baseSortedWorkspaces, activeId]);
 
   useEffect(() => {
-    if (!collapsed) return;
-    if (!draggingId) return;
-    setDraggingId(null);
-    setDragOverId(null);
-    dragStartIndexRef.current = null;
-    pointerIdRef.current = null;
-    draggingPointerTypeRef.current = null;
-  }, [collapsed, draggingId]);
-
-  useEffect(() => {
-    if (!draggingId) return;
-    if (draggingPointerTypeRef.current !== "touch") return;
-
+    if (!touchDragging) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prevOverflow;
     };
-  }, [draggingId]);
+  }, [touchDragging]);
 
-  useEffect(() => {
-    if (draggingId) return;
-    setLocalWorkspaces(baseSortedWorkspaces);
-  }, [baseSortedWorkspaces, draggingId]);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 400, tolerance: 6 },
+    }),
+  );
 
-  const sortedWorkspaces = draggingId ? localWorkspaces : baseSortedWorkspaces;
+  const sortedWorkspaces = localWorkspaces;
+  const sortableIds = useMemo(
+    () => sortedWorkspaces.map((w) => w.id).filter((id): id is string => typeof id === "string" && id.length > 0),
+    [sortedWorkspaces],
+  );
 
-  const moveInArray = <T,>(arr: T[], from: number, to: number) => {
-    if (from === to) return arr;
-    const next = arr.slice();
-    const [item] = next.splice(from, 1);
-    if (item === undefined) return arr;
-    next.splice(to, 0, item);
-    return next;
-  };
-
-  const findWorkspaceIndex = (id: string | null, list: WorkspaceDoc[]) => {
-    if (!id) return -1;
-    return list.findIndex((w) => w.id === id);
-  };
-
-  const handleWorkspacePointerDown = (wsId: string) => (e: ReactPointerEvent) => {
-    if (collapsed) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (longPressTimeoutRef.current !== null) {
-      window.clearTimeout(longPressTimeoutRef.current);
-      longPressTimeoutRef.current = null;
-    }
-
-    pendingDragRef.current = {
-      wsId,
-      pointerId: e.pointerId,
-      pointerType: (e.pointerType === "pen" ? "pen" : e.pointerType === "touch" ? "touch" : "mouse") as
-        | "mouse"
-        | "touch"
-        | "pen",
-      startX: e.clientX,
-      startY: e.clientY,
-      target: e.currentTarget as HTMLElement,
-    };
-
-    if (e.pointerType === "touch") {
-      longPressStartRef.current = { x: e.clientX, y: e.clientY };
-      longPressTimeoutRef.current = window.setTimeout(() => {
-        const pending = pendingDragRef.current;
-        if (!pending || pending.wsId !== wsId) return;
-
-        const user = auth.currentUser;
-        const ws = localWorkspaces.find((w) => w.id === pending.wsId);
-        if (!user || !ws || user.uid !== ws.ownerId) return;
-
-        const index = findWorkspaceIndex(pending.wsId, localWorkspaces);
-        if (index < 0) return;
-
-        draggingPointerTypeRef.current = "touch";
-        pointerIdRef.current = pending.pointerId;
-        dragStartIndexRef.current = index;
-        setDraggingId(pending.wsId);
-        setDragOverId(pending.wsId);
-
-        try {
-          pending.target?.setPointerCapture(pending.pointerId);
-        } catch {
-          // ignore
-        }
-      }, 350);
-
-      return;
-    }
-  };
-
-  const startDragFromPending = () => {
-    const pending = pendingDragRef.current;
-    if (!pending) return;
-
-    const user = auth.currentUser;
-    const ws = localWorkspaces.find((w) => w.id === pending.wsId);
-    if (!user || !ws || user.uid !== ws.ownerId) return;
-
-    const index = findWorkspaceIndex(pending.wsId, localWorkspaces);
-    if (index < 0) return;
-
-    draggingPointerTypeRef.current = pending.pointerType;
-    pointerIdRef.current = pending.pointerId;
-    dragStartIndexRef.current = index;
-    setDraggingId(pending.wsId);
-    setDragOverId(pending.wsId);
-
-    try {
-      pending.target?.setPointerCapture(pending.pointerId);
-    } catch {
-      // ignore
-    }
-  };
-
-  const handleWorkspacePointerMove = (e: ReactPointerEvent) => {
-    if (!draggingId && e.pointerType === "touch" && longPressTimeoutRef.current !== null && longPressStartRef.current) {
-      const dx = Math.abs(e.clientX - longPressStartRef.current.x);
-      const dy = Math.abs(e.clientY - longPressStartRef.current.y);
-      if (dx > 8 || dy > 8) {
-        window.clearTimeout(longPressTimeoutRef.current);
-        longPressTimeoutRef.current = null;
-        longPressStartRef.current = null;
-        pendingDragRef.current = null;
-      }
-      return;
-    }
-
-    if (!draggingId && e.pointerType !== "touch" && pendingDragRef.current) {
-      const pending = pendingDragRef.current;
-      if (pending.pointerId !== e.pointerId) return;
-      const dx = Math.abs(e.clientX - pending.startX);
-      const dy = Math.abs(e.clientY - pending.startY);
-      if (dx > 4 || dy > 4) {
-        startDragFromPending();
-      }
-      return;
-    }
-
-    if (!draggingId) return;
-    if (pointerIdRef.current !== null && e.pointerId !== pointerIdRef.current) return;
-
-    if (e.pointerType === "touch") {
-      e.preventDefault();
-    }
-
-    const target = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
-    const row = target?.closest?.("[data-ws-row='true']") as HTMLElement | null;
-    const overId = row?.getAttribute?.("data-ws-id") ?? null;
-
-    if (!overId || overId === dragOverId) return;
-    setDragOverId(overId);
-
-    setLocalWorkspaces((prev) => {
-      const from = findWorkspaceIndex(draggingId, prev);
-      const to = findWorkspaceIndex(overId, prev);
-      if (from < 0 || to < 0) return prev;
-      return moveInArray(prev, from, to);
-    });
-  };
-
-  const handleWorkspacePointerUp = async (e?: ReactPointerEvent) => {
-    e?.preventDefault();
-    e?.stopPropagation();
-
-    if (longPressTimeoutRef.current !== null) {
-      window.clearTimeout(longPressTimeoutRef.current);
-      longPressTimeoutRef.current = null;
-    }
-
-    if (!draggingId) {
-      pendingDragRef.current = null;
-      longPressStartRef.current = null;
-      return;
-    }
-
-    const finalList = localWorkspaces;
-    const from = dragStartIndexRef.current ?? -1;
-    const to = findWorkspaceIndex(draggingId, finalList);
-
-    const ws = finalList.find((w) => w.id === draggingId);
-
-    setDraggingId(null);
-    setDragOverId(null);
-    dragStartIndexRef.current = null;
-    pointerIdRef.current = null;
-
-    if (!ws?.id) return;
-    if (from < 0 || to < 0 || from === to) return;
-
-    const prev = finalList[to - 1];
-    const next = finalList[to + 1];
+  const computeNextOrderValue = (list: WorkspaceDoc[], index: number) => {
+    const prev = list[index - 1];
+    const next = list[index + 1];
 
     const prevOrder = typeof prev?.order === "number" ? prev.order : null;
     const nextOrder = typeof next?.order === "number" ? next.order : null;
 
-    const nextValue = (() => {
-      if (prevOrder !== null && nextOrder !== null) {
-        if (prevOrder === nextOrder) return prevOrder + 1;
-        return prevOrder + (nextOrder - prevOrder) / 2;
-      }
-      if (prevOrder !== null && nextOrder === null) return prevOrder + 1;
-      if (prevOrder === null && nextOrder !== null) return nextOrder - 1;
-      return to;
-    })();
+    if (prevOrder !== null && nextOrder !== null) {
+      if (prevOrder === nextOrder) return prevOrder + 1;
+      return prevOrder + (nextOrder - prevOrder) / 2;
+    }
+    if (prevOrder !== null && nextOrder === null) return prevOrder + 1;
+    if (prevOrder === null && nextOrder !== null) return nextOrder - 1;
+    return index;
+  };
 
-    if (typeof ws.order === "number" && ws.order === nextValue) return;
+  const onDragStart = (event: DragStartEvent) => {
+    const id = event.active.id;
+    if (typeof id !== "string") return;
+    setActiveId(id);
+
+    const pe = event.activatorEvent as PointerEvent | undefined;
+    setTouchDragging(pe?.pointerType === "touch");
+  };
+
+  const onDragCancel = (_event: DragCancelEvent) => {
+    setActiveId(null);
+    setTouchDragging(false);
+    setLocalWorkspaces(baseSortedWorkspaces);
+  };
+
+  const onDragEnd = async (event: DragEndEvent) => {
+    const active = event.active.id;
+    const over = event.over?.id;
+
+    setActiveId(null);
+    setTouchDragging(false);
+
+    if (typeof active !== "string" || typeof over !== "string") return;
+    if (active === over) return;
+
+    const oldIndex = sortedWorkspaces.findIndex((w) => w.id === active);
+    const newIndex = sortedWorkspaces.findIndex((w) => w.id === over);
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    const nextList = arrayMove(sortedWorkspaces, oldIndex, newIndex);
+    setLocalWorkspaces(nextList);
+
+    const moved = nextList.find((w) => w.id === active);
+    if (!moved?.id) return;
+
+    const user = auth.currentUser;
+    if (!user || user.uid !== moved.ownerId) return;
+
+    const nextOrder = computeNextOrderValue(nextList, newIndex);
+    if (typeof moved.order === "number" && moved.order === nextOrder) return;
 
     try {
-      await updateDoc(doc(db, "workspaces", ws.id), {
-        order: nextValue,
+      await updateDoc(doc(db, "workspaces", moved.id), {
+        order: nextOrder,
         updatedAt: serverTimestamp(),
       });
     } catch (e) {
       console.error("Error reordering workspace", e);
       setLocalWorkspaces(baseSortedWorkspaces);
     }
+  };
+
+  const SortableWorkspaceRow = ({ ws, selected }: { ws: WorkspaceDoc; selected: boolean }) => {
+    const wsId = ws.id;
+    const user = auth.currentUser;
+    const canDrag = !!wsId && !!user && user.uid === ws.ownerId;
+
+    const {
+      attributes,
+      listeners,
+      setNodeRef,
+      transform,
+      transition,
+      isDragging,
+      isOver,
+      active,
+    } = useSortable({ id: wsId ?? "", disabled: !canDrag });
+
+    const style = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+    } as const;
+
+    const showDropIndicator = !!active && isOver && !isDragging;
+
+    return (
+      <div
+        ref={setNodeRef}
+        data-ws-row="true"
+        data-ws-id={ws.id ?? ""}
+        style={style}
+        className={`border rounded p-2 select-none ${
+          isDragging ? "opacity-60 shadow-lg" : ""
+        } ${showDropIndicator ? "ring-1 ring-primary" : ""} ${
+          selected ? "border-primary bg-accent" : "border-border bg-card"
+        }`}
+      >
+        {!renamingId || ws.id !== renamingId ? (
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              aria-label="Réordonner"
+              title={canDrag ? "Réordonner" : "Réordonner (propriétaire uniquement)"}
+              className={`shrink-0 text-muted-foreground hover:text-foreground ${
+                canDrag ? (activeId ? "cursor-grabbing" : "cursor-grab") : "opacity-40 cursor-not-allowed"
+              }`}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              {...attributes}
+              {...listeners}
+            >
+              <GripVertical className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => navigateWithWorkspace(ws.id ?? null)}
+              className={`text-left text-sm truncate ${selected ? "font-semibold" : ""}`}
+              aria-label={`Ouvrir le dossier ${ws.name}`}
+            >
+              {ws.name}
+            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button type="button" onClick={() => startRename(ws)} className="text-xs underline" disabled={!ws.id}>
+                Renommer
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDelete(ws)}
+                className="text-xs underline text-destructive"
+                disabled={!ws.id || deletingId === ws.id}
+              >
+                {deletingId === ws.id ? "..." : "Suppr"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <input
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              className="w-full border border-input rounded px-3 py-2 bg-background text-sm"
+              autoFocus
+            />
+            {renameError && <div className="text-xs text-destructive">{renameError}</div>}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => handleRename(ws)}
+                disabled={savingRename}
+                className="px-3 py-1 rounded-md bg-primary text-primary-foreground text-xs disabled:opacity-50"
+              >
+                {savingRename ? "..." : "Sauver"}
+              </button>
+              <button
+                type="button"
+                onClick={cancelRename}
+                disabled={savingRename}
+                className="px-3 py-1 rounded-md border border-input text-xs disabled:opacity-50"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        )}
+        {showDropIndicator && <div className="mt-2 h-0.5 bg-primary rounded" />}
+      </div>
+    );
   };
 
   const navigateWithWorkspace = (workspaceId: string | null) => {
@@ -633,112 +602,30 @@ export default function SidebarWorkspaces({
                 <div className="text-sm text-muted-foreground">Aucun dossier.</div>
               )}
 
-              {sortedWorkspaces.map((ws) => {
-                const isSelected = ws.id && ws.id === currentWorkspaceId;
-                const isRenaming = ws.id && ws.id === renamingId;
-                const isDragging = !!ws.id && ws.id === draggingId;
-                const isOver = !!ws.id && ws.id === dragOverId;
-
-                return (
-                  <div
-                    key={ws.id ?? ws.name}
-                    data-ws-row="true"
-                    data-ws-id={ws.id ?? ""}
-                    className={`border rounded p-2 select-none ${
-                      isDragging ? "opacity-60 shadow-lg" : ""
-                    } ${isOver && draggingId && !isDragging ? "ring-1 ring-primary" : ""} ${
-                      isSelected ? "border-primary bg-accent" : "border-border bg-card"
-                    } ${draggingId ? "touch-none" : ""}`}
-                  >
-                    {!isRenaming ? (
-                      <div className="flex items-center justify-between gap-2">
-                        <button
-                          type="button"
-                          aria-label="Réordonner"
-                          title="Réordonner"
-                          className={`shrink-0 text-muted-foreground hover:text-foreground ${
-                            draggingId ? "cursor-grabbing" : "cursor-grab"
-                          }`}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                          }}
-                          onPointerDown={ws.id ? handleWorkspacePointerDown(ws.id) : undefined}
-                          onPointerMove={handleWorkspacePointerMove}
-                          onPointerUp={handleWorkspacePointerUp}
-                          onPointerCancel={handleWorkspacePointerCancel}
-                        >
-                          <GripVertical className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => navigateWithWorkspace(ws.id ?? null)}
-                          className={`text-left text-sm truncate ${isSelected ? "font-semibold" : ""}`}
-                          aria-label={`Ouvrir le dossier ${ws.name}`}
-                          disabled={!!draggingId}
-                        >
-                          {ws.name}
-                        </button>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => startRename(ws)}
-                            className="text-xs underline"
-                            disabled={!ws.id}
-                          >
-                            Renommer
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(ws)}
-                            className="text-xs underline text-destructive"
-                            disabled={!ws.id || deletingId === ws.id}
-                          >
-                            {deletingId === ws.id ? "..." : "Suppr"}
-                          </button>
-                        </div>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={onDragStart}
+                onDragCancel={onDragCancel}
+                onDragEnd={onDragEnd}
+              >
+                <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+                  {sortedWorkspaces.map((ws) => {
+                    const isSelected = ws.id && ws.id === currentWorkspaceId;
+                    return <SortableWorkspaceRow key={ws.id ?? ws.name} ws={ws} selected={!!isSelected} />;
+                  })}
+                </SortableContext>
+                <DragOverlay>
+                  {activeId ? (
+                    <div className="border rounded p-2 bg-card opacity-80 shadow-lg">
+                      <div className="flex items-center gap-2">
+                        <GripVertical className="h-4 w-4 text-muted-foreground" />
+                        <div className="text-sm truncate">{sortedWorkspaces.find((w) => w.id === activeId)?.name}</div>
                       </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <input
-                          value={renameValue}
-                          onChange={(e) => setRenameValue(e.target.value)}
-                          aria-label="Renommer le dossier"
-                          placeholder="Nom"
-                          className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                        />
-
-                        {renameError && (
-                          <div className="sn-alert sn-alert--error" role="status" aria-live="polite">
-                            {renameError}
-                          </div>
-                        )}
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => ws.id && handleRename(ws)}
-                            disabled={savingRename}
-                            className="px-3 py-1 rounded-md bg-primary text-primary-foreground text-xs disabled:opacity-50"
-                          >
-                            {savingRename ? "..." : "OK"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={cancelRename}
-                            disabled={savingRename}
-                            className="px-3 py-1 rounded-md border border-input text-xs disabled:opacity-50"
-                          >
-                            Annuler
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {isOver && draggingId && !isDragging && <div className="mt-2 h-0.5 bg-primary rounded" />}
-                  </div>
-                );
-              })}
+                    </div>
+                  ) : null}
+                </DragOverlay>
+              </DndContext>
             </div>
           </div>
 
