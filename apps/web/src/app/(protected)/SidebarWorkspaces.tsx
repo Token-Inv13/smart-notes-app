@@ -11,22 +11,13 @@ import {
   GripVertical,
 } from "lucide-react";
 import {
-  DndContext,
   DragOverlay,
-  PointerSensor,
-  TouchSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragCancelEvent,
-  type DragEndEvent,
-  type DragStartEvent,
+  useDndContext,
 } from "@dnd-kit/core";
 import {
   SortableContext,
   useSortable,
   verticalListSortingStrategy,
-  arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { z } from "zod";
@@ -139,106 +130,18 @@ export default function SidebarWorkspaces({
       });
   }, [workspaces]);
 
-  const [localWorkspaces, setLocalWorkspaces] = useState<WorkspaceDoc[]>(baseSortedWorkspaces);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [touchDragging, setTouchDragging] = useState(false);
-
-  useEffect(() => {
-    if (activeId) return;
-    setLocalWorkspaces(baseSortedWorkspaces);
-  }, [baseSortedWorkspaces, activeId]);
-
-  useEffect(() => {
-    if (!touchDragging) return;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [touchDragging]);
-
-  const sensors = useSensors(
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 350, tolerance: 10 },
-    }),
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 6 },
-    }),
-  );
-
-  const sortedWorkspaces = localWorkspaces;
+  const { active } = useDndContext();
+  const activeId = typeof active?.id === "string" ? active.id : null;
+  const activeWorkspaceName = useMemo(() => {
+    if (!activeId) return null;
+    const ws = baseSortedWorkspaces.find((w) => w.id === activeId);
+    return ws?.name ?? null;
+  }, [activeId, baseSortedWorkspaces]);
+  const sortedWorkspaces = baseSortedWorkspaces;
   const sortableIds = useMemo(
     () => sortedWorkspaces.map((w) => w.id).filter((id): id is string => typeof id === "string" && id.length > 0),
     [sortedWorkspaces],
   );
-
-  const computeNextOrderValue = (list: WorkspaceDoc[], index: number) => {
-    const prev = list[index - 1];
-    const next = list[index + 1];
-
-    const prevOrder = typeof prev?.order === "number" ? prev.order : null;
-    const nextOrder = typeof next?.order === "number" ? next.order : null;
-
-    if (prevOrder !== null && nextOrder !== null) {
-      if (prevOrder === nextOrder) return prevOrder + 1;
-      return prevOrder + (nextOrder - prevOrder) / 2;
-    }
-    if (prevOrder !== null && nextOrder === null) return prevOrder + 1;
-    if (prevOrder === null && nextOrder !== null) return nextOrder - 1;
-    return index;
-  };
-
-  const onDragStart = (event: DragStartEvent) => {
-    const id = event.active.id;
-    if (typeof id !== "string") return;
-    setActiveId(id);
-
-    const pe = event.activatorEvent as PointerEvent | undefined;
-    setTouchDragging(pe?.pointerType === "touch");
-  };
-
-  const onDragCancel = (_event: DragCancelEvent) => {
-    setActiveId(null);
-    setTouchDragging(false);
-    setLocalWorkspaces(baseSortedWorkspaces);
-  };
-
-  const onDragEnd = async (event: DragEndEvent) => {
-    const active = event.active.id;
-    const over = event.over?.id;
-
-    setActiveId(null);
-    setTouchDragging(false);
-
-    if (typeof active !== "string" || typeof over !== "string") return;
-    if (active === over) return;
-
-    const oldIndex = sortedWorkspaces.findIndex((w) => w.id === active);
-    const newIndex = sortedWorkspaces.findIndex((w) => w.id === over);
-    if (oldIndex < 0 || newIndex < 0) return;
-
-    const nextList = arrayMove(sortedWorkspaces, oldIndex, newIndex);
-    setLocalWorkspaces(nextList);
-
-    const moved = nextList.find((w) => w.id === active);
-    if (!moved?.id) return;
-
-    const user = auth.currentUser;
-    if (!user || user.uid !== moved.ownerId) return;
-
-    const nextOrder = computeNextOrderValue(nextList, newIndex);
-    if (typeof moved.order === "number" && moved.order === nextOrder) return;
-
-    try {
-      await updateDoc(doc(db, "workspaces", moved.id), {
-        order: nextOrder,
-        updatedAt: serverTimestamp(),
-      });
-    } catch (e) {
-      console.error("Error reordering workspace", e);
-      setLocalWorkspaces(baseSortedWorkspaces);
-    }
-  };
 
   const SortableWorkspaceRow = ({ ws, selected }: { ws: WorkspaceDoc; selected: boolean }) => {
     const wsId = ws.id;
@@ -254,7 +157,7 @@ export default function SidebarWorkspaces({
       isDragging,
       isOver,
       active,
-    } = useSortable({ id: wsId ?? "", disabled: !canDrag });
+    } = useSortable({ id: wsId ?? "", disabled: !canDrag, data: { type: "workspace" } });
 
     const style = {
       transform: CSS.Transform.toString(transform),
@@ -282,7 +185,7 @@ export default function SidebarWorkspaces({
               aria-label="Réordonner"
               title={canDrag ? "Réordonner" : "Réordonner (propriétaire uniquement)"}
               className={`shrink-0 text-muted-foreground hover:text-foreground ${
-                canDrag ? (activeId ? "cursor-grabbing" : "cursor-grab") : "opacity-40 cursor-not-allowed"
+                canDrag ? "cursor-grab" : "opacity-40 cursor-not-allowed"
               }`}
               onClick={(e) => {
                 e.preventDefault();
@@ -607,30 +510,22 @@ export default function SidebarWorkspaces({
                 <div className="text-sm text-muted-foreground">Aucun dossier.</div>
               )}
 
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragStart={onDragStart}
-                onDragCancel={onDragCancel}
-                onDragEnd={onDragEnd}
-              >
-                <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
-                  {sortedWorkspaces.map((ws) => {
-                    const isSelected = ws.id && ws.id === currentWorkspaceId;
-                    return <SortableWorkspaceRow key={ws.id ?? ws.name} ws={ws} selected={!!isSelected} />;
-                  })}
-                </SortableContext>
-                <DragOverlay>
-                  {activeId ? (
-                    <div className="border rounded p-2 bg-card opacity-80 shadow-lg">
-                      <div className="flex items-center gap-2">
-                        <GripVertical className="h-4 w-4 text-muted-foreground" />
-                        <div className="text-sm truncate">{sortedWorkspaces.find((w) => w.id === activeId)?.name}</div>
-                      </div>
+              <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+                {sortedWorkspaces.map((ws) => {
+                  const isSelected = ws.id && ws.id === currentWorkspaceId;
+                  return <SortableWorkspaceRow key={ws.id ?? ws.name} ws={ws} selected={!!isSelected} />;
+                })}
+              </SortableContext>
+              <DragOverlay>
+                {activeWorkspaceName ? (
+                  <div className="border rounded p-2 bg-card opacity-80 shadow-lg">
+                    <div className="flex items-center gap-2">
+                      <GripVertical className="h-4 w-4 text-muted-foreground" />
+                      <div className="text-sm truncate">{activeWorkspaceName}</div>
                     </div>
-                  ) : null}
-                </DragOverlay>
-              </DndContext>
+                  </div>
+                ) : null}
+              </DragOverlay>
             </div>
           </div>
 

@@ -278,52 +278,53 @@ export default function NotesPage() {
               const hrefSuffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
 
               return (
-                <li
-                  key={note.id}
-                  className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4`}
-                  onClick={() => {
-                    if (!note.id) return;
-                    router.push(`/notes/${note.id}${hrefSuffix}`);
-                  }}
-                >
-                  <div className="space-y-3">
-                    <div className="sn-card-header">
-                      <div className="min-w-0">
-                        <div className="sn-card-title truncate">{note.title}</div>
-                        <div className="sn-card-meta">
-                          <span className="sn-badge">{workspaceName}</span>
-                          {note.favorite && <span className="sn-badge">Favori</span>}
+                <li key={note.id}>
+                  <div
+                    className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4`}
+                    onClick={() => {
+                      if (!note.id) return;
+                      router.push(`/notes/${note.id}${hrefSuffix}`);
+                    }}
+                  >
+                    <div className="space-y-3">
+                      <div className="sn-card-header">
+                        <div className="min-w-0">
+                          <div className="sn-card-title truncate">{note.title}</div>
+                          <div className="sn-card-meta">
+                            <span className="sn-badge">{workspaceName}</span>
+                            {note.favorite && <span className="sn-badge">Favori</span>}
+                          </div>
+                        </div>
+
+                        <div className="sn-card-actions sn-card-actions-secondary shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFavorite(note);
+                            }}
+                            className="sn-icon-btn"
+                            aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                            title={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                          >
+                            {note.favorite ? "★" : "☆"}
+                          </button>
                         </div>
                       </div>
 
-                      <div className="sn-card-actions sn-card-actions-secondary shrink-0">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleFavorite(note);
-                          }}
-                          className="sn-icon-btn"
-                          aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                          title={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                        >
-                          {note.favorite ? "★" : "☆"}
-                        </button>
+                      <div className="sn-card-body line-clamp-4">{note.content ?? ""}</div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="text-xs flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={note.completed === true}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => toggleCompleted(note, e.target.checked)}
+                          />
+                          <span className="text-muted-foreground">Terminé</span>
+                        </label>
                       </div>
-                    </div>
-
-                    <div className="sn-card-body line-clamp-4">{note.content ?? ""}</div>
-
-                    <div className="flex items-center justify-between gap-3">
-                      <label className="text-xs flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={note.completed === true}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => toggleCompleted(note, e.target.checked)}
-                        />
-                        <span className="text-muted-foreground">Terminé</span>
-                      </label>
                     </div>
                   </div>
                 </li>

@@ -32,6 +32,10 @@ export default function TasksPage() {
   const router = useRouter();
   const pathname = usePathname();
   const { data: tasks, loading, error } = useUserTasks();
+  const searchParams = useSearchParams();
+  const highlightedTaskId = searchParams.get("taskId");
+  const workspaceIdParam = searchParams.get("workspaceId");
+  const createParam = searchParams.get("create");
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === "pro";
   const freeLimitMessage = "Limite Free atteinte. Passe en Pro pour créer plus de tâches et utiliser les favoris sans limite.";
@@ -53,16 +57,10 @@ export default function TasksPage() {
   const [archiveView] = useState<"active" | "archived">("active");
 
   const [viewMode, setViewMode] = useState<"list" | "grid" | "kanban">("list");
-  const [movingTaskId, setMovingTaskId] = useState<string | null>(null);
 
   const [editError, setEditError] = useState<string | null>(null);
   const [pushStatus, setPushStatus] = useState<string | null>(null);
   const [enablingPush, setEnablingPush] = useState(false);
-
-  const searchParams = useSearchParams();
-  const highlightedTaskId = searchParams.get("taskId");
-  const workspaceIdParam = searchParams.get("workspaceId");
-  const createParam = searchParams.get("create");
 
   const tabsTouchStartRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -115,7 +113,7 @@ export default function TasksPage() {
       result = result.filter((task) => task.workspaceId === workspaceFilter);
     }
 
-    return result
+    const sorted = result
       .slice()
       .sort((a, b) => {
         const aDue = a.dueDate ? a.dueDate.toMillis() : null;
@@ -135,6 +133,8 @@ export default function TasksPage() {
         const bUpdated = b.updatedAt ? b.updatedAt.toMillis() : 0;
         return bUpdated - aUpdated; // updatedAt desc
       });
+
+    return sorted;
   }, [tasks, statusFilter, workspaceFilter, archiveView]);
 
   const activeTasks = useMemo(
@@ -217,28 +217,6 @@ export default function TasksPage() {
     </div>
   );
 
-  const handleMoveTask = async (task: TaskDoc, nextStatus: TaskStatus) => {
-    if (!task.id) return;
-    const user = auth.currentUser;
-    if (!user || user.uid !== task.userId) return;
-
-    setMovingTaskId(task.id);
-    try {
-      await updateDoc(doc(db, "tasks", task.id), {
-        title: task.title,
-        status: nextStatus,
-        workspaceId: typeof task.workspaceId === "string" ? task.workspaceId : null,
-        dueDate: task.dueDate ?? null,
-        favorite: task.favorite === true,
-        updatedAt: serverTimestamp(),
-      });
-    } catch (e) {
-      console.error("Error moving task", e);
-    } finally {
-      setMovingTaskId(null);
-    }
-  };
-
   const toggleDone = async (task: TaskDoc, nextDone: boolean) => {
     if (!task.id) return;
     const user = auth.currentUser;
@@ -257,27 +235,6 @@ export default function TasksPage() {
     } catch (e) {
       console.error("Error toggling done", e);
     }
-  };
-
-  const handleDragStart = (e: React.DragEvent, taskId: string) => {
-    e.dataTransfer.setData("text/plain", taskId);
-    e.dataTransfer.effectAllowed = "move";
-  };
-
-  const handleDrop = async (e: React.DragEvent, status: TaskStatus) => {
-    e.preventDefault();
-    const taskId = e.dataTransfer.getData("text/plain");
-    if (!taskId) return;
-
-    const task = filteredTasks.find((t) => t.id === taskId);
-    if (!task) return;
-
-    await handleMoveTask(task, status);
-  };
-
-  const allowDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
   };
 
   const groupedTasks = useMemo(() => {
@@ -472,18 +429,16 @@ export default function TasksPage() {
             const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
 
             return (
-              <li
-                key={task.id}
-                id={task.id ? `task-${task.id}` : undefined}
-                className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 ${
-                  task.id && task.id === highlightedTaskId ? "border-primary" : ""
-                }`}
-                onClick={() => {
-                  if (!task.id) return;
-                  router.push(`/tasks/${task.id}${hrefSuffix}`);
-                }}
-              >
-                <>
+              <li key={task.id} id={task.id ? `task-${task.id}` : undefined}>
+                <div
+                  className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 ${
+                    task.id && task.id === highlightedTaskId ? "border-primary" : ""
+                  }`}
+                  onClick={() => {
+                    if (!task.id) return;
+                    router.push(`/tasks/${task.id}${hrefSuffix}`);
+                  }}
+                >
                   <div className="space-y-3">
                     <div className="sn-card-header">
                       <div className="min-w-0">
@@ -527,7 +482,7 @@ export default function TasksPage() {
                       </label>
                     </div>
                   </div>
-                </>
+                </div>
               </li>
             );
           })}
@@ -618,8 +573,6 @@ export default function TasksPage() {
             <div
               key={colStatus}
               className="sn-card sn-card--task p-3 min-h-[240px]"
-              onDragOver={allowDrop}
-              onDrop={(e) => handleDrop(e, colStatus)}
             >
               <div className="flex items-center justify-between mb-2">
                 <h2 className="font-semibold">{statusLabel(colStatus)}</h2>
@@ -633,15 +586,12 @@ export default function TasksPage() {
                     .slice()
                     .sort((a, b) => new Date(a.reminderTime).getTime() - new Date(b.reminderTime).getTime())[0];
                   const reminderLabel = nextReminder ? new Date(nextReminder.reminderTime).toLocaleString() : null;
-                  const isMoving = movingTaskId === task.id;
 
                   return (
                     <div
                       key={task.id}
-                      draggable={!isMoving}
-                      onDragStart={(e) => task.id && handleDragStart(e, task.id)}
                       className={`border border-border rounded-md bg-background p-2 cursor-move transition-shadow ${
-                        isMoving ? "opacity-50" : ""
+                        ""
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
