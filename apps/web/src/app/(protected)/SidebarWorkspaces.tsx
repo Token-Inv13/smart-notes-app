@@ -158,11 +158,11 @@ export default function SidebarWorkspaces({
   }, [touchDragging]);
 
   const sensors = useSensors(
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 350, tolerance: 10 },
+    }),
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 },
-    }),
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 400, tolerance: 6 },
     }),
   );
 
@@ -288,6 +288,11 @@ export default function SidebarWorkspaces({
                 e.preventDefault();
                 e.stopPropagation();
               }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              style={{ touchAction: "none", WebkitTouchCallout: "none" }}
               {...attributes}
               {...listeners}
             >
