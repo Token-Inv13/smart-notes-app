@@ -516,16 +516,16 @@ export default function SidebarWorkspaces({
                   return <SortableWorkspaceRow key={ws.id ?? ws.name} ws={ws} selected={!!isSelected} />;
                 })}
               </SortableContext>
-              <DragOverlay>
-                {activeWorkspaceName ? (
+              {activeWorkspaceName ? (
+                <DragOverlay style={{ pointerEvents: "none" }}>
                   <div className="border rounded p-2 bg-card opacity-80 shadow-lg">
                     <div className="flex items-center gap-2">
                       <GripVertical className="h-4 w-4 text-muted-foreground" />
                       <div className="text-sm truncate">{activeWorkspaceName}</div>
                     </div>
                   </div>
-                ) : null}
-              </DragOverlay>
+                </DragOverlay>
+              ) : null}
             </div>
           </div>
 
