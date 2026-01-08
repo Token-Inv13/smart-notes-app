@@ -138,9 +138,13 @@ export default function SidebarWorkspaces({
     return ws?.name ?? null;
   }, [activeId, baseSortedWorkspaces]);
   const sortedWorkspaces = baseSortedWorkspaces;
-  const sortableIds = useMemo(
-    () => sortedWorkspaces.map((w) => w.id).filter((id): id is string => typeof id === "string" && id.length > 0),
+  const sortableWorkspaces = useMemo(
+    () => sortedWorkspaces.filter((w) => typeof w.id === "string" && w.id.length > 0),
     [sortedWorkspaces],
+  );
+  const sortableIds = useMemo(
+    () => sortableWorkspaces.map((w) => w.id as string),
+    [sortableWorkspaces],
   );
 
   const SortableWorkspaceRow = ({ ws, selected }: { ws: WorkspaceDoc; selected: boolean }) => {
@@ -511,7 +515,7 @@ export default function SidebarWorkspaces({
               )}
 
               <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
-                {sortedWorkspaces.map((ws) => {
+                {sortableWorkspaces.map((ws) => {
                   const isSelected = ws.id && ws.id === currentWorkspaceId;
                   return <SortableWorkspaceRow key={ws.id ?? ws.name} ws={ws} selected={!!isSelected} />;
                 })}
