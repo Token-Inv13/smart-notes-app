@@ -46,7 +46,11 @@ export function useUserWorkspaces(): UseUserWorkspacesState {
         const ownerDocs = snapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as WorkspaceDoc) }));
         setData((prev) => {
           const memberOnly = prev.filter((w) => w.ownerId !== user.uid);
-          return [...ownerDocs, ...memberOnly];
+          const byId = new Map<string, WorkspaceDoc>();
+          [...ownerDocs, ...memberOnly].forEach((w) => {
+            if (w.id) byId.set(w.id, w);
+          });
+          return Array.from(byId.values());
         });
         setLoading(false);
       },
