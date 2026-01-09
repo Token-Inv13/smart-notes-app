@@ -197,14 +197,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   const sidebarWidthClass = collapsed ? "w-16" : "w-64";
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragStart={onDragStart}
-      onDragCancel={onDragCancel}
-      onDragEnd={onDragEnd}
-    >
-      <div className="min-h-screen flex bg-background text-foreground">
+    <div className="min-h-screen flex bg-background text-foreground">
       {/* Desktop sidebar */}
       <aside className={`hidden md:flex ${sidebarWidthClass} border-r border-border`}>
         <div className="w-full flex flex-col">
@@ -228,13 +221,21 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
             </button>
           </div>
           <div className="px-3 pb-3 overflow-y-auto">
-            <SidebarWorkspaces
-              collapsed={collapsed}
-              onRequestExpand={collapsed ? () => setCollapsed(false) : undefined}
-              workspaces={localWorkspaces}
-              loading={workspacesLoading}
-              error={workspacesError}
-            />
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={onDragStart}
+              onDragCancel={onDragCancel}
+              onDragEnd={onDragEnd}
+            >
+              <SidebarWorkspaces
+                collapsed={collapsed}
+                onRequestExpand={collapsed ? () => setCollapsed(false) : undefined}
+                workspaces={localWorkspaces}
+                loading={workspacesLoading}
+                error={workspacesError}
+              />
+            </DndContext>
           </div>
         </div>
       </aside>
@@ -261,13 +262,21 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
               </button>
             </div>
             <div className="p-3 overflow-y-auto h-[calc(100%-52px)]">
-              <SidebarWorkspaces
-                collapsed={false}
-                onNavigate={closeMobile}
-                workspaces={localWorkspaces}
-                loading={workspacesLoading}
-                error={workspacesError}
-              />
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={onDragStart}
+                onDragCancel={onDragCancel}
+                onDragEnd={onDragEnd}
+              >
+                <SidebarWorkspaces
+                  collapsed={false}
+                  onNavigate={closeMobile}
+                  workspaces={localWorkspaces}
+                  loading={workspacesLoading}
+                  error={workspacesError}
+                />
+              </DndContext>
             </div>
           </div>
         </div>
@@ -307,7 +316,6 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
           {children}
         </main>
       </div>
-      </div>
-    </DndContext>
+    </div>
   );
 }
