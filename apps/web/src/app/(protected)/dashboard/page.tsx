@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   addDoc,
   collection,
@@ -29,6 +29,7 @@ function formatFrDateTime(ts?: unknown | null) {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get('workspaceId') || undefined;
   const suffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : '';
@@ -255,21 +256,28 @@ export default function DashboardPage() {
         {!notesLoading && !notesError && activeFavoriteNotes.length > 0 && (
           <ul className="space-y-1">
             {activeFavoriteNotes.map((note) => {
+              const href = note.id ? `/notes/${encodeURIComponent(note.id)}${suffix}` : null;
               return (
                 <li
                   key={note.id}
                   className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4 relative ${
                     note.id ? "cursor-pointer" : ""
                   }`}
+                  role={href ? 'link' : undefined}
+                  tabIndex={href ? 0 : undefined}
+                  onClick={() => {
+                    if (!href) return;
+                    router.push(href);
+                  }}
+                  onKeyDown={(e) => {
+                    if (!href) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      router.push(href);
+                    }
+                  }}
                 >
                   <div className="space-y-3">
-                    {note.id && (
-                      <Link
-                        href={`/notes/${encodeURIComponent(note.id)}${suffix}`}
-                        aria-label={`Ouvrir la note ${note.title}`}
-                        className="absolute inset-0"
-                      />
-                    )}
                     <div className="sn-card-header">
                       <div className="min-w-0 relative z-10">
                         <div className="sn-card-title truncate">{note.title}</div>
@@ -344,6 +352,7 @@ export default function DashboardPage() {
         {!tasksLoading && !tasksError && activeFavoriteTasks.length > 0 && (
           <ul className="space-y-1">
             {activeFavoriteTasks.map((task) => {
+              const href = task.id ? `/tasks/${encodeURIComponent(task.id)}${suffix}` : null;
               const dueLabel = formatFrDateTime(task.dueDate ?? null);
               return (
                 <li
@@ -351,15 +360,21 @@ export default function DashboardPage() {
                   className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 relative ${
                     task.id ? "cursor-pointer" : ""
                   }`}
+                  role={href ? 'link' : undefined}
+                  tabIndex={href ? 0 : undefined}
+                  onClick={() => {
+                    if (!href) return;
+                    router.push(href);
+                  }}
+                  onKeyDown={(e) => {
+                    if (!href) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      router.push(href);
+                    }
+                  }}
                 >
                   <div className="space-y-3">
-                    {task.id && (
-                      <Link
-                        href={`/tasks/${encodeURIComponent(task.id)}${suffix}`}
-                        aria-label={`Ouvrir la tâche ${task.title}`}
-                        className="absolute inset-0"
-                      />
-                    )}
                     <div className="sn-card-header">
                       <div className="min-w-0 relative z-10">
                         <div className="sn-card-title truncate">{task.title}</div>
