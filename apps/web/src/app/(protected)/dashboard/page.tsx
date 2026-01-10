@@ -263,7 +263,6 @@ export default function DashboardPage() {
                   className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4 relative ${
                     note.id ? "cursor-pointer" : ""
                   }`}
-                  role={href ? 'link' : undefined}
                   tabIndex={href ? 0 : undefined}
                   onClick={() => {
                     if (!href) return;
@@ -360,7 +359,6 @@ export default function DashboardPage() {
                   className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 relative ${
                     task.id ? "cursor-pointer" : ""
                   }`}
-                  role={href ? 'link' : undefined}
                   tabIndex={href ? 0 : undefined}
                   onClick={() => {
                     if (!href) return;

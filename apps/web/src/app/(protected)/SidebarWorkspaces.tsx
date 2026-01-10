@@ -10,10 +10,7 @@ import {
   PanelLeft,
   GripVertical,
 } from "lucide-react";
-import {
-  DragOverlay,
-  useDndContext,
-} from "@dnd-kit/core";
+import { useDndContext } from "@dnd-kit/core";
 import {
   SortableContext,
   useSortable,
@@ -130,13 +127,9 @@ export default function SidebarWorkspaces({
       });
   }, [workspaces]);
 
-  const { active } = useDndContext();
-  const activeId = typeof active?.id === "string" ? active.id : null;
-  const activeWorkspaceName = useMemo(() => {
-    if (!activeId) return null;
-    const ws = baseSortedWorkspaces.find((w) => w.id === activeId);
-    return ws?.name ?? null;
-  }, [activeId, baseSortedWorkspaces]);
+  // Keep a reference to the DnD context so sortable rows can work,
+  // but avoid rendering DragOverlay portals which may block clicks in some prod builds.
+  useDndContext();
   const sortedWorkspaces = baseSortedWorkspaces;
   const sortableWorkspaces = useMemo(
     () => sortedWorkspaces.filter((w) => typeof w.id === "string" && w.id.length > 0),
@@ -522,16 +515,7 @@ export default function SidebarWorkspaces({
                   return <SortableWorkspaceRow key={ws.id ?? ws.name} ws={ws} selected={!!isSelected} />;
                 })}
               </SortableContext>
-              {activeWorkspaceName ? (
-                <DragOverlay style={{ pointerEvents: "none" }}>
-                  <div className="border rounded p-2 bg-card opacity-80 shadow-lg">
-                    <div className="flex items-center gap-2">
-                      <GripVertical className="h-4 w-4 text-muted-foreground" />
-                      <div className="text-sm truncate">{activeWorkspaceName}</div>
-                    </div>
-                  </div>
-                </DragOverlay>
-              ) : null}
+              {null}
             </div>
           </div>
 
