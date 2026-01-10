@@ -32,8 +32,30 @@ service cloud.firestore {
     
     // Users collection
     match /users/{userId} {
-      allow read, update, delete: if request.auth != null && request.auth.uid == userId;
-      allow create: if request.auth != null;
+      allow read, delete: if request.auth != null && request.auth.uid == userId;
+
+      // Client-side user profile creation is only allowed for the authenticated user.
+      // The plan must start as 'free' from the client; upgrades are applied server-side (Admin SDK).
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.uid == userId
+        && request.resource.data.plan == 'free'
+        && isServerTimestamp(request.resource.data.createdAt)
+        && isServerTimestamp(request.resource.data.updatedAt);
+
+      // Client-side updates are limited to profile/settings/device tokens.
+      // Prevent client from updating billing/plan fields.
+      allow update: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.plan == resource.data.plan
+        && isServerTimestamp(request.resource.data.updatedAt)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName',
+          'settings',
+          'fcmTokens',
+          'updatedAt'
+        ]);
     }
     
     // Notes collection

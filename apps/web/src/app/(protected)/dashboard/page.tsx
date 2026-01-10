@@ -18,9 +18,10 @@ import type { NoteDoc, TaskDoc } from '@/types/firestore';
 import Link from 'next/link';
 import { getOnboardingFlag, setOnboardingFlag } from '@/lib/onboarding';
 
-function formatFrDateTime(ts?: { toDate: () => Date } | null) {
+function formatFrDateTime(ts?: unknown | null) {
   if (!ts) return '';
-  const d = ts.toDate();
+  if (typeof (ts as any)?.toDate !== 'function') return '';
+  const d = (ts as any).toDate() as Date;
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(
     d.getMinutes(),

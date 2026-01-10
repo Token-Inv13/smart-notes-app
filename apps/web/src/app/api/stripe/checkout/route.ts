@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { cookies, headers } from 'next/headers';
 import Stripe from 'stripe';
 import { verifySessionCookie, getAdminDb } from '@/lib/firebaseAdmin';
+import type { UserDoc } from '@/types/firestore';
 
 const SESSION_COOKIE_NAME = 'session';
 
@@ -29,7 +30,7 @@ export async function POST() {
     const db = getAdminDb();
     const userRef = db.collection('users').doc(decoded.uid);
     const userSnap = await userRef.get();
-    const userData = (userSnap.data() as { stripeCustomerId?: string | null } | undefined) ?? {};
+    const userData: Partial<UserDoc> = (userSnap.data() as UserDoc | undefined) ?? {};
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',

@@ -64,6 +64,13 @@ export default function TasksPage() {
 
   const tabsTouchStartRef = useRef<{ x: number; y: number } | null>(null);
 
+  const toMillisSafe = (ts: unknown) => {
+    if (ts && typeof (ts as any).toMillis === "function") {
+      return (ts as any).toMillis() as number;
+    }
+    return 0;
+  };
+
   const userId = auth.currentUser?.uid;
   const showMicroGuide = !!userId && !getOnboardingFlag(userId, "tasks_microguide_v1");
 
@@ -129,8 +136,8 @@ export default function TasksPage() {
         if (aHasDue && !bHasDue) return -1;
         if (!aHasDue && bHasDue) return 1;
 
-        const aUpdated = a.updatedAt ? a.updatedAt.toMillis() : 0;
-        const bUpdated = b.updatedAt ? b.updatedAt.toMillis() : 0;
+        const aUpdated = toMillisSafe(a.updatedAt);
+        const bUpdated = toMillisSafe(b.updatedAt);
         return bUpdated - aUpdated; // updatedAt desc
       });
 
@@ -156,8 +163,8 @@ export default function TasksPage() {
         .filter((t) => ((t.status as TaskStatus | undefined) ?? "todo") === "done")
         .slice()
         .sort((a, b) => {
-          const aUpdated = a.updatedAt ? a.updatedAt.toMillis() : 0;
-          const bUpdated = b.updatedAt ? b.updatedAt.toMillis() : 0;
+          const aUpdated = toMillisSafe(a.updatedAt);
+          const bUpdated = toMillisSafe(b.updatedAt);
           return bUpdated - aUpdated;
         });
     },
@@ -176,7 +183,7 @@ export default function TasksPage() {
   const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
   const tabs = (
     <div
-      className="mb-4"
+      className="mb-4 max-w-full overflow-x-auto"
       onTouchStart={(e) => {
         const t = e.touches[0];
         if (!t) return;
@@ -198,7 +205,7 @@ export default function TasksPage() {
         }
       }}
     >
-      <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
+      <div className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap">
         <button
           type="button"
           onClick={() => router.push(`/notes${hrefSuffix}`)}

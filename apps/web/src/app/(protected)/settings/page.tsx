@@ -4,7 +4,7 @@ import { useUserSettings } from "@/hooks/useUserSettings";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { auth, db } from "@/lib/firebase";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { registerFcmToken } from "@/lib/fcm";
 import LogoutButton from "../LogoutButton";
 
@@ -17,9 +17,6 @@ export default function SettingsPage() {
 
   const [notesViewMode, setNotesViewMode] = useState<"list" | "grid">("list");
   const [tasksViewMode, setTasksViewMode] = useState<"list" | "grid" | "kanban">("list");
-
-  const [savingPlan, setSavingPlan] = useState(false);
-  const [planMessage, setPlanMessage] = useState<string | null>(null);
 
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
@@ -87,6 +84,7 @@ export default function SettingsPage() {
       const userRef = doc(db, "users", currentUser.uid);
       await updateDoc(userRef, {
         "settings.notifications.taskReminders": nextValue,
+        updatedAt: serverTimestamp(),
       });
       setToggleMessage("Task reminders updated.");
 
@@ -100,30 +98,6 @@ export default function SettingsPage() {
       setToggleMessage("Error updating task reminders.");
     } finally {
       setToggling(false);
-    }
-  };
-
-  const handleTogglePlan = async () => {
-    const currentUser = ensureCanEdit();
-    if (!currentUser) {
-      setPlanMessage("Cannot update plan for this user.");
-      return;
-    }
-
-    const currentPlan = user?.plan ?? 'free';
-    const nextPlan = currentPlan === 'pro' ? 'free' : 'pro';
-
-    setSavingPlan(true);
-    setPlanMessage(null);
-    try {
-      const userRef = doc(db, 'users', currentUser.uid);
-      await updateDoc(userRef, { plan: nextPlan });
-      setPlanMessage(nextPlan === 'pro' ? 'Plan Pro activé (test).' : 'Plan Free activé.');
-    } catch (e) {
-      console.error('Error updating plan', e);
-      setPlanMessage('Erreur lors de la mise à jour du plan.');
-    } finally {
-      setSavingPlan(false);
     }
   };
 
@@ -148,6 +122,7 @@ export default function SettingsPage() {
       const userRef = doc(db, "users", currentUser.uid);
       await updateDoc(userRef, {
         displayName: displayNameDraft.trim() || null,
+        updatedAt: serverTimestamp(),
       });
       setProfileMessage("Profil mis à jour.");
     } catch (e) {
@@ -174,6 +149,7 @@ export default function SettingsPage() {
       const userRef = doc(db, "users", currentUser.uid);
       await updateDoc(userRef, {
         "settings.appearance.mode": nextMode,
+        updatedAt: serverTimestamp(),
       });
       setAppearanceMessage("Mode mis à jour.");
     } catch (e) {
@@ -197,6 +173,7 @@ export default function SettingsPage() {
       const userRef = doc(db, "users", currentUser.uid);
       await updateDoc(userRef, {
         "settings.appearance.background": background,
+        updatedAt: serverTimestamp(),
       });
       setAppearanceMessage("Fond mis à jour.");
     } catch (e) {
@@ -466,15 +443,6 @@ export default function SettingsPage() {
             >
               Débloquer Pro
             </Link>
-            <button
-              type="button"
-              onClick={handleTogglePlan}
-              disabled={savingPlan}
-              className="border border-border rounded px-3 py-2 bg-background text-sm disabled:opacity-50"
-            >
-              {savingPlan ? 'Mise à jour…' : user.plan === 'pro' ? 'Repasser en Free' : 'Activer Pro (démo)'}
-            </button>
-            {planMessage && <p className="text-sm">{planMessage}</p>}
           </section>
         </div>
       )}

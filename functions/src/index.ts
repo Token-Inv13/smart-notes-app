@@ -213,11 +213,47 @@ function escapeHtml(input: string): string {
     .replace(/'/g, '&#039;');
 }
 
+async function claimReminder(params: {
+  db: FirebaseFirestore.Firestore;
+  ref: FirebaseFirestore.DocumentReference;
+  now: FirebaseFirestore.Timestamp;
+  processingTtlMs: number;
+  processingBy: string;
+}): Promise<boolean> {
+  const { db, ref, now, processingTtlMs, processingBy } = params;
+
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return false;
+
+    const data = snap.data() as any;
+    if (data?.sent === true) return false;
+
+    const processingAt: FirebaseFirestore.Timestamp | null = data?.processingAt ?? null;
+    if (processingAt) {
+      const ageMs = now.toMillis() - processingAt.toMillis();
+      if (ageMs >= 0 && ageMs < processingTtlMs) {
+        return false;
+      }
+    }
+
+    tx.update(ref, {
+      processingAt: now,
+      processingBy,
+    });
+    return true;
+  });
+}
+
 export const checkAndSendReminders = functions.pubsub
   .schedule('every 1 minutes')
   .onRun(async (context) => {
     const now = new Date();
     const nowIso = now.toISOString();
+    const processingTtlMs = 2 * 60 * 1000;
+    const processingBy = typeof (context as any)?.eventId === 'string' && (context as any).eventId
+      ? String((context as any).eventId)
+      : `run:${nowIso}`;
 
     try {
       const db = admin.firestore();
@@ -235,11 +271,27 @@ export const checkAndSendReminders = functions.pubsub
 
       const reminderPromises = remindersSnapshot.docs.map(async (doc) => {
         const reminder = doc.data() as TaskReminder;
+
+        const claimed = await claimReminder({
+          db,
+          ref: doc.ref,
+          now: admin.firestore.Timestamp.fromDate(now),
+          processingTtlMs,
+          processingBy,
+        });
+        if (!claimed) {
+          return;
+        }
         
         // Get the task details
         const taskDoc = await db.collection('tasks').doc(reminder.taskId).get();
         if (!taskDoc.exists) {
           console.log(`Task ${reminder.taskId} not found, skipping reminder`);
+          try {
+            await doc.ref.update({ processingAt: admin.firestore.FieldValue.delete(), processingBy: admin.firestore.FieldValue.delete() });
+          } catch {
+            // ignore
+          }
           return;
         }
         
@@ -249,6 +301,11 @@ export const checkAndSendReminders = functions.pubsub
         const userDoc = await db.collection('users').doc(reminder.userId).get();
         if (!userDoc.exists) {
           console.log(`User ${reminder.userId} not found, skipping reminder`);
+          try {
+            await doc.ref.update({ processingAt: admin.firestore.FieldValue.delete(), processingBy: admin.firestore.FieldValue.delete() });
+          } catch {
+            // ignore
+          }
           return;
         }
         
@@ -341,7 +398,19 @@ export const checkAndSendReminders = functions.pubsub
         }
 
         if (delivered) {
-          await doc.ref.update({ sent: true, deliveryChannel });
+          await doc.ref.update({
+            sent: true,
+            deliveryChannel,
+            processingAt: admin.firestore.FieldValue.delete(),
+            processingBy: admin.firestore.FieldValue.delete(),
+          });
+        } else {
+          // Allow retry on next run (but only after TTL, enforced by claimReminder).
+          try {
+            await doc.ref.update({ processingAt: admin.firestore.Timestamp.fromDate(now), processingBy });
+          } catch {
+            // ignore
+          }
         }
       });
       

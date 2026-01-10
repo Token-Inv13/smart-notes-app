@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { getAdminDb } from '@/lib/firebaseAdmin';
 import admin from 'firebase-admin';
+import type { UserDoc } from '@/types/firestore';
 
 export const runtime = 'nodejs';
 
@@ -13,7 +14,7 @@ function getStripeClient() {
   return new Stripe(secretKey, { apiVersion: '2024-06-20' });
 }
 
-async function setUserPlan(userId: string, plan: 'free' | 'pro', updates?: Record<string, unknown>) {
+async function setUserPlan(userId: string, plan: 'free' | 'pro', updates?: Partial<UserDoc>) {
   const db = getAdminDb();
   await db
     .collection('users')

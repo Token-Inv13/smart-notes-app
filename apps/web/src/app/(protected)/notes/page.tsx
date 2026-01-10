@@ -52,12 +52,19 @@ export default function NotesPage() {
 
   const showUpgradeCta = !!editError?.includes("Limite Free atteinte");
 
+  const toMillisSafe = (ts: unknown) => {
+    if (ts && typeof (ts as any).toMillis === "function") {
+      return (ts as any).toMillis() as number;
+    }
+    return 0;
+  };
+
   const sortedNotes = useMemo(() => {
     return notes
       .slice()
       .sort((a, b) => {
-        const aUpdated = a.updatedAt ? a.updatedAt.toMillis() : 0;
-        const bUpdated = b.updatedAt ? b.updatedAt.toMillis() : 0;
+        const aUpdated = toMillisSafe(a.updatedAt);
+        const bUpdated = toMillisSafe(b.updatedAt);
         return bUpdated - aUpdated;
       });
   }, [notes]);
@@ -96,7 +103,7 @@ export default function NotesPage() {
   const hrefSuffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
   const tabs = (
     <div
-      className="mb-4"
+      className="mb-4 max-w-full overflow-x-auto"
       onTouchStart={(e) => {
         const t = e.touches[0];
         if (!t) return;
@@ -118,7 +125,7 @@ export default function NotesPage() {
         }
       }}
     >
-      <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
+      <div className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap">
         <button
           type="button"
           onClick={() => router.push(`/notes${hrefSuffix}`)}

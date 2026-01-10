@@ -122,8 +122,8 @@ export default function NoteCreateForm({ initialWorkspaceId, onCreated }: Props)
         favorite: false,
         completed: false,
         archived: false,
-        createdAt: serverTimestamp() as unknown as NoteDoc["createdAt"],
-        updatedAt: serverTimestamp() as unknown as NoteDoc["updatedAt"],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       };
       await addDoc(collection(db, "notes"), payload);
 

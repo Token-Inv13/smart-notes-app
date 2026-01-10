@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { cookies, headers } from 'next/headers';
 import Stripe from 'stripe';
 import { getAdminDb, verifySessionCookie } from '@/lib/firebaseAdmin';
+import type { UserDoc } from '@/types/firestore';
 
 export const runtime = 'nodejs';
 
@@ -22,7 +23,7 @@ export async function POST() {
 
     const db = getAdminDb();
     const userSnap = await db.collection('users').doc(decoded.uid).get();
-    const userData = (userSnap.data() as { stripeCustomerId?: string | null } | undefined) ?? {};
+    const userData: Partial<UserDoc> = (userSnap.data() as UserDoc | undefined) ?? {};
 
     const customer = userData.stripeCustomerId;
     if (!customer) {

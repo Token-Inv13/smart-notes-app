@@ -149,8 +149,8 @@ export default function TaskCreateForm({ initialWorkspaceId, onCreated }: Props)
         dueDate: dueTimestamp,
         favorite: false,
         archived: false,
-        createdAt: serverTimestamp() as unknown as TaskDoc["createdAt"],
-        updatedAt: serverTimestamp() as unknown as TaskDoc["updatedAt"],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       };
       const taskRef = await addDoc(collection(db, "tasks"), payload);
 

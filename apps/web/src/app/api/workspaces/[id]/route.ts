@@ -6,9 +6,13 @@ import { getAdminDb, verifySessionCookie } from '@/lib/firebaseAdmin';
 const SESSION_COOKIE_NAME = 'session';
 
 async function deleteQueryInBatches(db: Firestore, q: Query, batchSize = 400) {
-  while (true) {
+  let hasMore = true;
+  while (hasMore) {
     const snap = await q.limit(batchSize).get();
-    if (snap.empty) return;
+    if (snap.empty) {
+      hasMore = false;
+      continue;
+    }
 
     const batch = db.batch();
     for (const doc of snap.docs) {

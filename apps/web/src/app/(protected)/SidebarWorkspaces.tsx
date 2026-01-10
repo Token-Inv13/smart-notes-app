@@ -156,6 +156,7 @@ export default function SidebarWorkspaces({
       attributes,
       listeners,
       setNodeRef,
+      setActivatorNodeRef,
       transform,
       transition,
       isDragging,
@@ -188,6 +189,7 @@ export default function SidebarWorkspaces({
               type="button"
               aria-label="Réordonner"
               title={canDrag ? "Réordonner" : "Réordonner (propriétaire uniquement)"}
+              ref={setActivatorNodeRef}
               className={`shrink-0 text-muted-foreground hover:text-foreground ${
                 canDrag ? "cursor-grab" : "opacity-40 cursor-not-allowed"
               }`}

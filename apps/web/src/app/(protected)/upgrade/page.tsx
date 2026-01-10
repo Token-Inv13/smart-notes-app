@@ -2,11 +2,12 @@
 
 import { useState } from 'react';
 import { useUserSettings } from '@/hooks/useUserSettings';
+import type { UserDoc } from '@/types/firestore';
 
 export default function UpgradePage() {
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === 'pro';
-  const stripeCustomerId = (userSettings as any)?.stripeCustomerId as string | null | undefined;
+  const stripeCustomerId = (userSettings as UserDoc | undefined)?.stripeCustomerId;
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

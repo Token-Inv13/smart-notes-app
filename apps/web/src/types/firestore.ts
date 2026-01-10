@@ -1,4 +1,4 @@
-import type { Timestamp } from 'firebase/firestore';
+import type { FieldValue, Timestamp } from 'firebase/firestore';
 
 export interface UserDoc {
   uid: string;
@@ -6,8 +6,11 @@ export interface UserDoc {
   displayName?: string | null;
   photoURL?: string | null;
   plan?: 'free' | 'pro';
-  createdAt?: string;
-  updatedAt?: string;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripeSubscriptionStatus?: string | null;
+  createdAt?: Timestamp | FieldValue;
+  updatedAt?: Timestamp | FieldValue;
   fcmTokens?: Record<string, boolean>;
   settings?: {
     appearance?: {
@@ -34,8 +37,8 @@ export interface NoteDoc {
   completed?: boolean;
   archived?: boolean;
   tags?: string[];
-  createdAt?: Timestamp;
-  updatedAt?: Timestamp;
+  createdAt?: Timestamp | FieldValue;
+  updatedAt?: Timestamp | FieldValue;
   [key: string]: unknown;
 }
 
@@ -50,8 +53,8 @@ export interface TaskDoc {
   favorite?: boolean;
   completed?: boolean;
   archived?: boolean;
-  createdAt?: Timestamp;
-  updatedAt?: Timestamp;
+  createdAt?: Timestamp | FieldValue;
+  updatedAt?: Timestamp | FieldValue;
   [key: string]: unknown;
 }
 
@@ -61,8 +64,8 @@ export interface WorkspaceDoc {
   name: string;
   order?: number;
   members?: string[];
-  createdAt?: string;
-  updatedAt?: string;
+  createdAt?: Timestamp | FieldValue;
+  updatedAt?: Timestamp | FieldValue;
   [key: string]: unknown;
 }
 
@@ -73,5 +76,10 @@ export interface TaskReminderDoc {
   dueDate: string;
   reminderTime: string;
   sent: boolean;
+  deliveryChannel?: 'web_push' | 'email';
+  createdAt?: Timestamp | FieldValue;
+  updatedAt?: Timestamp | FieldValue;
+  processingAt?: Timestamp | FieldValue;
+  processingBy?: string;
   [key: string]: unknown;
 }

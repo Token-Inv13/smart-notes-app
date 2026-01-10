@@ -7,6 +7,16 @@ import { NetworkFirst, StaleWhileRevalidate } from 'workbox-strategies';
 
 declare const self: ServiceWorkerGlobalScope & { __WB_MANIFEST: any };
 
+declare const process: {
+  env: {
+    NEXT_PUBLIC_FIREBASE_API_KEY?: string;
+    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN?: string;
+    NEXT_PUBLIC_FIREBASE_PROJECT_ID?: string;
+    NEXT_PUBLIC_FIREBASE_APP_ID?: string;
+    NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID?: string;
+  };
+};
+
 clientsClaim();
 
 precacheAndRoute(self.__WB_MANIFEST || []);
@@ -25,6 +35,44 @@ registerRoute(
   ({ url }) => url.pathname.startsWith('/icons/'),
   new StaleWhileRevalidate({ cacheName: 'icons-cache' }),
 );
+
+try {
+  const config = {
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  } as const;
+
+  const missing = Object.values(config).some((v) => !v);
+  if (!missing) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (self as any).importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (self as any).importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js');
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const firebase = (self as any).firebase as any;
+    if (firebase?.apps?.length === 0) {
+      firebase.initializeApp(config);
+    }
+
+    const messaging = firebase.messaging();
+    messaging.onBackgroundMessage((payload: any) => {
+      const title = payload?.notification?.title || 'Notification';
+      const body = payload?.notification?.body || '';
+      const data = payload?.data || {};
+
+      self.registration.showNotification(title, {
+        body,
+        data,
+      });
+    });
+  }
+} catch {
+  // ignore
+}
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();

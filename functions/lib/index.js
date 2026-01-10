@@ -159,11 +159,39 @@ function escapeHtml(input) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
 }
+async function claimReminder(params) {
+    const { db, ref, now, processingTtlMs, processingBy } = params;
+    return db.runTransaction(async (tx) => {
+        var _a;
+        const snap = await tx.get(ref);
+        if (!snap.exists)
+            return false;
+        const data = snap.data();
+        if ((data === null || data === void 0 ? void 0 : data.sent) === true)
+            return false;
+        const processingAt = (_a = data === null || data === void 0 ? void 0 : data.processingAt) !== null && _a !== void 0 ? _a : null;
+        if (processingAt) {
+            const ageMs = now.toMillis() - processingAt.toMillis();
+            if (ageMs >= 0 && ageMs < processingTtlMs) {
+                return false;
+            }
+        }
+        tx.update(ref, {
+            processingAt: now,
+            processingBy,
+        });
+        return true;
+    });
+}
 exports.checkAndSendReminders = functions.pubsub
     .schedule('every 1 minutes')
     .onRun(async (context) => {
     const now = new Date();
     const nowIso = now.toISOString();
+    const processingTtlMs = 2 * 60 * 1000;
+    const processingBy = typeof (context === null || context === void 0 ? void 0 : context.eventId) === 'string' && context.eventId
+        ? String(context.eventId)
+        : `run:${nowIso}`;
     try {
         const db = admin.firestore();
         const remindersSnapshot = await db
@@ -177,10 +205,26 @@ exports.checkAndSendReminders = functions.pubsub
         const reminderPromises = remindersSnapshot.docs.map(async (doc) => {
             var _a, _b;
             const reminder = doc.data();
+            const claimed = await claimReminder({
+                db,
+                ref: doc.ref,
+                now: admin.firestore.Timestamp.fromDate(now),
+                processingTtlMs,
+                processingBy,
+            });
+            if (!claimed) {
+                return;
+            }
             // Get the task details
             const taskDoc = await db.collection('tasks').doc(reminder.taskId).get();
             if (!taskDoc.exists) {
                 console.log(`Task ${reminder.taskId} not found, skipping reminder`);
+                try {
+                    await doc.ref.update({ processingAt: admin.firestore.FieldValue.delete(), processingBy: admin.firestore.FieldValue.delete() });
+                }
+                catch (_c) {
+                    // ignore
+                }
                 return;
             }
             const task = taskDoc.data();
@@ -188,6 +232,12 @@ exports.checkAndSendReminders = functions.pubsub
             const userDoc = await db.collection('users').doc(reminder.userId).get();
             if (!userDoc.exists) {
                 console.log(`User ${reminder.userId} not found, skipping reminder`);
+                try {
+                    await doc.ref.update({ processingAt: admin.firestore.FieldValue.delete(), processingBy: admin.firestore.FieldValue.delete() });
+                }
+                catch (_d) {
+                    // ignore
+                }
                 return;
             }
             const userData = userDoc.data();
@@ -266,7 +316,21 @@ exports.checkAndSendReminders = functions.pubsub
                 }
             }
             if (delivered) {
-                await doc.ref.update({ sent: true, deliveryChannel });
+                await doc.ref.update({
+                    sent: true,
+                    deliveryChannel,
+                    processingAt: admin.firestore.FieldValue.delete(),
+                    processingBy: admin.firestore.FieldValue.delete(),
+                });
+            }
+            else {
+                // Allow retry on next run (but only after TTL, enforced by claimReminder).
+                try {
+                    await doc.ref.update({ processingAt: admin.firestore.Timestamp.fromDate(now), processingBy });
+                }
+                catch (_e) {
+                    // ignore
+                }
             }
         });
         await Promise.all(reminderPromises);
