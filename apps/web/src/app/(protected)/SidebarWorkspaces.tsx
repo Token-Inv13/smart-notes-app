@@ -8,15 +8,7 @@ import {
   Folder,
   Plus,
   PanelLeft,
-  GripVertical,
 } from "lucide-react";
-import { useDndContext } from "@dnd-kit/core";
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import { z } from "zod";
 import {
   addDoc,
@@ -127,84 +119,24 @@ export default function SidebarWorkspaces({
       });
   }, [workspaces]);
 
-  // Keep a reference to the DnD context so sortable rows can work,
-  // but avoid rendering DragOverlay portals which may block clicks in some prod builds.
-  useDndContext();
+  // Hotfix: DnD disabled.
   const sortedWorkspaces = baseSortedWorkspaces;
-  const sortableWorkspaces = useMemo(
-    () => sortedWorkspaces.filter((w) => typeof w.id === "string" && w.id.length > 0),
-    [sortedWorkspaces],
-  );
-  const sortableIds = useMemo(
-    () => sortableWorkspaces.map((w) => w.id as string),
-    [sortableWorkspaces],
-  );
 
-  const SortableWorkspaceRow = ({ ws, selected }: { ws: WorkspaceDoc; selected: boolean }) => {
-    const wsId = ws.id;
-    const user = auth.currentUser;
-    const canDrag = !!wsId && !!user && user.uid === ws.ownerId;
-
-    const {
-      attributes,
-      listeners,
-      setNodeRef,
-      setActivatorNodeRef,
-      transform,
-      transition,
-      isDragging,
-      isOver,
-      active,
-    } = useSortable({ id: wsId ?? "", disabled: !canDrag, data: { type: "workspace" } });
-
-    const style = {
-      transform: CSS.Transform.toString(transform),
-      transition,
-    } as const;
-
-    const showDropIndicator = !!active && isOver && !isDragging;
-
+  const WorkspaceRow = ({ ws, selected }: { ws: WorkspaceDoc; selected: boolean }) => {
     return (
       <div
-        ref={setNodeRef}
         data-ws-row="true"
         data-ws-id={ws.id ?? ""}
-        style={style}
-        className={`border rounded p-2 select-none ${
-          isDragging ? "opacity-60 shadow-lg" : ""
-        } ${showDropIndicator ? "ring-1 ring-primary" : ""} ${
-          selected ? "border-primary bg-accent" : "border-border bg-card"
-        }`}
+        className={`border rounded p-2 ${selected ? "border-primary bg-accent" : "border-border bg-card"}`}
       >
         {!renamingId || ws.id !== renamingId ? (
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
-              aria-label="Réordonner"
-              title={canDrag ? "Réordonner" : "Réordonner (propriétaire uniquement)"}
-              ref={setActivatorNodeRef}
-              className={`shrink-0 text-muted-foreground hover:text-foreground ${
-                canDrag ? "cursor-grab" : "opacity-40 cursor-not-allowed"
-              }`}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              style={{ touchAction: "none", WebkitTouchCallout: "none" }}
-              {...attributes}
-              {...listeners}
-            >
-              <GripVertical className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
               onClick={() => navigateWithWorkspace(ws.id ?? null)}
               className={`text-left text-sm truncate ${selected ? "font-semibold" : ""}`}
               aria-label={`Ouvrir le dossier ${ws.name}`}
+              disabled={!ws.id}
             >
               {ws.name}
             </button>
@@ -251,7 +183,6 @@ export default function SidebarWorkspaces({
             </div>
           </div>
         )}
-        {showDropIndicator && <div className="mt-2 h-0.5 bg-primary rounded" />}
       </div>
     );
   };
@@ -509,13 +440,10 @@ export default function SidebarWorkspaces({
                 <div className="text-sm text-muted-foreground">Aucun dossier.</div>
               )}
 
-              <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
-                {sortableWorkspaces.map((ws) => {
-                  const isSelected = ws.id && ws.id === currentWorkspaceId;
-                  return <SortableWorkspaceRow key={ws.id ?? ws.name} ws={ws} selected={!!isSelected} />;
-                })}
-              </SortableContext>
-              {null}
+              {sortedWorkspaces.map((ws) => {
+                const isSelected = ws.id && ws.id === currentWorkspaceId;
+                return <WorkspaceRow key={ws.id ?? ws.name} ws={ws} selected={!!isSelected} />;
+              })}
             </div>
           </div>
 

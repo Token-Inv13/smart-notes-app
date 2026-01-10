@@ -6,27 +6,9 @@ import { PanelLeft, Menu, X } from "lucide-react";
 import SidebarWorkspaces from "./SidebarWorkspaces";
 import PwaInstallCta from "./_components/PwaInstallCta";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
-import {
-  DndContext,
-  PointerSensor,
-  TouchSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragCancelEvent,
-  type DragEndEvent,
-  type DragStartEvent,
-} from "@dnd-kit/core";
-import { arrayMove } from "@dnd-kit/sortable";
-import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
 import type { WorkspaceDoc } from "@/types/firestore";
 
 const STORAGE_KEY = "sidebarCollapsed";
-
-type ActiveDragState =
-  | { kind: "workspace"; id: string }
-  | null;
 
 export default function SidebarShell({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams();
@@ -47,120 +29,8 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
       });
   }, [workspaces]);
 
-  const [localWorkspaces, setLocalWorkspaces] = useState<WorkspaceDoc[]>(baseSortedWorkspaces);
-  const [activeDrag, setActiveDrag] = useState<ActiveDragState>(null);
-  const [touchDragging, setTouchDragging] = useState(false);
-
-  useEffect(() => {
-    if (activeDrag) return;
-    // Avoid infinite loops when the hook returns a new array reference on each render.
-    // Only sync when the content (ids + order) actually changed.
-    const sig = (arr: WorkspaceDoc[]) =>
-      arr
-        .map((w) => `${w.id ?? ""}:${typeof w.order === "number" ? w.order : ""}`)
-        .join("|");
-
-    setLocalWorkspaces((prev) => {
-      if (sig(prev) === sig(baseSortedWorkspaces)) return prev;
-      return baseSortedWorkspaces;
-    });
-  }, [baseSortedWorkspaces, activeDrag]);
-
-  useEffect(() => {
-    if (!touchDragging) return;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [touchDragging]);
-
-  const touchActivationConstraint = useMemo(() => ({ delay: 350, tolerance: 10 }), []);
-  const pointerActivationConstraint = useMemo(() => ({ distance: 6 }), []);
-  const touchSensorOptions = useMemo(
-    () => ({ activationConstraint: touchActivationConstraint }),
-    [touchActivationConstraint],
-  );
-  const pointerSensorOptions = useMemo(
-    () => ({ activationConstraint: pointerActivationConstraint }),
-    [pointerActivationConstraint],
-  );
-
-  const sensors = useSensors(
-    useSensor(TouchSensor, touchSensorOptions),
-    useSensor(PointerSensor, pointerSensorOptions),
-  );
-
-  const computeNextOrderValue = (list: WorkspaceDoc[], index: number) => {
-    const prev = list[index - 1];
-    const next = list[index + 1];
-
-    const prevOrder = typeof prev?.order === "number" ? prev.order : null;
-    const nextOrder = typeof next?.order === "number" ? next.order : null;
-
-    if (prevOrder !== null && nextOrder !== null) {
-      if (prevOrder === nextOrder) return prevOrder + 1;
-      return prevOrder + (nextOrder - prevOrder) / 2;
-    }
-    if (prevOrder !== null && nextOrder === null) return prevOrder + 1;
-    if (prevOrder === null && nextOrder !== null) return nextOrder - 1;
-    return index;
-  };
-
-  const onDragStart = (event: DragStartEvent) => {
-    const id = event.active.id;
-    if (typeof id !== "string") return;
-
-    setActiveDrag({ kind: "workspace", id });
-
-    const pe = event.activatorEvent as PointerEvent | undefined;
-    setTouchDragging(pe?.pointerType === "touch");
-  };
-
-  const onDragCancel = (_event: DragCancelEvent) => {
-    setActiveDrag(null);
-    setTouchDragging(false);
-    setLocalWorkspaces(baseSortedWorkspaces);
-  };
-
-  const onDragEnd = async (event: DragEndEvent) => {
-    const activeId = event.active.id;
-    const overId = event.over?.id;
-
-    setActiveDrag(null);
-    setTouchDragging(false);
-
-    if (typeof activeId !== "string" || typeof overId !== "string") return;
-
-    // Workspace reorder
-    if (activeId === overId) return;
-
-    const oldIndex = localWorkspaces.findIndex((w) => w.id === activeId);
-    const newIndex = localWorkspaces.findIndex((w) => w.id === overId);
-    if (oldIndex < 0 || newIndex < 0) return;
-
-    const nextList = arrayMove(localWorkspaces, oldIndex, newIndex);
-    setLocalWorkspaces(nextList);
-
-    const moved = nextList.find((w) => w.id === activeId);
-    if (!moved?.id) return;
-
-    const user = auth.currentUser;
-    if (!user || user.uid !== moved.ownerId) return;
-
-    const nextOrder = computeNextOrderValue(nextList, newIndex);
-    if (typeof moved.order === "number" && moved.order === nextOrder) return;
-
-    try {
-      await updateDoc(doc(db, "workspaces", moved.id), {
-        order: nextOrder,
-        updatedAt: serverTimestamp(),
-      });
-    } catch (e) {
-      console.error("Error reordering workspace", e);
-      setLocalWorkspaces(baseSortedWorkspaces);
-    }
-  };
+  // Hotfix: DnD disabled (dnd-kit). We keep a sorted list only.
+  const localWorkspaces: WorkspaceDoc[] = baseSortedWorkspaces;
 
   const currentWorkspaceName = (() => {
     if (!workspaceId) return null;
@@ -265,21 +135,13 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
             </button>
           </div>
           <div className="px-3 pb-3 overflow-y-auto">
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragStart={onDragStart}
-              onDragCancel={onDragCancel}
-              onDragEnd={onDragEnd}
-            >
-              <SidebarWorkspaces
-                collapsed={collapsed}
-                onRequestExpand={collapsed ? () => setCollapsed(false) : undefined}
-                workspaces={localWorkspaces}
-                loading={workspacesLoading}
-                error={workspacesError}
-              />
-            </DndContext>
+            <SidebarWorkspaces
+              collapsed={collapsed}
+              onRequestExpand={collapsed ? () => setCollapsed(false) : undefined}
+              workspaces={localWorkspaces}
+              loading={workspacesLoading}
+              error={workspacesError}
+            />
           </div>
         </div>
       </aside>
@@ -311,21 +173,13 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
               </button>
             </div>
             <div className="p-3 overflow-y-auto h-[calc(100%-52px)]">
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragStart={onDragStart}
-                onDragCancel={onDragCancel}
-                onDragEnd={onDragEnd}
-              >
-                <SidebarWorkspaces
-                  collapsed={false}
-                  onNavigate={closeMobile}
-                  workspaces={localWorkspaces}
-                  loading={workspacesLoading}
-                  error={workspacesError}
-                />
-              </DndContext>
+              <SidebarWorkspaces
+                collapsed={false}
+                onNavigate={closeMobile}
+                workspaces={localWorkspaces}
+                loading={workspacesLoading}
+                error={workspacesError}
+              />
             </div>
           </div>
         </div>
