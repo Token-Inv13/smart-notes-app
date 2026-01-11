@@ -26,7 +26,6 @@ Option B : si tu utilises un mono-repo, configure le projet Vercel avec "Root Di
 
 Dans `index.html`, section `#cta`, remplace :
 
-- `https://smart-notes-app.vercel.app`
-- `https://smart-notes-app.vercel.app/upgrade`
+- `https://app.tachesnotes.com`
 
-par ton domaine de prod.
+par ton domaine de prod (si besoin).
