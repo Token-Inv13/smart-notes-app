@@ -49,9 +49,57 @@ export default function NoteDetailModal(props: any) {
   const isDirtyRef = useRef(false);
   const lastSavedSnapshotRef = useRef<string>("");
 
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const longPressFiredRef = useRef(false);
+
   useEffect(() => {
     isDirtyRef.current = isDirty;
   }, [isDirty]);
+
+  const clearLongPress = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressStartRef.current = null;
+  };
+
+  const scheduleLongPressToEdit = (e: React.TouchEvent) => {
+    if (mode !== "view") return;
+    if (!note) return;
+    const t = e.touches[0];
+    if (!t) return;
+
+    longPressFiredRef.current = false;
+    longPressStartRef.current = { x: t.clientX, y: t.clientY };
+
+    clearLongPress();
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressFiredRef.current = true;
+      startEdit();
+      clearLongPress();
+    }, 550);
+  };
+
+  const cancelLongPressIfMoved = (e: React.TouchEvent) => {
+    const start = longPressStartRef.current;
+    const t = e.touches[0];
+    if (!start || !t) return;
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+      clearLongPress();
+    }
+  };
+
+  const endLongPress = (e: React.TouchEvent) => {
+    if (longPressFiredRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    clearLongPress();
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -432,7 +480,16 @@ export default function NoteDetailModal(props: any) {
               <>
                 <div className="space-y-1">
                   <div className="text-sm font-medium">Titre</div>
-                  <div className="text-sm">{note.title}</div>
+                  <div
+                    className="text-sm"
+                    onDoubleClick={() => startEdit()}
+                    onTouchStart={scheduleLongPressToEdit}
+                    onTouchMove={cancelLongPressIfMoved}
+                    onTouchEnd={endLongPress}
+                    onTouchCancel={endLongPress}
+                  >
+                    {note.title}
+                  </div>
                 </div>
 
                 <div className="space-y-1">
@@ -442,6 +499,11 @@ export default function NoteDetailModal(props: any) {
                     value={note.content ?? ""}
                     aria-label="Contenu de la note"
                     className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                    onDoubleClick={() => startEdit()}
+                    onTouchStart={scheduleLongPressToEdit}
+                    onTouchMove={cancelLongPressIfMoved}
+                    onTouchEnd={endLongPress}
+                    onTouchCancel={endLongPress}
                   />
                 </div>
               </>

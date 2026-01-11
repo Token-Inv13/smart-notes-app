@@ -73,9 +73,57 @@ export default function TaskDetailModal(props: any) {
   const isDirtyRef = useRef(false);
   const lastSavedSnapshotRef = useRef<string>("");
 
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const longPressFiredRef = useRef(false);
+
   useEffect(() => {
     isDirtyRef.current = isDirty;
   }, [isDirty]);
+
+  const clearLongPress = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressStartRef.current = null;
+  };
+
+  const scheduleLongPressToEdit = (e: React.TouchEvent) => {
+    if (mode !== "view") return;
+    if (!task) return;
+    const t = e.touches[0];
+    if (!t) return;
+
+    longPressFiredRef.current = false;
+    longPressStartRef.current = { x: t.clientX, y: t.clientY };
+
+    clearLongPress();
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressFiredRef.current = true;
+      startEdit();
+      clearLongPress();
+    }, 550);
+  };
+
+  const cancelLongPressIfMoved = (e: React.TouchEvent) => {
+    const start = longPressStartRef.current;
+    const t = e.touches[0];
+    if (!start || !t) return;
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+      clearLongPress();
+    }
+  };
+
+  const endLongPress = (e: React.TouchEvent) => {
+    if (longPressFiredRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    clearLongPress();
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -570,7 +618,16 @@ export default function TaskDetailModal(props: any) {
               <>
                 <div className="space-y-1">
                   <div className="text-sm font-medium">Titre</div>
-                  <div className="text-sm">{task.title}</div>
+                  <div
+                    className="text-sm"
+                    onDoubleClick={() => startEdit()}
+                    onTouchStart={scheduleLongPressToEdit}
+                    onTouchMove={cancelLongPressIfMoved}
+                    onTouchEnd={endLongPress}
+                    onTouchCancel={endLongPress}
+                  >
+                    {task.title}
+                  </div>
                 </div>
 
                 <div className="space-y-1">
@@ -580,6 +637,11 @@ export default function TaskDetailModal(props: any) {
                     value={task.description ?? ""}
                     aria-label="Description de la tâche"
                     className="w-full min-h-[160px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                    onDoubleClick={() => startEdit()}
+                    onTouchStart={scheduleLongPressToEdit}
+                    onTouchMove={cancelLongPressIfMoved}
+                    onTouchEnd={endLongPress}
+                    onTouchCancel={endLongPress}
                   />
                 </div>
 
