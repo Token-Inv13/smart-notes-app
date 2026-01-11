@@ -199,7 +199,7 @@ export default function NoteCreateForm({ initialWorkspaceId, onCreated }: Props)
       </div>
 
       <div className="space-y-1">
-        <label className="text-sm font-medium" htmlFor="note-content">
+        <label className="sr-only" htmlFor="note-content">
           Contenu
         </label>
         <textarea

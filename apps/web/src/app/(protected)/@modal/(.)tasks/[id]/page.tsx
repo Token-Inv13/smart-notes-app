@@ -631,7 +631,6 @@ export default function TaskDetailModal(props: any) {
                 </div>
 
                 <div className="space-y-1">
-                  <div className="text-sm font-medium">Description</div>
                   <textarea
                     readOnly
                     value={task.description ?? ""}

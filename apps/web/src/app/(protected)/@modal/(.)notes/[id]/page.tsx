@@ -493,7 +493,6 @@ export default function NoteDetailModal(props: any) {
                 </div>
 
                 <div className="space-y-1">
-                  <div className="text-sm font-medium">Contenu</div>
                   <textarea
                     readOnly
                     value={note.content ?? ""}
@@ -559,7 +558,7 @@ export default function NoteDetailModal(props: any) {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-sm font-medium" htmlFor="note-modal-content">
+                  <label className="sr-only" htmlFor="note-modal-content">
                     Contenu
                   </label>
                   <textarea
