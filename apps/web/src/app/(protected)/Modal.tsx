@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 
 interface ModalProps {
   title?: string;
-  children: React.ReactNode;
+  children: React.ReactNode | ((ctx: { close: () => void }) => React.ReactNode);
   onBeforeClose?: () => void | boolean | Promise<void | boolean>;
+  hideHeader?: boolean;
 }
 
-export default function Modal({ title, children, onBeforeClose }: ModalProps) {
+export default function Modal({ title, children, onBeforeClose, hideHeader = false }: ModalProps) {
   const router = useRouter();
   const panelRef = useRef<HTMLDivElement | null>(null);
 
@@ -29,6 +30,8 @@ export default function Modal({ title, children, onBeforeClose }: ModalProps) {
     }
     router.back();
   };
+
+  const content = typeof children === "function" ? children({ close: () => void close() }) : children;
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -61,21 +64,23 @@ export default function Modal({ title, children, onBeforeClose }: ModalProps) {
         className="w-full max-w-2xl rounded-lg border border-border bg-card shadow-lg outline-none"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-          <div className="min-w-0">
-            {title ? <div className="text-sm font-semibold truncate">{title}</div> : null}
+        {!hideHeader && (
+          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+            <div className="min-w-0">
+              {title ? <div className="text-sm font-semibold truncate">{title}</div> : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => void close()}
+              className="sn-icon-btn"
+              aria-label="Fermer"
+              title="Fermer"
+            >
+              ×
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => void close()}
-            className="sn-icon-btn"
-            aria-label="Fermer"
-            title="Fermer"
-          >
-            ×
-          </button>
-        </div>
-        <div className="p-4">{children}</div>
+        )}
+        <div className="p-4">{content}</div>
       </div>
     </div>
   );

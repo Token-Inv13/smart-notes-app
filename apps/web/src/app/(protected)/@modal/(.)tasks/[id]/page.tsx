@@ -557,7 +557,7 @@ export default function TaskDetailModal(props: any) {
 
   return (
     <Modal
-      title="Détail de la tâche"
+      hideHeader
       onBeforeClose={async () => {
         if (mode !== "edit") return true;
 
@@ -565,71 +565,105 @@ export default function TaskDetailModal(props: any) {
         return await saveEdits({ setView: false });
       }}
     >
-      {loading && (
-        <div className="sn-skeleton-card space-y-3">
-          <div className="sn-skeleton-title w-56" />
-          <div className="sn-skeleton-line w-72" />
-          <div className="sn-skeleton-line w-64" />
-          <div className="sn-skeleton-block-md w-full" />
-        </div>
-      )}
-      {error && <div className="sn-alert sn-alert--error">{error}</div>}
+      {({ close }: { close: () => void }) => {
+        if (loading) {
+          return (
+            <div className="sn-skeleton-card space-y-3">
+              <div className="sn-skeleton-title w-56" />
+              <div className="sn-skeleton-line w-72" />
+              <div className="sn-skeleton-line w-64" />
+              <div className="sn-skeleton-block-md w-full" />
+            </div>
+          );
+        }
 
-      {!loading && !error && task && (
+        if (error) {
+          return <div className="sn-alert sn-alert--error">{error}</div>;
+        }
+
+        if (!task) return null;
+
+        return (
         <div className="space-y-4">
           {shareFeedback && <div className="sn-alert">{shareFeedback}</div>}
           {exportFeedback && <div className="sn-alert">{exportFeedback}</div>}
           {snoozeFeedback && <div className="sn-alert">{snoozeFeedback}</div>}
-          <div className="flex items-center justify-end gap-2">
-            {mode === "view" ? (
-              <ItemActionsMenu
-                onEdit={startEdit}
-                onToggleArchive={handleToggleArchive}
-                onShare={handleShare}
-                onExportPdf={handleExportPdf}
-                onExportMarkdown={handleExport}
-                archived={task.archived === true}
-                onDelete={handleDelete}
-              />
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={cancelEdit}
-                  disabled={saving}
-                  className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
-                >
-                  {saving ? "Enregistrement…" : "Enregistrer"}
-                </button>
-              </>
-            )}
-          </div>
-
           <div className="sn-card p-4 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                {mode === "view" ? (
+                  <div className="text-sm font-semibold truncate">{task.title}</div>
+                ) : (
+                  <div className="space-y-1">
+                    <label className="sr-only" htmlFor="task-modal-title">
+                      Titre
+                    </label>
+                    <input
+                      id="task-modal-title"
+                      value={editTitle}
+                      onChange={(e) => {
+                        const nextTitle = e.target.value;
+                        setEditTitle(nextTitle);
+                        const snap = JSON.stringify({
+                          title: nextTitle,
+                          status: editStatus,
+                          workspaceId: editWorkspaceId,
+                          dueDate: editDueDate,
+                        });
+                        setIsDirty(snap !== lastSavedSnapshotRef.current);
+                      }}
+                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="shrink-0 flex items-center gap-2">
+                {mode === "view" ? (
+                  <ItemActionsMenu
+                    onEdit={startEdit}
+                    onToggleArchive={handleToggleArchive}
+                    onShare={handleShare}
+                    onExportPdf={handleExportPdf}
+                    onExportMarkdown={handleExport}
+                    archived={task.archived === true}
+                    onDelete={handleDelete}
+                  />
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={cancelEdit}
+                      disabled={saving}
+                      className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSave}
+                      disabled={saving}
+                      className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+                    >
+                      {saving ? "Enregistrement…" : "Enregistrer"}
+                    </button>
+                  </>
+                )}
+
+                <button
+                  type="button"
+                  onClick={close}
+                  className="sn-icon-btn"
+                  aria-label="Fermer"
+                  title="Fermer"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
             {mode === "view" ? (
               <>
-                <div className="space-y-1">
-                  <div className="text-sm font-medium">Titre</div>
-                  <div
-                    className="text-sm"
-                    onDoubleClick={() => startEdit()}
-                    onTouchStart={scheduleLongPressToEdit}
-                    onTouchMove={cancelLongPressIfMoved}
-                    onTouchEnd={endLongPress}
-                    onTouchCancel={endLongPress}
-                  >
-                    {task.title}
-                  </div>
-                </div>
-
                 <div className="space-y-1">
                   <textarea
                     readOnly
@@ -686,28 +720,6 @@ export default function TaskDetailModal(props: any) {
               </>
             ) : (
               <>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium" htmlFor="task-modal-title">
-                    Titre
-                  </label>
-                  <input
-                    id="task-modal-title"
-                    value={editTitle}
-                    onChange={(e) => {
-                      const nextTitle = e.target.value;
-                      setEditTitle(nextTitle);
-                      const snap = JSON.stringify({
-                        title: nextTitle,
-                        status: editStatus,
-                        workspaceId: editWorkspaceId,
-                        dueDate: editDueDate,
-                      });
-                      setIsDirty(snap !== lastSavedSnapshotRef.current);
-                    }}
-                    className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                  />
-                </div>
-
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <label className="text-sm font-medium" htmlFor="task-modal-status">
@@ -793,7 +805,8 @@ export default function TaskDetailModal(props: any) {
             )}
           </div>
         </div>
-      )}
+        );
+      }}
     </Modal>
   );
 }
