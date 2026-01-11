@@ -69,7 +69,7 @@ export default function TaskDetailModal(props: any) {
   const [snoozing, setSnoozing] = useState(false);
   const [snoozeFeedback, setSnoozeFeedback] = useState<string | null>(null);
 
-  const [isDirty, setIsDirty] = useState(false);
+  const [, setIsDirty] = useState(false);
   const isDirtyRef = useRef(false);
   const lastSavedSnapshotRef = useRef<string>("");
 
@@ -77,9 +77,10 @@ export default function TaskDetailModal(props: any) {
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
   const longPressFiredRef = useRef(false);
 
-  useEffect(() => {
-    isDirtyRef.current = isDirty;
-  }, [isDirty]);
+  const setDirty = (next: boolean) => {
+    isDirtyRef.current = next;
+    setIsDirty(next);
+  };
 
   const clearLongPress = () => {
     if (longPressTimerRef.current !== null) {
@@ -286,7 +287,7 @@ export default function TaskDetailModal(props: any) {
       workspaceId: typeof task.workspaceId === "string" ? task.workspaceId : "",
       dueDate: formatTimestampForInput(task.dueDate ?? null),
     });
-    setIsDirty(false);
+    setDirty(false);
   }, [task]);
 
   const dueLabel = useMemo(() => formatFrDateTime(task?.dueDate ?? null), [task?.dueDate]);
@@ -354,7 +355,7 @@ export default function TaskDetailModal(props: any) {
     if (!task) return;
     setMode("edit");
     setEditError(null);
-    setIsDirty(false);
+    setDirty(false);
   };
 
   const cancelEdit = () => {
@@ -365,7 +366,7 @@ export default function TaskDetailModal(props: any) {
     setEditWorkspaceId(typeof task.workspaceId === "string" ? task.workspaceId : "");
     setEditDueDate(formatTimestampForInput(task.dueDate ?? null));
     setEditError(null);
-    setIsDirty(false);
+    setDirty(false);
   };
 
   const saveEdits = async (opts?: { setView?: boolean }): Promise<boolean> => {
@@ -374,6 +375,12 @@ export default function TaskDetailModal(props: any) {
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) {
       setEditError("Impossible de modifier cette tâche.");
+      console.warn("[task modal] saveEdits blocked: unauth or not owner", {
+        hasUser: Boolean(user),
+        userId: user?.uid,
+        taskUserId: task.userId,
+        taskId: task.id,
+      });
       return false;
     }
 
@@ -386,6 +393,10 @@ export default function TaskDetailModal(props: any) {
 
     if (!validation.success) {
       setEditError(validation.error.issues[0]?.message ?? "Données invalides.");
+      console.warn("[task modal] saveEdits blocked: validation failed", {
+        issues: validation.error.issues,
+        taskId: task.id,
+      });
       return false;
     }
 
@@ -397,8 +408,9 @@ export default function TaskDetailModal(props: any) {
     });
 
     if (lastSavedSnapshotRef.current === nextSnapshot) {
+      console.info("[task modal] saveEdits noop: snapshot unchanged", { taskId: task.id });
       if (opts?.setView) setMode("view");
-      setIsDirty(false);
+      setDirty(false);
       return true;
     }
 
@@ -408,6 +420,11 @@ export default function TaskDetailModal(props: any) {
 
     setSaving(true);
     setEditError(null);
+    console.info("[task modal] saveEdits start", {
+      taskId: task.id,
+      workspaceId: validation.data.workspaceId,
+      status: validation.data.status,
+    });
 
     try {
       await updateDoc(doc(db, "tasks", task.id), {
@@ -417,6 +434,8 @@ export default function TaskDetailModal(props: any) {
         dueDate: dueTimestamp,
         updatedAt: serverTimestamp(),
       });
+
+      console.info("[task modal] saveEdits success", { taskId: task.id });
 
       const remindersRef = collection(db, "taskReminders");
       const remindersSnap = await getDocs(
@@ -470,7 +489,7 @@ export default function TaskDetailModal(props: any) {
       );
 
       lastSavedSnapshotRef.current = nextSnapshot;
-      setIsDirty(false);
+      setDirty(false);
       if (opts?.setView) setMode("view");
       return true;
     } catch (e) {
@@ -483,7 +502,10 @@ export default function TaskDetailModal(props: any) {
   };
 
   const handleSave = async () => {
-    await saveEdits({ setView: true });
+    const ok = await saveEdits({ setView: true });
+    if (!ok) {
+      console.warn("[task modal] handleSave: save failed (staying in edit mode)", { taskId: task?.id });
+    }
   };
 
   useEffect(() => {
@@ -588,6 +610,7 @@ export default function TaskDetailModal(props: any) {
           {shareFeedback && <div className="sn-alert">{shareFeedback}</div>}
           {exportFeedback && <div className="sn-alert">{exportFeedback}</div>}
           {snoozeFeedback && <div className="sn-alert">{snoozeFeedback}</div>}
+          {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
           <div className="sn-card p-4 space-y-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
@@ -610,7 +633,7 @@ export default function TaskDetailModal(props: any) {
                           workspaceId: editWorkspaceId,
                           dueDate: editDueDate,
                         });
-                        setIsDirty(snap !== lastSavedSnapshotRef.current);
+                        setDirty(snap !== lastSavedSnapshotRef.current);
                       }}
                       className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                     />
@@ -737,7 +760,7 @@ export default function TaskDetailModal(props: any) {
                           workspaceId: editWorkspaceId,
                           dueDate: editDueDate,
                         });
-                        setIsDirty(snap !== lastSavedSnapshotRef.current);
+                        setDirty(snap !== lastSavedSnapshotRef.current);
                       }}
                       className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                     >
@@ -764,7 +787,7 @@ export default function TaskDetailModal(props: any) {
                           workspaceId: editWorkspaceId,
                           dueDate: nextDueDate,
                         });
-                        setIsDirty(snap !== lastSavedSnapshotRef.current);
+                        setDirty(snap !== lastSavedSnapshotRef.current);
                       }}
                       className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                     />
@@ -787,7 +810,7 @@ export default function TaskDetailModal(props: any) {
                         workspaceId: nextWorkspaceId,
                         dueDate: editDueDate,
                       });
-                      setIsDirty(snap !== lastSavedSnapshotRef.current);
+                      setDirty(snap !== lastSavedSnapshotRef.current);
                     }}
                     className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                   >

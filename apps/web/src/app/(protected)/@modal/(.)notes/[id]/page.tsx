@@ -45,7 +45,7 @@ export default function NoteDetailModal(props: any) {
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
   const [exportFeedback, setExportFeedback] = useState<string | null>(null);
 
-  const [isDirty, setIsDirty] = useState(false);
+  const [, setIsDirty] = useState(false);
   const isDirtyRef = useRef(false);
   const lastSavedSnapshotRef = useRef<string>("");
 
@@ -53,9 +53,10 @@ export default function NoteDetailModal(props: any) {
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
   const longPressFiredRef = useRef(false);
 
-  useEffect(() => {
-    isDirtyRef.current = isDirty;
-  }, [isDirty]);
+  const setDirty = (next: boolean) => {
+    isDirtyRef.current = next;
+    setIsDirty(next);
+  };
 
   const clearLongPress = () => {
     if (longPressTimerRef.current !== null) {
@@ -255,7 +256,7 @@ export default function NoteDetailModal(props: any) {
       content: note.content ?? "",
       workspaceId: typeof note.workspaceId === "string" ? note.workspaceId : "",
     });
-    setIsDirty(false);
+    setDirty(false);
   }, [note]);
 
   const createdLabel = useMemo(() => formatFrDateTime(note?.createdAt ?? null), [note?.createdAt]);
@@ -265,7 +266,7 @@ export default function NoteDetailModal(props: any) {
     if (!note) return;
     setMode("edit");
     setEditError(null);
-    setIsDirty(false);
+    setDirty(false);
   };
 
   const cancelEdit = () => {
@@ -275,7 +276,7 @@ export default function NoteDetailModal(props: any) {
     setEditContent(note.content ?? "");
     setEditWorkspaceId(typeof note.workspaceId === "string" ? note.workspaceId : "");
     setEditError(null);
-    setIsDirty(false);
+    setDirty(false);
   };
 
   const saveEdits = async (opts?: { setView?: boolean }): Promise<boolean> => {
@@ -284,6 +285,12 @@ export default function NoteDetailModal(props: any) {
     const user = auth.currentUser;
     if (!user || user.uid !== note.userId) {
       setEditError("Impossible de modifier cette note.");
+      console.warn("[note modal] saveEdits blocked: unauth or not owner", {
+        hasUser: Boolean(user),
+        userId: user?.uid,
+        noteUserId: note.userId,
+        noteId: note.id,
+      });
       return false;
     }
 
@@ -295,6 +302,10 @@ export default function NoteDetailModal(props: any) {
 
     if (!validation.success) {
       setEditError(validation.error.issues[0]?.message ?? "Données invalides.");
+      console.warn("[note modal] saveEdits blocked: validation failed", {
+        issues: validation.error.issues,
+        noteId: note.id,
+      });
       return false;
     }
 
@@ -305,13 +316,18 @@ export default function NoteDetailModal(props: any) {
     });
 
     if (lastSavedSnapshotRef.current === nextSnapshot) {
+      console.info("[note modal] saveEdits noop: snapshot unchanged", { noteId: note.id });
       if (opts?.setView) setMode("view");
-      setIsDirty(false);
+      setDirty(false);
       return true;
     }
 
     setSaving(true);
     setEditError(null);
+    console.info("[note modal] saveEdits start", {
+      noteId: note.id,
+      workspaceId: validation.data.workspaceId,
+    });
 
     try {
       await updateDoc(doc(db, "notes", note.id), {
@@ -321,8 +337,10 @@ export default function NoteDetailModal(props: any) {
         updatedAt: serverTimestamp(),
       });
 
+      console.info("[note modal] saveEdits success", { noteId: note.id });
+
       lastSavedSnapshotRef.current = nextSnapshot;
-      setIsDirty(false);
+      setDirty(false);
 
       setNote((prev) =>
         prev
@@ -346,7 +364,10 @@ export default function NoteDetailModal(props: any) {
   };
 
   const handleSave = async () => {
-    await saveEdits({ setView: true });
+    const ok = await saveEdits({ setView: true });
+    if (!ok) {
+      console.warn("[note modal] handleSave: save failed (staying in edit mode)", { noteId: note?.id });
+    }
   };
 
   useEffect(() => {
@@ -450,6 +471,7 @@ export default function NoteDetailModal(props: any) {
         <div className="space-y-4">
           {shareFeedback && <div className="sn-alert">{shareFeedback}</div>}
           {exportFeedback && <div className="sn-alert">{exportFeedback}</div>}
+          {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
           <div className="sn-card p-4 space-y-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
@@ -471,7 +493,7 @@ export default function NoteDetailModal(props: any) {
                           content: editContent,
                           workspaceId: editWorkspaceId,
                         });
-                        setIsDirty(snap !== lastSavedSnapshotRef.current);
+                        setDirty(snap !== lastSavedSnapshotRef.current);
                       }}
                       className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                     />
@@ -556,7 +578,7 @@ export default function NoteDetailModal(props: any) {
                         content: editContent,
                         workspaceId: nextWorkspaceId,
                       });
-                      setIsDirty(snap !== lastSavedSnapshotRef.current);
+                      setDirty(snap !== lastSavedSnapshotRef.current);
                     }}
                     className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                   >
@@ -584,7 +606,7 @@ export default function NoteDetailModal(props: any) {
                         content: nextContent,
                         workspaceId: editWorkspaceId,
                       });
-                      setIsDirty(snap !== lastSavedSnapshotRef.current);
+                      setDirty(snap !== lastSavedSnapshotRef.current);
                     }}
                     className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                   />
