@@ -9,7 +9,16 @@ lerna-debug.log*
 
 eslint-report*.json
 
+# Dependencies
 node_modules
+
+# Android Studio / Eclipse metadata (Capacitor Android project)
+apps/web/android/.project
+apps/web/android/.settings/
+apps/web/android/app/.project
+apps/web/android/app/.classpath
+apps/web/android/app/.settings/
+
 dist
 dist-ssr
 *.local

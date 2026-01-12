@@ -37,7 +37,7 @@ function getFirebaseAuthErrorMessage(err: unknown): string {
     case "auth/network-request-failed":
       return "Problème réseau. Vérifie ta connexion puis réessaie.";
     default:
-      return "Une erreur est survenue. Réessaie.";
+      return `Une erreur est survenue (${code}). Réessaie.`;
   }
 }
 
@@ -102,6 +102,7 @@ function LoginPageInner() {
       await establishSession();
       router.replace(nextPath);
     } catch (err: any) {
+      console.error(err);
       setError(getFirebaseAuthErrorMessage(err));
     } finally {
       setLoading(false);
