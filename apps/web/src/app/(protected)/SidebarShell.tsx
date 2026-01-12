@@ -111,7 +111,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   const sidebarWidthClass = collapsed ? "w-16" : "w-64";
 
   return (
-    <div className="min-h-screen flex bg-background text-foreground overflow-x-hidden">
+    <div className="min-h-[100dvh] flex bg-background text-foreground overflow-x-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       {/* Desktop sidebar */}
       <aside className={`hidden md:flex ${sidebarWidthClass} border-r border-border`}>
         <div className="w-full flex flex-col">
@@ -156,7 +156,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
             onClick={closeMobile}
           />
           <div
-            className="sn-drawer-panel absolute left-0 top-0 h-full w-72 bg-background border-r border-border"
+            className="sn-drawer-panel absolute left-0 top-0 h-full w-72 bg-background border-r border-border pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
             role="dialog"
             aria-modal="true"
             aria-label="Menu"
