@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { auth } from "@/lib/firebase";
@@ -8,6 +8,7 @@ import {
   signInWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithCredential,
   sendPasswordResetEmail,
 } from "firebase/auth";
 
@@ -58,6 +59,15 @@ function LoginPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [resetStatus, setResetStatus] = useState<string | null>(null);
 
+  const isCapacitorNative = () => {
+    try {
+      const cap = (globalThis as any)?.Capacitor;
+      return Boolean(cap && typeof cap.isNativePlatform === "function" && cap.isNativePlatform());
+    } catch {
+      return false;
+    }
+  };
+
   const establishSession = async () => {
     const user = auth.currentUser;
     if (!user) {
@@ -76,6 +86,11 @@ function LoginPageInner() {
       throw new Error(text || "Failed to establish session");
     }
   };
+
+  useEffect(() => {
+    // Intentionally left empty: native Google sign-in is handled via the Capacitor plugin
+    // when the user taps the button.
+  }, []);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,6 +114,23 @@ function LoginPageInner() {
     setLoading(true);
     try {
       const provider = new GoogleAuthProvider();
+      if (isCapacitorNative()) {
+        const { FirebaseAuthentication } = await import("@capacitor-firebase/authentication");
+        const nativeResult = await FirebaseAuthentication.signInWithGoogle();
+
+        const idToken = nativeResult.credential?.idToken;
+        const accessToken = nativeResult.credential?.accessToken;
+        if (!idToken && !accessToken) {
+          throw new Error("Missing Google credential tokens");
+        }
+
+        const credential = GoogleAuthProvider.credential(idToken ?? undefined, accessToken ?? undefined);
+        await signInWithCredential(auth, credential);
+        await establishSession();
+        router.replace(nextPath);
+        return;
+      }
+
       await signInWithPopup(auth, provider);
       await establishSession();
       router.replace(nextPath);
