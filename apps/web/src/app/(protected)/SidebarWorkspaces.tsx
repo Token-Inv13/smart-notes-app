@@ -159,6 +159,7 @@ export default function SidebarWorkspaces({
             <input
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
+              placeholder="Nom du dossier"
               className="w-full border border-input rounded px-3 py-2 bg-background text-sm"
               autoFocus
             />
@@ -198,10 +199,11 @@ export default function SidebarWorkspaces({
 
     const qs = params.toString();
 
-    const sectionFromPath = pathname.startsWith("/tasks") ? "tasks" : "notes";
-    const isContentPage = pathname.startsWith("/notes") || pathname.startsWith("/tasks");
+    const isTodoPage = pathname.startsWith("/todo");
+    const sectionFromPath = pathname.startsWith("/tasks") || isTodoPage ? "tasks" : "notes";
+    const isContentPage = pathname.startsWith("/notes") || pathname.startsWith("/tasks") || isTodoPage;
 
-    const targetBase = isContentPage ? `/${sectionFromPath}` : `/${lastSection}`;
+    const targetBase = isTodoPage ? "/todo" : isContentPage ? `/${sectionFromPath}` : `/${lastSection}`;
     router.push(qs ? `${targetBase}?${qs}` : targetBase);
     onNavigate?.();
   };
@@ -218,6 +220,13 @@ export default function SidebarWorkspaces({
     params.delete("workspaceId");
     const qs = params.toString();
     router.push(qs ? `/dashboard?${qs}` : "/dashboard");
+    onNavigate?.();
+  };
+
+  const navigateToTodo = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    const qs = params.toString();
+    router.push(qs ? `/todo?${qs}` : "/todo");
     onNavigate?.();
   };
 
@@ -354,6 +363,16 @@ export default function SidebarWorkspaces({
             >
               <LayoutDashboard className="h-4 w-4" />
             </button>
+
+            <button
+              type="button"
+              onClick={navigateToTodo}
+              className={iconButtonClass(pathname.startsWith("/todo"))}
+              aria-label="ToDo"
+              title="ToDo"
+            >
+              <span className="text-sm font-semibold">✓</span>
+            </button>
           </div>
 
           <div className="border-t border-border pt-3">
@@ -421,6 +440,14 @@ export default function SidebarWorkspaces({
               className={navButtonClass(isNavActive("/dashboard"))}
             >
               Ouvrir le dashboard
+            </button>
+
+            <button
+              type="button"
+              onClick={navigateToTodo}
+              className={navButtonClass(pathname.startsWith("/todo"))}
+            >
+              Ouvrir ToDo
             </button>
           </div>
           <div>

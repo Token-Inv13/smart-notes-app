@@ -19,6 +19,7 @@ export function middleware(request: NextRequest) {
     pathname.startsWith('/dashboard') ||
     pathname.startsWith('/tasks') ||
     pathname.startsWith('/notes') ||
+    pathname.startsWith('/todo') ||
     pathname.startsWith('/settings');
 
   if (!isProtectedRoute) {
