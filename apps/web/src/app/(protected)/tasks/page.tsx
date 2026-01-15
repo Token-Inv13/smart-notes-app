@@ -65,8 +65,9 @@ export default function TasksPage() {
   const tabsTouchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const toMillisSafe = (ts: unknown) => {
-    if (ts && typeof (ts as any).toMillis === "function") {
-      return (ts as any).toMillis() as number;
+    const maybeTs = ts as { toMillis?: () => number };
+    if (maybeTs && typeof maybeTs.toMillis === "function") {
+      return maybeTs.toMillis();
     }
     return 0;
   };
@@ -359,18 +360,6 @@ export default function TasksPage() {
       <section className="border border-border rounded-lg bg-card">
         <div className="p-4 flex items-center justify-between gap-3">
           <h1 className="text-xl font-semibold">Tes tâches</h1>
-          <button
-            type="button"
-            onClick={() => {
-              const href = workspaceIdParam
-                ? `/tasks/new?workspaceId=${encodeURIComponent(workspaceIdParam)}`
-                : "/tasks/new";
-              router.push(href);
-            }}
-            className="inline-flex items-center justify-center px-3 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
-          >
-            Planifier une tâche
-          </button>
         </div>
 
         {showMicroGuide && (
@@ -416,7 +405,7 @@ export default function TasksPage() {
             {archiveView === "archived" ? "Aucune tâche archivée" : "Aucune tâche pour le moment"}
           </div>
           {archiveView !== "archived" && (
-            <div className="sn-empty-desc">Planifie ta première tâche avec “Planifier une tâche”.</div>
+            <div className="sn-empty-desc">Commence par créer une tâche.</div>
           )}
         </div>
       )}

@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { PanelLeft, Menu, X } from "lucide-react";
 import SidebarWorkspaces from "./SidebarWorkspaces";
 import PwaInstallCta from "./_components/PwaInstallCta";
+import CreateButton from "./_components/CreateButton";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import type { WorkspaceDoc } from "@/types/firestore";
 
@@ -217,6 +218,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
             <div className="mb-4 text-sm text-muted-foreground truncate">📁 {currentWorkspaceName}</div>
           )}
           {children}
+          <CreateButton />
         </main>
       </div>
     </div>

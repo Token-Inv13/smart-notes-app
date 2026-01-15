@@ -53,8 +53,9 @@ export default function NotesPage() {
   const showUpgradeCta = !!editError?.includes("Limite Free atteinte");
 
   const toMillisSafe = (ts: unknown) => {
-    if (ts && typeof (ts as any).toMillis === "function") {
-      return (ts as any).toMillis() as number;
+    const maybeTs = ts as { toMillis?: () => number };
+    if (maybeTs && typeof maybeTs.toMillis === "function") {
+      return maybeTs.toMillis();
     }
     return 0;
   };
@@ -191,16 +192,6 @@ export default function NotesPage() {
       <section className="border border-border rounded-lg bg-card">
         <div className="p-4 flex items-center justify-between gap-3">
           <h1 className="text-xl font-semibold">Tes notes</h1>
-          <button
-            type="button"
-            onClick={() => {
-              const href = workspaceId ? `/notes/new?workspaceId=${encodeURIComponent(workspaceId)}` : "/notes/new";
-              router.push(href);
-            }}
-            className="inline-flex items-center justify-center px-3 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent"
-          >
-            Capturer une idée
-          </button>
         </div>
 
         {showMicroGuide && (
@@ -272,7 +263,7 @@ export default function NotesPage() {
             </div>
             {archiveView !== "archived" && (
               <div className="sn-empty-desc">
-                Commence simple : capture une idée, une liste ou un résumé. Clique sur “Capturer une idée” pour démarrer.
+                Commence simple : capture une idée, une liste ou un résumé.
               </div>
             )}
           </div>

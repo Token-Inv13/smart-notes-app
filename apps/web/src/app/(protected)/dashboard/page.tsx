@@ -1,14 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import {
-  addDoc,
-  collection,
-  doc,
-  serverTimestamp,
-  updateDoc,
-} from 'firebase/firestore';
+import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { useUserNotes } from '@/hooks/useUserNotes';
 import { useUserTasks } from '@/hooks/useUserTasks';
@@ -16,12 +10,12 @@ import { useUserWorkspaces } from '@/hooks/useUserWorkspaces';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import type { NoteDoc, TaskDoc } from '@/types/firestore';
 import Link from 'next/link';
-import { getOnboardingFlag, setOnboardingFlag } from '@/lib/onboarding';
 
 function formatFrDateTime(ts?: unknown | null) {
   if (!ts) return '';
-  if (typeof (ts as any)?.toDate !== 'function') return '';
-  const d = (ts as any).toDate() as Date;
+  const maybeTs = ts as { toDate?: () => Date };
+  if (typeof maybeTs?.toDate !== 'function') return '';
+  const d = maybeTs.toDate();
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(
     d.getMinutes(),
@@ -49,9 +43,6 @@ export default function DashboardPage() {
 
   const { data: workspaces } = useUserWorkspaces();
 
-  const { data: anyNotes, loading: anyNotesLoading } = useUserNotes({ workspaceId, limit: 1 });
-  const { data: anyTasks, loading: anyTasksLoading } = useUserTasks({ workspaceId, limit: 1 });
-
   const workspaceNameById = useMemo(() => {
     const m = new Map<string, string>();
     workspaces.forEach((w) => {
@@ -69,74 +60,6 @@ export default function DashboardPage() {
   const activeFavoriteNotes = notes.filter((n) => n.completed !== true && n.archived !== true);
   const activeFavoriteTasks = tasks.filter((t) => (t.status ?? 'todo') !== 'done' && t.archived !== true);
 
-  const userId = auth.currentUser?.uid;
-  const hasAnyContent = (anyNotes?.length ?? 0) > 0 || (anyTasks?.length ?? 0) > 0;
-  const emptyStateReady = !anyNotesLoading && !anyTasksLoading;
-  const shouldShowWelcome = emptyStateReady && !hasAnyContent;
-
-  const preferredWorkspaceId = useMemo(() => {
-    if (workspaceId) return workspaceId;
-    const first = workspaces.find((w) => !!w.id)?.id;
-    return first || '';
-  }, [workspaceId, workspaces]);
-
-  const notesCreateHref = preferredWorkspaceId
-    ? `/notes/new?workspaceId=${encodeURIComponent(preferredWorkspaceId)}`
-    : '/notes/new';
-
-  const tasksCreateHref = preferredWorkspaceId
-    ? `/tasks/new?workspaceId=${encodeURIComponent(preferredWorkspaceId)}`
-    : '/tasks/new';
-
-  useEffect(() => {
-    if (!userId) return;
-    if (!emptyStateReady) return;
-    if (hasAnyContent) {
-      if (!getOnboardingFlag(userId, 'welcome_dismissed')) {
-        setOnboardingFlag(userId, 'welcome_dismissed', true);
-      }
-      return;
-    }
-
-    const alreadySeeded = getOnboardingFlag(userId, 'seed_v1');
-    if (alreadySeeded) return;
-    if (!preferredWorkspaceId) return;
-
-    const seed = async () => {
-      try {
-        await addDoc(collection(db, 'notes'), {
-          userId,
-          workspaceId: preferredWorkspaceId,
-          title: 'Bienvenue 👋',
-          content:
-            "Tu peux commencer en écrivant une note rapide ici.\n\nAstuce : utilise les favoris ⭐ pour retrouver l’essentiel.",
-          favorite: true,
-          completed: false,
-          archived: false,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-
-        await addDoc(collection(db, 'tasks'), {
-          userId,
-          workspaceId: preferredWorkspaceId,
-          title: 'Ta première tâche',
-          status: 'todo',
-          dueDate: null,
-          favorite: true,
-          archived: false,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-
-        setOnboardingFlag(userId, 'seed_v1', true);
-      } catch (e) {
-        console.error('Error seeding onboarding content', e);
-      }
-    };
-
-    seed();
-  }, [userId, emptyStateReady, hasAnyContent, preferredWorkspaceId]);
   const [noteActionError, setNoteActionError] = useState<string | null>(null);
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
 
@@ -186,39 +109,6 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {shouldShowWelcome && (
-        <section className="sn-card p-6">
-          <div className="space-y-3">
-            <div className="text-sm font-semibold">Bienvenue 👋</div>
-            <div className="text-sm text-muted-foreground">
-              Commence en moins d’une minute : capture une note ou planifie une tâche. Un exemple a été ajouté pour te
-              guider.
-            </div>
-
-            {!preferredWorkspaceId && (
-              <div className="text-sm text-muted-foreground">
-                Commence par créer un dossier dans la sidebar, puis reviens ici.
-              </div>
-            )}
-
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Link
-                href={notesCreateHref}
-                className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
-              >
-                Capturer une note
-              </Link>
-              <Link
-                href={tasksCreateHref}
-                className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-input text-sm font-medium hover:bg-accent"
-              >
-                Planifier une tâche
-              </Link>
-            </div>
-          </div>
-        </section>
-      )}
-
       <section>
         <h2 className="text-lg font-semibold mb-2">Tes notes importantes</h2>
         {notesLoading && (
