@@ -115,7 +115,12 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
   return (
     <div className="space-y-4">
       {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
-      {error && <div className="sn-alert sn-alert--error">Impossible de charger les ToDo pour le moment.</div>}
+      {error && (
+        <div className="sn-alert sn-alert--error">
+          Impossible de charger les ToDo pour le moment.
+          {error.message ? ` (${error.message})` : ""}
+        </div>
+      )}
 
       {loading && (
         <div className="sn-empty sn-animate-in">
