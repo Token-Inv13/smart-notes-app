@@ -87,8 +87,9 @@ export default function TodoPage() {
   return (
     <div className="space-y-4">
       {workspaceId && tabs}
-      <header className="flex flex-col gap-2">
+      <header className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">ToDo</h1>
+        <div id="sn-create-slot" />
       </header>
 
       <TodoInlineList workspaceId={workspaceId} />

@@ -341,7 +341,10 @@ export default function TasksPage() {
     <div className="space-y-4">
       {workspaceIdParam && tabs}
       <header className="flex flex-col gap-2 mb-4">
-        <h1 className="text-xl font-semibold">Tes tâches</h1>
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="text-xl font-semibold">Tâches</h1>
+          <div id="sn-create-slot" />
+        </div>
         {notificationPermission !== "granted" && (
           <div className="space-y-2">
             {notificationPermission === "unsupported" && (
@@ -374,34 +377,27 @@ export default function TasksPage() {
         )}
       </header>
 
-      {/* New Task form */}
-      <section className="border border-border rounded-lg bg-card">
-        <div className="p-4 flex items-center justify-between gap-3">
-          <h1 className="text-xl font-semibold">Tes tâches</h1>
-        </div>
-
-        {showMicroGuide && (
-          <div className="px-4 pb-4">
-            <div className="sn-card sn-card--muted p-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold">Astuce</div>
-                  <div className="text-sm text-muted-foreground">
-                    Ajoute un titre simple, puis un rappel si besoin. Tu peux épingler l’essentiel en favori ⭐.
-                  </div>
+      {showMicroGuide && (
+        <div>
+          <div className="sn-card sn-card--muted p-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">Astuce</div>
+                <div className="text-sm text-muted-foreground">
+                  Ajoute un titre simple, puis un rappel si besoin. Tu peux épingler l’essentiel en favori ⭐.
                 </div>
-                <button
-                  type="button"
-                  onClick={() => userId && setOnboardingFlag(userId, "tasks_microguide_v1", true)}
-                  className="sn-text-btn shrink-0"
-                >
-                  Compris
-                </button>
               </div>
+              <button
+                type="button"
+                onClick={() => userId && setOnboardingFlag(userId, "tasks_microguide_v1", true)}
+                className="sn-text-btn shrink-0"
+              >
+                Compris
+              </button>
             </div>
           </div>
-        )}
-      </section>
+        </div>
+      )}
 
       {loading && (
         <div className="sn-empty sn-animate-in">

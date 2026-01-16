@@ -203,33 +203,32 @@ export default function NotesPage() {
   return (
     <div className="space-y-8">
       {workspaceId && tabs}
-      <section className="border border-border rounded-lg bg-card">
-        <div className="p-4 flex items-center justify-between gap-3">
-          <h1 className="text-xl font-semibold">Tes notes</h1>
-        </div>
+      <header className="flex items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold">Notes</h1>
+        <div id="sn-create-slot" />
+      </header>
 
-        {showMicroGuide && (
-          <div className="px-4 pb-4">
-            <div className="sn-card sn-card--muted p-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold">Astuce</div>
-                  <div className="text-sm text-muted-foreground">
-                    Un titre clair suffit. Tu peux compléter le contenu plus tard et épingler l’essentiel en favori ⭐.
-                  </div>
+      {showMicroGuide && (
+        <div>
+          <div className="sn-card sn-card--muted p-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">Astuce</div>
+                <div className="text-sm text-muted-foreground">
+                  Un titre clair suffit. Tu peux compléter le contenu plus tard et épingler l’essentiel en favori ⭐.
                 </div>
-                <button
-                  type="button"
-                  onClick={() => userId && setOnboardingFlag(userId, "notes_microguide_v1", true)}
-                  className="sn-text-btn shrink-0"
-                >
-                  OK, compris
-                </button>
               </div>
+              <button
+                type="button"
+                onClick={() => userId && setOnboardingFlag(userId, "notes_microguide_v1", true)}
+                className="sn-text-btn shrink-0"
+              >
+                OK, compris
+              </button>
             </div>
           </div>
-        )}
-      </section>
+        </div>
+      )}
 
       <section>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
