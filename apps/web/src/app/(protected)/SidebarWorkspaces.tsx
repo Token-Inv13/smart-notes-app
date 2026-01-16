@@ -476,7 +476,7 @@ export default function SidebarWorkspaces({
               onClick={navigateToDashboard}
               className={navButtonClass(isNavActive("/dashboard"))}
             >
-              Ouvrir le dashboard
+              Favoris
             </button>
 
             <button
@@ -484,7 +484,7 @@ export default function SidebarWorkspaces({
               onClick={navigateToNotes}
               className={navButtonClass(isNavActive("/notes"))}
             >
-              Ouvrir Notes
+              Notes
             </button>
 
             <button
@@ -492,7 +492,7 @@ export default function SidebarWorkspaces({
               onClick={navigateToTasks}
               className={navButtonClass(isNavActive("/tasks"))}
             >
-              Ouvrir Tâches
+              Tâches
             </button>
 
             <button
@@ -500,7 +500,7 @@ export default function SidebarWorkspaces({
               onClick={navigateToTodo}
               className={navButtonClass(pathname.startsWith("/todo"))}
             >
-              Ouvrir ToDo
+              ToDo
             </button>
           </div>
           <div>

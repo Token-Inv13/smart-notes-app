@@ -20,7 +20,7 @@ type Props = {
 const newTaskSchema = z.object({
   title: z.string().min(1, "Le titre est requis."),
   status: z.union([z.literal("todo"), z.literal("doing"), z.literal("done")]),
-  workspaceId: z.string().min(1, "Sélectionne un dossier (workspace)."),
+  workspaceId: z.string().optional(),
   dueDate: z.string().optional(),
 });
 
@@ -105,7 +105,7 @@ export default function TaskCreateForm({ initialWorkspaceId, onCreated }: Props)
       newTaskSchema.safeParse({
         title: newTitle,
         status: newStatus,
-        workspaceId: newWorkspaceId,
+        workspaceId: newWorkspaceId || undefined,
         dueDate: newDueDate || undefined,
       }).success,
     [newTitle, newStatus, newWorkspaceId, newDueDate],
@@ -126,7 +126,7 @@ export default function TaskCreateForm({ initialWorkspaceId, onCreated }: Props)
     const validation = newTaskSchema.safeParse({
       title: newTitle,
       status: newStatus,
-      workspaceId: newWorkspaceId,
+      workspaceId: newWorkspaceId || undefined,
       dueDate: newDueDate || undefined,
     });
 
@@ -145,7 +145,7 @@ export default function TaskCreateForm({ initialWorkspaceId, onCreated }: Props)
         userId: user.uid,
         title: validation.data.title,
         status: validation.data.status,
-        workspaceId: validation.data.workspaceId,
+        workspaceId: validation.data.workspaceId ?? null,
         dueDate: dueTimestamp,
         favorite: false,
         archived: false,

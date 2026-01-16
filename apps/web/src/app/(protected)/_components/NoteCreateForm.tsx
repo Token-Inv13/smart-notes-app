@@ -13,7 +13,7 @@ import type { NoteDoc } from "@/types/firestore";
 const newNoteSchema = z.object({
   title: z.string().min(1, "Le titre est requis."),
   content: z.string().optional(),
-  workspaceId: z.string().min(1, "Sélectionne un dossier (workspace)."),
+  workspaceId: z.string().optional(),
 });
 
 type Props = {
@@ -104,7 +104,7 @@ export default function NoteCreateForm({ initialWorkspaceId, onCreated }: Props)
     const validation = newNoteSchema.safeParse({
       title: noteTitle,
       content: noteContent,
-      workspaceId: noteWorkspaceId,
+      workspaceId: noteWorkspaceId || undefined,
     });
     if (!validation.success) {
       setCreateError(validation.error.issues[0]?.message ?? "Données invalides.");
@@ -116,7 +116,7 @@ export default function NoteCreateForm({ initialWorkspaceId, onCreated }: Props)
     try {
       const payload: Omit<NoteDoc, "id"> = {
         userId: user.uid,
-        workspaceId: validation.data.workspaceId,
+        workspaceId: validation.data.workspaceId ?? null,
         title: validation.data.title,
         content: validation.data.content ?? "",
         favorite: false,
