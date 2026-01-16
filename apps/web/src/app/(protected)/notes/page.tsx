@@ -202,7 +202,7 @@ export default function NotesPage() {
 
   return (
     <div className="space-y-8">
-      {tabs}
+      {workspaceId && tabs}
       <section className="border border-border rounded-lg bg-card">
         <div className="p-4 flex items-center justify-between gap-3">
           <h1 className="text-xl font-semibold">Tes notes</h1>
