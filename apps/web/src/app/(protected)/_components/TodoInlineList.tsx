@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { FirebaseError } from "firebase/app";
 import { addDoc, collection, doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTodos } from "@/hooks/useUserTodos";
@@ -64,7 +65,13 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
       cancelCreate();
     } catch (e) {
       console.error("Error creating todo", e);
-      setEditError(e instanceof Error ? e.message : "Erreur lors de la création de la ToDo.");
+      if (e instanceof FirebaseError) {
+        setEditError(`${e.code}: ${e.message}`);
+      } else if (e instanceof Error) {
+        setEditError(e.message);
+      } else {
+        setEditError("Erreur lors de la création de la ToDo.");
+      }
     }
   };
 
@@ -160,7 +167,11 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                   }
                 }}
                 onBlur={() => {
-                  if (!draftTitle.trim()) cancelCreate();
+                  if (!draftTitle.trim()) {
+                    cancelCreate();
+                    return;
+                  }
+                  submitCreate();
                 }}
               />
             </div>
