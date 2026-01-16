@@ -225,6 +225,7 @@ export default function SidebarWorkspaces({
 
   const navigateToTodo = () => {
     const params = new URLSearchParams(searchParams.toString());
+    params.delete("workspaceId");
     const qs = params.toString();
     router.push(qs ? `/todo?${qs}` : "/todo");
     onNavigate?.();

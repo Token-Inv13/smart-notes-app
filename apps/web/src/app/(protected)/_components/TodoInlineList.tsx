@@ -172,15 +172,15 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                 <li key={todo.id}>
                   <div className="sn-card p-4">
                     <div className="flex items-center justify-between gap-3">
-                      <label className="flex items-center gap-3 min-w-0">
+                      <div className="flex items-center gap-3 min-w-0">
                         <input
                           type="checkbox"
                           checked={todo.completed === true}
                           onChange={(e) => toggleCompleted(todo, e.target.checked)}
                           aria-label="Marquer comme terminée"
                         />
-                        <span className="truncate">{todo.title}</span>
-                      </label>
+                        <span className="truncate select-text">{todo.title}</span>
+                      </div>
 
                       <button
                         type="button"
