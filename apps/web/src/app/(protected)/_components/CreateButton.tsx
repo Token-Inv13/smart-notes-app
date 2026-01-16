@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { dispatchCreateTodoEvent } from "./todoEvents";
 
 type CreateContext = "notes" | "tasks";
 
@@ -24,6 +25,11 @@ export default function CreateButton() {
   }, [pathname]);
 
   const handleClick = () => {
+    if (pathname.startsWith("/todo")) {
+      dispatchCreateTodoEvent();
+      return;
+    }
+
     const workspaceId = searchParams.get("workspaceId");
     const hrefBase = context === "notes" ? "/notes/new" : "/tasks/new";
     const href = workspaceId ? `${hrefBase}?workspaceId=${encodeURIComponent(workspaceId)}` : hrefBase;

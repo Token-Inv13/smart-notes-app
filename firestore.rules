@@ -84,6 +84,33 @@ service cloud.firestore {
 
       allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
     }
+
+    // Todos collection
+    match /todos/{todoId} {
+      allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
+
+      allow create: if isAuthenticated()
+        && request.auth.uid == request.resource.data.userId
+        && ('workspaceId' in request.resource.data)
+        && isNullOrString(request.resource.data.workspaceId)
+        && isNonEmptyString(request.resource.data.title)
+        && isOptionalBool(request.resource.data.completed)
+        && isOptionalBool(request.resource.data.favorite)
+        && isServerTimestamp(request.resource.data.createdAt)
+        && isServerTimestamp(request.resource.data.updatedAt);
+
+      allow update: if isAuthenticated()
+        && request.auth.uid == resource.data.userId
+        && request.resource.data.userId == resource.data.userId
+        && ('workspaceId' in request.resource.data)
+        && isNullOrString(request.resource.data.workspaceId)
+        && isNonEmptyString(request.resource.data.title)
+        && isOptionalBool(request.resource.data.completed)
+        && isOptionalBool(request.resource.data.favorite)
+        && isServerTimestamp(request.resource.data.updatedAt);
+
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
     
     // Tasks collection
     match /tasks/{taskId} {

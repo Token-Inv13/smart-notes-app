@@ -58,6 +58,18 @@ export interface TaskDoc {
   [key: string]: unknown;
 }
 
+export interface TodoDoc {
+  id?: string;
+  userId: string;
+  workspaceId?: string | null;
+  title: string;
+  completed?: boolean;
+  favorite?: boolean;
+  createdAt?: Timestamp | FieldValue;
+  updatedAt?: Timestamp | FieldValue;
+  [key: string]: unknown;
+}
+
 export interface WorkspaceDoc {
   id?: string;
   ownerId: string;

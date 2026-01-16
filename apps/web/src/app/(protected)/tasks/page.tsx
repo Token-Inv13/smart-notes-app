@@ -16,6 +16,7 @@ import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserNotes } from "@/hooks/useUserNotes";
+import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useUserTaskReminders } from "@/hooks/useUserTaskReminders";
@@ -76,6 +77,7 @@ export default function TasksPage() {
   const showMicroGuide = !!userId && !getOnboardingFlag(userId, "tasks_microguide_v1");
 
   const { data: notesForCounter } = useUserNotes({ workspaceId: workspaceIdParam ?? undefined });
+  const { data: todosForCounter } = useUserTodos({ workspaceId: workspaceIdParam ?? undefined, completed: false });
 
   useEffect(() => {
     if (createParam !== "1") return;
@@ -181,6 +183,11 @@ export default function TasksPage() {
     [notesForCounter],
   );
 
+  const visibleTodosCount = useMemo(
+    () => todosForCounter.length,
+    [todosForCounter.length],
+  );
+
   const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
   const tabs = (
     <div
@@ -204,6 +211,10 @@ export default function TasksPage() {
         if (dx > 0) {
           router.push(`/notes${hrefSuffix}`);
         }
+
+        if (dx < 0) {
+          router.push(`/todo${hrefSuffix}`);
+        }
       }}
     >
       <div className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap">
@@ -220,6 +231,13 @@ export default function TasksPage() {
           className={`px-3 py-1 text-sm ${pathname.startsWith("/tasks") ? "bg-accent font-semibold" : ""}`}
         >
           Tâches ({visibleTasksCount})
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push(`/todo${hrefSuffix}`)}
+          className={`px-3 py-1 text-sm ${pathname.startsWith("/todo") ? "bg-accent font-semibold" : ""}`}
+        >
+          ToDo ({visibleTodosCount})
         </button>
       </div>
     </div>

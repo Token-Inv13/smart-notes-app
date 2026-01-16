@@ -6,9 +6,10 @@ import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { useUserNotes } from '@/hooks/useUserNotes';
 import { useUserTasks } from '@/hooks/useUserTasks';
+import { useUserTodos } from '@/hooks/useUserTodos';
 import { useUserWorkspaces } from '@/hooks/useUserWorkspaces';
 import { useUserSettings } from '@/hooks/useUserSettings';
-import type { NoteDoc, TaskDoc } from '@/types/firestore';
+import type { NoteDoc, TaskDoc, TodoDoc } from '@/types/firestore';
 import Link from 'next/link';
 
 function formatFrDateTime(ts?: unknown | null) {
@@ -40,6 +41,7 @@ export default function DashboardPage() {
 
   const { data: favoriteNotesForLimit } = useUserNotes({ favoriteOnly: true, limit: 11 });
   const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
+  const { data: favoriteTodos } = useUserTodos({ favoriteOnly: true, completed: false, limit: 50 });
 
   const { data: workspaces } = useUserWorkspaces();
 
@@ -80,6 +82,25 @@ export default function DashboardPage() {
       });
     } catch (e) {
       console.error('Error toggling note favorite', e);
+    }
+  };
+
+  const toggleTodoCompleted = async (todo: TodoDoc, nextCompleted: boolean) => {
+    if (!todo.id) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== todo.userId) return;
+
+    try {
+      await updateDoc(doc(db, 'todos', todo.id), {
+        userId: todo.userId,
+        workspaceId: typeof todo.workspaceId === 'string' ? todo.workspaceId : null,
+        title: todo.title,
+        favorite: todo.favorite === true,
+        completed: nextCompleted,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error('Error toggling todo completed', e);
     }
   };
 
@@ -200,6 +221,36 @@ export default function DashboardPage() {
                 </li>
               );
             })}
+          </ul>
+        )}
+      </section>
+
+      <section>
+        <h2 className="text-lg font-semibold mb-2">Tes ToDo importantes</h2>
+        {favoriteTodos.length === 0 && (
+          <div className="sn-empty">
+            <div className="sn-empty-title">Aucun favori pour l’instant</div>
+            <div className="sn-empty-desc">Depuis ToDo, épingle les éléments à garder sous la main ⭐.</div>
+          </div>
+        )}
+        {favoriteTodos.length > 0 && (
+          <ul className="space-y-1">
+            {favoriteTodos.map((todo) => (
+              <li key={todo.id} className="sn-card sn-card--task sn-card--favorite p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-sm flex items-center gap-3 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={todo.completed === true}
+                      onChange={(e) => toggleTodoCompleted(todo, e.target.checked)}
+                      aria-label="Marquer comme terminée"
+                    />
+                    <span className="truncate">{todo.title}</span>
+                  </label>
+                  <span className="sn-badge">Favori</span>
+                </div>
+              </li>
+            ))}
           </ul>
         )}
       </section>

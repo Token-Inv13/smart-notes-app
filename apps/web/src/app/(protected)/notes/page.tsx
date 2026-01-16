@@ -11,6 +11,7 @@ import {
 import { auth, db } from "@/lib/firebase";
 import { useUserNotes } from "@/hooks/useUserNotes";
 import { useUserTasks } from "@/hooks/useUserTasks";
+import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import type { NoteDoc } from "@/types/firestore";
@@ -38,6 +39,7 @@ export default function NotesPage() {
   const { data: notes, loading, error } = useUserNotes({ workspaceId });
   const { data: favoriteNotesForLimit } = useUserNotes({ favoriteOnly: true, limit: 11 });
   const { data: tasksForCounter } = useUserTasks({ workspaceId });
+  const { data: todosForCounter } = useUserTodos({ workspaceId, completed: false });
 
   const userId = auth.currentUser?.uid;
   const showMicroGuide = !!userId && !getOnboardingFlag(userId, "notes_microguide_v1");
@@ -101,6 +103,11 @@ export default function NotesPage() {
     [tasksForCounter],
   );
 
+  const visibleTodosCount = useMemo(
+    () => todosForCounter.length,
+    [todosForCounter.length],
+  );
+
   const hrefSuffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
   const tabs = (
     <div
@@ -140,6 +147,13 @@ export default function NotesPage() {
           className={`px-3 py-1 text-sm ${pathname.startsWith("/tasks") ? "bg-accent font-semibold" : ""}`}
         >
           Tâches ({visibleTasksCount})
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push(`/todo${hrefSuffix}`)}
+          className={`px-3 py-1 text-sm ${pathname.startsWith("/todo") ? "bg-accent font-semibold" : ""}`}
+        >
+          ToDo ({visibleTodosCount})
         </button>
       </div>
     </div>
