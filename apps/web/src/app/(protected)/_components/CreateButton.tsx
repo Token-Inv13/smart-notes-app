@@ -39,8 +39,6 @@ export default function CreateButton() {
     router.push(href);
   };
 
-  if (shouldHide) return null;
-
   const buttonBaseClass =
     "inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg h-12 w-12 text-2xl font-semibold";
 
@@ -50,7 +48,7 @@ export default function CreateButton() {
       onClick={handleClick}
       aria-label="Créer"
       title="Créer"
-      className={`hidden md:${buttonBaseClass}`}
+      className={`hidden md:inline-flex ${buttonBaseClass}`}
     >
       +
     </button>
@@ -78,7 +76,11 @@ export default function CreateButton() {
     setDesktopSlot(el);
   }, [pathname]);
 
-  if (desktopSlot) {
+  const canPortal = !!desktopSlot && desktopSlot.isConnected;
+
+  if (shouldHide) return null;
+
+  if (canPortal) {
     return (
       <>
         {createPortal(desktopButton, desktopSlot)}

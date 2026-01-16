@@ -130,6 +130,11 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <header className="flex items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold">Dashboard</h1>
+        <div id="sn-create-slot" />
+      </header>
+
       <section>
         <h2 className="text-lg font-semibold mb-2">Tes notes importantes</h2>
         {notesLoading && (
