@@ -223,6 +223,22 @@ export default function SidebarWorkspaces({
     onNavigate?.();
   };
 
+  const navigateToNotes = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("workspaceId");
+    const qs = params.toString();
+    router.push(qs ? `/notes?${qs}` : "/notes");
+    onNavigate?.();
+  };
+
+  const navigateToTasks = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("workspaceId");
+    const qs = params.toString();
+    router.push(qs ? `/tasks?${qs}` : "/tasks");
+    onNavigate?.();
+  };
+
   const navigateToTodo = () => {
     const params = new URLSearchParams(searchParams.toString());
     params.delete("workspaceId");
@@ -367,6 +383,26 @@ export default function SidebarWorkspaces({
 
             <button
               type="button"
+              onClick={navigateToNotes}
+              className={iconButtonClass(isNavActive("/notes"))}
+              aria-label="Notes"
+              title="Notes"
+            >
+              <span className="text-sm font-semibold">N</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={navigateToTasks}
+              className={iconButtonClass(isNavActive("/tasks"))}
+              aria-label="Tâches"
+              title="Tâches"
+            >
+              <span className="text-sm font-semibold">T</span>
+            </button>
+
+            <button
+              type="button"
               onClick={navigateToTodo}
               className={iconButtonClass(pathname.startsWith("/todo"))}
               aria-label="ToDo"
@@ -441,6 +477,22 @@ export default function SidebarWorkspaces({
               className={navButtonClass(isNavActive("/dashboard"))}
             >
               Ouvrir le dashboard
+            </button>
+
+            <button
+              type="button"
+              onClick={navigateToNotes}
+              className={navButtonClass(isNavActive("/notes"))}
+            >
+              Ouvrir Notes
+            </button>
+
+            <button
+              type="button"
+              onClick={navigateToTasks}
+              className={navButtonClass(isNavActive("/tasks"))}
+            >
+              Ouvrir Tâches
             </button>
 
             <button
