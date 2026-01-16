@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
+import { FirebaseError } from "firebase/app";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
@@ -182,7 +183,13 @@ export default function TaskCreateForm({ initialWorkspaceId, onCreated }: Props)
       onCreated?.();
     } catch (e) {
       console.error("Error creating task", e);
-      setCreateError("Erreur lors de la création de la tâche.");
+      if (e instanceof FirebaseError) {
+        setCreateError(`${e.code}: ${e.message}`);
+      } else if (e instanceof Error) {
+        setCreateError(e.message);
+      } else {
+        setCreateError("Erreur lors de la création de la tâche.");
+      }
     } finally {
       setCreating(false);
     }

@@ -64,7 +64,8 @@ service cloud.firestore {
 
       allow create: if isAuthenticated()
         && request.auth.uid == request.resource.data.userId
-        && isNonEmptyString(request.resource.data.workspaceId)
+        && ('workspaceId' in request.resource.data)
+        && isNullOrString(request.resource.data.workspaceId)
         && isNonEmptyString(request.resource.data.title)
         && isNullOrString(request.resource.data.content)
         && isOptionalBool(request.resource.data.favorite)
@@ -118,7 +119,8 @@ service cloud.firestore {
 
       allow create: if isAuthenticated()
         && request.auth.uid == request.resource.data.userId
-        && isNonEmptyString(request.resource.data.workspaceId)
+        && ('workspaceId' in request.resource.data)
+        && isNullOrString(request.resource.data.workspaceId)
         && isNonEmptyString(request.resource.data.title)
         && (request.resource.data.status in ['todo', 'doing', 'done'])
         && isNullOrTimestamp(request.resource.data.dueDate)
