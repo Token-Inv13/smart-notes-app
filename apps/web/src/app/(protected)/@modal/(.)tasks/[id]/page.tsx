@@ -73,57 +73,9 @@ export default function TaskDetailModal(props: any) {
   const isDirtyRef = useRef(false);
   const lastSavedSnapshotRef = useRef<string>("");
 
-  const longPressTimerRef = useRef<number | null>(null);
-  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
-  const longPressFiredRef = useRef(false);
-
   const setDirty = (next: boolean) => {
     isDirtyRef.current = next;
     setIsDirty(next);
-  };
-
-  const clearLongPress = () => {
-    if (longPressTimerRef.current !== null) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-    longPressStartRef.current = null;
-  };
-
-  const scheduleLongPressToEdit = (e: React.TouchEvent) => {
-    if (mode !== "view") return;
-    if (!task) return;
-    const t = e.touches[0];
-    if (!t) return;
-
-    longPressFiredRef.current = false;
-    longPressStartRef.current = { x: t.clientX, y: t.clientY };
-
-    clearLongPress();
-    longPressTimerRef.current = window.setTimeout(() => {
-      longPressFiredRef.current = true;
-      startEdit();
-      clearLongPress();
-    }, 550);
-  };
-
-  const cancelLongPressIfMoved = (e: React.TouchEvent) => {
-    const start = longPressStartRef.current;
-    const t = e.touches[0];
-    if (!start || !t) return;
-    const dx = t.clientX - start.x;
-    const dy = t.clientY - start.y;
-    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-      clearLongPress();
-    }
-  };
-
-  const endLongPress = (e: React.TouchEvent) => {
-    if (longPressFiredRef.current) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-    clearLongPress();
   };
 
   useEffect(() => {
@@ -617,27 +569,7 @@ export default function TaskDetailModal(props: any) {
                 {mode === "view" ? (
                   <div className="text-sm font-semibold truncate">{task.title}</div>
                 ) : (
-                  <div className="space-y-1">
-                    <label className="sr-only" htmlFor="task-modal-title">
-                      Titre
-                    </label>
-                    <input
-                      id="task-modal-title"
-                      value={editTitle}
-                      onChange={(e) => {
-                        const nextTitle = e.target.value;
-                        setEditTitle(nextTitle);
-                        const snap = JSON.stringify({
-                          title: nextTitle,
-                          status: editStatus,
-                          workspaceId: editWorkspaceId,
-                          dueDate: editDueDate,
-                        });
-                        setDirty(snap !== lastSavedSnapshotRef.current);
-                      }}
-                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                    />
-                  </div>
+                  <div className="text-sm font-semibold">Modifier la tâche</div>
                 )}
               </div>
 
@@ -687,20 +619,6 @@ export default function TaskDetailModal(props: any) {
 
             {mode === "view" ? (
               <>
-                <div className="space-y-1">
-                  <textarea
-                    readOnly
-                    value={task.description ?? ""}
-                    aria-label="Description de la tâche"
-                    className="w-full min-h-[160px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                    onDoubleClick={() => startEdit()}
-                    onTouchStart={scheduleLongPressToEdit}
-                    onTouchMove={cancelLongPressIfMoved}
-                    onTouchEnd={endLongPress}
-                    onTouchCancel={endLongPress}
-                  />
-                </div>
-
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                   <div>
                     <span className="font-medium">Statut:</span> {statusLabel(task.status ?? null)}
@@ -740,10 +658,38 @@ export default function TaskDetailModal(props: any) {
                     )}
                   </div>
                 </div>
+                <div className="text-sm">
+                  <span className="font-medium">Dossier:</span>{" "}
+                  {workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—"}
+                </div>
               </>
             ) : (
               <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 items-end">
+                  <div className="space-y-1 lg:col-span-2">
+                    <label className="text-sm font-medium" htmlFor="task-modal-title">
+                      Titre
+                    </label>
+                    <input
+                      id="task-modal-title"
+                      type="text"
+                      value={editTitle}
+                      onChange={(e) => {
+                        const nextTitle = e.target.value;
+                        setEditTitle(nextTitle);
+                        const snap = JSON.stringify({
+                          title: nextTitle,
+                          status: editStatus,
+                          workspaceId: editWorkspaceId,
+                          dueDate: editDueDate,
+                        });
+                        setDirty(snap !== lastSavedSnapshotRef.current);
+                      }}
+                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                      placeholder="Ex : Payer le loyer"
+                    />
+                  </div>
+
                   <div className="space-y-1">
                     <label className="text-sm font-medium" htmlFor="task-modal-status">
                       Statut
@@ -794,33 +740,44 @@ export default function TaskDetailModal(props: any) {
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-sm font-medium" htmlFor="task-modal-workspace">
-                    Dossier
-                  </label>
-                  <select
-                    id="task-modal-workspace"
-                    value={editWorkspaceId}
-                    onChange={(e) => {
-                      const nextWorkspaceId = e.target.value;
-                      setEditWorkspaceId(nextWorkspaceId);
-                      const snap = JSON.stringify({
-                        title: editTitle,
-                        status: editStatus,
-                        workspaceId: nextWorkspaceId,
-                        dueDate: editDueDate,
-                      });
-                      setDirty(snap !== lastSavedSnapshotRef.current);
-                    }}
-                    className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 items-end">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium" htmlFor="task-modal-workspace">
+                      Dossier
+                    </label>
+                    <select
+                      id="task-modal-workspace"
+                      value={editWorkspaceId}
+                      onChange={(e) => {
+                        const nextWorkspaceId = e.target.value;
+                        setEditWorkspaceId(nextWorkspaceId);
+                        const snap = JSON.stringify({
+                          title: editTitle,
+                          status: editStatus,
+                          workspaceId: nextWorkspaceId,
+                          dueDate: editDueDate,
+                        });
+                        setDirty(snap !== lastSavedSnapshotRef.current);
+                      }}
+                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                    >
+                      <option value="">—</option>
+                      {workspaces.map((ws) => (
+                        <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
+                          {ws.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50"
                   >
-                    <option value="">—</option>
-                    {workspaces.map((ws) => (
-                      <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
-                        {ws.name}
-                      </option>
-                    ))}
-                  </select>
+                    {saving ? "Enregistrement…" : "Enregistrer"}
+                  </button>
                 </div>
 
                 {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
