@@ -85,6 +85,25 @@ export default function DashboardPage() {
     }
   };
 
+  const toggleTodoFavorite = async (todo: TodoDoc) => {
+    if (!todo.id) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== todo.userId) return;
+
+    try {
+      await updateDoc(doc(db, 'todos', todo.id), {
+        userId: todo.userId,
+        workspaceId: typeof todo.workspaceId === 'string' ? todo.workspaceId : null,
+        title: todo.title,
+        completed: todo.completed === true,
+        favorite: !(todo.favorite === true),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error('Error toggling todo favorite', e);
+    }
+  };
+
   const toggleTodoCompleted = async (todo: TodoDoc, nextCompleted: boolean) => {
     if (!todo.id) return;
     const user = auth.currentUser;
@@ -252,7 +271,19 @@ export default function DashboardPage() {
                     />
                     <span className="truncate">{todo.title}</span>
                   </label>
-                  <span className="sn-badge">Favori</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toggleTodoFavorite(todo);
+                    }}
+                    className="sn-icon-btn shrink-0"
+                    aria-label={todo.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+                    title={todo.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+                  >
+                    {todo.favorite ? '★' : '☆'}
+                  </button>
                 </div>
               </li>
             ))}
