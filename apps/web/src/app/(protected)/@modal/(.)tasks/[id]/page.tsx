@@ -41,7 +41,7 @@ type TaskStatus = "todo" | "doing" | "done";
 const editTaskSchema = z.object({
   title: z.string().min(1, "Le titre est requis."),
   status: z.union([z.literal("todo"), z.literal("doing"), z.literal("done")]),
-  workspaceId: z.string().min(1, "Sélectionne un dossier (workspace)."),
+  workspaceId: z.string().optional(),
   dueDate: z.string().optional(),
 });
 
@@ -387,7 +387,7 @@ export default function TaskDetailModal(props: any) {
     const validation = editTaskSchema.safeParse({
       title: editTitle,
       status: editStatus,
-      workspaceId: editWorkspaceId,
+      workspaceId: editWorkspaceId || undefined,
       dueDate: editDueDate || undefined,
     });
 
@@ -403,7 +403,7 @@ export default function TaskDetailModal(props: any) {
     const nextSnapshot = JSON.stringify({
       title: validation.data.title,
       status: validation.data.status,
-      workspaceId: validation.data.workspaceId,
+      workspaceId: validation.data.workspaceId ?? "",
       dueDate: editDueDate,
     });
 
@@ -430,7 +430,7 @@ export default function TaskDetailModal(props: any) {
       await updateDoc(doc(db, "tasks", task.id), {
         title: validation.data.title,
         status: validation.data.status,
-        workspaceId: validation.data.workspaceId,
+        workspaceId: validation.data.workspaceId ?? null,
         dueDate: dueTimestamp,
         updatedAt: serverTimestamp(),
       });
@@ -482,7 +482,7 @@ export default function TaskDetailModal(props: any) {
               ...prev,
               title: validation.data.title,
               status: validation.data.status,
-              workspaceId: validation.data.workspaceId,
+              workspaceId: validation.data.workspaceId ?? null,
               dueDate: dueTimestamp,
             }
           : prev,

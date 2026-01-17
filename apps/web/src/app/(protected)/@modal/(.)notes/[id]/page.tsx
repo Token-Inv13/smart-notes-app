@@ -22,7 +22,7 @@ function formatFrDateTime(ts?: NoteDoc["updatedAt"] | NoteDoc["createdAt"] | nul
 const editNoteSchema = z.object({
   title: z.string().min(1, "Le titre est requis."),
   content: z.string().optional(),
-  workspaceId: z.string().min(1, "Sélectionne un dossier (workspace)."),
+  workspaceId: z.string().optional(),
 });
 
 export default function NoteDetailModal(props: any) {
@@ -297,7 +297,7 @@ export default function NoteDetailModal(props: any) {
     const validation = editNoteSchema.safeParse({
       title: editTitle,
       content: editContent,
-      workspaceId: editWorkspaceId,
+      workspaceId: editWorkspaceId || undefined,
     });
 
     if (!validation.success) {
@@ -312,7 +312,7 @@ export default function NoteDetailModal(props: any) {
     const nextSnapshot = JSON.stringify({
       title: validation.data.title,
       content: validation.data.content ?? "",
-      workspaceId: validation.data.workspaceId,
+      workspaceId: validation.data.workspaceId ?? "",
     });
 
     if (lastSavedSnapshotRef.current === nextSnapshot) {
@@ -333,7 +333,7 @@ export default function NoteDetailModal(props: any) {
       await updateDoc(doc(db, "notes", note.id), {
         title: validation.data.title,
         content: validation.data.content ?? "",
-        workspaceId: validation.data.workspaceId,
+        workspaceId: validation.data.workspaceId ?? null,
         updatedAt: serverTimestamp(),
       });
 
@@ -348,7 +348,7 @@ export default function NoteDetailModal(props: any) {
               ...prev,
               title: validation.data.title,
               content: validation.data.content ?? "",
-              workspaceId: validation.data.workspaceId,
+              workspaceId: validation.data.workspaceId ?? null,
             }
           : prev,
       );
