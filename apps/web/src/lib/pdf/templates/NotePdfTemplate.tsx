@@ -5,12 +5,12 @@ type Props = {
   workspaceName: string | null;
   createdAtLabel: string | null;
   updatedAtLabel: string | null;
-  content: string;
+  contentHtml: string;
   exportDateLabel: string;
 };
 
 export default function NotePdfTemplate(props: Props) {
-  const { title, workspaceName, createdAtLabel, updatedAtLabel, content, exportDateLabel } = props;
+  const { title, workspaceName, createdAtLabel, updatedAtLabel, contentHtml, exportDateLabel } = props;
 
   return (
     <div className="sn-pdf">
@@ -139,9 +139,48 @@ export default function NotePdfTemplate(props: Props) {
           font-size: 11pt;
           line-height: 1.65;
           color: #0f172a;
-          white-space: pre-wrap;
           overflow-wrap: anywhere;
           word-break: break-word;
+        }
+
+        .sn-pdf .content p {
+          margin: 0 0 3.2mm;
+        }
+
+        .sn-pdf .content ul {
+          margin: 0 0 3.2mm;
+          padding-left: 6mm;
+          list-style: disc;
+        }
+
+        .sn-pdf .content ol {
+          margin: 0 0 3.2mm;
+          padding-left: 6mm;
+          list-style: decimal;
+        }
+
+        .sn-pdf .content li {
+          margin: 0.8mm 0;
+        }
+
+        .sn-pdf .content hr {
+          border: 0;
+          border-top: 1px solid #e2e8f0;
+          margin: 5mm 0;
+        }
+
+        .sn-pdf .content b,
+        .sn-pdf .content strong {
+          font-weight: 700;
+        }
+
+        .sn-pdf .content i,
+        .sn-pdf .content em {
+          font-style: italic;
+        }
+
+        .sn-pdf .content u {
+          text-decoration: underline;
         }
 
         .sn-pdf .content p,
@@ -189,7 +228,7 @@ export default function NotePdfTemplate(props: Props) {
         </div>
 
         <h2 className="section-title">Contenu</h2>
-        <div className="content">{content || ""}</div>
+        <div className="content" dangerouslySetInnerHTML={{ __html: contentHtml || "" }} />
       </div>
     </div>
   );

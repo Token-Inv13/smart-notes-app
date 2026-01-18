@@ -2,7 +2,7 @@ import React from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import type { NoteDoc, TaskDoc } from "@/types/firestore";
-import { htmlToPlainText } from "@/lib/richText";
+import { sanitizeNoteHtml } from "@/lib/richText";
 import NotePdfTemplate from "./templates/NotePdfTemplate";
 import TaskPdfTemplate from "./templates/TaskPdfTemplate";
 
@@ -180,14 +180,14 @@ export async function exportNotePdf(note: NoteDoc, workspaceName: string | null)
       workspaceName={workspaceName}
       createdAtLabel={formatFrDateTime(note.createdAt)}
       updatedAtLabel={formatFrDateTime(note.updatedAt)}
-      content={sanitizeExportBody(htmlToPlainText(note.content ?? ""))}
+      contentHtml={sanitizeNoteHtml(note.content ?? "")}
       exportDateLabel={exportDateLabel}
     />
   );
 
   try {
     const doc = await buildPdfFromElement(element);
-    doc.save(`smartnotes-note-${sanitizeFilename(note.title ?? "")}.pdf`);
+    doc.save(`${sanitizeFilename(note.title ?? "")}.pdf`);
   } finally {
     cleanup();
   }
