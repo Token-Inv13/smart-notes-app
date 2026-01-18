@@ -88,16 +88,9 @@ export default function NotesPage() {
     [archiveView],
   );
 
-  const activeNotes = useMemo(
-    () => sortedNotes.filter((n) => n.completed !== true).filter(archivePredicate),
-    [sortedNotes, archivePredicate],
-  );
-  const completedNotes = useMemo(
-    () => sortedNotes.filter((n) => n.completed === true).filter(archivePredicate),
-    [sortedNotes, archivePredicate],
-  );
+  const activeNotes = useMemo(() => sortedNotes.filter(archivePredicate), [sortedNotes, archivePredicate]);
 
-  const visibleNotesCount = activeNotes.length + completedNotes.length;
+  const visibleNotesCount = activeNotes.length;
   const visibleTasksCount = useMemo(
     () => tasksForCounter.filter((t) => t.archived !== true).length,
     [tasksForCounter],
@@ -158,24 +151,6 @@ export default function NotesPage() {
       </div>
     </div>
   );
-
-  const toggleCompleted = async (note: NoteDoc, nextCompleted: boolean) => {
-    if (!note.id) return;
-    const user = auth.currentUser;
-    if (!user || user.uid !== note.userId) return;
-
-    try {
-      await updateDoc(doc(db, "notes", note.id), {
-        completed: nextCompleted,
-        updatedAt: serverTimestamp(),
-      });
-    } catch (e) {
-      console.error("Error toggling completed", e);
-      if (e instanceof FirebaseError) {
-        setEditError(`${e.code}: ${e.message}`);
-      }
-    }
-  };
 
   const toggleFavorite = async (note: NoteDoc) => {
     if (!note.id) return;
@@ -324,18 +299,6 @@ export default function NotesPage() {
                       </div>
 
                       <div className="sn-card-body line-clamp-4">{note.content ?? ""}</div>
-
-                      <div className="flex items-center justify-between gap-3">
-                        <label className="text-xs flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={note.completed === true}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => toggleCompleted(note, e.target.checked)}
-                          />
-                          <span className="text-muted-foreground">Terminé</span>
-                        </label>
-                      </div>
                     </div>
                   </div>
                 </li>
@@ -386,61 +349,12 @@ export default function NotesPage() {
                     </div>
 
                     <div className="sn-card-body line-clamp-5">{note.content ?? ""}</div>
-
-                    <div className="mt-auto flex items-center justify-between gap-3">
-                      <label className="text-xs flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={note.completed === true}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => toggleCompleted(note, e.target.checked)}
-                        />
-                        <span className="text-muted-foreground">Terminé</span>
-                      </label>
-                    </div>
                   </div>
                 </div>
               );
             })}
           </div>
         )}
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold mb-2">Terminées</h2>
-        {!loading && !error && completedNotes.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            {archiveView === "archived" ? "Aucune note archivée terminée." : "Aucune note terminée pour l’instant."}
-          </p>
-        )}
-
-        <ul className="space-y-2">
-          {completedNotes.map((note) => (
-            <li key={note.id} className="sn-card sn-card--note sn-card--muted p-4">
-              <div className="space-y-3">
-                <div className="sn-card-header">
-                  <div className="min-w-0">
-                    <div className="sn-card-title truncate">{note.title}</div>
-                    <div className="sn-card-meta">
-                      <span className="sn-badge">Terminée</span>
-                    </div>
-                  </div>
-                  <div className="sn-card-actions sn-card-actions-secondary shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => toggleCompleted(note, false)}
-                      className="sn-text-btn"
-                    >
-                      Restaurer
-                    </button>
-                  </div>
-                </div>
-
-                <div className="sn-card-body line-clamp-4">{note.content}</div>
-              </div>
-            </li>
-          ))}
-        </ul>
       </section>
     </div>
   );
