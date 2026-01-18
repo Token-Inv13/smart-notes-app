@@ -9,6 +9,8 @@ import { useUserNotes } from "@/hooks/useUserNotes";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import type { NoteDoc } from "@/types/firestore";
+import RichTextEditor from "./RichTextEditor";
+import { sanitizeNoteHtml } from "@/lib/richText";
 
 const newNoteSchema = z.object({
   title: z.string().min(1, "Le titre est requis."),
@@ -118,7 +120,7 @@ export default function NoteCreateForm({ initialWorkspaceId, onCreated }: Props)
         userId: user.uid,
         workspaceId: validation.data.workspaceId ?? null,
         title: validation.data.title,
-        content: validation.data.content ?? "",
+        content: sanitizeNoteHtml(validation.data.content ?? ""),
         favorite: false,
         completed: false,
         archived: false,
@@ -202,12 +204,11 @@ export default function NoteCreateForm({ initialWorkspaceId, onCreated }: Props)
         <label className="sr-only" htmlFor="note-content">
           Contenu
         </label>
-        <textarea
-          id="note-content"
+        <RichTextEditor
           value={noteContent}
-          onChange={(e) => setNoteContent(e.target.value)}
-          className="w-full min-h-[120px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          onChange={setNoteContent}
           placeholder="Quelques lignes pour te rappeler l’essentiel…"
+          minHeightClassName="min-h-[120px]"
         />
       </div>
 

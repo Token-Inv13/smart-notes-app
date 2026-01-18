@@ -173,6 +173,31 @@ body {
     box-shadow: var(--shadow-ambient);
   }
 
+  .sn-richtext-content {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .sn-richtext-content ul {
+    list-style: disc;
+    padding-left: 1.25rem;
+  }
+
+  .sn-richtext-content ol {
+    list-style: decimal;
+    padding-left: 1.25rem;
+  }
+
+  .sn-richtext-content li {
+    margin: 0.125rem 0;
+  }
+
+  .sn-richtext-content hr {
+    border: 0;
+    border-top: 1px solid hsl(var(--border));
+    margin: 0.75rem 0;
+  }
+
   .sn-empty {
     @apply sn-card p-6 text-center;
   }

@@ -2,6 +2,7 @@ import React from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import type { NoteDoc, TaskDoc } from "@/types/firestore";
+import { htmlToPlainText } from "@/lib/richText";
 import NotePdfTemplate from "./templates/NotePdfTemplate";
 import TaskPdfTemplate from "./templates/TaskPdfTemplate";
 
@@ -179,7 +180,7 @@ export async function exportNotePdf(note: NoteDoc, workspaceName: string | null)
       workspaceName={workspaceName}
       createdAtLabel={formatFrDateTime(note.createdAt)}
       updatedAtLabel={formatFrDateTime(note.updatedAt)}
-      content={sanitizeExportBody(note.content ?? "")}
+      content={sanitizeExportBody(htmlToPlainText(note.content ?? ""))}
       exportDateLabel={exportDateLabel}
     />
   );

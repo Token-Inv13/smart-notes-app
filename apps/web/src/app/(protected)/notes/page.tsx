@@ -15,6 +15,7 @@ import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import type { NoteDoc } from "@/types/firestore";
+import { htmlToPlainText } from "@/lib/richText";
 import Link from "next/link";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
 
@@ -298,7 +299,7 @@ export default function NotesPage() {
                         </div>
                       </div>
 
-                      <div className="sn-card-body line-clamp-4">{note.content ?? ""}</div>
+                      <div className="sn-card-body line-clamp-4">{htmlToPlainText(note.content ?? "")}</div>
                     </div>
                   </div>
                 </li>
@@ -348,7 +349,7 @@ export default function NotesPage() {
                       </div>
                     </div>
 
-                    <div className="sn-card-body line-clamp-5">{note.content ?? ""}</div>
+                    <div className="sn-card-body line-clamp-5">{htmlToPlainText(note.content ?? "")}</div>
                   </div>
                 </div>
               );

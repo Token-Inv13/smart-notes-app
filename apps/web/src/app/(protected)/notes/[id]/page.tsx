@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import type { NoteDoc } from "@/types/firestore";
+import { sanitizeNoteHtml } from "@/lib/richText";
 
 function formatFrDateTime(ts?: NoteDoc["updatedAt"] | NoteDoc["createdAt"] | null) {
   if (!ts) return "—";
@@ -110,12 +111,12 @@ export default function NoteDetailPage(props: any) {
 
           <div className="space-y-1">
             <div className="text-sm font-medium">Contenu</div>
-            <textarea
-              readOnly
-              value={note.content ?? ""}
+            <div
               aria-label="Contenu de la note"
-              className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-            />
+              className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm sn-richtext-content"
+            >
+              <div dangerouslySetInnerHTML={{ __html: sanitizeNoteHtml(note.content ?? "") }} />
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">

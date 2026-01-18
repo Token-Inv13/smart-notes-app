@@ -6,10 +6,12 @@ import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { auth, db } from "@/lib/firebase";
 import { exportNotePdf } from "@/lib/pdf/exportPdf";
+import { sanitizeNoteHtml } from "@/lib/richText";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import type { NoteDoc } from "@/types/firestore";
 import Modal from "../../../Modal";
 import ItemActionsMenu from "../../../ItemActionsMenu";
+import RichTextEditor from "../../../_components/RichTextEditor";
 
 function formatFrDateTime(ts?: NoteDoc["updatedAt"] | NoteDoc["createdAt"] | null) {
   if (!ts) return "—";
@@ -332,7 +334,7 @@ export default function NoteDetailModal(props: any) {
     try {
       await updateDoc(doc(db, "notes", note.id), {
         title: validation.data.title,
-        content: validation.data.content ?? "",
+        content: sanitizeNoteHtml(validation.data.content ?? ""),
         workspaceId: validation.data.workspaceId ?? null,
         updatedAt: serverTimestamp(),
       });
@@ -551,14 +553,14 @@ export default function NoteDetailModal(props: any) {
                   <div className="space-y-1">
                     <div
                       aria-label="Contenu de la note"
-                      className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm whitespace-pre-wrap break-words select-text"
+                      className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm sn-richtext-content select-text"
                       onDoubleClick={() => startEdit()}
                       onTouchStart={scheduleLongPressToEdit}
                       onTouchMove={cancelLongPressIfMoved}
                       onTouchEnd={endLongPress}
                       onTouchCancel={endLongPress}
                     >
-                      {note.content ?? ""}
+                      <div dangerouslySetInnerHTML={{ __html: sanitizeNoteHtml(note.content ?? "") }} />
                     </div>
                   </div>
                 ) : (
@@ -595,20 +597,18 @@ export default function NoteDetailModal(props: any) {
                       <label className="sr-only" htmlFor="note-modal-content">
                         Contenu
                       </label>
-                      <textarea
-                        id="note-modal-content"
+                      <RichTextEditor
                         value={editContent}
-                        onChange={(e) => {
-                          const nextContent = e.target.value;
-                          setEditContent(nextContent);
+                        onChange={(next) => {
+                          setEditContent(next);
                           const snap = JSON.stringify({
                             title: editTitle,
-                            content: nextContent,
+                            content: next,
                             workspaceId: editWorkspaceId,
                           });
                           setDirty(snap !== lastSavedSnapshotRef.current);
                         }}
-                        className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                        minHeightClassName="min-h-[240px]"
                       />
                     </div>
 
