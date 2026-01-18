@@ -468,166 +468,167 @@ export default function NoteDetailModal(props: any) {
         if (!note) return null;
 
         return (
-        <div className="space-y-4">
-          {shareFeedback && <div className="sn-alert">{shareFeedback}</div>}
-          {exportFeedback && <div className="sn-alert">{exportFeedback}</div>}
-          {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
-          <div className="sn-card p-4 space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
+          <div className="max-h-[90svh] md:max-h-[90vh] overflow-y-auto">
+            <div className="space-y-4">
+              {shareFeedback && <div className="sn-alert">{shareFeedback}</div>}
+              {exportFeedback && <div className="sn-alert">{exportFeedback}</div>}
+              {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
+
+              <div className="sn-card p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    {mode === "view" ? (
+                      <div className="text-sm font-semibold truncate">{note.title}</div>
+                    ) : (
+                      <div className="space-y-1">
+                        <label className="sr-only" htmlFor="note-modal-title">
+                          Titre
+                        </label>
+                        <input
+                          id="note-modal-title"
+                          value={editTitle}
+                          onChange={(e) => {
+                            const nextTitle = e.target.value;
+                            setEditTitle(nextTitle);
+                            const snap = JSON.stringify({
+                              title: nextTitle,
+                              content: editContent,
+                              workspaceId: editWorkspaceId,
+                            });
+                            setDirty(snap !== lastSavedSnapshotRef.current);
+                          }}
+                          className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="shrink-0 flex items-center gap-2">
+                    {mode === "view" ? (
+                      <ItemActionsMenu
+                        onEdit={startEdit}
+                        onToggleArchive={handleToggleArchive}
+                        onShare={handleShare}
+                        onExportPdf={handleExportPdf}
+                        onExportMarkdown={handleExport}
+                        archived={note.archived === true}
+                        onDelete={handleDelete}
+                      />
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={cancelEdit}
+                          disabled={saving}
+                          className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+                        >
+                          Annuler
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSave}
+                          disabled={saving}
+                          className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+                        >
+                          {saving ? "Enregistrement…" : "Enregistrer"}
+                        </button>
+                      </>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={close}
+                      className="sn-icon-btn"
+                      aria-label="Fermer"
+                      title="Fermer"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+
                 {mode === "view" ? (
-                  <div className="text-sm font-semibold truncate">{note.title}</div>
-                ) : (
                   <div className="space-y-1">
-                    <label className="sr-only" htmlFor="note-modal-title">
-                      Titre
-                    </label>
-                    <input
-                      id="note-modal-title"
-                      value={editTitle}
-                      onChange={(e) => {
-                        const nextTitle = e.target.value;
-                        setEditTitle(nextTitle);
-                        const snap = JSON.stringify({
-                          title: nextTitle,
-                          content: editContent,
-                          workspaceId: editWorkspaceId,
-                        });
-                        setDirty(snap !== lastSavedSnapshotRef.current);
-                      }}
-                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                    <textarea
+                      readOnly
+                      value={note.content ?? ""}
+                      aria-label="Contenu de la note"
+                      className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                      onDoubleClick={() => startEdit()}
+                      onTouchStart={scheduleLongPressToEdit}
+                      onTouchMove={cancelLongPressIfMoved}
+                      onTouchEnd={endLongPress}
+                      onTouchCancel={endLongPress}
                     />
                   </div>
-                )}
-              </div>
-
-              <div className="shrink-0 flex items-center gap-2">
-                {mode === "view" ? (
-                  <ItemActionsMenu
-                    onEdit={startEdit}
-                    onToggleArchive={handleToggleArchive}
-                    onShare={handleShare}
-                    onExportPdf={handleExportPdf}
-                    onExportMarkdown={handleExport}
-                    archived={note.archived === true}
-                    onDelete={handleDelete}
-                  />
                 ) : (
                   <>
-                    <button
-                      type="button"
-                      onClick={cancelEdit}
-                      disabled={saving}
-                      className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-                    >
-                      Annuler
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSave}
-                      disabled={saving}
-                      className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
-                    >
-                      {saving ? "Enregistrement…" : "Enregistrer"}
-                    </button>
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium" htmlFor="note-modal-workspace">
+                        Dossier
+                      </label>
+                      <select
+                        id="note-modal-workspace"
+                        value={editWorkspaceId}
+                        onChange={(e) => {
+                          const nextWorkspaceId = e.target.value;
+                          setEditWorkspaceId(nextWorkspaceId);
+                          const snap = JSON.stringify({
+                            title: editTitle,
+                            content: editContent,
+                            workspaceId: nextWorkspaceId,
+                          });
+                          setDirty(snap !== lastSavedSnapshotRef.current);
+                        }}
+                        className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                      >
+                        <option value="">—</option>
+                        {workspaces.map((ws) => (
+                          <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
+                            {ws.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="sr-only" htmlFor="note-modal-content">
+                        Contenu
+                      </label>
+                      <textarea
+                        id="note-modal-content"
+                        value={editContent}
+                        onChange={(e) => {
+                          const nextContent = e.target.value;
+                          setEditContent(nextContent);
+                          const snap = JSON.stringify({
+                            title: editTitle,
+                            content: nextContent,
+                            workspaceId: editWorkspaceId,
+                          });
+                          setDirty(snap !== lastSavedSnapshotRef.current);
+                        }}
+                        className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                      />
+                    </div>
+
+                    {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
                   </>
                 )}
 
-                <button
-                  type="button"
-                  onClick={close}
-                  className="sn-icon-btn"
-                  aria-label="Fermer"
-                  title="Fermer"
-                >
-                  ×
-                </button>
+                {mode === "view" && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="font-medium">Créée le:</span> {createdLabel}
+                    </div>
+                    <div>
+                      <span className="font-medium">Dernière mise à jour:</span> {updatedLabel}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-
-            {mode === "view" ? (
-              <>
-                <div className="space-y-1">
-                  <textarea
-                    readOnly
-                    value={note.content ?? ""}
-                    aria-label="Contenu de la note"
-                    className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                    onDoubleClick={() => startEdit()}
-                    onTouchStart={scheduleLongPressToEdit}
-                    onTouchMove={cancelLongPressIfMoved}
-                    onTouchEnd={endLongPress}
-                    onTouchCancel={endLongPress}
-                  />
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium" htmlFor="note-modal-workspace">
-                    Dossier
-                  </label>
-                  <select
-                    id="note-modal-workspace"
-                    value={editWorkspaceId}
-                    onChange={(e) => {
-                      const nextWorkspaceId = e.target.value;
-                      setEditWorkspaceId(nextWorkspaceId);
-                      const snap = JSON.stringify({
-                        title: editTitle,
-                        content: editContent,
-                        workspaceId: nextWorkspaceId,
-                      });
-                      setDirty(snap !== lastSavedSnapshotRef.current);
-                    }}
-                    className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                  >
-                    <option value="">—</option>
-                    {workspaces.map((ws) => (
-                      <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
-                        {ws.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="sr-only" htmlFor="note-modal-content">
-                    Contenu
-                  </label>
-                  <textarea
-                    id="note-modal-content"
-                    value={editContent}
-                    onChange={(e) => {
-                      const nextContent = e.target.value;
-                      setEditContent(nextContent);
-                      const snap = JSON.stringify({
-                        title: editTitle,
-                        content: nextContent,
-                        workspaceId: editWorkspaceId,
-                      });
-                      setDirty(snap !== lastSavedSnapshotRef.current);
-                    }}
-                    className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                  />
-                </div>
-
-                {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
-              </>
-            )}
-
-            {mode === "view" && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-                <div>
-                  <span className="font-medium">Créée le:</span> {createdLabel}
-                </div>
-                <div>
-                  <span className="font-medium">Dernière mise à jour:</span> {updatedLabel}
-                </div>
-              </div>
-            )}
           </div>
-        </div>
         );
       }}
     </Modal>
