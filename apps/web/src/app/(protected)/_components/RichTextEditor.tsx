@@ -98,7 +98,7 @@ export default function RichTextEditor({
   allowHr = true,
 }: Props) {
   const editorRef = useRef<HTMLDivElement | null>(null);
-  const lastValueRef = useRef<string>(value);
+  const lastValueRef = useRef<string>("");
   const [hasFocus, setHasFocus] = useState(false);
 
   const safeValue = useMemo(() => sanitizeNoteHtml(value ?? "", { allowHr }), [allowHr, value]);
@@ -107,12 +107,14 @@ export default function RichTextEditor({
     const el = editorRef.current;
     if (!el) return;
 
-    if (safeValue !== lastValueRef.current) {
-      if (!hasFocus) {
-        el.innerHTML = safeValue;
-      }
-      lastValueRef.current = safeValue;
+    if (hasFocus) {
+      return;
     }
+
+    if (el.innerHTML !== safeValue) {
+      el.innerHTML = safeValue;
+    }
+    lastValueRef.current = safeValue;
   }, [hasFocus, safeValue]);
 
   const emitChange = () => {
