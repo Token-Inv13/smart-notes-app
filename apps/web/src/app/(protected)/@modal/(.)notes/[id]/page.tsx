@@ -549,17 +549,17 @@ export default function NoteDetailModal(props: any) {
 
                 {mode === "view" ? (
                   <div className="space-y-1">
-                    <textarea
-                      readOnly
-                      value={note.content ?? ""}
+                    <div
                       aria-label="Contenu de la note"
-                      className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                      className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm whitespace-pre-wrap break-words select-text"
                       onDoubleClick={() => startEdit()}
                       onTouchStart={scheduleLongPressToEdit}
                       onTouchMove={cancelLongPressIfMoved}
                       onTouchEnd={endLongPress}
                       onTouchCancel={endLongPress}
-                    />
+                    >
+                      {note.content ?? ""}
+                    </div>
                   </div>
                 ) : (
                   <>
