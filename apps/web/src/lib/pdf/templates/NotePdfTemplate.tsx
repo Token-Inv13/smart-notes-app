@@ -22,6 +22,11 @@ export default function NotePdfTemplate(props: Props) {
           background: #ffffff;
         }
 
+        .sn-pdf, .sn-pdf * {
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+
         .sn-pdf * {
           box-sizing: border-box;
         }
@@ -143,6 +148,14 @@ export default function NotePdfTemplate(props: Props) {
           word-break: break-word;
         }
 
+        .sn-pdf .content div {
+          margin: 0 0 3.2mm;
+        }
+
+        .sn-pdf .content div:empty::before {
+          content: "\u00A0";
+        }
+
         .sn-pdf .content p {
           margin: 0 0 3.2mm;
         }
@@ -183,12 +196,8 @@ export default function NotePdfTemplate(props: Props) {
           text-decoration: underline;
         }
 
-        .sn-pdf .content p,
         .sn-pdf .content ul,
-        .sn-pdf .content ol,
-        .sn-pdf .content li,
-        .sn-pdf .content pre,
-        .sn-pdf .content blockquote {
+        .sn-pdf .content ol {
           break-inside: avoid;
           page-break-inside: avoid;
         }
