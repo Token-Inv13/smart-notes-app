@@ -67,7 +67,12 @@ function initFirebase() {
   db = getFirestore(app);
   storage = getStorage(app);
 
-  if (useEmulators && typeof window !== 'undefined') {
+  const canUseEmulators =
+    useEmulators &&
+    typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+  if (canUseEmulators) {
     connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
     connectFirestoreEmulator(db, 'localhost', 8080);
     connectStorageEmulator(storage, 'localhost', 9199);
