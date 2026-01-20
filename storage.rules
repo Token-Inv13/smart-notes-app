@@ -23,6 +23,10 @@ service firebase.storage {
       return request.resource.size < 120 * 1024 * 1024;
     }
 
+    function isAllowedAttachmentExtension(path) {
+      return path.matches('.*\\.(jpg|jpeg|png|webp|pdf|mp4|mov)$');
+    }
+
     function isNotesAttachmentPath(path) {
       return path.matches('notes/.*');
     }
@@ -40,7 +44,7 @@ service firebase.storage {
       allow read: if isAuthenticated() && isOwner(userId);
       allow write: if isAuthenticated() && isOwner(userId) && (
         request.resource == null ||
-        (isAllowedAttachmentMime() && isAllowedAttachmentSize())
+        (isAllowedAttachmentSize() && (isAllowedAttachmentMime() || isAllowedAttachmentExtension(allFiles)))
       );
     }
     

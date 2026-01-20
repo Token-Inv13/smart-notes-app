@@ -66,6 +66,23 @@ function safeId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function sanitizeFilename(raw: string) {
+  const name = String(raw ?? "fichier");
+  const lastDot = name.lastIndexOf(".");
+  const ext = lastDot > 0 ? name.slice(lastDot + 1).toLowerCase() : "";
+  const base = lastDot > 0 ? name.slice(0, lastDot) : name;
+  const cleanedBase = base
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+
+  const shortBase = (cleanedBase || "fichier").slice(0, 60);
+  if (!ext) return shortBase;
+  return `${shortBase}.${ext}`;
+}
+
 function formatFrDateTime(ts?: NoteDoc["updatedAt"] | NoteDoc["createdAt"] | null) {
   if (!ts) return "—";
   if (typeof (ts as any)?.toDate !== "function") return "—";
@@ -164,7 +181,7 @@ export default function NoteDetailModal(props: any) {
 
     try {
       const attachmentId = safeId();
-      const safeName = String(file.name ?? "fichier");
+      const safeName = sanitizeFilename(file.name ?? "fichier");
       const storagePath = `users/${user.uid}/notes/${note.id}/${attachmentId}-${safeName}`;
       const fileRef = ref(storage, storagePath);
       await uploadBytes(fileRef, file, { contentType: file.type });
