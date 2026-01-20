@@ -33,6 +33,7 @@ export interface NoteDoc {
   workspaceId?: string | null;
   title: string;
   content: string;
+  attachments?: NoteAttachment[];
   favorite?: boolean;
   completed?: boolean;
   archived?: boolean;
@@ -40,6 +41,15 @@ export interface NoteDoc {
   createdAt?: Timestamp | FieldValue;
   updatedAt?: Timestamp | FieldValue;
   [key: string]: unknown;
+}
+
+export interface NoteAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  storagePath: string;
+  addedAt: Timestamp;
 }
 
 export interface TaskDoc {

@@ -1,17 +1,70 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { Timestamp, deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
-import { auth, db } from "@/lib/firebase";
+import { auth, db, storage } from "@/lib/firebase";
 import { exportNotePdf } from "@/lib/pdf/exportPdf";
 import { sanitizeNoteHtml } from "@/lib/richText";
+import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
-import type { NoteDoc } from "@/types/firestore";
+import type { NoteAttachment, NoteDoc } from "@/types/firestore";
 import Modal from "../../../Modal";
 import ItemActionsMenu from "../../../ItemActionsMenu";
 import RichTextEditor from "../../../_components/RichTextEditor";
+
+const FREE_MAX_FILES_PER_NOTE = 5;
+const PRO_MAX_FILES_PER_NOTE = 10;
+const FREE_MAX_BYTES = 20 * 1024 * 1024;
+const PRO_MAX_BYTES = 120 * 1024 * 1024;
+
+const FREE_ALLOWED_MIME = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/pdf",
+]);
+
+const PRO_ALLOWED_MIME = new Set([
+  ...Array.from(FREE_ALLOWED_MIME),
+  "video/mp4",
+  "video/quicktime",
+]);
+
+function formatBytes(size: number) {
+  if (!Number.isFinite(size) || size <= 0) return "0 o";
+  const units = ["o", "Ko", "Mo", "Go"];
+  let n = size;
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i += 1;
+  }
+  const v = i === 0 ? Math.round(n) : Math.round(n * 10) / 10;
+  return `${v} ${units[i]}`;
+}
+
+function iconForMime(mime: string) {
+  if (mime.startsWith("image/")) return "🖼️";
+  if (mime === "application/pdf") return "📄";
+  if (mime.startsWith("video/")) return "🎬";
+  return "📎";
+}
+
+function safeId() {
+  const cryptoAny = globalThis as any;
+  if (typeof cryptoAny?.crypto?.randomUUID === "function") return cryptoAny.crypto.randomUUID();
+  if (typeof cryptoAny?.crypto?.getRandomValues === "function") {
+    const bytes = new Uint8Array(16);
+    cryptoAny.crypto.getRandomValues(bytes);
+    return Array.from(bytes)
+      .map((b: number) => b.toString(16).padStart(2, "0"))
+      .join("");
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 function formatFrDateTime(ts?: NoteDoc["updatedAt"] | NoteDoc["createdAt"] | null) {
   if (!ts) return "—";
@@ -32,6 +85,7 @@ export default function NoteDetailModal(props: any) {
   const noteId: string | undefined = props?.params?.id;
 
   const { data: workspaces } = useUserWorkspaces();
+  const { data: userSettings } = useUserSettings();
 
   const [note, setNote] = useState<NoteDoc | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,6 +101,10 @@ export default function NoteDetailModal(props: any) {
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
   const [exportFeedback, setExportFeedback] = useState<string | null>(null);
 
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const [, setIsDirty] = useState(false);
   const isDirtyRef = useRef(false);
   const lastSavedSnapshotRef = useRef<string>("");
@@ -58,6 +116,126 @@ export default function NoteDetailModal(props: any) {
   const setDirty = (next: boolean) => {
     isDirtyRef.current = next;
     setIsDirty(next);
+  };
+
+  const attachments = note?.attachments ?? [];
+  const userPlan = userSettings?.plan === "pro" ? "pro" : "free";
+  const maxFiles = userPlan === "pro" ? PRO_MAX_FILES_PER_NOTE : FREE_MAX_FILES_PER_NOTE;
+  const maxBytes = userPlan === "pro" ? PRO_MAX_BYTES : FREE_MAX_BYTES;
+  const allowedMime = userPlan === "pro" ? PRO_ALLOWED_MIME : FREE_ALLOWED_MIME;
+
+  const validateFileForPlan = (file: File) => {
+    if (attachments.length >= maxFiles) {
+      return `Limite atteinte: ${maxFiles} fichiers max par note.`;
+    }
+    if (!allowedMime.has(file.type)) {
+      if (file.type.startsWith("video/") && userPlan === "free") {
+        return "Les vidéos sont réservées au plan Premium.";
+      }
+      return "Type de fichier non autorisé.";
+    }
+    if (file.size > maxBytes) {
+      return `Fichier trop volumineux (max ${formatBytes(maxBytes)}).`;
+    }
+    return null;
+  };
+
+  const handlePickAttachment = () => {
+    setAttachmentError(null);
+    fileInputRef.current?.click();
+  };
+
+  const handleUploadAttachment = async (file: File) => {
+    if (!note?.id) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== note.userId) {
+      setAttachmentError("Impossible d’ajouter un fichier à cette note.");
+      return;
+    }
+
+    const msg = validateFileForPlan(file);
+    if (msg) {
+      setAttachmentError(msg);
+      return;
+    }
+
+    setUploadingAttachment(true);
+    setAttachmentError(null);
+
+    try {
+      const attachmentId = safeId();
+      const safeName = String(file.name ?? "fichier");
+      const storagePath = `users/${user.uid}/notes/${note.id}/${attachmentId}-${safeName}`;
+      const fileRef = ref(storage, storagePath);
+      await uploadBytes(fileRef, file, { contentType: file.type });
+
+      const newAttachment: NoteAttachment = {
+        id: attachmentId,
+        name: safeName,
+        mimeType: file.type,
+        size: file.size,
+        storagePath,
+        addedAt: Timestamp.now(),
+      };
+
+      const next = [...attachments, newAttachment];
+      await updateDoc(doc(db, "notes", note.id), {
+        attachments: next,
+        updatedAt: serverTimestamp(),
+      });
+
+      setNote((prev) => (prev ? { ...prev, attachments: next } : prev));
+    } catch (e) {
+      console.error("Error uploading attachment", e);
+      setAttachmentError(e instanceof Error ? e.message : "Erreur lors de l’ajout du fichier.");
+    } finally {
+      setUploadingAttachment(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDownloadAttachment = async (att: NoteAttachment) => {
+    try {
+      const url = await getDownloadURL(ref(storage, att.storagePath));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = att.name;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (e) {
+      console.error("Error downloading attachment", e);
+      setAttachmentError(e instanceof Error ? e.message : "Erreur lors du téléchargement.");
+    }
+  };
+
+  const handleDeleteAttachment = async (att: NoteAttachment) => {
+    if (!note?.id) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== note.userId) {
+      setAttachmentError("Impossible de supprimer ce fichier.");
+      return;
+    }
+
+    if (!confirm("Supprimer ce fichier joint ?")) return;
+
+    setUploadingAttachment(true);
+    setAttachmentError(null);
+    try {
+      await deleteObject(ref(storage, att.storagePath));
+      const next = attachments.filter((a) => a.id !== att.id);
+      await updateDoc(doc(db, "notes", note.id), {
+        attachments: next,
+        updatedAt: serverTimestamp(),
+      });
+      setNote((prev) => (prev ? { ...prev, attachments: next } : prev));
+    } catch (e) {
+      console.error("Error deleting attachment", e);
+      setAttachmentError(e instanceof Error ? e.message : "Erreur lors de la suppression du fichier.");
+    } finally {
+      setUploadingAttachment(false);
+    }
   };
 
   const clearLongPress = () => {
@@ -475,6 +653,7 @@ export default function NoteDetailModal(props: any) {
               {shareFeedback && <div className="sn-alert">{shareFeedback}</div>}
               {exportFeedback && <div className="sn-alert">{exportFeedback}</div>}
               {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
+              {attachmentError && <div className="sn-alert sn-alert--error">{attachmentError}</div>}
 
               <div className="sn-card p-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
@@ -612,8 +791,102 @@ export default function NoteDetailModal(props: any) {
                       />
                     </div>
 
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-medium">📎 Fichiers joints</div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            className="hidden"
+                            aria-label="Ajouter un fichier"
+                            accept={userPlan === "pro" ? ".jpg,.jpeg,.png,.webp,.pdf,.mp4,.mov" : ".jpg,.jpeg,.png,.webp,.pdf"}
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (!f) return;
+                              void handleUploadAttachment(f);
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={handlePickAttachment}
+                            disabled={uploadingAttachment || saving}
+                            className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+                          >
+                            {uploadingAttachment ? "Ajout…" : "Ajouter un fichier"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {attachments.length === 0 ? (
+                        <div className="text-sm text-muted-foreground">Aucun fichier joint.</div>
+                      ) : (
+                        <div className="space-y-2">
+                          {attachments.map((att) => (
+                            <div key={att.id} className="flex items-center justify-between gap-3 rounded-md border border-input px-3 py-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-medium truncate">
+                                  {iconForMime(att.mimeType)} {att.name}
+                                </div>
+                                <div className="text-xs text-muted-foreground">{formatBytes(att.size)}</div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  className="px-3 py-2 rounded-md border border-input text-sm"
+                                  onClick={() => void handleDownloadAttachment(att)}
+                                >
+                                  Télécharger
+                                </button>
+                                <button
+                                  type="button"
+                                  className="px-3 py-2 rounded-md border border-input text-sm"
+                                  disabled={uploadingAttachment}
+                                  onClick={() => void handleDeleteAttachment(att)}
+                                >
+                                  Supprimer
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                          <div className="text-xs text-muted-foreground">
+                            {attachments.length}/{maxFiles} fichiers — max {formatBytes(maxBytes)} par fichier
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
                   </>
+                )}
+
+                {mode === "view" && (
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium">📎 Fichiers joints</div>
+                    {attachments.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">Aucun fichier joint.</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {attachments.map((att) => (
+                          <div key={att.id} className="flex items-center justify-between gap-3 rounded-md border border-input px-3 py-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-medium truncate">
+                                {iconForMime(att.mimeType)} {att.name}
+                              </div>
+                              <div className="text-xs text-muted-foreground">{formatBytes(att.size)}</div>
+                            </div>
+                            <button
+                              type="button"
+                              className="px-3 py-2 rounded-md border border-input text-sm"
+                              onClick={() => void handleDownloadAttachment(att)}
+                            >
+                              Télécharger
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {mode === "view" && (
