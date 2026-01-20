@@ -9,17 +9,39 @@ service firebase.storage {
     function isOwner(userId) {
       return request.auth.uid == userId;
     }
+
+    function isAllowedAttachmentMime() {
+      return request.resource.contentType == 'image/jpeg' ||
+        request.resource.contentType == 'image/png' ||
+        request.resource.contentType == 'image/webp' ||
+        request.resource.contentType == 'application/pdf' ||
+        request.resource.contentType == 'video/mp4' ||
+        request.resource.contentType == 'video/quicktime';
+    }
+
+    function isAllowedAttachmentSize() {
+      return request.resource.size < 120 * 1024 * 1024;
+    }
+
+    function isNotesAttachmentPath(path) {
+      return path.matches('notes/.*');
+    }
     
     // User files
     match /users/{userId}/{allPaths=**} {
       allow read: if isAuthenticated() && isOwner(userId);
-      allow write: if isAuthenticated() && isOwner(userId);
+      // Do not allow this generic rule to grant access to note attachments.
+      // Attachments are enforced by the dedicated /users/{userId}/notes/... rule below.
+      allow write: if isAuthenticated() && isOwner(userId) && !isNotesAttachmentPath(allPaths);
     }
     
     // Note attachments
     match /users/{userId}/notes/{noteId}/{allFiles=**} {
       allow read: if isAuthenticated() && isOwner(userId);
-      allow write: if isAuthenticated() && isOwner(userId);
+      allow write: if isAuthenticated() && isOwner(userId) && (
+        request.resource == null ||
+        (isAllowedAttachmentMime() && isAllowedAttachmentSize())
+      );
     }
     
     // Workspace files
