@@ -203,8 +203,48 @@ export default function NoteDetailModal(props: any) {
 
       setNote((prev) => (prev ? { ...prev, attachments: next } : prev));
     } catch (e) {
-      console.error("Error uploading attachment", e);
-      setAttachmentError(e instanceof Error ? e.message : "Erreur lors de l’ajout du fichier.");
+      const err = e as any;
+      const code = typeof err?.code === "string" ? err.code : undefined;
+      const message = typeof err?.message === "string" ? err.message : undefined;
+      const serverResponse =
+        typeof err?.serverResponse === "string"
+          ? err.serverResponse
+          : typeof err?.customData?.serverResponse === "string"
+            ? err.customData.serverResponse
+            : undefined;
+
+      let serverResponseSummary: string | undefined;
+      if (serverResponse) {
+        try {
+          const parsed = JSON.parse(serverResponse);
+          serverResponseSummary =
+            typeof parsed?.error?.message === "string"
+              ? parsed.error.message
+              : typeof parsed?.error === "string"
+                ? parsed.error
+                : serverResponse.slice(0, 200);
+        } catch {
+          serverResponseSummary = serverResponse.slice(0, 200);
+        }
+      }
+
+      console.error("Error uploading attachment", {
+        code,
+        message,
+        serverResponse,
+        customData: err?.customData,
+        name: err?.name,
+      });
+
+      const uiMsg = [
+        code ? `[${code}]` : null,
+        message ?? null,
+        serverResponseSummary ? `serverResponse: ${serverResponseSummary}` : null,
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      setAttachmentError(uiMsg || "Erreur lors de l’ajout du fichier.");
     } finally {
       setUploadingAttachment(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
