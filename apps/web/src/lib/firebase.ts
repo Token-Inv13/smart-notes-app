@@ -1,4 +1,5 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import {
   getAuth,
   onAuthStateChanged,
@@ -61,6 +62,13 @@ function initFirebase() {
     app = initializeApp(firebaseConfig);
   } else {
     app = getApps()[0]!;
+  }
+
+  if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY) {
+    initializeAppCheck(app, {
+      provider: new ReCaptchaV3Provider(process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY),
+      isTokenAutoRefreshEnabled: true,
+    });
   }
 
   auth = getAuth(app);
