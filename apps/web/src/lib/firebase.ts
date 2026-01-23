@@ -1,5 +1,9 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
-import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
+import {
+  getToken as getAppCheckToken,
+  initializeAppCheck,
+  ReCaptchaV3Provider,
+} from 'firebase/app-check';
 import {
   getAuth,
   onAuthStateChanged,
@@ -69,11 +73,17 @@ function initFirebase() {
     const globalAny = globalThis as unknown as { __smartNotesAppCheckInit?: boolean };
 
     if (siteKey && !globalAny.__smartNotesAppCheckInit) {
-      initializeAppCheck(app, {
+      const appCheck = initializeAppCheck(app, {
         provider: new ReCaptchaV3Provider(siteKey),
         isTokenAutoRefreshEnabled: true,
       });
       globalAny.__smartNotesAppCheckInit = true;
+
+      // Pre-warm App Check so the first Storage request is less likely to race
+      // with the initial reCAPTCHA token bootstrap.
+      void getAppCheckToken(appCheck).catch(() => {
+        // Intentionally ignore: failures will surface on the first protected request.
+      });
     }
   }
 
