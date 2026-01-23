@@ -64,11 +64,17 @@ function initFirebase() {
     app = getApps()[0]!;
   }
 
-  if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY) {
-    initializeAppCheck(app, {
-      provider: new ReCaptchaV3Provider(process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY),
-      isTokenAutoRefreshEnabled: true,
-    });
+  if (typeof window !== 'undefined') {
+    const siteKey = process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY?.trim();
+    const globalAny = globalThis as unknown as { __smartNotesAppCheckInit?: boolean };
+
+    if (siteKey && !globalAny.__smartNotesAppCheckInit) {
+      initializeAppCheck(app, {
+        provider: new ReCaptchaV3Provider(siteKey),
+        isTokenAutoRefreshEnabled: true,
+      });
+      globalAny.__smartNotesAppCheckInit = true;
+    }
   }
 
   auth = getAuth(app);
