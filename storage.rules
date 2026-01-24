@@ -51,15 +51,15 @@ service firebase.storage {
     // Workspace files
     match /workspaces/{workspaceId}/{allPaths=**} {
       allow read: if isAuthenticated() && (
-        exists(/databases/$(database)/documents/workspaces/$(workspaceId)) &&
+        firestore.exists(/databases/(default)/documents/workspaces/$(workspaceId)) &&
         (
-          get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerId == request.auth.uid ||
-          request.auth.uid in get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.members
+          firestore.get(/databases/(default)/documents/workspaces/$(workspaceId)).data.ownerId == request.auth.uid ||
+          request.auth.uid in firestore.get(/databases/(default)/documents/workspaces/$(workspaceId)).data.members
         )
       );
       allow write: if isAuthenticated() && 
-        exists(/databases/$(database)/documents/workspaces/$(workspaceId)) &&
-        get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerId == request.auth.uid;
+        firestore.exists(/databases/(default)/documents/workspaces/$(workspaceId)) &&
+        firestore.get(/databases/(default)/documents/workspaces/$(workspaceId)).data.ownerId == request.auth.uid;
     }
   }
 }
