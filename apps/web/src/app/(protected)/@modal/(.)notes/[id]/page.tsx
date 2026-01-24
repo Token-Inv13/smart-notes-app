@@ -83,6 +83,10 @@ function sanitizeFilename(raw: string) {
   return `${shortBase}.${ext}`;
 }
 
+function normalizeStoragePath(path: string) {
+  return String(path ?? "").replace(/^\/+/, "");
+}
+
 function formatFrDateTime(ts?: NoteDoc["updatedAt"] | NoteDoc["createdAt"] | null) {
   if (!ts) return "—";
   if (typeof (ts as any)?.toDate !== "function") return "—";
@@ -182,7 +186,9 @@ export default function NoteDetailModal(props: any) {
     try {
       const attachmentId = safeId();
       const safeName = sanitizeFilename(file.name ?? "fichier");
-      const storagePath = `users/${user.uid}/notes/${note.id}/${attachmentId}-${safeName}`;
+      const storagePath = normalizeStoragePath(
+        `users/${user.uid}/notes/${note.id}/${attachmentId}-${safeName}`,
+      );
       const fileRef = ref(storage, storagePath);
       await uploadBytes(fileRef, file, { contentType: file.type });
 
@@ -253,7 +259,7 @@ export default function NoteDetailModal(props: any) {
 
   const handleDownloadAttachment = async (att: NoteAttachment) => {
     try {
-      const url = await getDownloadURL(ref(storage, att.storagePath));
+      const url = await getDownloadURL(ref(storage, normalizeStoragePath(att.storagePath)));
       const a = document.createElement("a");
       a.href = url;
       a.download = att.name;
@@ -280,7 +286,7 @@ export default function NoteDetailModal(props: any) {
     setUploadingAttachment(true);
     setAttachmentError(null);
     try {
-      await deleteObject(ref(storage, att.storagePath));
+      await deleteObject(ref(storage, normalizeStoragePath(att.storagePath)));
       const next = attachments.filter((a) => a.id !== att.id);
       await updateDoc(doc(db, "notes", note.id), {
         attachments: next,
