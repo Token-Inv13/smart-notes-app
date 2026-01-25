@@ -123,6 +123,7 @@ export default function NoteDetailModal(props: any) {
   const [exportFeedback, setExportFeedback] = useState<string | null>(null);
 
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [busyAttachmentId, setBusyAttachmentId] = useState<string | null>(null);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -284,9 +285,19 @@ export default function NoteDetailModal(props: any) {
     if (!confirm("Supprimer ce fichier joint ?")) return;
 
     setUploadingAttachment(true);
+    setBusyAttachmentId(att.id);
     setAttachmentError(null);
     try {
-      await deleteObject(ref(storage, normalizeStoragePath(att.storagePath)));
+      try {
+        await deleteObject(ref(storage, normalizeStoragePath(att.storagePath)));
+      } catch (e) {
+        const err = e as any;
+        if (typeof err?.code === "string" && err.code === "storage/object-not-found") {
+          // continue
+        } else {
+          throw e;
+        }
+      }
       const next = attachments.filter((a) => a.id !== att.id);
       await updateDoc(doc(db, "notes", note.id), {
         attachments: next,
@@ -298,6 +309,7 @@ export default function NoteDetailModal(props: any) {
       setAttachmentError(e instanceof Error ? e.message : "Erreur lors de la suppression du fichier.");
     } finally {
       setUploadingAttachment(false);
+      setBusyAttachmentId(null);
     }
   };
 
@@ -904,10 +916,10 @@ export default function NoteDetailModal(props: any) {
                                 <button
                                   type="button"
                                   className="px-3 py-2 rounded-md border border-input text-sm"
-                                  disabled={uploadingAttachment}
+                                  disabled={uploadingAttachment || busyAttachmentId === att.id}
                                   onClick={() => void handleDeleteAttachment(att)}
                                 >
-                                  Supprimer
+                                  {busyAttachmentId === att.id ? "Suppression…" : "Supprimer"}
                                 </button>
                               </div>
                             </div>
@@ -938,13 +950,23 @@ export default function NoteDetailModal(props: any) {
                               </div>
                               <div className="text-xs text-muted-foreground">{formatBytes(att.size)}</div>
                             </div>
-                            <button
-                              type="button"
-                              className="px-3 py-2 rounded-md border border-input text-sm"
-                              onClick={() => void handleDownloadAttachment(att)}
-                            >
-                              Télécharger
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                className="px-3 py-2 rounded-md border border-input text-sm"
+                                onClick={() => void handleDownloadAttachment(att)}
+                              >
+                                Télécharger
+                              </button>
+                              <button
+                                type="button"
+                                className="px-3 py-2 rounded-md border border-input text-sm"
+                                disabled={uploadingAttachment || busyAttachmentId === att.id}
+                                onClick={() => void handleDeleteAttachment(att)}
+                              >
+                                {busyAttachmentId === att.id ? "Suppression…" : "Supprimer"}
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
