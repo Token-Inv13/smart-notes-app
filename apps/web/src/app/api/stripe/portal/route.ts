@@ -27,6 +27,7 @@ export async function POST() {
 
     const customer = userData.stripeCustomerId;
     if (!customer) {
+      console.error('Stripe portal: missing stripeCustomerId', { uid: decoded.uid });
       return new NextResponse('Missing stripeCustomerId', { status: 400 });
     }
 
@@ -41,7 +42,6 @@ export async function POST() {
     return NextResponse.json({ url: portal.url });
   } catch (e) {
     console.error('Error creating billing portal session', e);
-    const message = e instanceof Error ? e.message : 'Failed to create portal session';
-    return new NextResponse(message, { status: 500 });
+    return new NextResponse('Failed to create portal session', { status: 500 });
   }
 }

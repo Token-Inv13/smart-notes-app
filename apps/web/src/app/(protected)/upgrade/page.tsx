@@ -46,7 +46,19 @@ export default function UpgradePage() {
       const res = await fetch('/api/stripe/portal', { method: 'POST' });
       if (!res.ok) {
         const text = await res.text().catch(() => '');
-        throw new Error(text || 'Failed to open portal');
+        const lower = text.toLowerCase();
+
+        if (res.status === 401) {
+          throw new Error('SESSION_EXPIRED');
+        }
+        if (res.status === 400 && lower.includes('stripecustomerid')) {
+          throw new Error('MISSING_CUSTOMER');
+        }
+        if (res.status === 500) {
+          throw new Error('PORTAL_UNAVAILABLE');
+        }
+
+        throw new Error(text || `PORTAL_HTTP_${res.status}`);
       }
 
       const json = (await res.json()) as { url?: string };
@@ -54,7 +66,18 @@ export default function UpgradePage() {
       window.location.href = json.url;
     } catch (e) {
       console.error('Portal error', e);
-      setPortalError("Impossible d’ouvrir la gestion de l’abonnement. Réessaie dans quelques instants.");
+      const message = e instanceof Error ? e.message : '';
+      if (message === 'SESSION_EXPIRED') {
+        setPortalError('Ta session a expiré. Rafraîchis la page et reconnecte-toi si besoin.');
+      } else if (message === 'MISSING_CUSTOMER') {
+        setPortalError(
+          'La gestion de l’abonnement n’est pas encore disponible pour ce compte. Contacte le support si le problème persiste.',
+        );
+      } else if (message === 'PORTAL_UNAVAILABLE') {
+        setPortalError('Le portail Stripe est temporairement indisponible. Réessaie dans quelques instants.');
+      } else {
+        setPortalError('Impossible d’ouvrir la gestion de l’abonnement. Vérifie ta connexion et réessaie.');
+      }
     } finally {
       setPortalLoading(false);
     }
@@ -135,15 +158,6 @@ export default function UpgradePage() {
             >
               {isPro ? 'Pro activé' : loading ? 'Redirection…' : 'Passer à Pro'}
             </button>
-
-            <button
-              type="button"
-              onClick={handleOpenPortal}
-              disabled={portalLoading || !isPro || !stripeCustomerId}
-              className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium disabled:opacity-50"
-            >
-              {portalLoading ? 'Ouverture…' : 'Gérer l’abonnement'}
-            </button>
           </div>
 
           {!isPro && (
@@ -152,15 +166,31 @@ export default function UpgradePage() {
             </div>
           )}
 
+          {isPro && (
+            <div className="rounded-lg border border-border bg-background p-3 space-y-2">
+              <div className="text-sm font-medium">Gérer mon abonnement (Stripe sécurisé)</div>
+              <div className="text-xs text-muted-foreground">
+                Accède au portail Stripe pour modifier ton moyen de paiement, télécharger tes factures, ou annuler.
+              </div>
+              <button
+                type="button"
+                onClick={handleOpenPortal}
+                disabled={portalLoading || !stripeCustomerId}
+                className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium disabled:opacity-50"
+              >
+                {portalLoading ? 'Ouverture…' : 'Ouvrir le portail Stripe'}
+              </button>
+              {!stripeCustomerId && (
+                <div className="text-xs text-muted-foreground">
+                  Ce compte n’est pas encore relié à Stripe. Si tu viens de t’abonner, attends quelques instants puis réessaie.
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="text-xs text-muted-foreground">
             Paiement sécurisé par Stripe. Annulation en un clic, sans engagement. Le statut Pro est mis à jour automatiquement.
           </div>
-
-          {isPro && !stripeCustomerId && (
-            <p className="text-sm text-muted-foreground">
-              La gestion de l’abonnement n’est pas disponible pour ce compte pour le moment.
-            </p>
-          )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
           {portalError && <p className="text-sm text-destructive">{portalError}</p>}

@@ -172,7 +172,7 @@ export default function DashboardPage() {
             <div className="sn-alert sn-alert--error" role="status" aria-live="polite">
               {noteActionError}
             </div>
-            {noteActionError.includes('Limite Free atteinte') && (
+            {!isPro && noteActionError.includes('Limite Free atteinte') && (
               <Link
                 href="/upgrade"
                 className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
@@ -309,7 +309,7 @@ export default function DashboardPage() {
             <div className="sn-alert sn-alert--error" role="status" aria-live="polite">
               {taskActionError}
             </div>
-            {taskActionError.includes('Limite Free atteinte') && (
+            {!isPro && taskActionError.includes('Limite Free atteinte') && (
               <Link
                 href="/upgrade"
                 className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"

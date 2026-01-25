@@ -64,6 +64,7 @@ export default function SettingsPage() {
   };
 
   const hasFcmTokens = Object.keys(user?.fcmTokens ?? {}).length > 0;
+  const isPro = (user?.plan ?? "free") === "pro";
 
   const handleToggleTaskReminders = async () => {
     if (!user) return;
@@ -437,12 +438,32 @@ export default function SettingsPage() {
             <div className="text-sm">
               <span className="font-medium">Plan actuel :</span> <span>{user.plan ?? 'free'}</span>
             </div>
-            <Link
-              href="/upgrade"
-              className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
-            >
-              Débloquer Pro
-            </Link>
+            {isPro ? (
+              <div className="space-y-2">
+                <div className="text-xs px-2 py-1 rounded-full border border-primary/30 bg-primary/10 text-foreground inline-flex w-fit">
+                  Pro actif
+                </div>
+                <Link
+                  href="/upgrade"
+                  className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium"
+                >
+                  Gérer l’abonnement
+                </Link>
+                <div className="text-xs text-muted-foreground">
+                  Modification et annulation via le portail sécurisé Stripe.
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Link
+                  href="/upgrade"
+                  className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+                >
+                  Débloquer Pro
+                </Link>
+                <div className="text-xs text-muted-foreground">Essai immédiat. Annulation en un clic.</div>
+              </div>
+            )}
           </section>
         </div>
       )}

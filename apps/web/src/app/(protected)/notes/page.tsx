@@ -236,7 +236,7 @@ export default function NotesPage() {
           </div>
         )}
         {editError && <div className="mt-2 sn-alert sn-alert--error">{editError}</div>}
-        {showUpgradeCta && (
+        {!isPro && showUpgradeCta && (
           <Link
             href="/upgrade"
             className="mt-2 inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
