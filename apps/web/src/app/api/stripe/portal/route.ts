@@ -24,6 +24,12 @@ function getCustomerIdFromSubscription(sub: Stripe.Subscription): string | null 
   return null;
 }
 
+async function recoverCustomerIdByEmail(stripe: Stripe, email: string): Promise<string | null> {
+  const res = await stripe.customers.list({ email, limit: 1 });
+  const first = res.data?.[0];
+  return first?.id ?? null;
+}
+
 export async function POST() {
   try {
     const sessionCookie = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
@@ -64,7 +70,10 @@ export async function POST() {
         return_url: `${origin}/upgrade`,
       });
     } catch (err) {
-      if (isNoSuchCustomerError(err) && typeof userData.stripeSubscriptionId === 'string' && userData.stripeSubscriptionId) {
+      if (!isNoSuchCustomerError(err)) throw err;
+
+      // Recovery path #1: derive customer from subscription id (if present)
+      if (typeof userData.stripeSubscriptionId === 'string' && userData.stripeSubscriptionId) {
         try {
           const sub = await stripe.subscriptions.retrieve(userData.stripeSubscriptionId);
           const recoveredCustomer = getCustomerIdFromSubscription(sub);
@@ -74,15 +83,27 @@ export async function POST() {
               customer: recoveredCustomer,
               return_url: `${origin}/upgrade`,
             });
-          } else {
-            throw err;
+            return NextResponse.json({ url: portal.url });
           }
         } catch {
-          throw err;
+          // ignore, try email-based recovery
         }
-      } else {
-        throw err;
       }
+
+      // Recovery path #2: find an existing live customer by email
+      if (typeof decoded.email === 'string' && decoded.email) {
+        const recoveredCustomer = await recoverCustomerIdByEmail(stripe, decoded.email);
+        if (recoveredCustomer) {
+          await db.collection('users').doc(decoded.uid).update({ stripeCustomerId: recoveredCustomer });
+          portal = await stripe.billingPortal.sessions.create({
+            customer: recoveredCustomer,
+            return_url: `${origin}/upgrade`,
+          });
+          return NextResponse.json({ url: portal.url });
+        }
+      }
+
+      throw err;
     }
 
     return NextResponse.json({ url: portal.url });
