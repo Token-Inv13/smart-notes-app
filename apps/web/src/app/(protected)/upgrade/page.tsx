@@ -256,6 +256,24 @@ export default function UpgradePage() {
                 </div>
               )}
 
+              {!isPro && (
+                <div className="rounded-lg border border-border bg-background p-3 space-y-2">
+                  <div className="text-sm font-medium">Déjà abonné ?</div>
+                  <div className="text-xs text-muted-foreground">
+                    Si ton paiement Stripe a été confirmé mais que ton statut est encore Free, rafraîchis le statut.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSync}
+                    disabled={syncLoading}
+                    className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium disabled:opacity-50"
+                  >
+                    {syncLoading ? 'Rafraîchissement…' : 'Rafraîchir le statut'}
+                  </button>
+                  {syncError && <p className="text-sm text-destructive">{syncError}</p>}
+                </div>
+              )}
+
               {isPro && hasActiveStripeSubscription && (
                 <div className="rounded-lg border border-border bg-background p-3 space-y-2">
                   <div className="text-sm font-medium">Gérer mon abonnement (Stripe sécurisé)</div>
