@@ -13,6 +13,9 @@
   --radius2:22px;
 }
 
+@-ms-viewport{width:device-width;}
+@viewport{width:device-width;}
+
 *{box-sizing:border-box}
 html,body{height:100%}
 body{
