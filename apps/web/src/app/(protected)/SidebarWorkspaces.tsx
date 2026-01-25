@@ -8,6 +8,8 @@ import {
   Folder,
   Plus,
   PanelLeft,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { z } from "zod";
 import {
@@ -79,13 +81,17 @@ export default function SidebarWorkspaces({
   }, [pathname, lastSection]);
 
   const navButtonClass = (active: boolean) =>
-    `w-full inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent ${
-      active ? " bg-accent font-semibold" : ""
+    `w-full inline-flex items-center justify-start gap-2 px-3 py-2 rounded-lg text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background ${
+      active
+        ? "bg-primary/10 text-foreground border border-primary/20 font-semibold"
+        : "text-muted-foreground hover:text-foreground hover:bg-accent/60 border border-transparent"
     }`;
 
   const iconButtonClass = (active: boolean) =>
-    `h-10 w-10 inline-flex items-center justify-center rounded-md border border-border bg-background hover:bg-accent ${
-      active ? " bg-accent border-primary" : ""
+    `h-10 w-10 inline-flex items-center justify-center rounded-lg text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background ${
+      active
+        ? "bg-primary/10 text-foreground border border-primary/20"
+        : "border border-transparent hover:bg-accent/60 hover:text-foreground"
     }`;
 
   const isNavActive = (href: "/dashboard" | "/notes" | "/tasks" | "/settings") => {
@@ -127,30 +133,48 @@ export default function SidebarWorkspaces({
       <div
         data-ws-row="true"
         data-ws-id={ws.id ?? ""}
-        className={`border rounded p-2 ${selected ? "border-primary bg-accent" : "border-border bg-card"}`}
+        className={`group rounded-lg px-3 py-2 transition-colors ${
+          selected
+            ? "bg-accent/70 border border-border"
+            : "border border-transparent hover:bg-accent/50"
+        }`}
       >
         {!renamingId || ws.id !== renamingId ? (
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
               onClick={() => navigateWithWorkspace(ws.id ?? null)}
-              className={`text-left text-sm truncate ${selected ? "font-semibold" : ""}`}
+              className={`min-w-0 flex-1 text-left text-sm truncate transition-colors ${
+                selected ? "font-semibold text-foreground" : "text-foreground"
+              }`}
               aria-label={`Ouvrir le dossier ${ws.name}`}
               disabled={!ws.id}
             >
-              {ws.name}
+              <span className="inline-flex items-center gap-2 min-w-0">
+                <Folder className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="truncate">{ws.name}</span>
+              </span>
             </button>
-            <div className="flex items-center gap-2 shrink-0">
-              <button type="button" onClick={() => startRename(ws)} className="text-xs underline" disabled={!ws.id}>
-                Renommer
+            <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+              <button
+                type="button"
+                onClick={() => startRename(ws)}
+                className="h-8 w-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                aria-label={`Renommer le dossier ${ws.name}`}
+                title="Renommer"
+                disabled={!ws.id}
+              >
+                <Pencil className="h-4 w-4" />
               </button>
               <button
                 type="button"
                 onClick={() => handleDelete(ws)}
-                className="text-xs underline text-destructive"
+                className="h-8 w-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                aria-label={`Supprimer le dossier ${ws.name}`}
+                title="Supprimer"
                 disabled={!ws.id || deletingId === ws.id}
               >
-                {deletingId === ws.id ? "..." : "Suppr"}
+                {deletingId === ws.id ? <span className="text-xs">…</span> : <Trash2 className="h-4 w-4" />}
               </button>
             </div>
           </div>
@@ -160,7 +184,7 @@ export default function SidebarWorkspaces({
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
               placeholder="Nom du dossier"
-              className="w-full border border-input rounded px-3 py-2 bg-background text-sm"
+              className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               autoFocus
             />
             {renameError && <div className="text-xs text-destructive">{renameError}</div>}
@@ -169,7 +193,7 @@ export default function SidebarWorkspaces({
                 type="button"
                 onClick={() => handleRename(ws)}
                 disabled={savingRename}
-                className="px-3 py-1 rounded-md bg-primary text-primary-foreground text-xs disabled:opacity-50"
+                className="px-3 py-1 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 disabled:opacity-50"
               >
                 {savingRename ? "..." : "Sauver"}
               </button>
@@ -177,7 +201,7 @@ export default function SidebarWorkspaces({
                 type="button"
                 onClick={cancelRename}
                 disabled={savingRename}
-                className="px-3 py-1 rounded-md border border-input text-xs disabled:opacity-50"
+                className="px-3 py-1 rounded-md border border-input text-xs hover:bg-accent disabled:opacity-50"
               >
                 Annuler
               </button>
@@ -412,7 +436,7 @@ export default function SidebarWorkspaces({
             </button>
           </div>
 
-          <div className="border-t border-border pt-3">
+          <div className="border-t border-border/60 pt-3">
             <div className="flex flex-col items-center gap-2">
               {sortedWorkspaces.map((ws) => {
                 const isSelected = ws.id && ws.id === currentWorkspaceId;
@@ -443,7 +467,7 @@ export default function SidebarWorkspaces({
             </div>
           </div>
 
-          <div className="border-t border-border pt-3">
+          <div className="border-t border-border/60 pt-3">
             <div className="flex flex-col items-center gap-2">
               <button
                 type="button"
@@ -470,13 +494,16 @@ export default function SidebarWorkspaces({
       ) : (
         <>
           <div>
-            <div className="text-sm font-semibold mb-2">Navigation</div>
+            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 px-1">
+              Navigation
+            </div>
             <button
               type="button"
               onClick={navigateToDashboard}
               className={navButtonClass(isNavActive("/dashboard"))}
             >
-              Favoris
+              <LayoutDashboard className="h-4 w-4" />
+              <span>Favoris</span>
             </button>
 
             <button
@@ -484,7 +511,10 @@ export default function SidebarWorkspaces({
               onClick={navigateToNotes}
               className={navButtonClass(isNavActive("/notes"))}
             >
-              Notes
+              <span className="h-4 w-4 inline-flex items-center justify-center rounded text-[11px] font-semibold bg-muted text-muted-foreground">
+                N
+              </span>
+              <span>Notes</span>
             </button>
 
             <button
@@ -492,7 +522,10 @@ export default function SidebarWorkspaces({
               onClick={navigateToTasks}
               className={navButtonClass(isNavActive("/tasks"))}
             >
-              Tâches
+              <span className="h-4 w-4 inline-flex items-center justify-center rounded text-[11px] font-semibold bg-muted text-muted-foreground">
+                T
+              </span>
+              <span>Tâches</span>
             </button>
 
             <button
@@ -500,11 +533,17 @@ export default function SidebarWorkspaces({
               onClick={navigateToTodo}
               className={navButtonClass(pathname.startsWith("/todo"))}
             >
-              ToDo
+              <span className="h-4 w-4 inline-flex items-center justify-center rounded text-[11px] font-semibold bg-muted text-muted-foreground">
+                ✓
+              </span>
+              <span>ToDo</span>
             </button>
           </div>
+          <div className="h-px bg-border/60" />
           <div>
-            <div className="text-sm font-semibold mb-2">Dossiers</div>
+            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 px-1">
+              Dossiers
+            </div>
 
             <div className="mt-2 space-y-2">
               {loading && (
@@ -527,14 +566,17 @@ export default function SidebarWorkspaces({
             </div>
           </div>
 
-          <div className="border-t border-border pt-4">
-            <div className="text-sm font-semibold mb-2">Nouveau dossier</div>
+          <div className="h-px bg-border/60" />
+          <div>
+            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 px-1">
+              Nouveau dossier
+            </div>
             <input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               aria-label="Nom du nouveau dossier"
               placeholder="Ex: Travail"
-              className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+              className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
             {createError && (
               <div className="mt-2 sn-alert sn-alert--error" role="status" aria-live="polite">
@@ -551,14 +593,18 @@ export default function SidebarWorkspaces({
             </button>
           </div>
 
-          <div className="border-t border-border pt-4">
-            <div className="text-sm font-semibold mb-2">Paramètres</div>
+          <div className="h-px bg-border/60" />
+          <div>
+            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 px-1">
+              Paramètres
+            </div>
             <button
               type="button"
               onClick={navigateToSettings}
               className={navButtonClass(isNavActive("/settings"))}
             >
-              Ouvrir les paramètres
+              <Settings className="h-4 w-4" />
+              <span>Ouvrir les paramètres</span>
             </button>
           </div>
         </>

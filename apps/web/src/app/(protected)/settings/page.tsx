@@ -223,8 +223,11 @@ export default function SettingsPage() {
     !hasFcmTokens;
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Paramètres</h1>
+    <div className="space-y-6 max-w-3xl mx-auto">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-xl font-semibold">Paramètres</h1>
+        <p className="text-sm text-muted-foreground">Gère ton profil, l’affichage et ton abonnement.</p>
+      </div>
 
       <div>
         <LogoutButton />
@@ -249,8 +252,11 @@ export default function SettingsPage() {
 
       {!loading && !error && user && (
         <div className="space-y-6">
-          <section className="border border-border rounded-lg p-4 bg-card space-y-3">
-            <h2 className="text-lg font-semibold">Profil</h2>
+          <section className="border border-border/70 rounded-xl p-5 bg-card shadow-sm space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">Profil</h2>
+              <div className="text-xs text-muted-foreground">Compte</div>
+            </div>
             <div className="text-sm">
               <span className="font-medium">Email :</span> <span>{user.email || "—"}</span>
             </div>
@@ -272,15 +278,18 @@ export default function SettingsPage() {
               type="button"
               onClick={handleSaveDisplayName}
               disabled={savingProfile}
-              className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+              className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 disabled:opacity-50"
             >
               {savingProfile ? "Enregistrement…" : "Enregistrer"}
             </button>
             {profileMessage && <p className="text-sm">{profileMessage}</p>}
           </section>
 
-          <section className="border border-border rounded-lg p-4 bg-card space-y-3">
-            <h2 className="text-lg font-semibold">Apparence</h2>
+          <section className="border border-border/70 rounded-xl p-5 bg-card shadow-sm space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">Apparence</h2>
+              <div className="text-xs text-muted-foreground">Thème</div>
+            </div>
 
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -293,7 +302,7 @@ export default function SettingsPage() {
                 type="button"
                 onClick={handleToggleThemeMode}
                 disabled={savingAppearance}
-                className="border border-border rounded px-3 py-2 bg-background text-sm disabled:opacity-50"
+                className="border border-border rounded-lg px-3 py-2 bg-background text-sm hover:bg-accent/60 disabled:opacity-50"
               >
                 Basculer
               </button>
@@ -305,7 +314,7 @@ export default function SettingsPage() {
                 value={user.settings?.appearance?.background ?? "none"}
                 onChange={(e) => handleSetBackground(e.target.value as "none" | "dots" | "grid")}
                 disabled={savingAppearance}
-                className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm disabled:opacity-50"
+                className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm disabled:opacity-50"
                 aria-label="Fond de page"
               >
                 <option value="none">Aucun</option>
@@ -317,15 +326,18 @@ export default function SettingsPage() {
             {appearanceMessage && <p className="text-sm">{appearanceMessage}</p>}
           </section>
 
-          <section className="border border-border rounded-lg p-4 bg-card space-y-3">
-            <h2 className="text-lg font-semibold">Affichage</h2>
+          <section className="border border-border/70 rounded-xl p-5 bg-card shadow-sm space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">Affichage</h2>
+              <div className="text-xs text-muted-foreground">Préférences</div>
+            </div>
 
             <div className="space-y-1">
               <div className="text-sm font-medium">Notes</div>
               <select
                 value={notesViewMode}
                 onChange={(e) => setAndPersistNotesViewMode(e.target.value as "list" | "grid")}
-                className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
                 aria-label="Affichage des notes"
               >
                 <option value="list">Liste</option>
@@ -337,10 +349,8 @@ export default function SettingsPage() {
               <div className="text-sm font-medium">Tâches</div>
               <select
                 value={tasksViewMode}
-                onChange={(e) =>
-                  setAndPersistTasksViewMode(e.target.value as "list" | "grid" | "kanban")
-                }
-                className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                onChange={(e) => setAndPersistTasksViewMode(e.target.value as "list" | "grid" | "kanban")}
+                className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
                 aria-label="Affichage des tâches"
               >
                 <option value="list">Liste</option>
@@ -350,8 +360,11 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          <section className="border border-border rounded-lg p-4 bg-card space-y-2">
-            <h2 className="text-lg font-semibold">Notifications</h2>
+          <section className="border border-border/70 rounded-xl p-5 bg-card shadow-sm space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">Notifications</h2>
+              <div className="text-xs text-muted-foreground">Rappels</div>
+            </div>
             <div className="text-sm">
               <span className="font-medium">Rappels de tâches:</span>{" "}
               <span>
@@ -377,7 +390,7 @@ export default function SettingsPage() {
                 type="button"
                 onClick={handleToggleTaskReminders}
                 disabled={toggling}
-                className="border border-border rounded px-3 py-1 bg-background"
+                className="border border-border rounded-lg px-3 py-2 bg-background text-sm hover:bg-accent/60 disabled:opacity-50"
               >
                 {toggling ? "Mise à jour…" : "Basculer rappels"}
               </button>
@@ -393,7 +406,7 @@ export default function SettingsPage() {
                   type="button"
                   onClick={handleEnablePushNotifications}
                   disabled={enablingPush}
-                  className="border border-border rounded px-3 py-1 bg-background"
+                  className="border border-border rounded-lg px-3 py-2 bg-background text-sm hover:bg-accent/60 disabled:opacity-50"
                 >
                   {enablingPush ? "Enregistrement…" : "Enregistrer cet appareil"}
                 </button>
@@ -422,7 +435,7 @@ export default function SettingsPage() {
                     type="button"
                     onClick={handleEnablePushNotifications}
                     disabled={enablingPush}
-                    className="border border-border rounded px-3 py-1 bg-background"
+                    className="border border-border rounded-lg px-3 py-2 bg-background text-sm hover:bg-accent/60 disabled:opacity-50"
                   >
                     {enablingPush ? "Activation…" : "Activer les notifications"}
                   </button>
@@ -437,8 +450,11 @@ export default function SettingsPage() {
             )}
           </section>
 
-          <section className="border border-border rounded-lg p-4 bg-card space-y-2">
-            <h2 className="text-lg font-semibold">Abonnement</h2>
+          <section className="border border-primary/20 rounded-xl p-5 bg-gradient-to-b from-primary/5 to-transparent shadow-sm space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">Abonnement</h2>
+              <div className="text-xs text-muted-foreground">Pro</div>
+            </div>
             <div className="text-sm">
               <span className="font-medium">Plan actuel :</span> <span>{user.plan ?? 'free'}</span>
             </div>
@@ -449,7 +465,7 @@ export default function SettingsPage() {
                 </div>
                 <Link
                   href="/upgrade"
-                  className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium"
+                  className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-border bg-background text-sm font-medium hover:bg-accent/60"
                 >
                   Gérer l’abonnement
                 </Link>
@@ -460,7 +476,7 @@ export default function SettingsPage() {
                       href={googlePlayManageUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium"
+                      className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-border bg-background text-sm font-medium hover:bg-accent/60"
                     >
                       Ouvrir Google Play
                     </a>
@@ -477,7 +493,7 @@ export default function SettingsPage() {
               <div className="space-y-2">
                 <Link
                   href="/upgrade"
-                  className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+                  className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-95"
                 >
                   Débloquer Pro
                 </Link>

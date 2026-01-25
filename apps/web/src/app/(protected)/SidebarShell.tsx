@@ -114,9 +114,15 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   return (
     <div className="min-h-[100dvh] flex bg-background text-foreground overflow-x-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       {/* Desktop sidebar */}
-      <aside className={`hidden md:flex ${sidebarWidthClass} border-r border-border`}>
+      <aside className={`hidden md:flex ${sidebarWidthClass} border-r border-border bg-background/95`}>
         <div className="w-full flex flex-col">
-          <div className={collapsed ? "p-3 flex flex-col items-center gap-2" : "p-3 flex items-center justify-between gap-2"}>
+          <div
+            className={
+              collapsed
+                ? "p-3 flex flex-col items-center gap-2 border-b border-border/60"
+                : "p-3 flex items-center justify-between gap-2 border-b border-border/60"
+            }
+          >
             <div className={collapsed ? "flex flex-col items-center gap-2" : "min-w-0 flex items-center gap-2"}>
               <img
                 src="/favicon.svg"
@@ -128,14 +134,14 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
             <button
               type="button"
               onClick={toggleCollapsed}
-              className="inline-flex items-center justify-center h-9 w-9 rounded-md border border-border bg-background hover:bg-accent"
+              className="inline-flex items-center justify-center h-9 w-9 rounded-md border border-border bg-background hover:bg-accent transition-colors"
               aria-label={collapsed ? "Agrandir la sidebar" : "Réduire la sidebar"}
               title={collapsed ? "Agrandir" : "Réduire"}
             >
               <PanelLeft className="h-4 w-4" />
             </button>
           </div>
-          <div className="px-3 pb-3 overflow-y-auto">
+          <div className="px-3 py-3 overflow-y-auto">
             <SidebarWorkspaces
               collapsed={collapsed}
               onRequestExpand={collapsed ? () => setCollapsed(false) : undefined}
@@ -192,7 +198,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
-            className="inline-flex items-center justify-center h-9 w-9 rounded-md border border-border bg-background hover:bg-accent"
+            className="inline-flex items-center justify-center h-9 w-9 rounded-md border border-border bg-background hover:bg-accent transition-colors"
             aria-label="Ouvrir le menu"
           >
             <Menu className="h-4 w-4" />
