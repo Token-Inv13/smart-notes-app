@@ -10,21 +10,29 @@ service firebase.storage {
       return request.auth.uid == userId;
     }
 
-    function isAllowedAttachmentMime() {
+    function isProUser(userId) {
+      return firestore.exists(/databases/(default)/documents/users/$(userId)) &&
+        firestore.get(/databases/(default)/documents/users/$(userId)).data.plan == 'pro';
+    }
+
+    function isAllowedAttachmentMime(userId) {
       return request.resource.contentType == 'image/jpeg' ||
         request.resource.contentType == 'image/png' ||
         request.resource.contentType == 'image/webp' ||
         request.resource.contentType == 'application/pdf' ||
-        request.resource.contentType == 'video/mp4' ||
-        request.resource.contentType == 'video/quicktime';
+        (isProUser(userId) && (
+          request.resource.contentType == 'video/mp4' ||
+          request.resource.contentType == 'video/quicktime'
+        ));
     }
 
-    function isAllowedAttachmentSize() {
-      return request.resource.size < 120 * 1024 * 1024;
+    function isAllowedAttachmentSize(userId) {
+      return request.resource.size < (isProUser(userId) ? 120 * 1024 * 1024 : 20 * 1024 * 1024);
     }
 
-    function isAllowedAttachmentExtension(path) {
-      return path.matches('.*\\.(jpg|jpeg|png|webp|pdf|mp4|mov)$');
+    function isAllowedAttachmentExtension(userId, path) {
+      return path.matches('.*\\.(jpg|jpeg|png|webp|pdf)$') ||
+        (isProUser(userId) && path.matches('.*\\.(mp4|mov)$'));
     }
 
     function isNotesAttachmentPath(path) {
@@ -44,7 +52,7 @@ service firebase.storage {
       allow read: if isAuthenticated() && isOwner(userId);
       allow write: if isAuthenticated() && isOwner(userId) && (
         request.resource == null ||
-        (isAllowedAttachmentSize() && (isAllowedAttachmentMime() || isAllowedAttachmentExtension(allFiles)))
+        (isAllowedAttachmentSize(userId) && (isAllowedAttachmentMime(userId) || isAllowedAttachmentExtension(userId, allFiles)))
       );
     }
     

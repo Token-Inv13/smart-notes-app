@@ -10,6 +10,11 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
 
+    function isProUser() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.plan == 'pro';
+    }
+
     function isNonEmptyString(value) {
       return value is string && value.size() > 0;
     }
@@ -143,15 +148,15 @@ service cloud.firestore {
     
     // Task Reminders collection
     match /taskReminders/{reminderId} {
-      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow read: if request.auth != null && isProUser() && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && isProUser() && request.auth.uid == request.resource.data.userId;
       // Only allow updates to the 'sent' field
       allow update: if request.auth != null && 
                       request.auth.uid == resource.data.userId &&
                       request.resource.data.userId == resource.data.userId &&
                       request.resource.data.taskId == resource.data.taskId &&
                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dueDate', 'reminderTime', 'sent']);
-      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow delete: if request.auth != null && isProUser() && request.auth.uid == resource.data.userId;
     }
     
     // Workspaces collection
