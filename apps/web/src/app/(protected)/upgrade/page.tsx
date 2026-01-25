@@ -224,7 +224,7 @@ export default function UpgradePage() {
                   <button
                     type="button"
                     onClick={handleOpenPortal}
-                    disabled={portalLoading || !stripeCustomerId}
+                    disabled={portalLoading}
                     className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium disabled:opacity-50"
                   >
                     {portalLoading ? 'Ouverture…' : 'Ouvrir le portail Stripe'}
