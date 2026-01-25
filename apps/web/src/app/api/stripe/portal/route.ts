@@ -48,7 +48,28 @@ export async function POST() {
 
     return NextResponse.json({ url: portal.url });
   } catch (e) {
-    console.error('Error creating billing portal session', e);
+    const stripeError = e as any;
+    const message = typeof stripeError?.message === 'string' ? stripeError.message : '';
+    const lower = message.toLowerCase();
+
+    console.error('Error creating billing portal session', {
+      message,
+      type: stripeError?.type,
+      code: stripeError?.code,
+      requestId: stripeError?.requestId,
+      statusCode: stripeError?.statusCode,
+    });
+
+    if (lower.includes('return_url') && (lower.includes('allowed') || lower.includes('not allowed'))) {
+      return new NextResponse('RETURN_URL_NOT_ALLOWED', { status: 400 });
+    }
+    if (lower.includes('no such customer')) {
+      return new NextResponse('NO_SUCH_CUSTOMER', { status: 400 });
+    }
+    if (lower.includes('customer portal') && (lower.includes('not enabled') || lower.includes('not been configured'))) {
+      return new NextResponse('PORTAL_NOT_ENABLED', { status: 500 });
+    }
+
     return new NextResponse('Failed to create portal session', { status: 500 });
   }
 }

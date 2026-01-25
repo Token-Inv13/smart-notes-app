@@ -62,8 +62,17 @@ export default function UpgradePage() {
         if (res.status === 401) {
           throw new Error('SESSION_EXPIRED');
         }
+        if (res.status === 400 && lower.includes('return_url_not_allowed')) {
+          throw new Error('RETURN_URL_NOT_ALLOWED');
+        }
+        if (res.status === 400 && lower.includes('no_such_customer')) {
+          throw new Error('NO_SUCH_CUSTOMER');
+        }
         if (res.status === 400 && lower.includes('stripecustomerid')) {
           throw new Error('MISSING_CUSTOMER');
+        }
+        if (res.status === 500 && lower.includes('portal_not_enabled')) {
+          throw new Error('PORTAL_NOT_ENABLED');
         }
         if (res.status === 500) {
           throw new Error('PORTAL_UNAVAILABLE');
@@ -80,10 +89,20 @@ export default function UpgradePage() {
       const message = e instanceof Error ? e.message : '';
       if (message === 'SESSION_EXPIRED') {
         setPortalError('Ta session a expiré. Rafraîchis la page et reconnecte-toi si besoin.');
+      } else if (message === 'RETURN_URL_NOT_ALLOWED') {
+        setPortalError(
+          'Configuration Stripe requise: ajoute https://app.tachesnotes.com/upgrade dans les URLs de retour autorisées du portail client, puis réessaie.',
+        );
+      } else if (message === 'NO_SUCH_CUSTOMER') {
+        setPortalError(
+          'Ce compte Stripe est introuvable (souvent un mismatch test/live). Vérifie que STRIPE_SECRET_KEY et le customerId utilisent le même mode.',
+        );
       } else if (message === 'MISSING_CUSTOMER') {
         setPortalError(
           'La gestion de l’abonnement n’est pas encore disponible pour ce compte. Contacte le support si le problème persiste.',
         );
+      } else if (message === 'PORTAL_NOT_ENABLED') {
+        setPortalError('Active le portail client dans Stripe (Billing > Customer portal), puis réessaie.');
       } else if (message === 'PORTAL_UNAVAILABLE') {
         setPortalError('Le portail Stripe est temporairement indisponible. Réessaie dans quelques instants.');
       } else {
