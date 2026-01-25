@@ -246,6 +246,13 @@ export default function NoteDetailModal(props: any) {
         name: err?.name,
       });
 
+      if (code === "storage/unauthorized") {
+        setAttachmentError(
+          "Import refusé. Vérifie que ton plan et ton fichier respectent les limites (Free: 20 Mo, Pro: 350 Mo).",
+        );
+        return;
+      }
+
       const uiMsg = [
         code ? `[${code}]` : null,
         message ?? null,
