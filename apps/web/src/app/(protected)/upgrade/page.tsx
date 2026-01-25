@@ -5,7 +5,7 @@ import { useUserSettings } from '@/hooks/useUserSettings';
 import type { UserDoc } from '@/types/firestore';
 
 export default function UpgradePage() {
-  const { data: userSettings } = useUserSettings();
+  const { data: userSettings, loading: userLoading } = useUserSettings();
   const isPro = userSettings?.plan === 'pro';
   const stripeCustomerId = (userSettings as UserDoc | undefined)?.stripeCustomerId;
 
@@ -32,7 +32,8 @@ export default function UpgradePage() {
       window.location.href = json.url;
     } catch (e) {
       console.error('Checkout error', e);
-      setError(e instanceof Error ? e.message : 'Erreur lors du paiement.');
+      setError("Impossible d’ouvrir le paiement pour le moment. Réessaie dans quelques instants.");
+    } finally {
       setLoading(false);
     }
   };
@@ -53,77 +54,117 @@ export default function UpgradePage() {
       window.location.href = json.url;
     } catch (e) {
       console.error('Portal error', e);
-      setPortalError(e instanceof Error ? e.message : 'Erreur lors de l’ouverture du portail.');
+      setPortalError("Impossible d’ouvrir la gestion de l’abonnement. Réessaie dans quelques instants.");
+    } finally {
       setPortalLoading(false);
     }
   };
 
   return (
-    <div className="max-w-3xl space-y-4">
-      <div className="space-y-1">
-        <h1 className="text-xl font-semibold">Débloquer Pro</h1>
+    <div className="max-w-3xl space-y-6">
+      <div className="space-y-2">
+        <h1 className="text-xl font-semibold">Abonnement</h1>
         <p className="text-sm text-muted-foreground">
-          Plus de limites, plus de favoris, et les rappels activés — pour 1,99€/mois.
+          Choisis le plan qui te convient. Tu peux annuler à tout moment depuis le portail sécurisé Stripe.
         </p>
       </div>
 
-      <div className="border border-border rounded-lg p-4 bg-card space-y-3">
-        <div className="text-sm">
-          <span className="font-medium">Statut actuel:</span> <span>{isPro ? 'Pro' : 'Free'}</span>
+      <div className="border border-border rounded-lg p-4 bg-card space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm">
+            <span className="font-medium">Statut actuel:</span>{' '}
+            <span>{userLoading ? 'Chargement…' : isPro ? 'Pro' : 'Free'}</span>
+          </div>
+          <div
+            className={`text-xs px-2 py-1 rounded-full border ${
+              isPro ? 'border-primary/30 bg-primary/10 text-foreground' : 'border-border bg-background text-muted-foreground'
+            }`}
+          >
+            {isPro ? 'Plan actif' : 'Plan de base'}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="border border-border rounded-lg p-4 bg-background space-y-2">
-            <div className="font-semibold">Free</div>
+          <div
+            className={`rounded-lg p-4 space-y-2 border ${
+              !isPro ? 'border-primary/40 bg-primary/5' : 'border-border bg-background'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-semibold">Free</div>
+              {!isPro && <div className="text-xs font-medium text-primary">Actuel</div>}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              L’essentiel pour organiser tes notes au quotidien.
+            </p>
             <ul className="text-sm text-muted-foreground space-y-1">
-              <li>15 notes max</li>
-              <li>15 tâches max</li>
-              <li>10 notes favorites max</li>
-              <li>15 tâches favorites max</li>
+              <li>Notes, tâches et todo</li>
+              <li>Import images &amp; PDF (jusqu’à 20 Mo)</li>
               <li>Rappels désactivés</li>
             </ul>
           </div>
 
-          <div className="border border-border rounded-lg p-4 bg-background space-y-2">
-            <div className="font-semibold">Pro (1,99€/mois)</div>
+          <div
+            className={`rounded-lg p-4 space-y-2 border ${
+              isPro ? 'border-primary/40 bg-primary/5' : 'border-border bg-background'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-semibold">Pro</div>
+              {isPro && <div className="text-xs font-medium text-primary">Actuel</div>}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Plus de liberté et des fonctionnalités avancées.
+            </p>
             <ul className="text-sm text-muted-foreground space-y-1">
-              <li>Notes &amp; tâches illimitées</li>
-              <li>Favoris illimités</li>
-              <li>Alertes activées</li>
+              <li>Import vidéos (jusqu’à 120 Mo)</li>
+              <li>Rappels activés</li>
+              <li>Accès prioritaire aux futures fonctionnalités</li>
             </ul>
+            <div className="text-sm font-medium pt-1">1,99€ / mois</div>
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-2">
-          <button
-            type="button"
-            onClick={handleCheckout}
-            disabled={loading || isPro}
-            className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
-          >
-            {isPro ? 'Pro activé' : loading ? 'Redirection…' : 'Débloquer Pro'}
-          </button>
+        <div className="space-y-2">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button
+              type="button"
+              onClick={handleCheckout}
+              disabled={loading || isPro}
+              className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+            >
+              {isPro ? 'Pro activé' : loading ? 'Redirection…' : 'Passer à Pro'}
+            </button>
 
-          {isPro && (
             <button
               type="button"
               onClick={handleOpenPortal}
-              disabled={portalLoading || !stripeCustomerId}
+              disabled={portalLoading || !isPro || !stripeCustomerId}
               className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium disabled:opacity-50"
             >
               {portalLoading ? 'Ouverture…' : 'Gérer l’abonnement'}
             </button>
+          </div>
+
+          {!isPro && (
+            <div className="text-xs text-muted-foreground">
+              La gestion de l’abonnement est disponible après activation du plan Pro.
+            </div>
           )}
+
+          <div className="text-xs text-muted-foreground">
+            Paiement sécurisé par Stripe. Annulation en un clic, sans engagement. Le statut Pro est mis à jour automatiquement.
+          </div>
+
+          {isPro && !stripeCustomerId && (
+            <p className="text-sm text-muted-foreground">
+              La gestion de l’abonnement n’est pas disponible pour ce compte pour le moment.
+            </p>
+          )}
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          {portalError && <p className="text-sm text-destructive">{portalError}</p>}
         </div>
-
-        {isPro && !stripeCustomerId && (
-          <p className="text-sm text-muted-foreground">
-            Gérer l’abonnement n’est pas disponible pour ce compte.
-          </p>
-        )}
-
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        {portalError && <p className="text-sm text-destructive">{portalError}</p>}
       </div>
     </div>
   );
