@@ -14,6 +14,35 @@ function getStripeClient() {
   return new Stripe(secretKey, { apiVersion: '2024-06-20' });
 }
 
+async function resolveUserIdFromStripeIds(params: {
+  stripeSubscriptionId?: string | null;
+  stripeCustomerId?: string | null;
+}): Promise<string | null> {
+  const db = getAdminDb();
+
+  if (params.stripeSubscriptionId) {
+    const snap = await db
+      .collection('users')
+      .where('stripeSubscriptionId', '==', params.stripeSubscriptionId)
+      .limit(1)
+      .get();
+    const doc = snap.docs[0];
+    if (doc) return doc.id;
+  }
+
+  if (params.stripeCustomerId) {
+    const snap = await db
+      .collection('users')
+      .where('stripeCustomerId', '==', params.stripeCustomerId)
+      .limit(1)
+      .get();
+    const doc = snap.docs[0];
+    if (doc) return doc.id;
+  }
+
+  return null;
+}
+
 async function setUserPlan(userId: string, plan: 'free' | 'pro', updates?: Partial<UserDoc>) {
   const db = getAdminDb();
   await db
@@ -68,15 +97,38 @@ export async function POST(request: Request) {
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted': {
         const subscription = event.data.object as Stripe.Subscription;
-        const userId = subscription.metadata?.userId as string | undefined;
+        const subscriptionCustomer = (subscription.customer as any) as string | { id?: string } | null;
+        const stripeCustomerId =
+          typeof subscriptionCustomer === 'string'
+            ? subscriptionCustomer
+            : typeof subscriptionCustomer?.id === 'string'
+              ? subscriptionCustomer.id
+              : null;
 
-        if (!userId) break;
+        const userIdFromMetadata = subscription.metadata?.userId as string | undefined;
+        const userId =
+          userIdFromMetadata ??
+          (await resolveUserIdFromStripeIds({ stripeSubscriptionId: subscription.id, stripeCustomerId }));
+
+        if (!userId) {
+          console.error('Stripe webhook: unable to resolve userId for subscription event', {
+            type: event.type,
+            subscriptionId: subscription.id,
+            stripeCustomerId,
+            status: subscription.status,
+          });
+          break;
+        }
 
         const isActive = subscription.status === 'active' || subscription.status === 'trialing';
         await setUserPlan(userId, isActive ? 'pro' : 'free', {
-          stripeCustomerId: (subscription.customer as string) ?? null,
+          stripeCustomerId: stripeCustomerId ?? null,
           stripeSubscriptionId: subscription.id,
           stripeSubscriptionStatus: subscription.status,
+          stripeSubscriptionCancelAtPeriodEnd: subscription.cancel_at_period_end ?? null,
+          stripeSubscriptionCurrentPeriodEnd: subscription.current_period_end
+            ? admin.firestore.Timestamp.fromMillis(subscription.current_period_end * 1000)
+            : null,
         });
         break;
       }
