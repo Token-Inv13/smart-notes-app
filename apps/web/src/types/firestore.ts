@@ -9,6 +9,8 @@ export interface UserDoc {
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
   stripeSubscriptionStatus?: string | null;
+  stripeSubscriptionCancelAtPeriodEnd?: boolean | null;
+  stripeSubscriptionCurrentPeriodEnd?: Timestamp | FieldValue | null;
   createdAt?: Timestamp | FieldValue;
   updatedAt?: Timestamp | FieldValue;
   fcmTokens?: Record<string, boolean>;

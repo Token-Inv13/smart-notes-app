@@ -1,14 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { isAndroidNative } from '@/lib/runtimePlatform';
 import type { UserDoc } from '@/types/firestore';
 
 export default function UpgradePage() {
-  const { data: userSettings, loading: userLoading } = useUserSettings();
+  const { data: userSettings, loading: userLoading, refetch } = useUserSettings();
   const isPro = userSettings?.plan === 'pro';
   const stripeCustomerId = (userSettings as UserDoc | undefined)?.stripeCustomerId;
+  const stripeSubscriptionStatus = (userSettings as UserDoc | undefined)?.stripeSubscriptionStatus;
+  const stripeSubscriptionId = (userSettings as UserDoc | undefined)?.stripeSubscriptionId;
+  const hasActiveStripeSubscription = stripeSubscriptionStatus === 'active' || stripeSubscriptionStatus === 'trialing';
+  const hasStripeSubscriptionData = !!stripeSubscriptionStatus || !!stripeSubscriptionId || !!stripeCustomerId;
   const isAndroid = isAndroidNative();
   const googlePlayManageUrl = 'https://play.google.com/store/account/subscriptions';
 
@@ -17,6 +21,39 @@ export default function UpgradePage() {
 
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
+
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  const handleSync = useCallback(async () => {
+    if (isAndroid) return;
+    setSyncLoading(true);
+    setSyncError(null);
+
+    try {
+      const res = await fetch('/api/stripe/sync', { method: 'POST', credentials: 'include' });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || 'SYNC_FAILED');
+      }
+      refetch();
+    } catch (e) {
+      console.error('Sync error', e);
+      setSyncError('Impossible de rafraîchir le statut pour le moment. Réessaie dans quelques instants.');
+    } finally {
+      setSyncLoading(false);
+    }
+  }, [isAndroid, refetch]);
+
+  useEffect(() => {
+    if (isAndroid) return;
+    if (userLoading) return;
+    if (!userSettings) return;
+    if (!isPro) return;
+    if (!hasStripeSubscriptionData) return;
+    if (hasActiveStripeSubscription) return;
+    void handleSync();
+  }, [handleSync, hasActiveStripeSubscription, hasStripeSubscriptionData, isAndroid, isPro, userLoading, userSettings]);
 
   const handleCheckout = async () => {
     if (isAndroid) {
@@ -130,14 +167,18 @@ export default function UpgradePage() {
         <div className="flex items-center justify-between gap-3">
           <div className="text-sm">
             <span className="font-medium">Statut actuel:</span>{' '}
-            <span>{userLoading ? 'Chargement…' : isPro ? 'Pro' : 'Free'}</span>
+            <span>
+              {userLoading ? 'Chargement…' : isPro ? (hasActiveStripeSubscription ? 'Pro' : 'Pro (à confirmer)') : 'Free'}
+            </span>
           </div>
           <div
             className={`text-xs px-2 py-1 rounded-full border ${
-              isPro ? 'border-primary/30 bg-primary/10 text-foreground' : 'border-border bg-background text-muted-foreground'
+              isPro && hasActiveStripeSubscription
+                ? 'border-primary/30 bg-primary/10 text-foreground'
+                : 'border-border bg-background text-muted-foreground'
             }`}
           >
-            {isPro ? 'Plan actif' : 'Plan de base'}
+            {isPro ? (hasActiveStripeSubscription ? 'Plan actif' : 'Statut à vérifier') : 'Plan de base'}
           </div>
         </div>
 
@@ -202,10 +243,10 @@ export default function UpgradePage() {
                 <button
                   type="button"
                   onClick={handleCheckout}
-                  disabled={loading || isPro}
+                  disabled={loading || (isPro && hasActiveStripeSubscription)}
                   className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
                 >
-                  {isPro ? 'Pro activé' : loading ? 'Redirection…' : 'Passer à Pro'}
+                  {isPro && hasActiveStripeSubscription ? 'Pro activé' : loading ? 'Redirection…' : 'Passer à Pro'}
                 </button>
               </div>
 
@@ -215,7 +256,7 @@ export default function UpgradePage() {
                 </div>
               )}
 
-              {isPro && (
+              {isPro && hasActiveStripeSubscription && (
                 <div className="rounded-lg border border-border bg-background p-3 space-y-2">
                   <div className="text-sm font-medium">Gérer mon abonnement (Stripe sécurisé)</div>
                   <div className="text-xs text-muted-foreground">
@@ -229,11 +270,38 @@ export default function UpgradePage() {
                   >
                     {portalLoading ? 'Ouverture…' : 'Ouvrir le portail Stripe'}
                   </button>
+                  <button
+                    type="button"
+                    onClick={handleSync}
+                    disabled={syncLoading}
+                    className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium disabled:opacity-50"
+                  >
+                    {syncLoading ? 'Rafraîchissement…' : 'Rafraîchir le statut'}
+                  </button>
                   {!stripeCustomerId && (
                     <div className="text-xs text-muted-foreground">
                       Ce compte n’est pas encore relié à Stripe. Si tu viens de t’abonner, attends quelques instants puis réessaie.
                     </div>
                   )}
+                  {syncError && <p className="text-sm text-destructive">{syncError}</p>}
+                </div>
+              )}
+
+              {isPro && !hasActiveStripeSubscription && (
+                <div className="rounded-lg border border-border bg-background p-3 space-y-2">
+                  <div className="text-sm font-medium">Abonnement Stripe</div>
+                  <div className="text-xs text-muted-foreground">
+                    Ton abonnement Stripe ne semble plus actif. Le plan sera remis à jour automatiquement.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSync}
+                    disabled={syncLoading}
+                    className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium disabled:opacity-50"
+                  >
+                    {syncLoading ? 'Rafraîchissement…' : 'Rafraîchir le statut'}
+                  </button>
+                  {syncError && <p className="text-sm text-destructive">{syncError}</p>}
                 </div>
               )}
 

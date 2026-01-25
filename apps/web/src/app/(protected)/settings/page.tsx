@@ -66,6 +66,7 @@ export default function SettingsPage() {
 
   const hasFcmTokens = Object.keys(user?.fcmTokens ?? {}).length > 0;
   const isPro = (user?.plan ?? "free") === "pro";
+  const hasActiveStripeSubscription = user?.stripeSubscriptionStatus === "active" || user?.stripeSubscriptionStatus === "trialing";
   const isAndroid = isAndroidNative();
   const googlePlayManageUrl = "https://play.google.com/store/account/subscriptions";
 
@@ -444,7 +445,7 @@ export default function SettingsPage() {
             {isPro ? (
               <div className="space-y-2">
                 <div className="text-xs px-2 py-1 rounded-full border border-primary/30 bg-primary/10 text-foreground inline-flex w-fit">
-                  Pro actif
+                  {hasActiveStripeSubscription || isAndroid ? "Pro actif" : "Statut à vérifier"}
                 </div>
                 <Link
                   href="/upgrade"
@@ -466,7 +467,9 @@ export default function SettingsPage() {
                   </div>
                 ) : (
                   <div className="text-xs text-muted-foreground">
-                    Modification et annulation via le portail sécurisé Stripe.
+                    {hasActiveStripeSubscription
+                      ? "Modification et annulation via le portail sécurisé Stripe."
+                      : "Ton abonnement Stripe ne semble plus actif. Ouvre la page Abonnement pour rafraîchir le statut."}
                   </div>
                 )}
               </div>
