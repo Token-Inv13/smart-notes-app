@@ -27,7 +27,7 @@ service firebase.storage {
     }
 
     function isAllowedAttachmentSize(userId) {
-      return request.resource.size < (isProUser(userId) ? 120 * 1024 * 1024 : 20 * 1024 * 1024);
+      return request.resource.size < (isProUser(userId) ? 350 * 1024 * 1024 : 20 * 1024 * 1024);
     }
 
     function isAllowedAttachmentExtension(userId, path) {

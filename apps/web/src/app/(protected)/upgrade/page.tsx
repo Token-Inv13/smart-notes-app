@@ -140,7 +140,7 @@ export default function UpgradePage() {
               Plus de liberté et des fonctionnalités avancées.
             </p>
             <ul className="text-sm text-muted-foreground space-y-1">
-              <li>Import vidéos (jusqu’à 120 Mo)</li>
+              <li>Import vidéos (jusqu’à 350 Mo)</li>
               <li>Rappels activés</li>
               <li>Accès prioritaire aux futures fonctionnalités</li>
             </ul>

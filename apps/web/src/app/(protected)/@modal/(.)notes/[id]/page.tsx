@@ -18,7 +18,7 @@ import RichTextEditor from "../../../_components/RichTextEditor";
 const FREE_MAX_FILES_PER_NOTE = 5;
 const PRO_MAX_FILES_PER_NOTE = 10;
 const FREE_MAX_BYTES = 20 * 1024 * 1024;
-const PRO_MAX_BYTES = 120 * 1024 * 1024;
+const PRO_MAX_BYTES = 350 * 1024 * 1024;
 
 const FREE_ALLOWED_MIME = new Set([
   "image/jpeg",
@@ -152,11 +152,14 @@ export default function NoteDetailModal(props: any) {
     }
     if (!allowedMime.has(file.type)) {
       if (file.type.startsWith("video/") && userPlan === "free") {
-        return "Les vidéos sont réservées au plan Premium.";
+        return "Passe à Pro pour importer des vidéos et des fichiers jusqu’à 350 Mo.";
       }
       return "Type de fichier non autorisé.";
     }
     if (file.size > maxBytes) {
+      if (userPlan === "free") {
+        return "Fichier trop volumineux (max 20 Mo en Free). Passe à Pro pour importer jusqu’à 350 Mo.";
+      }
       return `Fichier trop volumineux (max ${formatBytes(maxBytes)}).`;
     }
     return null;
