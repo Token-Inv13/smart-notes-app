@@ -8,6 +8,22 @@ export const runtime = 'nodejs';
 
 const SESSION_COOKIE_NAME = 'session';
 
+function isNoSuchCustomerError(err: any): boolean {
+  const message = typeof err?.message === 'string' ? err.message : '';
+  const lower = message.toLowerCase();
+  if (lower.includes('no such customer')) return true;
+  if (err?.code === 'resource_missing' && (err?.param === 'customer' || lower.includes('customer'))) return true;
+  return false;
+}
+
+function getCustomerIdFromSubscription(sub: Stripe.Subscription): string | null {
+  const customer = (sub as any)?.customer;
+  if (!customer) return null;
+  if (typeof customer === 'string') return customer;
+  if (typeof customer?.id === 'string') return customer.id;
+  return null;
+}
+
 export async function POST() {
   try {
     const sessionCookie = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
@@ -41,10 +57,33 @@ export async function POST() {
       return `${proto}://${host}`;
     })();
 
-    const portal = await stripe.billingPortal.sessions.create({
-      customer,
-      return_url: `${origin}/upgrade`,
-    });
+    let portal: Stripe.BillingPortal.Session;
+    try {
+      portal = await stripe.billingPortal.sessions.create({
+        customer,
+        return_url: `${origin}/upgrade`,
+      });
+    } catch (err) {
+      if (isNoSuchCustomerError(err) && typeof userData.stripeSubscriptionId === 'string' && userData.stripeSubscriptionId) {
+        try {
+          const sub = await stripe.subscriptions.retrieve(userData.stripeSubscriptionId);
+          const recoveredCustomer = getCustomerIdFromSubscription(sub);
+          if (recoveredCustomer) {
+            await db.collection('users').doc(decoded.uid).update({ stripeCustomerId: recoveredCustomer });
+            portal = await stripe.billingPortal.sessions.create({
+              customer: recoveredCustomer,
+              return_url: `${origin}/upgrade`,
+            });
+          } else {
+            throw err;
+          }
+        } catch {
+          throw err;
+        }
+      } else {
+        throw err;
+      }
+    }
 
     return NextResponse.json({ url: portal.url });
   } catch (e) {
@@ -63,7 +102,7 @@ export async function POST() {
     if (lower.includes('return_url') && (lower.includes('allowed') || lower.includes('not allowed'))) {
       return new NextResponse('RETURN_URL_NOT_ALLOWED', { status: 400 });
     }
-    if (lower.includes('no such customer')) {
+    if (isNoSuchCustomerError(stripeError)) {
       return new NextResponse('NO_SUCH_CUSTOMER', { status: 400 });
     }
     if (lower.includes('customer portal') && (lower.includes('not enabled') || lower.includes('not been configured'))) {
