@@ -165,30 +165,6 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSetBackground = async (background: "none" | "dots" | "grid") => {
-    const currentUser = ensureCanEdit();
-    if (!currentUser) {
-      setAppearanceMessage("Impossible de modifier l’apparence pour ce compte.");
-      return;
-    }
-
-    setSavingAppearance(true);
-    setAppearanceMessage(null);
-    try {
-      const userRef = doc(db, "users", currentUser.uid);
-      await updateDoc(userRef, {
-        "settings.appearance.background": background,
-        updatedAt: serverTimestamp(),
-      });
-      setAppearanceMessage("Fond mis à jour.");
-    } catch (e) {
-      console.error("Error updating background", e);
-      setAppearanceMessage("Erreur lors de la mise à jour du fond.");
-    } finally {
-      setSavingAppearance(false);
-    }
-  };
-
   const handleEnablePushNotifications = async () => {
     setFcmStatus("Activation des notifications push…");
     setEnablingPush(true);
@@ -257,6 +233,7 @@ export default function SettingsPage() {
               <h2 className="text-base font-semibold">Profil</h2>
               <div className="text-xs text-muted-foreground">Compte</div>
             </div>
+            <p className="text-sm text-muted-foreground">Informations de base de ton compte.</p>
             <div className="text-sm">
               <span className="font-medium">Email :</span> <span>{user.email || "—"}</span>
             </div>
@@ -285,79 +262,57 @@ export default function SettingsPage() {
             {profileMessage && <p className="text-sm">{profileMessage}</p>}
           </section>
 
-          <section className="border border-border/70 rounded-xl p-5 bg-card shadow-sm space-y-4">
+          <section className="border border-primary/30 rounded-xl p-5 bg-gradient-to-b from-primary/8 to-transparent shadow-md space-y-4">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-base font-semibold">Apparence</h2>
-              <div className="text-xs text-muted-foreground">Thème</div>
+              <h2 className="text-base font-semibold">Abonnement</h2>
+              <div className="text-xs text-muted-foreground">Pro</div>
             </div>
-
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <div className="text-sm font-medium">Mode</div>
-                <div className="text-sm text-muted-foreground">
-                  {user.settings?.appearance?.mode === "dark" ? "Sombre" : "Clair"}
+            <p className="text-sm text-muted-foreground">Ton plan et les options de gestion.</p>
+            <div className="text-sm">
+              <span className="font-medium">Plan actuel :</span> <span>{user.plan ?? "free"}</span>
+            </div>
+            {isPro ? (
+              <div className="space-y-2">
+                <div className="text-xs px-2 py-1 rounded-full border border-primary/30 bg-primary/10 text-foreground inline-flex w-fit">
+                  {hasActiveStripeSubscription || isAndroid ? "Pro actif" : "Statut à vérifier"}
                 </div>
+                <Link
+                  href="/upgrade"
+                  className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-border bg-background text-sm font-medium hover:bg-accent/60"
+                >
+                  Gérer l’abonnement
+                </Link>
+                {isAndroid ? (
+                  <div className="space-y-2">
+                    <div className="text-xs text-muted-foreground">Ton abonnement est géré via Google Play.</div>
+                    <a
+                      href={googlePlayManageUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-border bg-background text-sm font-medium hover:bg-accent/60"
+                    >
+                      Ouvrir Google Play
+                    </a>
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground">
+                    {hasActiveStripeSubscription
+                      ? "Modification et annulation via le portail sécurisé Stripe."
+                      : "Ton abonnement Stripe ne semble plus actif. Ouvre la page Abonnement pour rafraîchir le statut."}
+                  </div>
+                )}
               </div>
-              <button
-                type="button"
-                onClick={handleToggleThemeMode}
-                disabled={savingAppearance}
-                className="border border-border rounded-lg px-3 py-2 bg-background text-sm hover:bg-accent/60 disabled:opacity-50"
-              >
-                Basculer
-              </button>
-            </div>
-
-            <div className="space-y-1">
-              <div className="text-sm font-medium">Fond</div>
-              <select
-                value={user.settings?.appearance?.background ?? "none"}
-                onChange={(e) => handleSetBackground(e.target.value as "none" | "dots" | "grid")}
-                disabled={savingAppearance}
-                className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm disabled:opacity-50"
-                aria-label="Fond de page"
-              >
-                <option value="none">Aucun</option>
-                <option value="dots">Points</option>
-                <option value="grid">Grille</option>
-              </select>
-            </div>
-
-            {appearanceMessage && <p className="text-sm">{appearanceMessage}</p>}
-          </section>
-
-          <section className="border border-border/70 rounded-xl p-5 bg-card shadow-sm space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-base font-semibold">Affichage</h2>
-              <div className="text-xs text-muted-foreground">Préférences</div>
-            </div>
-
-            <div className="space-y-1">
-              <div className="text-sm font-medium">Notes</div>
-              <select
-                value={notesViewMode}
-                onChange={(e) => setAndPersistNotesViewMode(e.target.value as "list" | "grid")}
-                className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
-                aria-label="Affichage des notes"
-              >
-                <option value="list">Liste</option>
-                <option value="grid">Vignettes</option>
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <div className="text-sm font-medium">Tâches</div>
-              <select
-                value={tasksViewMode}
-                onChange={(e) => setAndPersistTasksViewMode(e.target.value as "list" | "grid" | "kanban")}
-                className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
-                aria-label="Affichage des tâches"
-              >
-                <option value="list">Liste</option>
-                <option value="grid">Vignettes</option>
-                <option value="kanban">Kanban</option>
-              </select>
-            </div>
+            ) : (
+              <div className="space-y-2">
+                <Link
+                  href="/upgrade"
+                  className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-95"
+                >
+                  Débloquer Pro
+                </Link>
+                <div className="text-xs text-muted-foreground">Essai immédiat. Annulation en un clic.</div>
+              </div>
+            )}
           </section>
 
           <section className="border border-border/70 rounded-xl p-5 bg-card shadow-sm space-y-4">
@@ -365,11 +320,31 @@ export default function SettingsPage() {
               <h2 className="text-base font-semibold">Notifications</h2>
               <div className="text-xs text-muted-foreground">Rappels</div>
             </div>
-            <div className="text-sm">
-              <span className="font-medium">Rappels de tâches:</span>{" "}
-              <span>
-                {user.settings?.notifications?.taskReminders ? "Activés" : "Désactivés"}
-              </span>
+            <p className="text-sm text-muted-foreground">Active les rappels et configure ce navigateur.</p>
+
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="text-sm font-medium">Rappels de tâches</div>
+                <div className="text-sm text-muted-foreground">
+                  {user.settings?.notifications?.taskReminders ? "Activés" : "Désactivés"}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleToggleTaskReminders}
+                disabled={toggling}
+                aria-pressed={!!user.settings?.notifications?.taskReminders}
+                className={`relative inline-flex h-9 w-14 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background disabled:opacity-50 ${
+                  user.settings?.notifications?.taskReminders ? "bg-primary/30 border-primary/30" : "bg-muted border-border"
+                }`}
+              >
+                <span
+                  className={`inline-block h-7 w-7 rounded-full bg-background shadow-sm transition-transform ${
+                    user.settings?.notifications?.taskReminders ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
             </div>
 
             <div className="text-sm">
@@ -385,17 +360,7 @@ export default function SettingsPage() {
               </span>
             </div>
 
-            <div className="space-y-1">
-              <button
-                type="button"
-                onClick={handleToggleTaskReminders}
-                disabled={toggling}
-                className="border border-border rounded-lg px-3 py-2 bg-background text-sm hover:bg-accent/60 disabled:opacity-50"
-              >
-                {toggling ? "Mise à jour…" : "Basculer rappels"}
-              </button>
-              {toggleMessage && <p className="text-sm">{toggleMessage}</p>}
-            </div>
+            {toggleMessage && <p className="text-sm">{toggleMessage}</p>}
 
             {shouldShowRegisterDeviceCta && (
               <div className="space-y-2">
@@ -450,56 +415,74 @@ export default function SettingsPage() {
             )}
           </section>
 
-          <section className="border border-primary/20 rounded-xl p-5 bg-gradient-to-b from-primary/5 to-transparent shadow-sm space-y-4">
+          <section className="border border-border/70 rounded-xl p-5 bg-card shadow-sm space-y-4">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-base font-semibold">Abonnement</h2>
-              <div className="text-xs text-muted-foreground">Pro</div>
+              <h2 className="text-base font-semibold">Affichage</h2>
+              <div className="text-xs text-muted-foreground">Préférences</div>
             </div>
-            <div className="text-sm">
-              <span className="font-medium">Plan actuel :</span> <span>{user.plan ?? 'free'}</span>
+            <p className="text-sm text-muted-foreground">Choisis comment afficher tes listes.</p>
+
+            <div className="space-y-1">
+              <div className="text-sm font-medium">Notes</div>
+              <select
+                value={notesViewMode}
+                onChange={(e) => setAndPersistNotesViewMode(e.target.value as "list" | "grid")}
+                className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
+                aria-label="Affichage des notes"
+              >
+                <option value="list">Liste</option>
+                <option value="grid">Vignettes</option>
+              </select>
             </div>
-            {isPro ? (
-              <div className="space-y-2">
-                <div className="text-xs px-2 py-1 rounded-full border border-primary/30 bg-primary/10 text-foreground inline-flex w-fit">
-                  {hasActiveStripeSubscription || isAndroid ? "Pro actif" : "Statut à vérifier"}
+
+            <div className="space-y-1">
+              <div className="text-sm font-medium">Tâches</div>
+              <select
+                value={tasksViewMode}
+                onChange={(e) => setAndPersistTasksViewMode(e.target.value as "list" | "grid" | "kanban")}
+                className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
+                aria-label="Affichage des tâches"
+              >
+                <option value="list">Liste</option>
+                <option value="grid">Vignettes</option>
+                <option value="kanban">Kanban</option>
+              </select>
+            </div>
+          </section>
+
+          <section className="border border-border/70 rounded-xl p-5 bg-card shadow-sm space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">Apparence</h2>
+              <div className="text-xs text-muted-foreground">Thème</div>
+            </div>
+            <p className="text-sm text-muted-foreground">Mode clair ou sombre.</p>
+
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium">Mode</div>
+                <div className="text-sm text-muted-foreground">
+                  {user.settings?.appearance?.mode === "dark" ? "Sombre" : "Clair"}
                 </div>
-                <Link
-                  href="/upgrade"
-                  className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-border bg-background text-sm font-medium hover:bg-accent/60"
-                >
-                  Gérer l’abonnement
-                </Link>
-                {isAndroid ? (
-                  <div className="space-y-2">
-                    <div className="text-xs text-muted-foreground">Ton abonnement est géré via Google Play.</div>
-                    <a
-                      href={googlePlayManageUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-border bg-background text-sm font-medium hover:bg-accent/60"
-                    >
-                      Ouvrir Google Play
-                    </a>
-                  </div>
-                ) : (
-                  <div className="text-xs text-muted-foreground">
-                    {hasActiveStripeSubscription
-                      ? "Modification et annulation via le portail sécurisé Stripe."
-                      : "Ton abonnement Stripe ne semble plus actif. Ouvre la page Abonnement pour rafraîchir le statut."}
-                  </div>
-                )}
               </div>
-            ) : (
-              <div className="space-y-2">
-                <Link
-                  href="/upgrade"
-                  className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-95"
-                >
-                  Débloquer Pro
-                </Link>
-                <div className="text-xs text-muted-foreground">Essai immédiat. Annulation en un clic.</div>
-              </div>
-            )}
+
+              <button
+                type="button"
+                onClick={handleToggleThemeMode}
+                disabled={savingAppearance}
+                aria-pressed={user.settings?.appearance?.mode === "dark"}
+                className={`relative inline-flex h-9 w-14 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background disabled:opacity-50 ${
+                  user.settings?.appearance?.mode === "dark" ? "bg-primary/30 border-primary/30" : "bg-muted border-border"
+                }`}
+              >
+                <span
+                  className={`inline-block h-7 w-7 rounded-full bg-background shadow-sm transition-transform ${
+                    user.settings?.appearance?.mode === "dark" ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+
+            {appearanceMessage && <p className="text-sm">{appearanceMessage}</p>}
           </section>
         </div>
       )}
