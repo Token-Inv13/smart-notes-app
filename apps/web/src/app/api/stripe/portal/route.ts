@@ -30,6 +30,22 @@ async function recoverCustomerIdByEmail(stripe: Stripe, email: string): Promise<
   return first?.id ?? null;
 }
 
+async function recoverFromSubscriptionSearch(
+  stripe: Stripe,
+  uid: string,
+): Promise<{ customerId: string; subscriptionId: string; status: Stripe.Subscription.Status } | null> {
+  try {
+    const res = await stripe.subscriptions.search({ query: `metadata['userId']:'${uid}'`, limit: 1 });
+    const sub = res.data?.[0];
+    if (!sub) return null;
+    const customerId = getCustomerIdFromSubscription(sub);
+    if (!customerId) return null;
+    return { customerId, subscriptionId: sub.id, status: sub.status };
+  } catch {
+    return null;
+  }
+}
+
 export async function POST() {
   try {
     const sessionCookie = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
@@ -48,10 +64,6 @@ export async function POST() {
     const userData: Partial<UserDoc> = (userSnap.data() as UserDoc | undefined) ?? {};
 
     const customer = userData.stripeCustomerId;
-    if (!customer) {
-      console.error('Stripe portal: missing stripeCustomerId', { uid: decoded.uid });
-      return new NextResponse('Missing stripeCustomerId', { status: 400 });
-    }
 
     const h = await headers();
     const origin = (() => {
@@ -63,13 +75,13 @@ export async function POST() {
       return `${proto}://${host}`;
     })();
 
-    let portal: Stripe.BillingPortal.Session;
-    try {
-      portal = await stripe.billingPortal.sessions.create({
-        customer,
+    const attemptCreatePortal = async (customerId: string) =>
+      stripe.billingPortal.sessions.create({
+        customer: customerId,
         return_url: `${origin}/upgrade`,
       });
-    } catch (err) {
+
+    const attemptRecoveryAndCreate = async (err: any) => {
       if (!isNoSuchCustomerError(err)) throw err;
 
       // Recovery path #1: derive customer from subscription id (if present)
@@ -79,10 +91,7 @@ export async function POST() {
           const recoveredCustomer = getCustomerIdFromSubscription(sub);
           if (recoveredCustomer) {
             await db.collection('users').doc(decoded.uid).update({ stripeCustomerId: recoveredCustomer });
-            portal = await stripe.billingPortal.sessions.create({
-              customer: recoveredCustomer,
-              return_url: `${origin}/upgrade`,
-            });
+            const portal = await attemptCreatePortal(recoveredCustomer);
             return NextResponse.json({ url: portal.url });
           }
         } catch {
@@ -90,23 +99,62 @@ export async function POST() {
         }
       }
 
-      // Recovery path #2: find an existing live customer by email
+      // Recovery path #2: search live subscriptions by metadata.userId
+      const fromSearch = await recoverFromSubscriptionSearch(stripe, decoded.uid);
+      if (fromSearch) {
+        await db.collection('users').doc(decoded.uid).update({
+          stripeCustomerId: fromSearch.customerId,
+          stripeSubscriptionId: fromSearch.subscriptionId,
+          stripeSubscriptionStatus: fromSearch.status,
+        });
+        const portal = await attemptCreatePortal(fromSearch.customerId);
+        return NextResponse.json({ url: portal.url });
+      }
+
+      // Recovery path #3: find an existing live customer by email
       if (typeof decoded.email === 'string' && decoded.email) {
         const recoveredCustomer = await recoverCustomerIdByEmail(stripe, decoded.email);
         if (recoveredCustomer) {
           await db.collection('users').doc(decoded.uid).update({ stripeCustomerId: recoveredCustomer });
-          portal = await stripe.billingPortal.sessions.create({
-            customer: recoveredCustomer,
-            return_url: `${origin}/upgrade`,
-          });
+          const portal = await attemptCreatePortal(recoveredCustomer);
           return NextResponse.json({ url: portal.url });
         }
       }
 
       throw err;
+    };
+
+    if (!customer) {
+      console.error('Stripe portal: missing stripeCustomerId', { uid: decoded.uid });
+      const fromSearch = await recoverFromSubscriptionSearch(stripe, decoded.uid);
+      if (fromSearch) {
+        await db.collection('users').doc(decoded.uid).update({
+          stripeCustomerId: fromSearch.customerId,
+          stripeSubscriptionId: fromSearch.subscriptionId,
+          stripeSubscriptionStatus: fromSearch.status,
+        });
+        const portal = await attemptCreatePortal(fromSearch.customerId);
+        return NextResponse.json({ url: portal.url });
+      }
+
+      if (typeof decoded.email === 'string' && decoded.email) {
+        const recoveredCustomer = await recoverCustomerIdByEmail(stripe, decoded.email);
+        if (recoveredCustomer) {
+          await db.collection('users').doc(decoded.uid).update({ stripeCustomerId: recoveredCustomer });
+          const portal = await attemptCreatePortal(recoveredCustomer);
+          return NextResponse.json({ url: portal.url });
+        }
+      }
+
+      return new NextResponse('Missing stripeCustomerId', { status: 400 });
     }
 
-    return NextResponse.json({ url: portal.url });
+    try {
+      const portal = await attemptCreatePortal(customer);
+      return NextResponse.json({ url: portal.url });
+    } catch (err) {
+      return await attemptRecoveryAndCreate(err);
+    }
   } catch (e) {
     const stripeError = e as any;
     const message = typeof stripeError?.message === 'string' ? stripeError.message : '';
