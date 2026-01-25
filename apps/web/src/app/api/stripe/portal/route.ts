@@ -32,7 +32,14 @@ export async function POST() {
     }
 
     const h = await headers();
-    const origin = h.get('origin') ?? 'http://localhost:3000';
+    const origin = (() => {
+      const fromOrigin = h.get('origin');
+      if (fromOrigin) return fromOrigin;
+      const host = h.get('x-forwarded-host') ?? h.get('host');
+      if (!host) return 'https://app.tachesnotes.com';
+      const proto = h.get('x-forwarded-proto') ?? 'https';
+      return `${proto}://${host}`;
+    })();
 
     const portal = await stripe.billingPortal.sessions.create({
       customer,

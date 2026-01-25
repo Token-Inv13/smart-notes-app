@@ -2,12 +2,15 @@
 
 import { useState } from 'react';
 import { useUserSettings } from '@/hooks/useUserSettings';
+import { isAndroidNative } from '@/lib/runtimePlatform';
 import type { UserDoc } from '@/types/firestore';
 
 export default function UpgradePage() {
   const { data: userSettings, loading: userLoading } = useUserSettings();
   const isPro = userSettings?.plan === 'pro';
   const stripeCustomerId = (userSettings as UserDoc | undefined)?.stripeCustomerId;
+  const isAndroid = isAndroidNative();
+  const googlePlayManageUrl = 'https://play.google.com/store/account/subscriptions';
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -16,11 +19,15 @@ export default function UpgradePage() {
   const [portalError, setPortalError] = useState<string | null>(null);
 
   const handleCheckout = async () => {
+    if (isAndroid) {
+      setError('Ton abonnement est géré via Google Play.');
+      return;
+    }
     setLoading(true);
     setError(null);
 
     try {
-      const res = await fetch('/api/stripe/checkout', { method: 'POST' });
+      const res = await fetch('/api/stripe/checkout', { method: 'POST', credentials: 'include' });
       if (!res.ok) {
         const text = await res.text().catch(() => '');
         throw new Error(text || 'Failed to start checkout');
@@ -39,11 +46,15 @@ export default function UpgradePage() {
   };
 
   const handleOpenPortal = async () => {
+    if (isAndroid) {
+      setPortalError('Ton abonnement est géré via Google Play.');
+      return;
+    }
     setPortalLoading(true);
     setPortalError(null);
 
     try {
-      const res = await fetch('/api/stripe/portal', { method: 'POST' });
+      const res = await fetch('/api/stripe/portal', { method: 'POST', credentials: 'include' });
       if (!res.ok) {
         const text = await res.text().catch(() => '');
         const lower = text.toLowerCase();
@@ -87,9 +98,13 @@ export default function UpgradePage() {
     <div className="max-w-3xl space-y-6">
       <div className="space-y-2">
         <h1 className="text-xl font-semibold">Abonnement</h1>
-        <p className="text-sm text-muted-foreground">
-          Choisis le plan qui te convient. Tu peux annuler à tout moment depuis le portail sécurisé Stripe.
-        </p>
+        {isAndroid ? (
+          <p className="text-sm text-muted-foreground">Ton abonnement est géré via Google Play.</p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Choisis le plan qui te convient. Tu peux annuler à tout moment depuis le portail sécurisé Stripe.
+          </p>
+        )}
       </div>
 
       <div className="border border-border rounded-lg p-4 bg-card space-y-4">
@@ -149,48 +164,65 @@ export default function UpgradePage() {
         </div>
 
         <div className="space-y-2">
-          <div className="flex flex-col sm:flex-row gap-2">
-            <button
-              type="button"
-              onClick={handleCheckout}
-              disabled={loading || isPro}
-              className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
-            >
-              {isPro ? 'Pro activé' : loading ? 'Redirection…' : 'Passer à Pro'}
-            </button>
-          </div>
-
-          {!isPro && (
-            <div className="text-xs text-muted-foreground">
-              La gestion de l’abonnement est disponible après activation du plan Pro.
-            </div>
-          )}
-
-          {isPro && (
+          {isAndroid ? (
             <div className="rounded-lg border border-border bg-background p-3 space-y-2">
-              <div className="text-sm font-medium">Gérer mon abonnement (Stripe sécurisé)</div>
-              <div className="text-xs text-muted-foreground">
-                Accède au portail Stripe pour modifier ton moyen de paiement, télécharger tes factures, ou annuler.
-              </div>
-              <button
-                type="button"
-                onClick={handleOpenPortal}
-                disabled={portalLoading || !stripeCustomerId}
-                className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium disabled:opacity-50"
+              <div className="text-sm font-medium">Abonnement Android</div>
+              <div className="text-xs text-muted-foreground">Ton abonnement est géré via Google Play.</div>
+              <a
+                href={googlePlayManageUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium"
               >
-                {portalLoading ? 'Ouverture…' : 'Ouvrir le portail Stripe'}
-              </button>
-              {!stripeCustomerId && (
+                Ouvrir Google Play
+              </a>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                  type="button"
+                  onClick={handleCheckout}
+                  disabled={loading || isPro}
+                  className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+                >
+                  {isPro ? 'Pro activé' : loading ? 'Redirection…' : 'Passer à Pro'}
+                </button>
+              </div>
+
+              {!isPro && (
                 <div className="text-xs text-muted-foreground">
-                  Ce compte n’est pas encore relié à Stripe. Si tu viens de t’abonner, attends quelques instants puis réessaie.
+                  La gestion de l’abonnement est disponible après activation du plan Pro.
                 </div>
               )}
-            </div>
-          )}
 
-          <div className="text-xs text-muted-foreground">
-            Paiement sécurisé par Stripe. Annulation en un clic, sans engagement. Le statut Pro est mis à jour automatiquement.
-          </div>
+              {isPro && (
+                <div className="rounded-lg border border-border bg-background p-3 space-y-2">
+                  <div className="text-sm font-medium">Gérer mon abonnement (Stripe sécurisé)</div>
+                  <div className="text-xs text-muted-foreground">
+                    Accède au portail Stripe pour modifier ton moyen de paiement, télécharger tes factures, ou annuler.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleOpenPortal}
+                    disabled={portalLoading || !stripeCustomerId}
+                    className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium disabled:opacity-50"
+                  >
+                    {portalLoading ? 'Ouverture…' : 'Ouvrir le portail Stripe'}
+                  </button>
+                  {!stripeCustomerId && (
+                    <div className="text-xs text-muted-foreground">
+                      Ce compte n’est pas encore relié à Stripe. Si tu viens de t’abonner, attends quelques instants puis réessaie.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="text-xs text-muted-foreground">
+                Paiement sécurisé par Stripe. Annulation en un clic, sans engagement. Le statut Pro est mis à jour automatiquement.
+              </div>
+            </>
+          )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
           {portalError && <p className="text-sm text-destructive">{portalError}</p>}

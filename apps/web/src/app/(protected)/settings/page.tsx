@@ -4,6 +4,7 @@ import { useUserSettings } from "@/hooks/useUserSettings";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { auth, db } from "@/lib/firebase";
+import { isAndroidNative } from "@/lib/runtimePlatform";
 import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { registerFcmToken } from "@/lib/fcm";
 import LogoutButton from "../LogoutButton";
@@ -65,6 +66,8 @@ export default function SettingsPage() {
 
   const hasFcmTokens = Object.keys(user?.fcmTokens ?? {}).length > 0;
   const isPro = (user?.plan ?? "free") === "pro";
+  const isAndroid = isAndroidNative();
+  const googlePlayManageUrl = "https://play.google.com/store/account/subscriptions";
 
   const handleToggleTaskReminders = async () => {
     if (!user) return;
@@ -449,9 +452,23 @@ export default function SettingsPage() {
                 >
                   Gérer l’abonnement
                 </Link>
-                <div className="text-xs text-muted-foreground">
-                  Modification et annulation via le portail sécurisé Stripe.
-                </div>
+                {isAndroid ? (
+                  <div className="space-y-2">
+                    <div className="text-xs text-muted-foreground">Ton abonnement est géré via Google Play.</div>
+                    <a
+                      href={googlePlayManageUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium"
+                    >
+                      Ouvrir Google Play
+                    </a>
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground">
+                    Modification et annulation via le portail sécurisé Stripe.
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-2">
