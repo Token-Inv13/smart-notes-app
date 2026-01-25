@@ -88,7 +88,7 @@ export default function SidebarWorkspaces({
     }`;
 
   const iconButtonClass = (active: boolean) =>
-    `h-10 w-10 inline-flex items-center justify-center rounded-lg text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background ${
+    `relative h-10 w-10 inline-flex items-center justify-center rounded-lg text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background ${
       active
         ? "bg-primary/10 text-foreground border border-primary/20"
         : "border border-transparent hover:bg-accent/60 hover:text-foreground"
@@ -402,6 +402,9 @@ export default function SidebarWorkspaces({
               aria-label="Dashboard"
               title="Dashboard"
             >
+              {isNavActive("/dashboard") && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r bg-primary" />
+              )}
               <LayoutDashboard className="h-4 w-4" />
             </button>
 
@@ -412,6 +415,9 @@ export default function SidebarWorkspaces({
               aria-label="Notes"
               title="Notes"
             >
+              {isNavActive("/notes") && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r bg-primary" />
+              )}
               <span className="text-sm font-semibold">N</span>
             </button>
 
@@ -422,6 +428,9 @@ export default function SidebarWorkspaces({
               aria-label="Tâches"
               title="Tâches"
             >
+              {isNavActive("/tasks") && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r bg-primary" />
+              )}
               <span className="text-sm font-semibold">T</span>
             </button>
 
@@ -432,14 +441,18 @@ export default function SidebarWorkspaces({
               aria-label="ToDo"
               title="ToDo"
             >
+              {pathname.startsWith("/todo") && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r bg-primary" />
+              )}
               <span className="text-sm font-semibold">✓</span>
             </button>
           </div>
 
-          <div className="border-t border-border/60 pt-3">
+          <div className="border-t border-border/40 pt-3">
             <div className="flex flex-col items-center gap-2">
               {sortedWorkspaces.map((ws) => {
                 const isSelected = ws.id && ws.id === currentWorkspaceId;
+                const initial = (ws.name || "?").trim().slice(0, 1).toUpperCase();
                 return (
                   <button
                     key={ws.id ?? ws.name}
@@ -450,7 +463,12 @@ export default function SidebarWorkspaces({
                     title={ws.name}
                     disabled={!ws.id}
                   >
-                    <Folder className="h-4 w-4" />
+                    {isSelected && (
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r bg-primary" />
+                    )}
+                    <span className="h-6 w-6 inline-flex items-center justify-center rounded-md bg-muted text-muted-foreground text-[11px] font-semibold">
+                      {initial}
+                    </span>
                   </button>
                 );
               })}
@@ -467,7 +485,7 @@ export default function SidebarWorkspaces({
             </div>
           </div>
 
-          <div className="border-t border-border/60 pt-3">
+          <div className="border-t border-border/40 pt-3">
             <div className="flex flex-col items-center gap-2">
               <button
                 type="button"
@@ -476,6 +494,9 @@ export default function SidebarWorkspaces({
                 aria-label="Paramètres"
                 title="Paramètres"
               >
+                {isNavActive("/settings") && (
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r bg-primary" />
+                )}
                 <Settings className="h-4 w-4" />
               </button>
 
@@ -539,7 +560,7 @@ export default function SidebarWorkspaces({
               <span>ToDo</span>
             </button>
           </div>
-          <div className="h-px bg-border/60" />
+          <div className="h-px bg-border/40" />
           <div>
             <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 px-1">
               Dossiers
@@ -566,7 +587,7 @@ export default function SidebarWorkspaces({
             </div>
           </div>
 
-          <div className="h-px bg-border/60" />
+          <div className="h-px bg-border/40" />
           <div>
             <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 px-1">
               Nouveau dossier
@@ -593,7 +614,7 @@ export default function SidebarWorkspaces({
             </button>
           </div>
 
-          <div className="h-px bg-border/60" />
+          <div className="h-px bg-border/40" />
           <div>
             <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 px-1">
               Paramètres

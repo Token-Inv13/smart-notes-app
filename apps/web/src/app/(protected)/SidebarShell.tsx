@@ -114,13 +114,13 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   return (
     <div className="min-h-[100dvh] flex bg-background text-foreground overflow-x-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       {/* Desktop sidebar */}
-      <aside className={`hidden md:flex ${sidebarWidthClass} border-r border-border bg-background/95`}>
+      <aside className={`hidden md:flex ${sidebarWidthClass} border-r border-border/60 bg-background/95`}>
         <div className="w-full flex flex-col">
           <div
             className={
               collapsed
-                ? "p-3 flex flex-col items-center gap-2 border-b border-border/60"
-                : "p-3 flex items-center justify-between gap-2 border-b border-border/60"
+                ? "p-3 flex flex-col items-center gap-2 border-b border-border/40"
+                : "p-3 flex items-center justify-between gap-2 border-b border-border/40"
             }
           >
             <div className={collapsed ? "flex flex-col items-center gap-2" : "min-w-0 flex items-center gap-2"}>
