@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import Stripe from 'stripe';
 import admin from 'firebase-admin';
-import { getAdminDb, verifySessionCookie } from '@/lib/firebaseAdmin';
+import { getAdminDb, getAdminProjectId, verifySessionCookie } from '@/lib/firebaseAdmin';
 import type { UserDoc } from '@/types/firestore';
 
 export const runtime = 'nodejs';
@@ -15,6 +15,13 @@ function getStripeClient() {
     throw new Error('Missing STRIPE_SECRET_KEY');
   }
   return new Stripe(secretKey, { apiVersion: '2024-06-20' });
+}
+
+function getStripeModeFromSecret(): 'live' | 'test' | 'unknown' {
+  const secretKey = process.env.STRIPE_SECRET_KEY ?? '';
+  if (secretKey.startsWith('sk_live_')) return 'live';
+  if (secretKey.startsWith('sk_test_')) return 'test';
+  return 'unknown';
 }
 
 function getCustomerIdFromSubscription(sub: Stripe.Subscription): string | null {
@@ -35,33 +42,52 @@ async function getSubscriptionForUser(params: {
   uid: string;
   email: string | null;
   userData: Partial<UserDoc>;
-}): Promise<Stripe.Subscription | null> {
+}): Promise<{ subscription: Stripe.Subscription | null; attempts: Array<{ step: string; ok: boolean; detail?: string }> }> {
   const { stripe, uid, email, userData } = params;
+
+  const attempts: Array<{ step: string; ok: boolean; detail?: string }> = [];
 
   if (typeof userData.stripeSubscriptionId === 'string' && userData.stripeSubscriptionId) {
     try {
-      return await stripe.subscriptions.retrieve(userData.stripeSubscriptionId);
-    } catch {
-      // ignore
+      const sub = await stripe.subscriptions.retrieve(userData.stripeSubscriptionId);
+      attempts.push({ step: 'retrieve_by_subscription_id', ok: true });
+      return { subscription: sub, attempts };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'retrieve_failed';
+      attempts.push({ step: 'retrieve_by_subscription_id', ok: false, detail: message });
     }
   }
+
+  attempts.push({ step: 'retrieve_by_subscription_id', ok: false, detail: 'missing_subscription_id' });
 
   if (typeof userData.stripeCustomerId === 'string' && userData.stripeCustomerId) {
     try {
       const res = await stripe.subscriptions.list({ customer: userData.stripeCustomerId, status: 'all', limit: 10 });
       const sub = pickMostRecentSubscription(res.data);
-      if (sub) return sub;
-    } catch {
-      // ignore
+      if (sub) {
+        attempts.push({ step: 'list_by_customer_id', ok: true });
+        return { subscription: sub, attempts };
+      }
+      attempts.push({ step: 'list_by_customer_id', ok: false, detail: 'no_subscription_for_customer' });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'list_failed';
+      attempts.push({ step: 'list_by_customer_id', ok: false, detail: message });
     }
+  } else {
+    attempts.push({ step: 'list_by_customer_id', ok: false, detail: 'missing_customer_id' });
   }
 
   try {
     const res = await stripe.subscriptions.search({ query: `metadata['userId']:'${uid}'`, limit: 10 });
     const sub = pickMostRecentSubscription(res.data);
-    if (sub) return sub;
-  } catch {
-    // ignore
+    if (sub) {
+      attempts.push({ step: 'search_by_metadata_user_id', ok: true });
+      return { subscription: sub, attempts };
+    }
+    attempts.push({ step: 'search_by_metadata_user_id', ok: false, detail: 'no_match' });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'search_failed';
+    attempts.push({ step: 'search_by_metadata_user_id', ok: false, detail: message });
   }
 
   if (typeof email === 'string' && email) {
@@ -71,14 +97,23 @@ async function getSubscriptionForUser(params: {
       if (customerId) {
         const res = await stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 10 });
         const sub = pickMostRecentSubscription(res.data);
-        if (sub) return sub;
+        if (sub) {
+          attempts.push({ step: 'lookup_by_email_then_list', ok: true });
+          return { subscription: sub, attempts };
+        }
+        attempts.push({ step: 'lookup_by_email_then_list', ok: false, detail: 'no_subscription_for_email_customer' });
+      } else {
+        attempts.push({ step: 'lookup_by_email_then_list', ok: false, detail: 'no_customer_for_email' });
       }
-    } catch {
-      // ignore
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'email_lookup_failed';
+      attempts.push({ step: 'lookup_by_email_then_list', ok: false, detail: message });
     }
+  } else {
+    attempts.push({ step: 'lookup_by_email_then_list', ok: false, detail: 'missing_email' });
   }
 
-  return null;
+  return { subscription: null, attempts };
 }
 
 export async function POST() {
@@ -96,7 +131,15 @@ export async function POST() {
     const userSnap = await userRef.get();
     const userData: Partial<UserDoc> = (userSnap.data() as UserDoc | undefined) ?? {};
 
-    const sub = await getSubscriptionForUser({ stripe, uid: decoded.uid, email: decoded.email ?? null, userData });
+    const { subscription: sub, attempts } = await getSubscriptionForUser({
+      stripe,
+      uid: decoded.uid,
+      email: decoded.email ?? null,
+      userData,
+    });
+
+    const stripeMode = getStripeModeFromSecret();
+    const adminProjectId = getAdminProjectId();
 
     if (!sub) {
       const hasStripeContext =
@@ -117,7 +160,7 @@ export async function POST() {
         );
       }
 
-      return NextResponse.json({ ok: true, found: false });
+      return NextResponse.json({ ok: true, found: false, stripeMode, adminProjectId, attempts });
     }
 
     const status = sub.status;
@@ -138,7 +181,19 @@ export async function POST() {
       { merge: true },
     );
 
-    return NextResponse.json({ ok: true, found: true, status, plan: isActive ? 'pro' : 'free' });
+    return NextResponse.json({
+      ok: true,
+      found: true,
+      stripeMode,
+      adminProjectId,
+      attempts,
+      subscription: {
+        id: sub.id,
+        status,
+        customerId: getCustomerIdFromSubscription(sub),
+      },
+      plan: isActive ? 'pro' : 'free',
+    });
   } catch (e) {
     console.error('Stripe sync error', e);
     const message = e instanceof Error ? e.message : 'Sync failed';

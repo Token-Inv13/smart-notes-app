@@ -21,6 +21,33 @@ export default function UpgradeSuccessPage() {
         const text = await res.text().catch(() => '');
         throw new Error(text || 'SYNC_FAILED');
       }
+      const json = (await res.json().catch(() => null)) as
+        | {
+            ok?: boolean;
+            found?: boolean;
+            stripeMode?: 'live' | 'test' | 'unknown';
+            adminProjectId?: string | null;
+            attempts?: Array<{ step: string; ok: boolean; detail?: string }>;
+            plan?: 'free' | 'pro';
+          }
+        | null;
+
+      const clientProjectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+      if (json && json.adminProjectId && clientProjectId && json.adminProjectId !== clientProjectId) {
+        setSyncError(
+          `La synchro s’exécute sur un autre projet Firebase (admin: ${json.adminProjectId}, client: ${clientProjectId}). Vérifie les variables FIREBASE_ADMIN_JSON/PROJECT_ID côté serveur.`,
+        );
+        return;
+      }
+
+      if (json && json.found === false) {
+        const mode = json.stripeMode ?? 'unknown';
+        setSyncError(
+          `Aucun abonnement Stripe n’a été retrouvé pour ce compte (mode Stripe: ${mode}). Si la souscription est visible dans l’autre mode (test/live), corrige STRIPE_SECRET_KEY.`,
+        );
+        return;
+      }
+
       refetch();
     } catch (e) {
       console.error('Sync error', e);

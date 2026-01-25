@@ -104,6 +104,11 @@ export function getAdminDb(): admin.firestore.Firestore {
   return getAdminApp().firestore();
 }
 
+export function getAdminProjectId(): string | null {
+  const value = getAdminApp().options.projectId;
+  return typeof value === 'string' && value ? value : null;
+}
+
 export async function verifySessionCookie(sessionCookie: string) {
   try {
     return await getAdminAuth().verifySessionCookie(sessionCookie, true);
