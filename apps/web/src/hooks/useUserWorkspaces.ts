@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/hooks/useAuth';
+import { invalidateAuthSession, isAuthInvalidError } from '@/lib/authInvalidation';
 import type { WorkspaceDoc } from '@/types/firestore';
 
 interface UseUserWorkspacesState {
@@ -29,6 +30,8 @@ export function useUserWorkspaces(): UseUserWorkspacesState {
     }
 
     setLoading(true);
+    setData([]);
+    setError(null);
 
     const ownerRef = query(
       collection(db, 'workspaces'),
@@ -57,6 +60,9 @@ export function useUserWorkspaces(): UseUserWorkspacesState {
       (err) => {
         setError(err as Error);
         setLoading(false);
+        if (isAuthInvalidError(err)) {
+          void invalidateAuthSession();
+        }
       },
     );
 
@@ -77,6 +83,9 @@ export function useUserWorkspaces(): UseUserWorkspacesState {
       (err) => {
         setError(err as Error);
         setLoading(false);
+        if (isAuthInvalidError(err)) {
+          void invalidateAuthSession();
+        }
       },
     );
 

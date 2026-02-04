@@ -6,6 +6,7 @@ import {
   type QuerySnapshot,
   onSnapshot,
 } from 'firebase/firestore';
+import { invalidateAuthSession, isAuthInvalidError } from '@/lib/authInvalidation';
 
 interface UseCollectionState<T> {
   data: T[];
@@ -28,6 +29,8 @@ export function useCollection<T>(query: Query<T> | null): UseCollectionState<T> 
     }
 
     setLoading(true);
+    setData([]);
+    setError(null);
     const unsubscribe = onSnapshot(
       query as Query<T>,
       (snapshot: QuerySnapshot<T>) => {
@@ -38,6 +41,9 @@ export function useCollection<T>(query: Query<T> | null): UseCollectionState<T> 
       (err) => {
         setError(err as Error);
         setLoading(false);
+        if (isAuthInvalidError(err)) {
+          void invalidateAuthSession();
+        }
       },
     );
 

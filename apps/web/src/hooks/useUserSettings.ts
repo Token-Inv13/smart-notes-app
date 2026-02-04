@@ -1,9 +1,17 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { doc, onSnapshot, serverTimestamp, setDoc, type DocumentSnapshot } from 'firebase/firestore';
+import {
+  doc,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+  type DocumentReference,
+  type DocumentSnapshot,
+} from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/hooks/useAuth';
+import { invalidateAuthSession, isAuthInvalidError } from '@/lib/authInvalidation';
 import type { UserDoc } from '@/types/firestore';
 
 interface UseUserSettingsState {
@@ -29,11 +37,13 @@ export function useUserSettings(): UseUserSettingsState {
     }
 
     setLoading(true);
+    setData(null);
+    setError(null);
 
-    const ref = doc(db, 'users', user.uid);
+    const ref = doc(db, 'users', user.uid) as DocumentReference<UserDoc>;
 
     const unsubscribe = onSnapshot(
-      ref as any,
+      ref,
       (snapshot: DocumentSnapshot<UserDoc>) => {
         if (snapshot.exists()) {
           setData({ id: snapshot.id, ...(snapshot.data() as UserDoc) });
@@ -63,6 +73,9 @@ export function useUserSettings(): UseUserSettingsState {
       (err) => {
         setError(err as Error);
         setLoading(false);
+        if (isAuthInvalidError(err)) {
+          void invalidateAuthSession();
+        }
       },
     );
 

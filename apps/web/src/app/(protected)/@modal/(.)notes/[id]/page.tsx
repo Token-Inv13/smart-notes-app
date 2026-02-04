@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { auth, db, storage } from "@/lib/firebase";
 import { exportNotePdf } from "@/lib/pdf/exportPdf";
+import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import { sanitizeNoteHtml } from "@/lib/richText";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
@@ -402,6 +403,10 @@ export default function NoteDetailModal(props: any) {
           setMode("view");
         }
       } catch (e) {
+        if (isAuthInvalidError(e)) {
+          void invalidateAuthSession();
+          return;
+        }
         const msg = e instanceof Error ? e.message : "Erreur lors du chargement.";
         if (!cancelled) setError(msg);
       } finally {

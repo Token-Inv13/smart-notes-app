@@ -16,10 +16,11 @@ import {
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { auth, db } from "@/lib/firebase";
-import { exportTaskPdf } from "@/lib/pdf/exportPdf";
-import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
-import { formatTimestampForInput, parseLocalDateTimeToTimestamp } from "@/lib/datetime";
 import type { TaskDoc } from "@/types/firestore";
+import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
+import { exportTaskPdf } from "@/lib/pdf/exportPdf";
+import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
+import { formatTimestampForInput, parseLocalDateTimeToTimestamp } from "@/lib/datetime";
 import Modal from "../../../Modal";
 import ItemActionsMenu from "../../../ItemActionsMenu";
 
@@ -45,9 +46,9 @@ const editTaskSchema = z.object({
   dueDate: z.string().optional(),
 });
 
-export default function TaskDetailModal(props: any) {
+export default function TaskDetailModal(props: { params: Promise<{ id: string }> }) {
   const router = useRouter();
-  const params = use(props?.params as Promise<{ id: string }>);
+  const params = use(props.params);
   const taskId: string | undefined = params?.id;
 
   const { data: workspaces } = useUserWorkspaces();
@@ -113,6 +114,10 @@ export default function TaskDetailModal(props: any) {
           setMode("view");
         }
       } catch (e) {
+        if (isAuthInvalidError(e)) {
+          void invalidateAuthSession();
+          return;
+        }
         const msg = e instanceof Error ? e.message : "Erreur lors du chargement.";
         if (!cancelled) setError(msg);
       } finally {

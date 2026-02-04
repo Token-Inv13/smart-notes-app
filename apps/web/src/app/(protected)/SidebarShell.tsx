@@ -7,6 +7,8 @@ import SidebarWorkspaces from "./SidebarWorkspaces";
 import PwaInstallCta from "./_components/PwaInstallCta";
 import CreateButton from "./_components/CreateButton";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
+import { useAuth } from "@/hooks/useAuth";
+import { invalidateAuthSession } from "@/lib/authInvalidation";
 import type { WorkspaceDoc } from "@/types/firestore";
 
 const STORAGE_KEY = "sidebarCollapsed";
@@ -15,7 +17,16 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const workspaceId = searchParams.get("workspaceId");
+  const { user, loading: authLoading } = useAuth();
+  const [authInvalidating, setAuthInvalidating] = useState(false);
   const { data: workspaces, loading: workspacesLoading, error: workspacesError } = useUserWorkspaces();
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (user) return;
+    setAuthInvalidating(true);
+    void invalidateAuthSession();
+  }, [authLoading, user]);
 
   const baseSortedWorkspaces = useMemo(() => {
     return workspaces
@@ -111,8 +122,19 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
 
   const sidebarWidthClass = collapsed ? "w-16" : "w-64";
 
+  if (authLoading || authInvalidating || !user) {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center bg-background text-foreground">
+        <div className="h-5 w-5 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground animate-spin" />
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-[100dvh] flex bg-background text-foreground overflow-x-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+    <div
+      key={user.uid}
+      className="min-h-[100dvh] flex bg-background text-foreground overflow-x-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
+    >
       {/* Desktop sidebar */}
       <aside className={`hidden md:flex ${sidebarWidthClass} border-r border-border/60 bg-background/95`}>
         <div className="w-full flex flex-col">

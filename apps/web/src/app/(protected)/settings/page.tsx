@@ -7,6 +7,7 @@ import { auth, db } from "@/lib/firebase";
 import { isAndroidNative } from "@/lib/runtimePlatform";
 import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { registerFcmToken } from "@/lib/fcm";
+import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import LogoutButton from "../LogoutButton";
 
 export default function SettingsPage() {
@@ -100,6 +101,10 @@ export default function SettingsPage() {
       }
     } catch (e) {
       console.error("Error updating task reminders", e);
+      if (isAuthInvalidError(e)) {
+        void invalidateAuthSession();
+        return;
+      }
       setToggleMessage("Error updating task reminders.");
     } finally {
       setToggling(false);
@@ -132,6 +137,10 @@ export default function SettingsPage() {
       setProfileMessage("Profil mis à jour.");
     } catch (e) {
       console.error("Error updating profile", e);
+      if (isAuthInvalidError(e)) {
+        void invalidateAuthSession();
+        return;
+      }
       setProfileMessage("Erreur lors de la mise à jour du profil.");
     } finally {
       setSavingProfile(false);
@@ -159,6 +168,10 @@ export default function SettingsPage() {
       setAppearanceMessage("Mode mis à jour.");
     } catch (e) {
       console.error("Error updating appearance", e);
+      if (isAuthInvalidError(e)) {
+        void invalidateAuthSession();
+        return;
+      }
       setAppearanceMessage("Erreur lors de la mise à jour de l'apparence.");
     } finally {
       setSavingAppearance(false);
@@ -334,7 +347,8 @@ export default function SettingsPage() {
                 type="button"
                 onClick={handleToggleTaskReminders}
                 disabled={toggling}
-                aria-pressed={!!user.settings?.notifications?.taskReminders}
+                aria-label="Rappels de tâches"
+                title="Rappels de tâches"
                 className={`relative inline-flex h-9 w-14 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background disabled:opacity-50 ${
                   user.settings?.notifications?.taskReminders ? "bg-primary/30 border-primary/30" : "bg-muted border-border"
                 }`}
@@ -469,7 +483,8 @@ export default function SettingsPage() {
                 type="button"
                 onClick={handleToggleThemeMode}
                 disabled={savingAppearance}
-                aria-pressed={user.settings?.appearance?.mode === "dark"}
+                aria-label="Mode sombre"
+                title="Mode sombre"
                 className={`relative inline-flex h-9 w-14 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background disabled:opacity-50 ${
                   user.settings?.appearance?.mode === "dark" ? "bg-primary/30 border-primary/30" : "bg-muted border-border"
                 }`}

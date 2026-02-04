@@ -5,10 +5,20 @@ import { onAuthStateChanged } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { listenToForegroundMessages } from "@/lib/fcm";
+import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 
 type ThemeMode = "light" | "dark";
 
 type BackgroundPreset = "none" | "dots" | "grid";
+
+type UserAppearanceDoc = {
+  settings?: {
+    appearance?: {
+      mode?: ThemeMode;
+      background?: BackgroundPreset;
+    };
+  };
+};
 
 function applyTheme(mode: ThemeMode) {
   const root = document.documentElement;
@@ -58,22 +68,29 @@ export default function ThemeClientProvider({ children }: { children: React.Reac
       if (!user) return;
 
       const ref = doc(db, "users", user.uid);
-      unsubscribeSettings = onSnapshot(ref, (snap) => {
-        const data = snap.data() as any;
-        const mode = (data?.settings?.appearance?.mode as ThemeMode | undefined) ?? local.mode;
-        const background =
-          (data?.settings?.appearance?.background as BackgroundPreset | undefined) ?? local.background;
+      unsubscribeSettings = onSnapshot(
+        ref,
+        (snap) => {
+          const data = snap.data() as UserAppearanceDoc | undefined;
+          const mode = data?.settings?.appearance?.mode ?? local.mode;
+          const background = data?.settings?.appearance?.background ?? local.background;
 
-        const normalizedMode: ThemeMode = mode === "dark" ? "dark" : "light";
-        const normalizedBg: BackgroundPreset =
-          background === "dots" || background === "grid" ? background : "none";
+          const normalizedMode: ThemeMode = mode === "dark" ? "dark" : "light";
+          const normalizedBg: BackgroundPreset =
+            background === "dots" || background === "grid" ? background : "none";
 
-        localStorage.setItem("themeMode", normalizedMode);
-        localStorage.setItem("themeBackground", normalizedBg);
+          localStorage.setItem("themeMode", normalizedMode);
+          localStorage.setItem("themeBackground", normalizedBg);
 
-        applyTheme(normalizedMode);
-        applyBackground(normalizedBg);
-      });
+          applyTheme(normalizedMode);
+          applyBackground(normalizedBg);
+        },
+        (err) => {
+          if (isAuthInvalidError(err)) {
+            void invalidateAuthSession();
+          }
+        },
+      );
     });
 
     return () => {
