@@ -11,7 +11,7 @@
  * All writes must respect Firestore rules: user can only modify their own tasks.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
@@ -60,8 +60,13 @@ export default function TasksPage() {
   const [viewMode, setViewMode] = useState<"list" | "grid" | "kanban">("list");
 
   const [editError, setEditError] = useState<string | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [pushStatus, setPushStatus] = useState<string | null>(null);
   const [enablingPush, setEnablingPush] = useState(false);
+
+  const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null);
+  const [optimisticStatusById, setOptimisticStatusById] = useState<Record<string, TaskStatus>>({});
 
   const tabsTouchStartRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -147,10 +152,47 @@ export default function TasksPage() {
     return sorted;
   }, [tasks, statusFilter, workspaceFilter, archiveView]);
 
-  const activeTasks = useMemo(
-    () => filteredTasks.filter((t) => ((t.status as TaskStatus | undefined) ?? "todo") !== "done"),
-    [filteredTasks],
+  useEffect(() => {
+    setOptimisticStatusById((prev) => {
+      const ids = Object.keys(prev);
+      if (ids.length === 0) return prev;
+
+      const byId = new Map<string, TaskDoc>();
+      tasks.forEach((t) => {
+        if (t.id) byId.set(t.id, t);
+      });
+
+      let changed = false;
+      const next: Record<string, TaskStatus> = { ...prev };
+      for (const id of ids) {
+        const task = byId.get(id);
+        if (!task) {
+          delete next[id];
+          changed = true;
+          continue;
+        }
+        const actual = ((task.status as TaskStatus | undefined) ?? "todo") as TaskStatus;
+        if (actual === prev[id]) {
+          delete next[id];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [tasks]);
+
+  const statusForTask = useCallback(
+    (task: TaskDoc): TaskStatus => {
+      const optimistic = task.id ? optimisticStatusById[task.id] : undefined;
+      if (optimistic !== undefined) return optimistic;
+      return (((task.status as TaskStatus | undefined) ?? "todo") as TaskStatus) || "todo";
+    },
+    [optimisticStatusById],
   );
+
+  const activeTasks = useMemo(() => {
+    return filteredTasks.filter((t) => statusForTask(t) !== "done");
+  }, [filteredTasks, statusForTask]);
 
   const completedTasks = useMemo(
     () => {
@@ -163,7 +205,7 @@ export default function TasksPage() {
         result = result.filter((task) => task.workspaceId === workspaceFilter);
       }
       return result
-        .filter((t) => ((t.status as TaskStatus | undefined) ?? "todo") === "done")
+        .filter((t) => statusForTask(t) === "done")
         .slice()
         .sort((a, b) => {
           const aUpdated = toMillisSafe(a.updatedAt);
@@ -171,7 +213,7 @@ export default function TasksPage() {
           return bUpdated - aUpdated;
         });
     },
-    [tasks, workspaceFilter, archiveView],
+    [tasks, workspaceFilter, archiveView, statusForTask],
   );
 
   const visibleTasksCount = useMemo(
@@ -249,6 +291,7 @@ export default function TasksPage() {
     if (!user || user.uid !== task.userId) return;
 
     const nextStatus: TaskStatus = nextDone ? "done" : "todo";
+    setOptimisticStatusById((prev) => ({ ...prev, [task.id!]: nextStatus }));
     try {
       await updateDoc(doc(db, "tasks", task.id), {
         title: task.title,
@@ -258,8 +301,18 @@ export default function TasksPage() {
         favorite: task.favorite === true,
         updatedAt: serverTimestamp(),
       });
+
+      if (!nextDone) {
+        setActionFeedback("Tâche restaurée.");
+        window.setTimeout(() => setActionFeedback(null), 1800);
+      }
     } catch (e) {
       console.error("Error toggling done", e);
+      setOptimisticStatusById((prev) => {
+        const next = { ...prev };
+        delete next[task.id!];
+        return next;
+      });
     }
   };
 
@@ -271,12 +324,42 @@ export default function TasksPage() {
     };
 
     for (const task of filteredTasks) {
-      const status = ((task.status as TaskStatus | undefined) ?? "todo") as TaskStatus;
+      const status = statusForTask(task);
       groups[status].push(task);
     }
 
     return groups;
-  }, [filteredTasks]);
+  }, [filteredTasks, statusForTask]);
+
+  const handleKanbanDrop = async (taskId: string, targetStatus: TaskStatus) => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task || task.userId !== user.uid) return;
+
+    const source = statusForTask(task);
+    if (source === targetStatus) return;
+
+    setOptimisticStatusById((prev) => ({ ...prev, [taskId]: targetStatus }));
+    setEditError(null);
+
+    try {
+      await updateDoc(doc(db, "tasks", taskId), {
+        status: targetStatus,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error("Error moving task (kanban)", e);
+      setOptimisticStatusById((prev) => {
+        if (!prev[taskId]) return prev;
+        const next = { ...prev };
+        delete next[taskId];
+        return next;
+      });
+      setEditError("Erreur lors du déplacement de la tâche.");
+    }
+  };
 
   const archivedTasks = useMemo(() => {
     if (archiveView !== "archived") return [] as TaskDoc[];
@@ -462,6 +545,8 @@ export default function TasksPage() {
       )}
 
       {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
+
+      {actionFeedback && <div className="sn-alert" role="status" aria-live="polite">{actionFeedback}</div>}
 
       {error && <div className="sn-alert sn-alert--error">Impossible de charger les tâches pour le moment.</div>}
 
@@ -693,7 +778,24 @@ export default function TasksPage() {
           ).map((colStatus) => (
             <div
               key={colStatus}
-              className="sn-card sn-card--task p-3 min-h-[240px]"
+              className={`sn-card sn-card--task p-3 min-h-[240px] transition-colors ${
+                dragOverStatus === colStatus ? "ring-2 ring-primary/40 bg-accent/30" : ""
+              }`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                if (dragOverStatus !== colStatus) setDragOverStatus(colStatus);
+              }}
+              onDragLeave={() => {
+                setDragOverStatus((prev) => (prev === colStatus ? null : prev));
+              }}
+              onDrop={async (e) => {
+                e.preventDefault();
+                const id = e.dataTransfer.getData("text/plain");
+                if (!id) return;
+                await handleKanbanDrop(id, colStatus);
+                setDraggingTaskId(null);
+                setDragOverStatus(null);
+              }}
             >
               <div className="flex items-center justify-between mb-2">
                 <h2 className="font-semibold">{statusLabel(colStatus)}</h2>
@@ -711,8 +813,19 @@ export default function TasksPage() {
                   return (
                     <div
                       key={task.id}
+                      draggable={!!task.id}
+                      onDragStart={(e) => {
+                        if (!task.id) return;
+                        e.dataTransfer.setData("text/plain", task.id);
+                        e.dataTransfer.effectAllowed = "move";
+                        setDraggingTaskId(task.id);
+                      }}
+                      onDragEnd={() => {
+                        setDraggingTaskId(null);
+                        setDragOverStatus(null);
+                      }}
                       className={`border border-border rounded-md bg-background p-2 cursor-move transition-shadow ${
-                        ""
+                        draggingTaskId === task.id ? "opacity-60 ring-2 ring-primary/40" : ""
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -726,7 +839,7 @@ export default function TasksPage() {
                           <label className="text-xs flex items-center gap-1">
                             <input
                               type="checkbox"
-                              checked={((task.status as TaskStatus | undefined) ?? "todo") === "done"}
+                              checked={statusForTask(task) === "done"}
                               onChange={(e) => toggleDone(task, e.target.checked)}
                             />
                             Terminé
