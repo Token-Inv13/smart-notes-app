@@ -39,6 +39,7 @@ export interface NoteDoc {
   favorite?: boolean;
   completed?: boolean;
   archived?: boolean;
+  archivedAt?: Timestamp | FieldValue | null;
   tags?: string[];
   createdAt?: Timestamp | FieldValue;
   updatedAt?: Timestamp | FieldValue;

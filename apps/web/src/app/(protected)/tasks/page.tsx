@@ -388,6 +388,10 @@ export default function TasksPage() {
         archivedAt: null,
         updatedAt: serverTimestamp(),
       });
+
+      setActionFeedback("Tâche restaurée.");
+      window.setTimeout(() => setActionFeedback(null), 1800);
+      setArchiveView("active");
     } catch (e) {
       console.error("Error restoring archived task", e);
       setEditError("Erreur lors de la restauration de la tâche.");

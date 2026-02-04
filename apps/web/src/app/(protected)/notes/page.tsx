@@ -52,6 +52,7 @@ export default function NotesPage() {
   }, [createParam, router, workspaceId]);
 
   const [editError, setEditError] = useState<string | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
 
   const showUpgradeCta = !!editError?.includes("Limite Free atteinte");
 
@@ -84,12 +85,22 @@ export default function NotesPage() {
     }
   }, []);
 
-  const archivePredicate = useMemo(
-    () => (n: NoteDoc) => (archiveView === "archived" ? n.archived === true : n.archived !== true),
-    [archiveView],
-  );
+  const activeNotes = useMemo(() => sortedNotes.filter((n) => n.archived !== true), [sortedNotes]);
 
-  const activeNotes = useMemo(() => sortedNotes.filter(archivePredicate), [sortedNotes, archivePredicate]);
+  const archivedNotes = useMemo(() => {
+    return notes
+      .filter((n) => n.archived === true)
+      .slice()
+      .sort((a, b) => {
+        const aArchived = toMillisSafe(a.archivedAt ?? a.updatedAt);
+        const bArchived = toMillisSafe(b.archivedAt ?? b.updatedAt);
+        if (aArchived !== bArchived) return bArchived - aArchived;
+
+        const aUpdated = toMillisSafe(a.updatedAt);
+        const bUpdated = toMillisSafe(b.updatedAt);
+        return bUpdated - aUpdated;
+      });
+  }, [notes]);
 
   const visibleNotesCount = activeNotes.length;
   const visibleTasksCount = useMemo(
@@ -176,6 +187,27 @@ export default function NotesPage() {
     }
   };
 
+  const restoreArchivedNote = async (note: NoteDoc) => {
+    if (!note.id) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== note.userId) return;
+
+    try {
+      await updateDoc(doc(db, "notes", note.id), {
+        archived: false,
+        archivedAt: null,
+        updatedAt: serverTimestamp(),
+      });
+
+      setActionFeedback("Note restaurée.");
+      window.setTimeout(() => setActionFeedback(null), 1800);
+      setArchiveView("active");
+    } catch (e) {
+      console.error("Error restoring archived note", e);
+      setEditError("Erreur lors de la restauration de la note.");
+    }
+  };
+
   return (
     <div className="space-y-8">
       {workspaceId && tabs}
@@ -215,14 +247,14 @@ export default function NotesPage() {
               onClick={() => setArchiveView("active")}
               className={`px-3 py-1 text-sm ${archiveView === "active" ? "bg-accent" : ""}`}
             >
-              Actifs
+              Actives
             </button>
             <button
               type="button"
               onClick={() => setArchiveView("archived")}
               className={`px-3 py-1 text-sm ${archiveView === "archived" ? "bg-accent" : ""}`}
             >
-              Archivés
+              Archivées
             </button>
           </div>
         </div>
@@ -236,6 +268,7 @@ export default function NotesPage() {
           </div>
         )}
         {editError && <div className="mt-2 sn-alert sn-alert--error">{editError}</div>}
+        {actionFeedback && <div className="mt-2 sn-alert" role="status" aria-live="polite">{actionFeedback}</div>}
         {!isPro && showUpgradeCta && (
           <Link
             href="/upgrade"
@@ -245,20 +278,75 @@ export default function NotesPage() {
           </Link>
         )}
 
-        {!loading && !error && activeNotes.length === 0 && (
+        {!loading && !error && archiveView === "active" && activeNotes.length === 0 && (
           <div className="sn-empty">
-            <div className="sn-empty-title">
-              {archiveView === "archived" ? "Aucune note archivée" : "Aucune note pour le moment"}
-            </div>
-            {archiveView !== "archived" && (
-              <div className="sn-empty-desc">
-                Commence simple : capture une idée, une liste ou un résumé.
-              </div>
-            )}
+            <div className="sn-empty-title">Aucune note pour le moment</div>
+            <div className="sn-empty-desc">Commence simple : capture une idée, une liste ou un résumé.</div>
+          </div>
+        )}
+        {!loading && !error && archiveView === "archived" && archivedNotes.length === 0 && (
+          <div className="sn-empty">
+            <div className="sn-empty-title">Aucune note archivée</div>
+            <div className="sn-empty-desc">Archive une note pour la retrouver ici et la restaurer plus tard.</div>
           </div>
         )}
         {error && <div className="sn-alert sn-alert--error">Impossible de charger les notes pour le moment.</div>}
-        {!loading && !error && viewMode === "list" && activeNotes.length > 0 && (
+
+        {!loading && !error && archiveView === "archived" && archivedNotes.length > 0 && (
+          <ul className="space-y-2">
+            {archivedNotes.map((note) => {
+              const workspaceName = workspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";
+              const hrefSuffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
+
+              const archivedLabel = (() => {
+                const ts = note.archivedAt ?? note.updatedAt;
+                const maybeTs = ts as { toDate?: () => Date };
+                if (!maybeTs || typeof maybeTs.toDate !== "function") return null;
+                const d = maybeTs.toDate();
+                const pad = (n: number) => String(n).padStart(2, "0");
+                return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+              })();
+
+              return (
+                <li key={note.id}>
+                  <div
+                    className="sn-card sn-card--note sn-card--muted p-4 cursor-pointer"
+                    onClick={() => {
+                      if (!note.id) return;
+                      router.push(`/notes/${note.id}${hrefSuffix}`);
+                    }}
+                  >
+                    <div className="sn-card-header">
+                      <div className="min-w-0">
+                        <div className="sn-card-title truncate">{note.title}</div>
+                        <div className="sn-card-meta">
+                          <span className="sn-badge">{workspaceName}</span>
+                          {archivedLabel && <span className="sn-badge">Archivée: {archivedLabel}</span>}
+                        </div>
+                      </div>
+
+                      <div className="sn-card-actions sn-card-actions-secondary shrink-0">
+                        <button
+                          type="button"
+                          className="sn-text-btn"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            restoreArchivedNote(note);
+                          }}
+                        >
+                          Restaurer
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {!loading && !error && archiveView === "active" && viewMode === "list" && activeNotes.length > 0 && (
           <ul className="space-y-2">
             {activeNotes.map((note) => {
               const workspaceName = workspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";
@@ -308,7 +396,7 @@ export default function NotesPage() {
           </ul>
         )}
 
-        {viewMode === "grid" && (
+        {archiveView === "active" && viewMode === "grid" && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {activeNotes.map((note) => {
               const workspaceName = workspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";

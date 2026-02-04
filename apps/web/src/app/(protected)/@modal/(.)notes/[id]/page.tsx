@@ -671,8 +671,10 @@ export default function NoteDetailModal(props: any) {
     setSaving(true);
     setEditError(null);
     try {
+      const nextArchived = !(note.archived === true);
       await updateDoc(doc(db, "notes", note.id), {
-        archived: !(note.archived === true),
+        archived: nextArchived,
+        archivedAt: nextArchived ? serverTimestamp() : null,
         updatedAt: serverTimestamp(),
       });
       router.back();
