@@ -35,7 +35,8 @@ export default function CreateButton() {
     }
 
     if (pathname.startsWith("/todo")) {
-      dispatchCreateTodoEvent();
+      const todoId = searchParams.get("todoId");
+      dispatchCreateTodoEvent(todoId ? "add_item" : "create");
       return;
     }
 

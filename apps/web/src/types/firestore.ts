@@ -76,6 +76,12 @@ export interface TodoDoc {
   userId: string;
   workspaceId?: string | null;
   title: string;
+  items?: {
+    id: string;
+    text: string;
+    done: boolean;
+    createdAt?: number;
+  }[];
   completed?: boolean;
   favorite?: boolean;
   createdAt?: Timestamp | FieldValue;
