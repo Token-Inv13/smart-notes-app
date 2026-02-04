@@ -293,6 +293,174 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
     setTodoIdInUrl(null);
   };
 
+  const renderTodoDetail = (todo: TodoDoc) => {
+    const allItems = itemsForTodo(todo);
+    const activeItems = allItems.filter((it) => it.done !== true);
+    const doneItems = allItems.filter((it) => it.done === true);
+
+    return (
+      <>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-lg font-semibold truncate">{todo.title}</div>
+            <div className="text-xs text-muted-foreground">
+              Actifs: {activeItems.length} · Terminés: {doneItems.length}
+            </div>
+          </div>
+          <button type="button" className="sn-text-btn shrink-0" onClick={closeDetail}>
+            Fermer
+          </button>
+        </div>
+
+        <div className="sn-card sn-card--muted p-3">
+          <div className="flex items-center gap-2">
+            <input
+              value={newItemText}
+              onChange={(e) => setNewItemText(e.target.value)}
+              placeholder="Ajouter un élément"
+              className="w-full bg-transparent text-sm outline-none"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void addItemFromInput();
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setNewItemText("");
+                }
+              }}
+            />
+            <button type="button" className="sn-text-btn" onClick={() => void addItemFromInput()}>
+              Ajouter
+            </button>
+          </div>
+        </div>
+
+        {activeItems.length === 0 && doneItems.length === 0 && (
+          <div className="sn-empty">
+            <div className="sn-empty-title">ToDo vide</div>
+            <div className="sn-empty-desc">Ajoute un premier élément avec + ou le champ ci-dessus.</div>
+          </div>
+        )}
+
+        {activeItems.length === 0 && doneItems.length > 0 && (
+          <div className="sn-empty">
+            <div className="sn-empty-title">Aucun élément actif</div>
+            <div className="sn-empty-desc">Tes éléments terminés sont disponibles plus bas.</div>
+          </div>
+        )}
+
+        {activeItems.length > 0 && (
+          <ul className="space-y-2">
+            {activeItems.map((it) => (
+              <li key={it.id} className="sn-card p-3">
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={it.done === true}
+                    onChange={(e) => {
+                      const next = itemsForTodo(todo).map((x) => (x.id === it.id ? { ...x, done: e.target.checked } : x));
+                      void persistItems(todo, next);
+                    }}
+                    aria-label="Marquer l’élément comme terminé"
+                  />
+
+                  <input
+                    id={`todo-item-${it.id}`}
+                    className="w-full bg-transparent text-sm outline-none"
+                    value={it.text}
+                    placeholder="Nouvel élément"
+                    onChange={(e) => {
+                      const next = itemsForTodo(todo).map((x) => (x.id === it.id ? { ...x, text: e.target.value } : x));
+                      setOptimisticItemsByTodoId((prev) => ({ ...prev, [todo.id!]: next }));
+                    }}
+                    onBlur={() => {
+                      const current = itemsForTodo(todo);
+                      const item = current.find((x) => x.id === it.id);
+                      if (!item) return;
+                      if (!item.text.trim()) {
+                        const next = current.filter((x) => x.id !== it.id);
+                        void persistItems(todo, next);
+                        return;
+                      }
+                      void persistItems(todo, current);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        (e.currentTarget as HTMLInputElement).blur();
+                      }
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        (e.currentTarget as HTMLInputElement).blur();
+                      }
+                    }}
+                  />
+
+                  <button
+                    type="button"
+                    className="sn-icon-btn shrink-0"
+                    aria-label="Supprimer l’élément"
+                    title="Supprimer"
+                    onClick={() => {
+                      const next = itemsForTodo(todo).filter((x) => x.id !== it.id);
+                      void persistItems(todo, next);
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="pt-2">
+          <div className="text-sm font-medium mb-2">Terminées</div>
+
+          {doneItems.length === 0 && <div className="text-sm text-muted-foreground">Aucun élément terminé.</div>}
+
+          {doneItems.length > 0 && (
+            <ul className="space-y-2">
+              {doneItems.map((it) => (
+                <li key={it.id} className="sn-card sn-card--muted p-3">
+                  <div className="flex items-start gap-3 opacity-80">
+                    <input
+                      type="checkbox"
+                      checked={true}
+                      onChange={() => {
+                        const next = itemsForTodo(todo).map((x) => (x.id === it.id ? { ...x, done: false } : x));
+                        void persistItems(todo, next);
+                      }}
+                      aria-label="Restaurer l’élément"
+                    />
+
+                    <div className="w-full min-w-0">
+                      <div className="text-sm line-through text-muted-foreground break-words">{it.text}</div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="sn-icon-btn shrink-0"
+                      aria-label="Supprimer définitivement l’élément"
+                      title="Supprimer"
+                      onClick={() => {
+                        const next = itemsForTodo(todo).filter((x) => x.id !== it.id);
+                        void persistItems(todo, next);
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </>
+    );
+  };
+
   return (
     <div className="space-y-4">
       {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
@@ -415,117 +583,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
               </div>
             )}
 
-            {selectedTodo && (
-              <div className="space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-lg font-semibold truncate">{selectedTodo.title}</div>
-                    <div className="text-xs text-muted-foreground">Éléments: {itemsForTodo(selectedTodo).length}</div>
-                  </div>
-                  <button type="button" className="sn-text-btn shrink-0" onClick={closeDetail}>
-                    Fermer
-                  </button>
-                </div>
-
-                <div className="sn-card sn-card--muted p-3">
-                  <div className="flex items-center gap-2">
-                    <input
-                      value={newItemText}
-                      onChange={(e) => setNewItemText(e.target.value)}
-                      placeholder="Ajouter un élément"
-                      className="w-full bg-transparent text-sm outline-none"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          void addItemFromInput();
-                        }
-                        if (e.key === "Escape") {
-                          e.preventDefault();
-                          setNewItemText("");
-                        }
-                      }}
-                    />
-                    <button type="button" className="sn-text-btn" onClick={() => void addItemFromInput()}>
-                      Ajouter
-                    </button>
-                  </div>
-                </div>
-
-                {itemsForTodo(selectedTodo).length === 0 && (
-                  <div className="sn-empty">
-                    <div className="sn-empty-title">ToDo vide</div>
-                    <div className="sn-empty-desc">Ajoute un premier élément avec + ou le champ ci-dessus.</div>
-                  </div>
-                )}
-
-                {itemsForTodo(selectedTodo).length > 0 && (
-                  <ul className="space-y-2">
-                    {itemsForTodo(selectedTodo).map((it) => (
-                      <li key={it.id} className="sn-card p-3">
-                        <div className="flex items-start gap-3">
-                          <input
-                            type="checkbox"
-                            checked={it.done === true}
-                            onChange={(e) => {
-                              const next = itemsForTodo(selectedTodo).map((x) => (x.id === it.id ? { ...x, done: e.target.checked } : x));
-                              void persistItems(selectedTodo, next);
-                            }}
-                            aria-label="Marquer l’élément comme terminé"
-                          />
-
-                          <input
-                            id={`todo-item-${it.id}`}
-                            className={`w-full bg-transparent text-sm outline-none ${it.done ? "line-through text-muted-foreground" : ""}`}
-                            value={it.text}
-                            placeholder="Nouvel élément"
-                            onChange={(e) => {
-                              if (!selectedTodo) return;
-                              const next = itemsForTodo(selectedTodo).map((x) => (x.id === it.id ? { ...x, text: e.target.value } : x));
-                              setOptimisticItemsByTodoId((prev) => ({ ...prev, [selectedTodo.id!]: next }));
-                            }}
-                            onBlur={() => {
-                              if (!selectedTodo) return;
-                              const current = itemsForTodo(selectedTodo);
-                              const item = current.find((x) => x.id === it.id);
-                              if (!item) return;
-                              if (!item.text.trim()) {
-                                const next = current.filter((x) => x.id !== it.id);
-                                void persistItems(selectedTodo, next);
-                                return;
-                              }
-                              void persistItems(selectedTodo, current);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                (e.currentTarget as HTMLInputElement).blur();
-                              }
-                              if (e.key === "Escape") {
-                                e.preventDefault();
-                                (e.currentTarget as HTMLInputElement).blur();
-                              }
-                            }}
-                          />
-
-                          <button
-                            type="button"
-                            className="sn-icon-btn shrink-0"
-                            aria-label="Supprimer l’élément"
-                            title="Supprimer"
-                            onClick={() => {
-                              const next = itemsForTodo(selectedTodo).filter((x) => x.id !== it.id);
-                              void persistItems(selectedTodo, next);
-                            }}
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
+            {selectedTodo && <div className="space-y-4">{renderTodoDetail(selectedTodo)}</div>}
           </aside>
         </div>
       )}
