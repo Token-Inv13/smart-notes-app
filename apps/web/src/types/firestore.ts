@@ -65,6 +65,7 @@ export interface TaskDoc {
   favorite?: boolean;
   completed?: boolean;
   archived?: boolean;
+  archivedAt?: Timestamp | FieldValue | null;
   createdAt?: Timestamp | FieldValue;
   updatedAt?: Timestamp | FieldValue;
   [key: string]: unknown;

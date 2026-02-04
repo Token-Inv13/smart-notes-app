@@ -55,7 +55,7 @@ export default function TasksPage() {
 
   const [statusFilter] = useState<TaskStatusFilter>("all");
   const [workspaceFilter, setWorkspaceFilter] = useState<WorkspaceFilter>("all");
-  const [archiveView] = useState<"active" | "archived">("active");
+  const [archiveView, setArchiveView] = useState<"active" | "archived">("active");
 
   const [viewMode, setViewMode] = useState<"list" | "grid" | "kanban">("list");
 
@@ -278,12 +278,46 @@ export default function TasksPage() {
     return groups;
   }, [filteredTasks]);
 
+  const archivedTasks = useMemo(() => {
+    if (archiveView !== "archived") return [] as TaskDoc[];
+
+    return filteredTasks
+      .slice()
+      .sort((a, b) => {
+        const aArchived = toMillisSafe(a.archivedAt);
+        const bArchived = toMillisSafe(b.archivedAt);
+        if (aArchived !== bArchived) return bArchived - aArchived;
+
+        const aUpdated = toMillisSafe(a.updatedAt);
+        const bUpdated = toMillisSafe(b.updatedAt);
+        return bUpdated - aUpdated;
+      });
+  }, [archiveView, filteredTasks]);
+
+  const restoreArchivedTask = async (task: TaskDoc) => {
+    if (!task.id) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== task.userId) return;
+
+    try {
+      await updateDoc(doc(db, "tasks", task.id), {
+        archived: false,
+        archivedAt: null,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error("Error restoring archived task", e);
+      setEditError("Erreur lors de la restauration de la tâche.");
+    }
+  };
+
   const toggleFavorite = async (task: TaskDoc) => {
     if (!task.id) return;
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) return;
 
-    if (!isPro && task.favorite !== true && favoriteTasksForLimit.length >= 15) {
+    const favoriteActiveCount = favoriteTasksForLimit.filter((t) => t.archived !== true).length;
+    if (!isPro && task.favorite !== true && favoriteActiveCount >= 15) {
       setEditError(freeLimitMessage);
       return;
     }
@@ -345,6 +379,24 @@ export default function TasksPage() {
           <h1 className="text-xl font-semibold">Tâches</h1>
           <div id="sn-create-slot" />
         </div>
+
+        <div className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap w-fit">
+          <button
+            type="button"
+            onClick={() => setArchiveView("active")}
+            className={`px-3 py-1 text-sm ${archiveView === "active" ? "bg-accent" : ""}`}
+          >
+            Actives
+          </button>
+          <button
+            type="button"
+            onClick={() => setArchiveView("archived")}
+            className={`px-3 py-1 text-sm ${archiveView === "archived" ? "bg-accent" : ""}`}
+          >
+            Archivées
+          </button>
+        </div>
+
         {notificationPermission !== "granted" && (
           <div className="space-y-2">
             {notificationPermission === "unsupported" && (
@@ -413,18 +465,77 @@ export default function TasksPage() {
 
       {error && <div className="sn-alert sn-alert--error">Impossible de charger les tâches pour le moment.</div>}
 
-      {!loading && !error && activeTasks.length === 0 && (
+      {!loading && !error && archiveView === "active" && activeTasks.length === 0 && (
         <div className="sn-empty">
-          <div className="sn-empty-title">
-            {archiveView === "archived" ? "Aucune tâche archivée" : "Aucune tâche pour le moment"}
-          </div>
-          {archiveView !== "archived" && (
-            <div className="sn-empty-desc">Commence par créer une tâche.</div>
-          )}
+          <div className="sn-empty-title">Aucune tâche pour le moment</div>
+          <div className="sn-empty-desc">Commence par créer une tâche.</div>
         </div>
       )}
 
-      {!loading && !error && viewMode === "list" && activeTasks.length > 0 && (
+      {!loading && !error && archiveView === "archived" && archivedTasks.length === 0 && (
+        <div className="sn-empty">
+          <div className="sn-empty-title">Aucune tâche archivée</div>
+          <div className="sn-empty-desc">Archive une tâche pour la retrouver ici et la restaurer plus tard.</div>
+        </div>
+      )}
+
+      {!loading && !error && archiveView === "archived" && archivedTasks.length > 0 && (
+        <ul className="space-y-2">
+          {archivedTasks.map((task) => {
+            const status = (task.status as TaskStatus | undefined) ?? "todo";
+            const workspaceName = workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
+            const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
+
+            const archivedLabel = (() => {
+              const ts = task.archivedAt ?? task.updatedAt;
+              const maybeTs = ts as { toDate?: () => Date };
+              if (!maybeTs || typeof maybeTs.toDate !== "function") return null;
+              const d = maybeTs.toDate();
+              const pad = (n: number) => String(n).padStart(2, "0");
+              return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            })();
+
+            return (
+              <li key={task.id}>
+                <div
+                  className="sn-card sn-card--task sn-card--muted p-4 cursor-pointer"
+                  onClick={() => {
+                    if (!task.id) return;
+                    router.push(`/tasks/${task.id}${hrefSuffix}`);
+                  }}
+                >
+                  <div className="sn-card-header">
+                    <div className="min-w-0">
+                      <div className="sn-card-title truncate">{task.title}</div>
+                      <div className="sn-card-meta">
+                        <span className="sn-badge">{workspaceName}</span>
+                        <span className="sn-badge">{statusLabel(status)}</span>
+                        {archivedLabel && <span className="sn-badge">Archivée: {archivedLabel}</span>}
+                      </div>
+                    </div>
+
+                    <div className="sn-card-actions sn-card-actions-secondary shrink-0">
+                      <button
+                        type="button"
+                        className="sn-text-btn"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          restoreArchivedTask(task);
+                        }}
+                      >
+                        Restaurer
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {!loading && !error && archiveView === "active" && viewMode === "list" && activeTasks.length > 0 && (
         <ul className="space-y-2">
           {activeTasks.map((task) => {
             const status = (task.status as TaskStatus | undefined) ?? "todo";
@@ -499,7 +610,7 @@ export default function TasksPage() {
         </ul>
       )}
 
-      {!loading && !error && viewMode === "grid" && activeTasks.length > 0 && (
+      {!loading && !error && archiveView === "active" && viewMode === "grid" && activeTasks.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {activeTasks.map((task) => {
             const status = (task.status as TaskStatus | undefined) ?? "todo";
@@ -574,7 +685,7 @@ export default function TasksPage() {
         </div>
       )}
 
-      {!loading && !error && viewMode === "kanban" && (
+      {!loading && !error && archiveView === "active" && viewMode === "kanban" && (
         <section className="grid gap-4 md:grid-cols-3">
           {(statusFilter === "all"
             ? (["todo", "doing", "done"] as TaskStatus[])
@@ -643,7 +754,7 @@ export default function TasksPage() {
         </section>
       )}
 
-      {!loading && !error && completedTasks.length > 0 && (
+      {!loading && !error && archiveView === "active" && completedTasks.length > 0 && (
         <section>
           <h2 className="text-lg font-semibold mt-6 mb-2">Terminées</h2>
           <ul className="space-y-2">

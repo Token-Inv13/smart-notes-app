@@ -119,7 +119,8 @@ export default function TaskCreateForm({ initialWorkspaceId, onCreated }: Props)
       return;
     }
 
-    if (!isPro && allTasksForLimit.length >= 15) {
+    const activeTasksCount = allTasksForLimit.filter((t) => t.archived !== true).length;
+    if (!isPro && activeTasksCount >= 15) {
       setCreateError(freeLimitMessage);
       return;
     }

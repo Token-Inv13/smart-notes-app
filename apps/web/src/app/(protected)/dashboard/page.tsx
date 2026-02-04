@@ -128,7 +128,8 @@ export default function DashboardPage() {
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) return;
 
-    if (!isPro && task.favorite !== true && favoriteTasksForLimit.length >= 15) {
+    const activeFavoriteCount = favoriteTasksForLimit.filter((t) => t.archived !== true).length;
+    if (!isPro && task.favorite !== true && activeFavoriteCount >= 15) {
       setTaskActionError(freeLimitMessage);
       return;
     }

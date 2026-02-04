@@ -496,8 +496,10 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     setSaving(true);
     setEditError(null);
     try {
+      const nextArchived = !(task.archived === true);
       await updateDoc(doc(db, "tasks", task.id), {
-        archived: !(task.archived === true),
+        archived: nextArchived,
+        archivedAt: nextArchived ? serverTimestamp() : null,
         updatedAt: serverTimestamp(),
       });
       router.back();
