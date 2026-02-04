@@ -19,7 +19,7 @@ export default function TodoPage() {
 
   const { data: notesForCounter } = useUserNotes({ workspaceId });
   const { data: tasksForCounter } = useUserTasks({ workspaceId });
-  const { data: todosForCounter } = useUserTodos({ workspaceId, completed: false });
+  const { data: todosForCounter } = useUserTodos({ workspaceId });
 
   const visibleNotesCount = useMemo(
     () => notesForCounter.filter((n) => n.archived !== true).length,
@@ -30,8 +30,8 @@ export default function TodoPage() {
     [tasksForCounter],
   );
   const visibleTodosCount = useMemo(
-    () => todosForCounter.length,
-    [todosForCounter.length],
+    () => todosForCounter.filter((t) => t.completed !== true).length,
+    [todosForCounter],
   );
 
   const hrefSuffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";

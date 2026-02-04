@@ -17,12 +17,16 @@ interface TodoInlineListProps {
 export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { data: todos, loading, error } = useUserTodos({ workspaceId, completed: false });
+  const { data: todos, loading, error } = useUserTodos({ workspaceId });
   const [editError, setEditError] = useState<string | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [todoView, setTodoView] = useState<"active" | "completed">("active");
 
   const [isCreating, setIsCreating] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const [addingItem, setAddingItem] = useState(false);
 
   const [optimisticItemsByTodoId, setOptimisticItemsByTodoId] = useState<Record<string, TodoDoc["items"]>>({});
 
@@ -31,6 +35,18 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
     if (!selectedTodoId) return null;
     return todos.find((t) => t.id === selectedTodoId) ?? null;
   }, [selectedTodoId, todos]);
+
+  useEffect(() => {
+    if (!selectedTodo) return;
+    setTodoView(selectedTodo.completed === true ? "completed" : "active");
+  }, [selectedTodo]);
+
+  const activeTodos = useMemo(() => todos.filter((t) => t.completed !== true), [todos]);
+  const completedTodos = useMemo(() => todos.filter((t) => t.completed === true), [todos]);
+
+  const visibleTodos = useMemo(() => {
+    return todoView === "completed" ? completedTodos : activeTodos;
+  }, [activeTodos, completedTodos, todoView]);
 
   const itemsEqual = (a: TodoDoc["items"], b: TodoDoc["items"]) => {
     const aa = a ?? [];
@@ -98,6 +114,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
       if (resolvedMode === "add_item") {
         if (!selectedTodo || !selectedTodo.id) {
           setIsCreating(true);
+          setTodoView("active");
           setDraftTitle("");
           setTimeout(() => inputRef.current?.focus(), 0);
           return;
@@ -142,6 +159,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
       }
 
       setIsCreating(true);
+      setTodoView("active");
       setDraftTitle("");
       setTimeout(() => inputRef.current?.focus(), 0);
     };
@@ -152,8 +170,8 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
   }, [selectedTodoId, selectedTodo, todos, optimisticItemsByTodoId]);
 
   const sortedTodos = useMemo(() => {
-    return todos.slice();
-  }, [todos]);
+    return visibleTodos.slice();
+  }, [visibleTodos]);
 
   const cancelCreate = () => {
     setIsCreating(false);
@@ -162,7 +180,10 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
 
   const submitCreate = async () => {
     const user = auth.currentUser;
-    if (!user) return;
+    if (!user) {
+      setEditError("Tu dois être connecté.");
+      return;
+    }
 
     const title = draftTitle.trim();
     if (!title) {
@@ -199,9 +220,14 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
   const toggleCompleted = async (todo: TodoDoc, nextCompleted: boolean) => {
     if (!todo.id) return;
     const user = auth.currentUser;
-    if (!user || user.uid !== todo.userId) return;
+    if (!user) {
+      setEditError("Tu dois être connecté.");
+      return;
+    }
+    if (user.uid !== todo.userId) return;
 
     setEditError(null);
+    setActionFeedback(null);
 
     try {
       await updateDoc(doc(db, "todos", todo.id), {
@@ -212,6 +238,10 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
         completed: nextCompleted,
         updatedAt: serverTimestamp(),
       });
+
+      setActionFeedback(nextCompleted ? "ToDo terminée." : "ToDo restaurée.");
+      window.setTimeout(() => setActionFeedback(null), 1800);
+      setTodoView(nextCompleted ? "completed" : "active");
     } catch (e) {
       console.error("Error toggling todo completed", e);
       setEditError(e instanceof Error ? e.message : "Erreur lors de la mise à jour.");
@@ -278,15 +308,25 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
 
   const addItemFromInput = async () => {
     const todo = ensureSelectedTodo();
-    if (!todo || !todo.id) return;
+    if (!todo || !todo.id) {
+      setEditError("Ouvre une ToDo pour ajouter un élément.");
+      return;
+    }
 
     const text = newItemText.trim();
     if (!text) return;
+    if (addingItem) return;
 
     const nextId = `it_${Math.random().toString(36).slice(2)}_${Date.now()}`;
     const nextItems = itemsForTodo(todo).concat({ id: nextId, text, done: false, createdAt: Date.now() });
     setNewItemText("");
-    await persistItems(todo, nextItems);
+    setAddingItem(true);
+    setEditError(null);
+    try {
+      await persistItems(todo, nextItems);
+    } finally {
+      setAddingItem(false);
+    }
   };
 
   const closeDetail = () => {
@@ -329,9 +369,15 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                   setNewItemText("");
                 }
               }}
+              disabled={addingItem}
             />
-            <button type="button" className="sn-text-btn" onClick={() => void addItemFromInput()}>
-              Ajouter
+            <button
+              type="button"
+              className="sn-text-btn"
+              onClick={() => void addItemFromInput()}
+              disabled={addingItem || !newItemText.trim()}
+            >
+              {addingItem ? "Ajout…" : "Ajouter"}
             </button>
           </div>
         </div>
@@ -464,6 +510,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
   return (
     <div className="space-y-4">
       {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
+      {actionFeedback && <div className="sn-alert" role="status" aria-live="polite">{actionFeedback}</div>}
       {error && (
         <div className="sn-alert sn-alert--error">
           Impossible de charger les ToDo pour le moment.
@@ -483,14 +530,33 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
 
       {!loading && !error && sortedTodos.length === 0 && !isCreating && (
         <div className="sn-empty">
-          <div className="sn-empty-title">Aucune ToDo</div>
-          <div className="sn-empty-desc">Appuie sur + pour en créer une.</div>
+          <div className="sn-empty-title">{todoView === "completed" ? "Aucune ToDo terminée" : "Aucune ToDo"}</div>
+          <div className="sn-empty-desc">
+            {todoView === "completed" ? "Marque une ToDo comme terminée pour la retrouver ici." : "Appuie sur + pour en créer une."}
+          </div>
         </div>
       )}
 
       {!loading && !error && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="space-y-2">
+          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setTodoView("active")}
+              className={`px-3 py-1 text-sm ${todoView === "active" ? "bg-accent" : ""}`}
+            >
+              Actives ({activeTodos.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setTodoView("completed")}
+              className={`px-3 py-1 text-sm ${todoView === "completed" ? "bg-accent" : ""}`}
+            >
+              Terminées ({completedTodos.length})
+            </button>
+          </div>
+
           {isCreating && (
             <div className="sn-card p-3">
               <input
@@ -525,7 +591,9 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
               {sortedTodos.map((todo) => (
                 <li key={todo.id}>
                   <div
-                    className={`sn-card p-4 ${todo.id && todo.id === selectedTodoId ? "border-primary" : ""} ${
+                    className={`sn-card p-4 ${todo.completed ? "opacity-80" : ""} ${
+                      todo.id && todo.id === selectedTodoId ? "border-primary" : ""
+                    } ${
                       todo.id ? "cursor-pointer" : ""
                     }`}
                     onClick={() => {
@@ -542,7 +610,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                           aria-label="Marquer comme terminée"
                           onClick={(e) => e.stopPropagation()}
                         />
-                        <span className="truncate select-text">{todo.title}</span>
+                        <span className={`truncate select-text ${todo.completed ? "line-through text-muted-foreground" : ""}`}>{todo.title}</span>
                       </div>
 
                       <button
