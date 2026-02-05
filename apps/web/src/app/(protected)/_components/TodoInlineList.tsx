@@ -399,12 +399,13 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
         {activeItems.length > 0 && (
           <ul className="space-y-2">
             {activeItems.map((it) => (
-              <li key={it.id} className="sn-card p-3">
+              <li key={`active-${it.id}`} className="sn-card p-3">
                 <div className="flex items-start gap-3">
                   <input
                     type="checkbox"
                     checked={it.done === true}
                     onChange={(e) => {
+                      e.currentTarget.blur();
                       const next = itemsForTodo(todo).map((x) => (x.id === it.id ? { ...x, done: e.target.checked } : x));
                       void persistItems(todo, next);
                     }}
@@ -469,12 +470,14 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
           {doneItems.length > 0 && (
             <ul className="space-y-2">
               {doneItems.map((it) => (
-                <li key={it.id} className="sn-card sn-card--muted p-3">
+                <li key={`done-${it.id}`} className="sn-card sn-card--muted p-3">
                   <div className="flex items-start gap-3 opacity-80">
                     <input
                       type="checkbox"
                       checked={true}
                       onChange={() => {
+                        // Avoid scroll jump: this item moves back to the active list.
+                        (document.activeElement as HTMLElement | null)?.blur?.();
                         const next = itemsForTodo(todo).map((x) => (x.id === it.id ? { ...x, done: false } : x));
                         void persistItems(todo, next);
                       }}
