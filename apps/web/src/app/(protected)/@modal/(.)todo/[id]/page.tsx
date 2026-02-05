@@ -78,7 +78,12 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
   const activeItems = useMemo(() => items.filter((it) => it.done !== true), [items]);
   const doneItems = useMemo(() => items.filter((it) => it.done === true), [items]);
 
-  const persistItems = async (nextItems: NonNullable<TodoDoc["items"]>) => {
+  const persistTodo = async (next: {
+    title?: string;
+    items?: NonNullable<TodoDoc["items"]>;
+    favorite?: boolean;
+    completed?: boolean;
+  }) => {
     if (!todo?.id) return;
     const user = auth.currentUser;
     if (!user || user.uid !== todo.userId) return;
@@ -86,16 +91,31 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
     setSaving(true);
     setEditError(null);
     try {
+      const nextTitle = typeof next.title === "string" ? next.title : todo.title;
+      const nextItems = next.items ?? (todo.items ?? []);
+      const nextFavorite = typeof next.favorite === "boolean" ? next.favorite : todo.favorite === true;
+      const nextCompleted = typeof next.completed === "boolean" ? next.completed : todo.completed === true;
+
       await updateDoc(doc(db, "todos", todo.id), {
         userId: todo.userId,
         workspaceId: typeof todo.workspaceId === "string" ? todo.workspaceId : null,
-        title: todo.title,
-        completed: todo.completed === true,
-        favorite: todo.favorite === true,
+        title: nextTitle,
+        completed: nextCompleted,
+        favorite: nextFavorite,
         items: nextItems,
         updatedAt: serverTimestamp(),
       });
-      setTodo((prev) => (prev ? { ...prev, items: nextItems } : prev));
+      setTodo((prev) =>
+        prev
+          ? {
+              ...prev,
+              title: nextTitle,
+              items: nextItems,
+              favorite: nextFavorite,
+              completed: nextCompleted,
+            }
+          : prev,
+      );
     } catch (e) {
       console.error("Error updating todo items (modal)", e);
       setEditError(e instanceof Error ? e.message : "Erreur lors de la mise à jour.");
@@ -104,25 +124,66 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
     }
   };
 
+  const setTitleDraft = (nextTitle: string) => {
+    setTodo((prev) => (prev ? { ...prev, title: nextTitle } : prev));
+  };
+
+  const commitTitle = async () => {
+    if (!todo) return;
+    const trimmed = todo.title.trim();
+    if (!trimmed) {
+      setTitleDraft("ToDo");
+      await persistTodo({ title: "ToDo" });
+      return;
+    }
+    if (trimmed !== todo.title) {
+      setTitleDraft(trimmed);
+    }
+    await persistTodo({ title: trimmed });
+  };
+
   const addItem = async () => {
     if (!todo) return;
     const text = newItemText.trim();
     if (!text) return;
     const next = (todo.items ?? []).concat({ id: safeItemId(), text, done: false, createdAt: Date.now() });
     setNewItemText("");
-    await persistItems(next);
+    await persistTodo({ items: next });
   };
 
   const removeItem = async (itemId: string) => {
     if (!todo) return;
     const next = (todo.items ?? []).filter((x) => x.id !== itemId);
-    await persistItems(next);
+    await persistTodo({ items: next });
   };
 
   const toggleItemDone = async (itemId: string, nextDone: boolean) => {
     if (!todo) return;
     const next = (todo.items ?? []).map((x) => (x.id === itemId ? { ...x, done: nextDone } : x));
-    await persistItems(next);
+    await persistTodo({ items: next });
+  };
+
+  const updateItemTextDraft = (itemId: string, text: string) => {
+    if (!todo) return;
+    const next = (todo.items ?? []).map((x) => (x.id === itemId ? { ...x, text } : x));
+    setTodo((prev) => (prev ? { ...prev, items: next } : prev));
+  };
+
+  const commitItemText = async (itemId: string) => {
+    if (!todo) return;
+    const current = todo.items ?? [];
+    const item = current.find((x) => x.id === itemId);
+    if (!item) return;
+
+    if (!item.text.trim()) {
+      const next = current.filter((x) => x.id !== itemId);
+      await persistTodo({ items: next });
+      return;
+    }
+
+    const next = current.map((x) => (x.id === itemId ? { ...x, text: item.text.trim() } : x));
+    setTodo((prev) => (prev ? { ...prev, items: next } : prev));
+    await persistTodo({ items: next });
   };
 
   return (
@@ -152,7 +213,24 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
             <div className="sn-card p-4 space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="text-sm font-semibold truncate">{todo.title}</div>
+                  <input
+                    value={todo.title}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                    onBlur={() => void commitTitle()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        (e.currentTarget as HTMLInputElement).blur();
+                      }
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        (e.currentTarget as HTMLInputElement).blur();
+                      }
+                    }}
+                    className="w-full bg-transparent text-sm font-semibold outline-none"
+                    aria-label="Titre de la ToDo"
+                    disabled={saving}
+                  />
                   <div className="text-xs text-muted-foreground">
                     Actifs: {activeItems.length} · Terminés: {doneItems.length}
                   </div>
@@ -163,9 +241,9 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                     type="button"
                     onClick={() => {
                       const qs = new URLSearchParams();
-                      qs.set("todoId", String(todo.id));
                       if (workspaceId) qs.set("workspaceId", workspaceId);
-                      router.push(`/todo?${qs.toString()}`);
+                      const href = qs.toString();
+                      router.push(href ? `/todo?${href}` : "/todo");
                     }}
                     className="px-3 py-2 rounded-md border border-input text-sm"
                   >
@@ -229,9 +307,25 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                           aria-label="Marquer l’élément comme terminé"
                           disabled={saving}
                         />
-                        <div className="w-full min-w-0">
-                          <div className="text-sm break-words">{it.text}</div>
-                        </div>
+                        <input
+                          className="w-full bg-transparent text-sm outline-none"
+                          value={it.text}
+                          placeholder="Nouvel élément"
+                          onChange={(e) => updateItemTextDraft(it.id, e.target.value)}
+                          onBlur={() => void commitItemText(it.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              (e.currentTarget as HTMLInputElement).blur();
+                            }
+                            if (e.key === "Escape") {
+                              e.preventDefault();
+                              (e.currentTarget as HTMLInputElement).blur();
+                            }
+                          }}
+                          disabled={saving}
+                          aria-label="Texte de l’élément"
+                        />
                         <button
                           type="button"
                           className="sn-icon-btn shrink-0"
