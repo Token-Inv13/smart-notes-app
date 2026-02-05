@@ -260,34 +260,53 @@ export default function DashboardPage() {
         )}
         {favoriteTodos.length > 0 && (
           <ul className="space-y-1">
-            {favoriteTodos.map((todo) => (
-              <li key={todo.id} className="sn-card sn-card--task sn-card--favorite p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <label className="text-sm flex items-center gap-3 min-w-0">
-                    <input
-                      type="checkbox"
-                      checked={todo.completed === true}
-                      onChange={(e) => toggleTodoCompleted(todo, e.target.checked)}
-                      aria-label="Marquer comme terminée"
-                    />
-                    <span className="truncate">{todo.title}</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={(e) => {
+            {favoriteTodos.map((todo) => {
+              const href = todo.id ? `/todo/${encodeURIComponent(todo.id)}${suffix}` : null;
+              return (
+                <li
+                  key={todo.id}
+                  className={`sn-card sn-card--task sn-card--favorite p-4 ${href ? "cursor-pointer" : ""}`}
+                  tabIndex={href ? 0 : undefined}
+                  onClick={() => {
+                    if (!href) return;
+                    router.push(href);
+                  }}
+                  onKeyDown={(e) => {
+                    if (!href) return;
+                    if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
-                      e.stopPropagation();
-                      toggleTodoFavorite(todo);
-                    }}
-                    className="sn-icon-btn shrink-0"
-                    aria-label={todo.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
-                    title={todo.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
-                  >
-                    {todo.favorite ? '★' : '☆'}
-                  </button>
-                </div>
-              </li>
-            ))}
+                      router.push(href);
+                    }
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="text-sm flex items-center gap-3 min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={todo.completed === true}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => toggleTodoCompleted(todo, e.target.checked)}
+                        aria-label="Marquer comme terminée"
+                      />
+                      <span className="truncate">{todo.title}</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleTodoFavorite(todo);
+                      }}
+                      className="sn-icon-btn shrink-0"
+                      aria-label={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                      title={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                    >
+                      {todo.favorite ? "★" : "☆"}
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
