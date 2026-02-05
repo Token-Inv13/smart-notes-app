@@ -22,6 +22,8 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [todoView, setTodoView] = useState<"active" | "completed">("active");
 
+  const didInitTodoViewFromSelectionRef = useRef(false);
+
   const [isCreating, setIsCreating] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -38,7 +40,9 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
 
   useEffect(() => {
     if (!selectedTodo) return;
+    if (didInitTodoViewFromSelectionRef.current) return;
     setTodoView(selectedTodo.completed === true ? "completed" : "active");
+    didInitTodoViewFromSelectionRef.current = true;
   }, [selectedTodo]);
 
   const activeTodos = useMemo(() => todos.filter((t) => t.completed !== true), [todos]);
@@ -241,7 +245,6 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
 
       setActionFeedback(nextCompleted ? "ToDo terminée." : "ToDo restaurée.");
       window.setTimeout(() => setActionFeedback(null), 1800);
-      setTodoView(nextCompleted ? "completed" : "active");
     } catch (e) {
       console.error("Error toggling todo completed", e);
       setEditError(e instanceof Error ? e.message : "Erreur lors de la mise à jour.");
