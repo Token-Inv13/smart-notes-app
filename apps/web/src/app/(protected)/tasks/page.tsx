@@ -68,6 +68,8 @@ export default function TasksPage() {
   const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null);
   const [optimisticStatusById, setOptimisticStatusById] = useState<Record<string, TaskStatus>>({});
 
+  const suppressNextKanbanClickRef = useRef(false);
+
   const tabsTouchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const toMillisSafe = (ts: unknown) => {
@@ -814,19 +816,42 @@ export default function TasksPage() {
                     .sort((a, b) => new Date(a.reminderTime).getTime() - new Date(b.reminderTime).getTime())[0];
                   const reminderLabel = nextReminder ? new Date(nextReminder.reminderTime).toLocaleString() : null;
 
+                  const openTaskModal = () => {
+                    if (!task.id) return;
+                    if (suppressNextKanbanClickRef.current) {
+                      suppressNextKanbanClickRef.current = false;
+                      return;
+                    }
+                    const qs = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
+                    router.push(`/tasks/${task.id}${qs}`);
+                  };
+
                   return (
                     <div
                       key={task.id}
                       draggable={!!task.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={openTaskModal}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openTaskModal();
+                        }
+                      }}
                       onDragStart={(e) => {
                         if (!task.id) return;
                         e.dataTransfer.setData("text/plain", task.id);
                         e.dataTransfer.effectAllowed = "move";
                         setDraggingTaskId(task.id);
+                        suppressNextKanbanClickRef.current = true;
                       }}
                       onDragEnd={() => {
                         setDraggingTaskId(null);
                         setDragOverStatus(null);
+                        window.setTimeout(() => {
+                          suppressNextKanbanClickRef.current = false;
+                        }, 0);
                       }}
                       className={`border border-border rounded-md bg-background p-2 cursor-move transition-shadow ${
                         draggingTaskId === task.id ? "opacity-60 ring-2 ring-primary/40" : ""
@@ -844,13 +869,17 @@ export default function TasksPage() {
                             <input
                               type="checkbox"
                               checked={statusForTask(task) === "done"}
+                              onClick={(e) => e.stopPropagation()}
                               onChange={(e) => toggleDone(task, e.target.checked)}
                             />
                             Terminé
                           </label>
                           <button
                             type="button"
-                            onClick={() => toggleFavorite(task)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFavorite(task);
+                            }}
                             className="sn-text-btn"
                             aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                           >
