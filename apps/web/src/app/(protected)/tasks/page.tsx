@@ -846,15 +846,6 @@ export default function TasksPage() {
                     <div
                       key={task.id}
                       draggable={!!task.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={openTaskModal}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          openTaskModal();
-                        }
-                      }}
                       onDragStart={(e) => {
                         if (!task.id) return;
                         e.dataTransfer.setData("text/plain", task.id);
@@ -874,12 +865,18 @@ export default function TasksPage() {
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
+                        <button
+                          type="button"
+                          onClick={openTaskModal}
+                          draggable={!!task.id}
+                          className="min-w-0 flex-1 text-left bg-transparent p-0 border-0 cursor-move"
+                          aria-label={`Ouvrir la tâche : ${task.title}`}
+                        >
                           <div className="text-sm font-medium truncate">{task.title}</div>
                           <div className="text-xs text-muted-foreground mt-0.5">
                             {reminderLabel ? `Rappel : ${reminderLabel}` : "Aucun rappel"}
                           </div>
-                        </div>
+                        </button>
                         <div className="flex items-center gap-2 shrink-0">
                           <label className="text-xs flex items-center gap-1">
                             <input
