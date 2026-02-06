@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { TouchEvent as ReactTouchEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
@@ -69,6 +70,7 @@ export default function DashboardPage() {
   const slidesContainerRef = useRef<HTMLDivElement | null>(null);
   const slideRefs = useRef<Array<HTMLDivElement | null>>([]);
   const [activeSlideIndex, setActiveSlideIndex] = useState<0 | 1 | 2>(0);
+  const swipeStartRef = useRef<{ x: number; y: number; scrollLeft: number } | null>(null);
 
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
 
@@ -114,6 +116,42 @@ export default function DashboardPage() {
 
   const scrollToSlide = (index: 0 | 1 | 2) => {
     slideRefs.current[index]?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+  };
+
+  const handleTouchStart = (e: ReactTouchEvent<HTMLDivElement>) => {
+    const t = e.touches[0];
+    if (!t) return;
+    const root = slidesContainerRef.current;
+    swipeStartRef.current = {
+      x: t.clientX,
+      y: t.clientY,
+      scrollLeft: root?.scrollLeft ?? 0,
+    };
+  };
+
+  const handleTouchEnd = (e: ReactTouchEvent<HTMLDivElement>) => {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    const t = e.changedTouches[0];
+    if (!start || !t) return;
+
+    const root = slidesContainerRef.current;
+    const nextScrollLeft = root?.scrollLeft ?? 0;
+    if (Math.abs(nextScrollLeft - start.scrollLeft) > 20) return;
+
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+
+    if (Math.abs(dx) < 60) return;
+    if (Math.abs(dx) < Math.abs(dy)) return;
+
+    if (dx < 0) {
+      const nextIndex = Math.min(2, activeSlideIndex + 1) as 0 | 1 | 2;
+      if (nextIndex !== activeSlideIndex) scrollToSlide(nextIndex);
+    } else {
+      const nextIndex = Math.max(0, activeSlideIndex - 1) as 0 | 1 | 2;
+      if (nextIndex !== activeSlideIndex) scrollToSlide(nextIndex);
+    }
   };
 
   const [noteActionError, setNoteActionError] = useState<string | null>(null);
@@ -203,7 +241,14 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div
+      className="space-y-6 min-h-[calc(100svh-2rem)]"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={() => {
+        swipeStartRef.current = null;
+      }}
+    >
       <header className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Dashboard</h1>
         <div id="sn-create-slot" data-dashboard-slide-index={activeSlideIndex} />
