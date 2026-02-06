@@ -25,6 +25,7 @@ export default function CreateButton() {
 
   const shouldHide = useMemo(() => {
     if (pathname.startsWith("/notes/new") || pathname.startsWith("/tasks/new") || pathname.startsWith("/todo/new")) return true;
+    if (pathname.startsWith("/settings")) return true;
     return false;
   }, [pathname]);
 
