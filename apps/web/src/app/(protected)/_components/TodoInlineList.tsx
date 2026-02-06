@@ -249,7 +249,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                       }}
                     />
 
-                    <div className="flex items-center justify-between gap-3 relative z-10">
+                    <div className="flex items-center justify-between gap-3 relative z-10 pointer-events-none">
                       <div className="flex items-center gap-3 min-w-0">
                         <input
                           type="checkbox"
@@ -257,6 +257,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                           onChange={(e) => toggleCompleted(todo, e.target.checked)}
                           aria-label="Marquer comme terminée"
                           onClick={(e) => e.stopPropagation()}
+                          className="pointer-events-auto"
                         />
                         <span className={`truncate select-text ${todo.completed ? "line-through text-muted-foreground" : ""}`}>{todo.title}</span>
                       </div>
@@ -267,7 +268,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                           e.stopPropagation();
                           toggleFavorite(todo);
                         }}
-                        className="sn-icon-btn shrink-0"
+                        className="sn-icon-btn shrink-0 pointer-events-auto"
                         aria-label={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                         title={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                         onMouseDown={(e) => e.stopPropagation()}
