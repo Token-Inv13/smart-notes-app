@@ -239,22 +239,22 @@ export default function NotesPage() {
       )}
 
       <section>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2">
           <h2 className="text-lg font-semibold">Tes notes récentes</h2>
-          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
+          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap w-fit">
             <button
               type="button"
               onClick={() => setArchiveView("active")}
               className={`px-3 py-1 text-sm ${archiveView === "active" ? "bg-accent" : ""}`}
             >
-              Actives
+              Actives ({activeNotes.length})
             </button>
             <button
               type="button"
               onClick={() => setArchiveView("archived")}
               className={`px-3 py-1 text-sm ${archiveView === "archived" ? "bg-accent" : ""}`}
             >
-              Archivées
+              Archivées ({archivedNotes.length})
             </button>
           </div>
         </div>

@@ -232,6 +232,22 @@ export default function TasksPage() {
     [todosForCounter.length],
   );
 
+  const activeArchiveCount = useMemo(() => {
+    let result = tasks.filter((t) => t.archived !== true);
+    if (workspaceFilter !== "all") {
+      result = result.filter((task) => task.workspaceId === workspaceFilter);
+    }
+    return result.length;
+  }, [tasks, workspaceFilter]);
+
+  const archivedArchiveCount = useMemo(() => {
+    let result = tasks.filter((t) => t.archived === true);
+    if (workspaceFilter !== "all") {
+      result = result.filter((task) => task.workspaceId === workspaceFilter);
+    }
+    return result.length;
+  }, [tasks, workspaceFilter]);
+
   const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
   const tabs = (
     <div
@@ -475,14 +491,14 @@ export default function TasksPage() {
             onClick={() => setArchiveView("active")}
             className={`px-3 py-1 text-sm ${archiveView === "active" ? "bg-accent" : ""}`}
           >
-            Actives
+            Actives ({activeArchiveCount})
           </button>
           <button
             type="button"
             onClick={() => setArchiveView("archived")}
             className={`px-3 py-1 text-sm ${archiveView === "archived" ? "bg-accent" : ""}`}
           >
-            Archivées
+            Archivées ({archivedArchiveCount})
           </button>
         </div>
 
