@@ -8,14 +8,29 @@ import {
   signInWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signInWithCredential,
   sendPasswordResetEmail,
 } from "firebase/auth";
+import { Eye, EyeOff } from "lucide-react";
+
+function getFirebaseAuthErrorCode(err: unknown): string | undefined {
+  if (typeof err !== "object" || err === null) return undefined;
+  const code = (err as Record<string, unknown>).code;
+  return typeof code === "string" ? code : undefined;
+}
+
+function getFirebaseAuthErrorRawMessage(err: unknown): string {
+  if (typeof err !== "object" || err === null) return "";
+  const message = (err as Record<string, unknown>).message;
+  return typeof message === "string" ? message : "";
+}
 
 function getFirebaseAuthErrorMessage(err: unknown): string {
-  const code = typeof err === "object" && err && "code" in err ? (err as any).code : undefined;
+  const code = getFirebaseAuthErrorCode(err);
   if (typeof code !== "string") {
-    const message = typeof err === "object" && err && "message" in err ? String((err as any).message) : "";
+    const message = getFirebaseAuthErrorRawMessage(err);
     return message || "Une erreur est survenue. Réessaie.";
   }
 
@@ -55,13 +70,14 @@ function LoginPageInner() {
   const nextPath = searchParams.get("next") || "/dashboard";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetStatus, setResetStatus] = useState<string | null>(null);
 
   const isCapacitorNative = () => {
     try {
-      const cap = (globalThis as any)?.Capacitor;
+      const cap = (globalThis as unknown as { Capacitor?: { isNativePlatform?: () => boolean } })?.Capacitor;
       return Boolean(cap && typeof cap.isNativePlatform === "function" && cap.isNativePlatform());
     } catch {
       return false;
@@ -88,9 +104,35 @@ function LoginPageInner() {
   };
 
   useEffect(() => {
-    // Intentionally left empty: native Google sign-in is handled via the Capacitor plugin
-    // when the user taps the button.
-  }, []);
+    let cancelled = false;
+
+    // Handle the redirect flow for Google auth (mobile web / popup blocked).
+    void (async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (!result || cancelled) return;
+
+        setError(null);
+        setResetStatus(null);
+        setLoading(true);
+        await establishSession();
+        router.replace(nextPath);
+      } catch (err) {
+        if (cancelled) return;
+        // If no redirect is pending, Firebase may throw; treat it as non-blocking.
+        const code = getFirebaseAuthErrorCode(err);
+        if (code === "auth/no-auth-event") return;
+        const msg = getFirebaseAuthErrorMessage(err);
+        if (msg) setError(msg);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [nextPath, router]);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,7 +143,7 @@ function LoginPageInner() {
       await signInWithEmailAndPassword(auth, email, password);
       await establishSession();
       router.replace(nextPath);
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
       setError(getFirebaseAuthErrorMessage(err));
     } finally {
@@ -117,7 +159,9 @@ function LoginPageInner() {
       const provider = new GoogleAuthProvider();
       if (isCapacitorNative()) {
         const { FirebaseAuthentication } = await import("@capacitor-firebase/authentication");
-        const nativeResult = await FirebaseAuthentication.signInWithGoogle();
+        const nativeResult = (await FirebaseAuthentication.signInWithGoogle()) as unknown as {
+          credential?: { idToken?: string; accessToken?: string };
+        };
 
         const idToken = nativeResult.credential?.idToken;
         const accessToken = nativeResult.credential?.accessToken;
@@ -132,10 +176,20 @@ function LoginPageInner() {
         return;
       }
 
-      await signInWithPopup(auth, provider);
-      await establishSession();
-      router.replace(nextPath);
-    } catch (err: any) {
+      try {
+        await signInWithPopup(auth, provider);
+        await establishSession();
+        router.replace(nextPath);
+      } catch (err) {
+        const code = getFirebaseAuthErrorCode(err) ?? "";
+        // On some mobile browsers the popup may be blocked; redirect is more reliable.
+        if (code === "auth/popup-blocked") {
+          await signInWithRedirect(auth, provider);
+          return;
+        }
+        throw err;
+      }
+    } catch (err) {
       setError(getFirebaseAuthErrorMessage(err));
     } finally {
       setLoading(false);
@@ -191,15 +245,27 @@ function LoginPageInner() {
             <label className="text-sm font-medium" htmlFor="password">
               Mot de passe
             </label>
-            <input
-              id="password"
-              type="password"
-              required
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            />
+            <div className="relative">
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full pr-10 px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center rounded-md p-1 text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+                aria-pressed={showPassword ? "true" : "false"}
+                disabled={loading}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
 
           {error && (
@@ -244,7 +310,7 @@ function LoginPageInner() {
           onClick={handleGoogleLogin}
           className="w-full inline-flex items-center justify-center px-4 py-2 rounded-md border border-input bg-background text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Continuer avec Google
+          {loading ? "Connexion…" : "Continuer avec Google"}
         </button>
 
         <p className="text-xs text-muted-foreground mt-4 text-center">
