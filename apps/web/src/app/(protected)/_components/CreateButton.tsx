@@ -24,7 +24,7 @@ export default function CreateButton() {
   const context = useMemo(() => getCreateContext(pathname), [pathname]);
 
   const shouldHide = useMemo(() => {
-    if (pathname.startsWith("/notes/new") || pathname.startsWith("/tasks/new")) return true;
+    if (pathname.startsWith("/notes/new") || pathname.startsWith("/tasks/new") || pathname.startsWith("/todo/new")) return true;
     return false;
   }, [pathname]);
 
@@ -43,9 +43,9 @@ export default function CreateButton() {
 
       if (idx === 0) {
         const qs = new URLSearchParams();
-        qs.set("create", "1");
         if (workspaceId) qs.set("workspaceId", workspaceId);
-        router.push(`/todo?${qs.toString()}`);
+        const href = qs.toString();
+        router.push(href ? `/todo/new?${href}` : "/todo/new");
         return;
       }
 

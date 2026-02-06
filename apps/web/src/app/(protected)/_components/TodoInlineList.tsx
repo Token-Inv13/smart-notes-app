@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FirebaseError } from "firebase/app";
-import { addDoc, collection, doc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTodos } from "@/hooks/useUserTodos";
 import type { TodoDoc } from "@/types/firestore";
 import { TODO_CREATE_EVENT } from "./todoEvents";
+import TodoCreateForm from "./TodoCreateForm";
 
 interface TodoInlineListProps {
   workspaceId?: string;
@@ -23,8 +23,6 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
   const [todoView, setTodoView] = useState<"active" | "completed">("active");
 
   const [isCreating, setIsCreating] = useState(false);
-  const [draftTitle, setDraftTitle] = useState("");
-  const inputRef = useRef<HTMLInputElement | null>(null);
 
   const activeTodos = useMemo(() => todos.filter((t) => t.completed !== true), [todos]);
   const completedTodos = useMemo(() => todos.filter((t) => t.completed === true), [todos]);
@@ -37,8 +35,6 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
     const onCreate = () => {
       setIsCreating(true);
       setTodoView("active");
-      setDraftTitle("");
-      setTimeout(() => inputRef.current?.focus(), 0);
     };
 
     window.addEventListener(TODO_CREATE_EVENT, onCreate);
@@ -52,50 +48,6 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
 
   const cancelCreate = () => {
     setIsCreating(false);
-    setDraftTitle("");
-  };
-
-  const submitCreate = async () => {
-    const user = auth.currentUser;
-    if (!user) {
-      setEditError("Tu dois être connecté.");
-      return;
-    }
-
-    const title = draftTitle.trim();
-    if (!title) {
-      cancelCreate();
-      return;
-    }
-
-    setEditError(null);
-    try {
-      const ref = await addDoc(collection(db, "todos"), {
-        userId: user.uid,
-        workspaceId: typeof workspaceId === "string" ? workspaceId : null,
-        title,
-        items: [],
-        completed: false,
-        favorite: false,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      cancelCreate();
-      const qs = new URLSearchParams(searchParams.toString());
-      if (workspaceId) qs.set("workspaceId", workspaceId);
-      else qs.delete("workspaceId");
-      const href = qs.toString();
-      router.push(`/todo/${encodeURIComponent(ref.id)}${href ? `?${href}` : ""}`);
-    } catch (e) {
-      console.error("Error creating todo", e);
-      if (e instanceof FirebaseError) {
-        setEditError(`${e.code}: ${e.message}`);
-      } else if (e instanceof Error) {
-        setEditError(e.message);
-      } else {
-        setEditError("Erreur lors de la création de la ToDo.");
-      }
-    }
   };
 
   const toggleCompleted = async (todo: TodoDoc, nextCompleted: boolean) => {
@@ -201,28 +153,17 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
 
           {isCreating && (
             <div className="sn-card p-3">
-              <input
-                ref={inputRef}
-                value={draftTitle}
-                onChange={(e) => setDraftTitle(e.target.value)}
-                placeholder="Nouvelle ToDo"
-                className="w-full bg-background text-foreground text-sm outline-none"
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    e.preventDefault();
-                    cancelCreate();
-                  }
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    submitCreate();
-                  }
-                }}
-                onBlur={() => {
-                  if (!draftTitle.trim()) {
-                    cancelCreate();
-                    return;
-                  }
-                  submitCreate();
+              <TodoCreateForm
+                initialWorkspaceId={workspaceId}
+                autoFocus
+                onCancel={cancelCreate}
+                onCreated={(todoId) => {
+                  cancelCreate();
+                  const qs = new URLSearchParams(searchParams.toString());
+                  if (workspaceId) qs.set("workspaceId", workspaceId);
+                  else qs.delete("workspaceId");
+                  const href = qs.toString();
+                  router.push(`/todo/${encodeURIComponent(todoId)}${href ? `?${href}` : ""}`);
                 }}
               />
             </div>

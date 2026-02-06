@@ -43,8 +43,6 @@ export default function DashboardPage() {
   const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
   const { data: activeTodos } = useUserTodos({ workspaceId, completed: false });
 
-  const favoriteTodos = useMemo(() => activeTodos.filter((t) => t.favorite === true), [activeTodos]);
-
   const { data: workspaces } = useUserWorkspaces();
 
   const workspaceNameById = useMemo(() => {
@@ -232,21 +230,21 @@ export default function DashboardPage() {
           className="flex-none w-full snap-start"
         >
           <section>
-            <h2 className="text-lg font-semibold mb-2">Tes ToDo importantes</h2>
-            {favoriteTodos.length === 0 && (
+            <h2 className="text-lg font-semibold mb-2">Tes ToDo</h2>
+            {activeTodos.length === 0 && (
               <div className="sn-empty">
-                <div className="sn-empty-title">Aucun favori pour l’instant</div>
-                <div className="sn-empty-desc">Depuis ToDo, épingle les éléments à garder sous la main ⭐.</div>
+                <div className="sn-empty-title">Aucune ToDo</div>
+                <div className="sn-empty-desc">Appuie sur + pour en créer une.</div>
               </div>
             )}
-            {favoriteTodos.length > 0 && (
+            {activeTodos.length > 0 && (
               <ul className="space-y-1">
-                {favoriteTodos.map((todo) => {
+                {activeTodos.map((todo) => {
                   const href = todo.id ? `/todo/${encodeURIComponent(todo.id)}${suffix}` : null;
                   return (
                     <li
                       key={todo.id}
-                      className={`sn-card sn-card--task sn-card--favorite p-4 ${href ? "cursor-pointer" : ""}`}
+                      className={`sn-card sn-card--task ${todo.favorite ? " sn-card--favorite" : ""} p-4 ${href ? "cursor-pointer" : ""}`}
                       tabIndex={href ? 0 : undefined}
                       onClick={() => {
                         if (!href) return;
