@@ -41,7 +41,6 @@ export default function DashboardPage() {
 
   const { data: favoriteNotesForLimit } = useUserNotes({ favoriteOnly: true, limit: 11 });
   const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
-  const { data: activeTodos } = useUserTodos({ workspaceId, completed: false });
   const { data: favoriteTodos } = useUserTodos({ workspaceId, completed: false, favoriteOnly: true });
 
   const { data: workspaces } = useUserWorkspaces();
@@ -63,7 +62,7 @@ export default function DashboardPage() {
   const activeFavoriteNotes = notes.filter((n) => n.completed !== true && n.archived !== true);
   const activeFavoriteTasks = tasks.filter((t) => (t.status ?? 'todo') !== 'done' && t.archived !== true);
 
-  const todoActiveCount = activeTodos.length;
+  const todoFavoriteCount = favoriteTodos.length;
   const notesFavoriteCount = activeFavoriteNotes.length;
   const tasksFavoriteCount = activeFavoriteTasks.length;
 
@@ -217,7 +216,7 @@ export default function DashboardPage() {
             onClick={() => scrollToSlide(0)}
             className={`px-3 py-1 text-sm ${activeSlideIndex === 0 ? 'bg-accent font-semibold' : ''}`}
           >
-            To-Dos ({todoActiveCount})
+            To-Dos ({todoFavoriteCount})
           </button>
           <button
             type="button"
