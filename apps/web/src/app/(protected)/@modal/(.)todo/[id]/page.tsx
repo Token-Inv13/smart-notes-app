@@ -2,7 +2,6 @@
 
 import { use, useEffect, useMemo, useState } from "react";
 import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
-import { useRouter, useSearchParams } from "next/navigation";
 import { auth, db } from "@/lib/firebase";
 import type { TodoDoc } from "@/types/firestore";
 import Modal from "../../../Modal";
@@ -12,12 +11,8 @@ function safeItemId() {
 }
 
 export default function TodoDetailModal(props: { params: Promise<{ id: string }> }) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
   const params = use(props.params);
   const todoId: string | undefined = params?.id;
-
-  const workspaceId = searchParams.get("workspaceId");
 
   const [todo, setTodo] = useState<TodoDoc | null>(null);
   const [loading, setLoading] = useState(true);
@@ -237,18 +232,6 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                 </div>
 
                 <div className="shrink-0 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const qs = new URLSearchParams();
-                      if (workspaceId) qs.set("workspaceId", workspaceId);
-                      const href = qs.toString();
-                      router.push(href ? `/todo?${href}` : "/todo");
-                    }}
-                    className="px-3 py-2 rounded-md border border-input text-sm"
-                  >
-                    Ouvrir
-                  </button>
                   <button type="button" onClick={close} className="sn-icon-btn" aria-label="Fermer" title="Fermer">
                     ×
                   </button>
