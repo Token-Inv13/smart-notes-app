@@ -878,6 +878,20 @@ export default function TasksPage() {
                           </div>
                         </button>
                         <div className="flex items-center gap-2 shrink-0">
+                          <select
+                            className="md:hidden text-xs border border-input rounded px-2 py-1 bg-background"
+                            value={statusForTask(task)}
+                            disabled={!task.id}
+                            aria-label="Déplacer la tâche"
+                            onChange={async (e) => {
+                              if (!task.id) return;
+                              await handleKanbanDrop(task.id, e.target.value as TaskStatus);
+                            }}
+                          >
+                            <option value="todo">À faire</option>
+                            <option value="doing">En cours</option>
+                            <option value="done">Terminée</option>
+                          </select>
                           <label className="text-xs flex items-center gap-1">
                             <input
                               type="checkbox"
@@ -913,7 +927,7 @@ export default function TasksPage() {
         </section>
       )}
 
-      {!loading && !error && archiveView === "active" && completedTasks.length > 0 && (
+      {!loading && !error && archiveView === "active" && viewMode !== "kanban" && completedTasks.length > 0 && (
         <section>
           <h2 className="text-lg font-semibold mt-6 mb-2">Terminées</h2>
           <ul className="space-y-2">
