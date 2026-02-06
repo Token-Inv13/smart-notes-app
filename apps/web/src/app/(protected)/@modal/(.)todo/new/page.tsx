@@ -8,11 +8,13 @@ export default function NewTodoModal() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId") || undefined;
+  const initialFavorite = searchParams.get("favorite") === "1";
 
   return (
     <Modal title="Nouvelle ToDo">
       <TodoCreateForm
         initialWorkspaceId={workspaceId}
+        initialFavorite={initialFavorite}
         autoFocus
         showActions
         onCancel={() => router.back()}

@@ -6,6 +6,7 @@ import NoteCreateForm from "../../_components/NoteCreateForm";
 export default function NewNotePage() {
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId") || undefined;
+  const initialFavorite = searchParams.get("favorite") === "1";
 
   return (
     <div className="space-y-4">
@@ -15,7 +16,7 @@ export default function NewNotePage() {
       </header>
 
       <section className="border border-border rounded-lg bg-card p-4">
-        <NoteCreateForm initialWorkspaceId={workspaceId} />
+        <NoteCreateForm initialWorkspaceId={workspaceId} initialFavorite={initialFavorite} />
       </section>
     </div>
   );

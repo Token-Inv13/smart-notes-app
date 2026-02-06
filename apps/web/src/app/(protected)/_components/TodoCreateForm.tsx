@@ -8,6 +8,7 @@ import type { TodoDoc } from "@/types/firestore";
 
 type Props = {
   initialWorkspaceId?: string;
+  initialFavorite?: boolean;
   onCreated?: (todoId: string) => void;
   onCancel?: () => void;
   autoFocus?: boolean;
@@ -16,6 +17,7 @@ type Props = {
 
 export default function TodoCreateForm({
   initialWorkspaceId,
+  initialFavorite,
   onCreated,
   onCancel,
   autoFocus,
@@ -61,7 +63,7 @@ export default function TodoCreateForm({
         title: trimmed,
         items: [],
         completed: false,
-        favorite: false,
+        favorite: initialFavorite === true,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };

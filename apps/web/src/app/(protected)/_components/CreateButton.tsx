@@ -9,7 +9,7 @@ type CreateContext = "notes" | "tasks";
 
 function getCreateContext(pathname: string): CreateContext {
   if (pathname.startsWith("/notes")) return "notes";
-  if (pathname.startsWith("/tasks") || pathname.startsWith("/todo")) return "tasks";
+  if (pathname.startsWith("/tasks")) return "tasks";
   return "notes";
 }
 
@@ -44,20 +44,27 @@ export default function CreateButton() {
       if (idx === 0) {
         const qs = new URLSearchParams();
         if (workspaceId) qs.set("workspaceId", workspaceId);
+        qs.set("favorite", "1");
         const href = qs.toString();
         router.push(href ? `/todo/new?${href}` : "/todo/new");
         return;
       }
 
       if (idx === 1) {
-        const href = workspaceId ? `/notes/new?workspaceId=${encodeURIComponent(workspaceId)}` : "/notes/new";
-        router.push(href);
+        const qs = new URLSearchParams();
+        if (workspaceId) qs.set("workspaceId", workspaceId);
+        qs.set("favorite", "1");
+        const href = qs.toString();
+        router.push(href ? `/notes/new?${href}` : "/notes/new");
         return;
       }
 
       if (idx === 2) {
-        const href = workspaceId ? `/tasks/new?workspaceId=${encodeURIComponent(workspaceId)}` : "/tasks/new";
-        router.push(href);
+        const qs = new URLSearchParams();
+        if (workspaceId) qs.set("workspaceId", workspaceId);
+        qs.set("favorite", "1");
+        const href = qs.toString();
+        router.push(href ? `/tasks/new?${href}` : "/tasks/new");
         return;
       }
 
@@ -98,10 +105,11 @@ export default function CreateButton() {
             onClick={() => {
               const workspaceId = searchParams.get("workspaceId");
               setFavoritesPickerOpen(false);
-              const href = workspaceId
-                ? `/notes/new?workspaceId=${encodeURIComponent(workspaceId)}`
-                : "/notes/new";
-              router.push(href);
+              const qs = new URLSearchParams();
+              if (workspaceId) qs.set("workspaceId", workspaceId);
+              qs.set("favorite", "1");
+              const href = qs.toString();
+              router.push(href ? `/notes/new?${href}` : "/notes/new");
             }}
           >
             Note
@@ -113,10 +121,11 @@ export default function CreateButton() {
             onClick={() => {
               const workspaceId = searchParams.get("workspaceId");
               setFavoritesPickerOpen(false);
-              const href = workspaceId
-                ? `/tasks/new?workspaceId=${encodeURIComponent(workspaceId)}`
-                : "/tasks/new";
-              router.push(href);
+              const qs = new URLSearchParams();
+              if (workspaceId) qs.set("workspaceId", workspaceId);
+              qs.set("favorite", "1");
+              const href = qs.toString();
+              router.push(href ? `/tasks/new?${href}` : "/tasks/new");
             }}
           >
             Tâche
@@ -129,9 +138,10 @@ export default function CreateButton() {
               const workspaceId = searchParams.get("workspaceId");
               setFavoritesPickerOpen(false);
               const qs = new URLSearchParams();
-              qs.set("create", "1");
               if (workspaceId) qs.set("workspaceId", workspaceId);
-              router.push(`/todo?${qs.toString()}`);
+              qs.set("favorite", "1");
+              const href = qs.toString();
+              router.push(href ? `/todo/new?${href}` : "/todo/new");
             }}
           >
             ToDo

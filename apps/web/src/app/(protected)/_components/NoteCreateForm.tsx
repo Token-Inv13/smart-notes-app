@@ -20,10 +20,11 @@ const newNoteSchema = z.object({
 
 type Props = {
   initialWorkspaceId?: string;
+  initialFavorite?: boolean;
   onCreated?: () => void;
 };
 
-export default function NoteCreateForm({ initialWorkspaceId, onCreated }: Props) {
+export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, onCreated }: Props) {
   const { data: workspaces } = useUserWorkspaces();
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === "pro";
@@ -31,6 +32,7 @@ export default function NoteCreateForm({ initialWorkspaceId, onCreated }: Props)
     "Limite Free atteinte. Tu peux passer en Pro pour créer plus de notes et utiliser les favoris sans limite.";
 
   const { data: allNotesForLimit } = useUserNotes({ limit: 16 });
+  const { data: favoriteNotesForLimit } = useUserNotes({ favoriteOnly: true, limit: 11 });
 
   const [noteTitle, setNoteTitle] = useState("");
   const [noteContent, setNoteContent] = useState("");
@@ -116,18 +118,34 @@ export default function NoteCreateForm({ initialWorkspaceId, onCreated }: Props)
     setCreateError(null);
     setCreating(true);
     try {
+      const canFavoriteNow =
+        initialFavorite === true ? isPro || favoriteNotesForLimit.length < 10 : false;
+
       const payload: Omit<NoteDoc, "id"> = {
         userId: user.uid,
         workspaceId: validation.data.workspaceId ?? null,
         title: validation.data.title,
         content: sanitizeNoteHtml(validation.data.content ?? ""),
-        favorite: false,
+        favorite: canFavoriteNow,
         completed: false,
         archived: false,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
       await addDoc(collection(db, "notes"), payload);
+
+      if (initialFavorite === true && !canFavoriteNow) {
+        try {
+          if (typeof window !== "undefined") {
+            window.sessionStorage.setItem(
+              "smartnotes:flash",
+              "Note créée, mais non épinglée (limite Free). Passe en Pro ou retire un favori.",
+            );
+          }
+        } catch {
+          // ignore
+        }
+      }
 
       try {
         if (typeof window !== "undefined") window.sessionStorage.removeItem(DRAFT_KEY);

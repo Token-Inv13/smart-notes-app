@@ -15,6 +15,7 @@ type TaskStatus = "todo" | "doing" | "done";
 
 type Props = {
   initialWorkspaceId?: string;
+  initialFavorite?: boolean;
   onCreated?: () => void;
 };
 
@@ -25,7 +26,7 @@ const newTaskSchema = z.object({
   dueDate: z.string().optional(),
 });
 
-export default function TaskCreateForm({ initialWorkspaceId, onCreated }: Props) {
+export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, onCreated }: Props) {
   const { data: workspaces } = useUserWorkspaces();
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === "pro";
@@ -33,6 +34,7 @@ export default function TaskCreateForm({ initialWorkspaceId, onCreated }: Props)
     "Limite Free atteinte. Passe en Pro pour créer plus de tâches et utiliser les favoris sans limite.";
 
   const { data: allTasksForLimit } = useUserTasks({ limit: 16 });
+  const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
 
   const [newTitle, setNewTitle] = useState("");
   const [newStatus, setNewStatus] = useState<TaskStatus>("todo");
@@ -143,18 +145,35 @@ export default function TaskCreateForm({ initialWorkspaceId, onCreated }: Props)
 
     setCreating(true);
     try {
+      const activeFavoriteCount = favoriteTasksForLimit.filter((t) => t.archived !== true).length;
+      const canFavoriteNow =
+        initialFavorite === true ? isPro || activeFavoriteCount < 15 : false;
+
       const payload: Omit<TaskDoc, "id"> = {
         userId: user.uid,
         title: validation.data.title,
         status: validation.data.status,
         workspaceId: validation.data.workspaceId ?? null,
         dueDate: dueTimestamp,
-        favorite: false,
+        favorite: canFavoriteNow,
         archived: false,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
       const taskRef = await addDoc(collection(db, "tasks"), payload);
+
+      if (initialFavorite === true && !canFavoriteNow) {
+        try {
+          if (typeof window !== "undefined") {
+            window.sessionStorage.setItem(
+              "smartnotes:flash",
+              "Tâche créée, mais non épinglée (limite Free). Passe en Pro ou retire un favori.",
+            );
+          }
+        } catch {
+          // ignore
+        }
+      }
 
       if (validation.data.dueDate) {
         const reminderDate = new Date(validation.data.dueDate);

@@ -42,6 +42,7 @@ export default function DashboardPage() {
   const { data: favoriteNotesForLimit } = useUserNotes({ favoriteOnly: true, limit: 11 });
   const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
   const { data: activeTodos } = useUserTodos({ workspaceId, completed: false });
+  const { data: favoriteTodos } = useUserTodos({ workspaceId, completed: false, favoriteOnly: true });
 
   const { data: workspaces } = useUserWorkspaces();
 
@@ -69,6 +70,20 @@ export default function DashboardPage() {
   const slidesContainerRef = useRef<HTMLDivElement | null>(null);
   const slideRefs = useRef<Array<HTMLDivElement | null>>([]);
   const [activeSlideIndex, setActiveSlideIndex] = useState<0 | 1 | 2>(0);
+
+  const [flashMessage, setFlashMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.sessionStorage.getItem('smartnotes:flash');
+      if (!raw) return;
+      setFlashMessage(raw);
+      window.sessionStorage.removeItem('smartnotes:flash');
+    } catch {
+      // ignore
+    }
+  }, []);
 
   useEffect(() => {
     const root = slidesContainerRef.current;
@@ -221,6 +236,12 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {flashMessage && (
+        <div className="sn-alert sn-alert--info" role="status" aria-live="polite">
+          {flashMessage}
+        </div>
+      )}
+
       <div ref={slidesContainerRef} className="flex overflow-x-auto snap-x snap-mandatory gap-6">
         <div
           ref={(el) => {
@@ -230,16 +251,16 @@ export default function DashboardPage() {
           className="flex-none w-full snap-start"
         >
           <section>
-            <h2 className="text-lg font-semibold mb-2">Tes ToDo</h2>
-            {activeTodos.length === 0 && (
+            <h2 className="text-lg font-semibold mb-2">Tes ToDo importantes</h2>
+            {favoriteTodos.length === 0 && (
               <div className="sn-empty">
-                <div className="sn-empty-title">Aucune ToDo</div>
-                <div className="sn-empty-desc">Appuie sur + pour en créer une.</div>
+                <div className="sn-empty-title">Aucun favori pour l’instant</div>
+                <div className="sn-empty-desc">Depuis ToDo, épingle les éléments à garder sous la main ⭐.</div>
               </div>
             )}
-            {activeTodos.length > 0 && (
+            {favoriteTodos.length > 0 && (
               <ul className="space-y-1">
-                {activeTodos.map((todo) => {
+                {favoriteTodos.map((todo) => {
                   const href = todo.id ? `/todo/${encodeURIComponent(todo.id)}${suffix}` : null;
                   return (
                     <li
