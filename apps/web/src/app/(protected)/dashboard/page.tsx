@@ -155,258 +155,266 @@ export default function DashboardPage() {
         <div id="sn-create-slot" />
       </header>
 
-      <section>
-        <h2 className="text-lg font-semibold mb-2">Tes notes importantes</h2>
-        {notesLoading && (
-          <div className="sn-empty sn-animate-in">
-            <div className="space-y-3">
-              <div className="mx-auto sn-skeleton-avatar" />
-              <div className="sn-skeleton-title w-40 mx-auto" />
-              <div className="sn-skeleton-line w-64 mx-auto" />
-              <div className="sn-skeleton-line w-56 mx-auto" />
-            </div>
-          </div>
-        )}
-        {notesError && <div className="sn-alert sn-alert--error">Impossible de charger les notes favorites.</div>}
-        {noteActionError && (
-          <div className="space-y-2">
-            <div className="sn-alert sn-alert--error" role="status" aria-live="polite">
-              {noteActionError}
-            </div>
-            {!isPro && noteActionError.includes('Limite Free atteinte') && (
-              <Link
-                href="/upgrade"
-                className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
-              >
-                Débloquer Pro
-              </Link>
+      <div className="flex overflow-x-auto snap-x snap-mandatory gap-6">
+        <div className="flex-none w-full snap-start">
+          <section>
+            <h2 className="text-lg font-semibold mb-2">Tes ToDo importantes</h2>
+            {favoriteTodos.length === 0 && (
+              <div className="sn-empty">
+                <div className="sn-empty-title">Aucun favori pour l’instant</div>
+                <div className="sn-empty-desc">Depuis ToDo, épingle les éléments à garder sous la main ⭐.</div>
+              </div>
             )}
-          </div>
-        )}
-        {!notesLoading && !notesError && activeFavoriteNotes.length === 0 && (
-          <div className="sn-empty">
-            <div className="sn-empty-title">Aucun favori pour l’instant</div>
-            <div className="sn-empty-desc">Depuis Notes, épingle les éléments à garder sous la main ⭐.</div>
-          </div>
-        )}
-        {!notesLoading && !notesError && activeFavoriteNotes.length > 0 && (
-          <ul className="space-y-1">
-            {activeFavoriteNotes.map((note) => {
-              const href = note.id ? `/notes/${encodeURIComponent(note.id)}${suffix}` : null;
-              return (
-                <li
-                  key={note.id}
-                  className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4 relative ${
-                    note.id ? "cursor-pointer" : ""
-                  }`}
-                  tabIndex={href ? 0 : undefined}
-                  onClick={() => {
-                    if (!href) return;
-                    router.push(href);
-                  }}
-                  onKeyDown={(e) => {
-                    if (!href) return;
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      router.push(href);
-                    }
-                  }}
-                >
-                  <div className="space-y-3">
-                    <div className="sn-card-header">
-                      <div className="min-w-0 relative z-10">
-                        <div className="sn-card-title truncate">{note.title}</div>
-                        <div className="sn-card-meta">
-                          {note.workspaceId && typeof note.workspaceId === "string" && (
-                            <span className="sn-badge">
-                              {workspaceNameById.get(note.workspaceId) ?? note.workspaceId}
-                            </span>
-                          )}
-                          {note.favorite && <span className="sn-badge">Favori</span>}
-                        </div>
-                      </div>
-
-                      <div className="sn-card-actions sn-card-actions-secondary shrink-0 relative z-20">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            toggleNoteFavorite(note);
-                          }}
-                          className="sn-icon-btn"
-                          aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                          title={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                        >
-                          {note.favorite ? "★" : "☆"}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold mb-2">Tes ToDo importantes</h2>
-        {favoriteTodos.length === 0 && (
-          <div className="sn-empty">
-            <div className="sn-empty-title">Aucun favori pour l’instant</div>
-            <div className="sn-empty-desc">Depuis ToDo, épingle les éléments à garder sous la main ⭐.</div>
-          </div>
-        )}
-        {favoriteTodos.length > 0 && (
-          <ul className="space-y-1">
-            {favoriteTodos.map((todo) => {
-              const href = todo.id ? `/todo/${encodeURIComponent(todo.id)}${suffix}` : null;
-              return (
-                <li
-                  key={todo.id}
-                  className={`sn-card sn-card--task sn-card--favorite p-4 ${href ? "cursor-pointer" : ""}`}
-                  tabIndex={href ? 0 : undefined}
-                  onClick={() => {
-                    if (!href) return;
-                    router.push(href);
-                  }}
-                  onKeyDown={(e) => {
-                    if (!href) return;
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      router.push(href);
-                    }
-                  }}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <label className="text-sm flex items-center gap-3 min-w-0">
-                      <input
-                        type="checkbox"
-                        checked={todo.completed === true}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => toggleTodoCompleted(todo, e.target.checked)}
-                        aria-label="Marquer comme terminée"
-                      />
-                      <span className="truncate">{todo.title}</span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        toggleTodoFavorite(todo);
+            {favoriteTodos.length > 0 && (
+              <ul className="space-y-1">
+                {favoriteTodos.map((todo) => {
+                  const href = todo.id ? `/todo/${encodeURIComponent(todo.id)}${suffix}` : null;
+                  return (
+                    <li
+                      key={todo.id}
+                      className={`sn-card sn-card--task sn-card--favorite p-4 ${href ? "cursor-pointer" : ""}`}
+                      tabIndex={href ? 0 : undefined}
+                      onClick={() => {
+                        if (!href) return;
+                        router.push(href);
                       }}
-                      className="sn-icon-btn shrink-0"
-                      aria-label={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                      title={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                      onKeyDown={(e) => {
+                        if (!href) return;
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          router.push(href);
+                        }
+                      }}
                     >
-                      {todo.favorite ? "★" : "☆"}
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold mb-2">Tes tâches importantes</h2>
-        {tasksLoading && (
-          <div className="sn-empty sn-animate-in">
-            <div className="space-y-3">
-              <div className="mx-auto sn-skeleton-avatar" />
-              <div className="sn-skeleton-title w-40 mx-auto" />
-              <div className="sn-skeleton-line w-64 mx-auto" />
-              <div className="sn-skeleton-line w-56 mx-auto" />
-            </div>
-          </div>
-        )}
-        {tasksError && <div className="sn-alert sn-alert--error">Impossible de charger les tâches favorites.</div>}
-        {taskActionError && (
-          <div className="space-y-2">
-            <div className="sn-alert sn-alert--error" role="status" aria-live="polite">
-              {taskActionError}
-            </div>
-            {!isPro && taskActionError.includes('Limite Free atteinte') && (
-              <Link
-                href="/upgrade"
-                className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
-              >
-                Débloquer Pro
-              </Link>
-            )}
-          </div>
-        )}
-        {!tasksLoading && !tasksError && activeFavoriteTasks.length === 0 && (
-          <div className="sn-empty">
-            <div className="sn-empty-title">Aucun favori pour l’instant</div>
-            <div className="sn-empty-desc">Depuis Tâches, épingle les priorités ⭐ pour les retrouver ici.</div>
-          </div>
-        )}
-        {!tasksLoading && !tasksError && activeFavoriteTasks.length > 0 && (
-          <ul className="space-y-1">
-            {activeFavoriteTasks.map((task) => {
-              const href = task.id ? `/tasks/${encodeURIComponent(task.id)}${suffix}` : null;
-              const dueLabel = formatFrDateTime(task.dueDate ?? null);
-              return (
-                <li
-                  key={task.id}
-                  className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 relative ${
-                    task.id ? "cursor-pointer" : ""
-                  }`}
-                  tabIndex={href ? 0 : undefined}
-                  onClick={() => {
-                    if (!href) return;
-                    router.push(href);
-                  }}
-                  onKeyDown={(e) => {
-                    if (!href) return;
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      router.push(href);
-                    }
-                  }}
-                >
-                  <div className="space-y-3">
-                    <div className="sn-card-header">
-                      <div className="min-w-0 relative z-10">
-                        <div className="sn-card-title truncate">{task.title}</div>
-                        <div className="sn-card-meta">
-                          {task.workspaceId && typeof task.workspaceId === "string" && (
-                            <span className="sn-badge">
-                              {workspaceNameById.get(task.workspaceId) ?? task.workspaceId}
-                            </span>
-                          )}
-                          <span className="sn-badge">{dueLabel || "Aucun rappel"}</span>
-                          {task.favorite && <span className="sn-badge">Favori</span>}
-                        </div>
-                      </div>
-
-                      <div className="sn-card-actions sn-card-actions-secondary shrink-0 relative z-20">
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="text-sm flex items-center gap-3 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={todo.completed === true}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => toggleTodoCompleted(todo, e.target.checked)}
+                            aria-label="Marquer comme terminée"
+                          />
+                          <span className="truncate">{todo.title}</span>
+                        </label>
                         <button
                           type="button"
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            toggleTaskFavorite(task);
+                            toggleTodoFavorite(todo);
                           }}
-                          className="sn-icon-btn"
-                          aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                          title={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                          className="sn-icon-btn shrink-0"
+                          aria-label={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                          title={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                         >
-                          {task.favorite ? "★" : "☆"}
+                          {todo.favorite ? "★" : "☆"}
                         </button>
                       </div>
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        </div>
+
+        <div className="flex-none w-full snap-start">
+          <section>
+            <h2 className="text-lg font-semibold mb-2">Tes notes importantes</h2>
+            {notesLoading && (
+              <div className="sn-empty sn-animate-in">
+                <div className="space-y-3">
+                  <div className="mx-auto sn-skeleton-avatar" />
+                  <div className="sn-skeleton-title w-40 mx-auto" />
+                  <div className="sn-skeleton-line w-64 mx-auto" />
+                  <div className="sn-skeleton-line w-56 mx-auto" />
+                </div>
+              </div>
+            )}
+            {notesError && <div className="sn-alert sn-alert--error">Impossible de charger les notes favorites.</div>}
+            {noteActionError && (
+              <div className="space-y-2">
+                <div className="sn-alert sn-alert--error" role="status" aria-live="polite">
+                  {noteActionError}
+                </div>
+                {!isPro && noteActionError.includes('Limite Free atteinte') && (
+                  <Link
+                    href="/upgrade"
+                    className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+                  >
+                    Débloquer Pro
+                  </Link>
+                )}
+              </div>
+            )}
+            {!notesLoading && !notesError && activeFavoriteNotes.length === 0 && (
+              <div className="sn-empty">
+                <div className="sn-empty-title">Aucun favori pour l’instant</div>
+                <div className="sn-empty-desc">Depuis Notes, épingle les éléments à garder sous la main ⭐.</div>
+              </div>
+            )}
+            {!notesLoading && !notesError && activeFavoriteNotes.length > 0 && (
+              <ul className="space-y-1">
+                {activeFavoriteNotes.map((note) => {
+                  const href = note.id ? `/notes/${encodeURIComponent(note.id)}${suffix}` : null;
+                  return (
+                    <li
+                      key={note.id}
+                      className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4 relative ${
+                        note.id ? "cursor-pointer" : ""
+                      }`}
+                      tabIndex={href ? 0 : undefined}
+                      onClick={() => {
+                        if (!href) return;
+                        router.push(href);
+                      }}
+                      onKeyDown={(e) => {
+                        if (!href) return;
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          router.push(href);
+                        }
+                      }}
+                    >
+                      <div className="space-y-3">
+                        <div className="sn-card-header">
+                          <div className="min-w-0 relative z-10">
+                            <div className="sn-card-title truncate">{note.title}</div>
+                            <div className="sn-card-meta">
+                              {note.workspaceId && typeof note.workspaceId === "string" && (
+                                <span className="sn-badge">
+                                  {workspaceNameById.get(note.workspaceId) ?? note.workspaceId}
+                                </span>
+                              )}
+                              {note.favorite && <span className="sn-badge">Favori</span>}
+                            </div>
+                          </div>
+
+                          <div className="sn-card-actions sn-card-actions-secondary shrink-0 relative z-20">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                toggleNoteFavorite(note);
+                              }}
+                              className="sn-icon-btn"
+                              aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                              title={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                            >
+                              {note.favorite ? "★" : "☆"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        </div>
+
+        <div className="flex-none w-full snap-start">
+          <section>
+            <h2 className="text-lg font-semibold mb-2">Tes tâches importantes</h2>
+            {tasksLoading && (
+              <div className="sn-empty sn-animate-in">
+                <div className="space-y-3">
+                  <div className="mx-auto sn-skeleton-avatar" />
+                  <div className="sn-skeleton-title w-40 mx-auto" />
+                  <div className="sn-skeleton-line w-64 mx-auto" />
+                  <div className="sn-skeleton-line w-56 mx-auto" />
+                </div>
+              </div>
+            )}
+            {tasksError && <div className="sn-alert sn-alert--error">Impossible de charger les tâches favorites.</div>}
+            {taskActionError && (
+              <div className="space-y-2">
+                <div className="sn-alert sn-alert--error" role="status" aria-live="polite">
+                  {taskActionError}
+                </div>
+                {!isPro && taskActionError.includes('Limite Free atteinte') && (
+                  <Link
+                    href="/upgrade"
+                    className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+                  >
+                    Débloquer Pro
+                  </Link>
+                )}
+              </div>
+            )}
+            {!tasksLoading && !tasksError && activeFavoriteTasks.length === 0 && (
+              <div className="sn-empty">
+                <div className="sn-empty-title">Aucun favori pour l’instant</div>
+                <div className="sn-empty-desc">Depuis Tâches, épingle les priorités ⭐ pour les retrouver ici.</div>
+              </div>
+            )}
+            {!tasksLoading && !tasksError && activeFavoriteTasks.length > 0 && (
+              <ul className="space-y-1">
+                {activeFavoriteTasks.map((task) => {
+                  const href = task.id ? `/tasks/${encodeURIComponent(task.id)}${suffix}` : null;
+                  const dueLabel = formatFrDateTime(task.dueDate ?? null);
+                  return (
+                    <li
+                      key={task.id}
+                      className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 relative ${
+                        task.id ? "cursor-pointer" : ""
+                      }`}
+                      tabIndex={href ? 0 : undefined}
+                      onClick={() => {
+                        if (!href) return;
+                        router.push(href);
+                      }}
+                      onKeyDown={(e) => {
+                        if (!href) return;
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          router.push(href);
+                        }
+                      }}
+                    >
+                      <div className="space-y-3">
+                        <div className="sn-card-header">
+                          <div className="min-w-0 relative z-10">
+                            <div className="sn-card-title truncate">{task.title}</div>
+                            <div className="sn-card-meta">
+                              {task.workspaceId && typeof task.workspaceId === "string" && (
+                                <span className="sn-badge">
+                                  {workspaceNameById.get(task.workspaceId) ?? task.workspaceId}
+                                </span>
+                              )}
+                              <span className="sn-badge">{dueLabel || "Aucun rappel"}</span>
+                              {task.favorite && <span className="sn-badge">Favori</span>}
+                            </div>
+                          </div>
+
+                          <div className="sn-card-actions sn-card-actions-secondary shrink-0 relative z-20">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                toggleTaskFavorite(task);
+                              }}
+                              className="sn-icon-btn"
+                              aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                              title={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                            >
+                              {task.favorite ? "★" : "☆"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        </div>
+      </div>
     </div>
   );
 }
