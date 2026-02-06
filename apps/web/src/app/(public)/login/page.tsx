@@ -260,7 +260,6 @@ function LoginPageInner() {
                 onClick={() => setShowPassword((v) => !v)}
                 className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center rounded-md p-1 text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
-                aria-pressed={showPassword ? "true" : "false"}
                 disabled={loading}
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
