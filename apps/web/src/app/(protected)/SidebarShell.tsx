@@ -246,7 +246,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
             <div className="mb-4 text-sm text-muted-foreground truncate">📁 {currentWorkspaceName}</div>
           )}
           {children}
-          <CreateButton />
+          <CreateButton mobileHidden={mobileOpen} />
         </main>
       </div>
     </div>

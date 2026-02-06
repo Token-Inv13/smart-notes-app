@@ -7,13 +7,17 @@ import { dispatchCreateTodoEvent } from "./todoEvents";
 
 type CreateContext = "notes" | "tasks";
 
+type Props = {
+  mobileHidden?: boolean;
+};
+
 function getCreateContext(pathname: string): CreateContext {
   if (pathname.startsWith("/notes")) return "notes";
   if (pathname.startsWith("/tasks")) return "tasks";
   return "notes";
 }
 
-export default function CreateButton() {
+export default function CreateButton({ mobileHidden }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -163,7 +167,7 @@ export default function CreateButton() {
   ) : null;
 
   const buttonBaseClass =
-    "inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg h-12 w-12 text-2xl font-semibold";
+    "inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg h-12 w-12 text-2xl font-semibold select-none transition-transform active:scale-95";
 
   const desktopButton = (
     <button
@@ -178,18 +182,11 @@ export default function CreateButton() {
   );
 
   const mobileFab = (
-    <button
-      type="button"
-      onClick={handleClick}
-      aria-label="Créer"
-      title="Créer"
-      className={
-        `md:hidden fixed z-50 ${buttonBaseClass} ` +
-        "left-1/2 -translate-x-1/2 bottom-[calc(1rem+env(safe-area-inset-bottom))]"
-      }
-    >
-      +
-    </button>
+    <div className="md:hidden fixed z-50 left-1/2 -translate-x-1/2 bottom-[calc(1rem+env(safe-area-inset-bottom))]">
+      <button type="button" onClick={handleClick} aria-label="Créer" title="Créer" className={buttonBaseClass}>
+        +
+      </button>
+    </div>
   );
 
   // If a page provides a header slot, render the desktop button inside it (no floating on desktop).
@@ -207,7 +204,7 @@ export default function CreateButton() {
     return (
       <>
         {createPortal(desktopButton, desktopSlot)}
-        {mobileFab}
+        {!mobileHidden && mobileFab}
         {favoritesPicker}
       </>
     );
@@ -222,11 +219,12 @@ export default function CreateButton() {
         title="Créer"
         className={
           `fixed z-50 ${buttonBaseClass} ` +
-          "right-4 bottom-4 md:bottom-auto md:top-24 md:right-8"
+          "hidden md:inline-flex right-8 top-24"
         }
       >
         +
       </button>
+      {!mobileHidden && mobileFab}
       {favoritesPicker}
     </>
   );
