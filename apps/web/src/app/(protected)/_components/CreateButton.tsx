@@ -28,8 +28,39 @@ export default function CreateButton() {
     return false;
   }, [pathname]);
 
+  const getDashboardSlideIndex = () => {
+    if (typeof document === "undefined") return null;
+    const el = document.getElementById("sn-create-slot");
+    const raw = el?.getAttribute("data-dashboard-slide-index");
+    if (raw === "0" || raw === "1" || raw === "2") return Number(raw) as 0 | 1 | 2;
+    return null;
+  };
+
   const handleClick = () => {
     if (pathname === "/dashboard") {
+      const idx = getDashboardSlideIndex();
+      const workspaceId = searchParams.get("workspaceId");
+
+      if (idx === 0) {
+        const qs = new URLSearchParams();
+        qs.set("create", "1");
+        if (workspaceId) qs.set("workspaceId", workspaceId);
+        router.push(`/todo?${qs.toString()}`);
+        return;
+      }
+
+      if (idx === 1) {
+        const href = workspaceId ? `/notes/new?workspaceId=${encodeURIComponent(workspaceId)}` : "/notes/new";
+        router.push(href);
+        return;
+      }
+
+      if (idx === 2) {
+        const href = workspaceId ? `/tasks/new?workspaceId=${encodeURIComponent(workspaceId)}` : "/tasks/new";
+        router.push(href);
+        return;
+      }
+
       setFavoritesPickerOpen(true);
       return;
     }

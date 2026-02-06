@@ -194,7 +194,7 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <header className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Dashboard</h1>
-        <div id="sn-create-slot" />
+        <div id="sn-create-slot" data-dashboard-slide-index={activeSlideIndex} />
       </header>
 
       <div className="sticky top-0 z-10 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
