@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useEffect, useMemo, useState } from "react";
-import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import type { TodoDoc } from "@/types/firestore";
 import Modal from "../../../Modal";
@@ -19,6 +19,8 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const [newItemText, setNewItemText] = useState("");
 
@@ -144,6 +146,26 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
     const next = (todo.items ?? []).concat({ id: safeItemId(), text, done: false, createdAt: Date.now() });
     setNewItemText("");
     await persistTodo({ items: next });
+  };
+
+  const deleteTodo = async (close: () => void) => {
+    if (!todo?.id) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== todo.userId) return;
+
+    setEditError(null);
+    setDeleting(true);
+    try {
+      await deleteDoc(doc(db, "todos", todo.id));
+      setTodo(null);
+      close();
+    } catch (e) {
+      console.error("Error deleting todo (modal)", e);
+      setEditError(e instanceof Error ? e.message : "Erreur lors de la suppression.");
+    } finally {
+      setDeleting(false);
+      setConfirmingDelete(false);
+    }
   };
 
   const removeItem = async (itemId: string) => {
@@ -362,6 +384,45 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                       </li>
                     ))}
                   </ul>
+                )}
+              </div>
+
+              <div className="pt-3 border-t border-border/70">
+                {!confirmingDelete && (
+                  <button
+                    type="button"
+                    className="sn-text-btn text-red-500"
+                    onClick={() => setConfirmingDelete(true)}
+                    disabled={saving || deleting}
+                  >
+                    Supprimer
+                  </button>
+                )}
+
+                {confirmingDelete && (
+                  <div className="space-y-2">
+                    <div className="text-sm text-muted-foreground">
+                      Supprimer définitivement cette ToDo ? Cette action est irréversible.
+                    </div>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        className="px-3 py-2 rounded-md text-sm border border-border"
+                        onClick={() => setConfirmingDelete(false)}
+                        disabled={deleting}
+                      >
+                        Annuler
+                      </button>
+                      <button
+                        type="button"
+                        className="px-3 py-2 rounded-md text-sm bg-red-600 text-white"
+                        onClick={() => void deleteTodo(close)}
+                        disabled={deleting}
+                      >
+                        {deleting ? "Suppression…" : "Supprimer définitivement"}
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
