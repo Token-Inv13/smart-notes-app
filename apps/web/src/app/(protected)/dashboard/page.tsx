@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
@@ -41,7 +41,9 @@ export default function DashboardPage() {
 
   const { data: favoriteNotesForLimit } = useUserNotes({ favoriteOnly: true, limit: 11 });
   const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
-  const { data: favoriteTodos } = useUserTodos({ favoriteOnly: true, completed: false, limit: 50 });
+  const { data: activeTodos } = useUserTodos({ workspaceId, completed: false });
+
+  const favoriteTodos = useMemo(() => activeTodos.filter((t) => t.favorite === true), [activeTodos]);
 
   const { data: workspaces } = useUserWorkspaces();
 
@@ -61,6 +63,46 @@ export default function DashboardPage() {
 
   const activeFavoriteNotes = notes.filter((n) => n.completed !== true && n.archived !== true);
   const activeFavoriteTasks = tasks.filter((t) => (t.status ?? 'todo') !== 'done' && t.archived !== true);
+
+  const todoActiveCount = activeTodos.length;
+  const notesFavoriteCount = activeFavoriteNotes.length;
+  const tasksFavoriteCount = activeFavoriteTasks.length;
+
+  const slidesContainerRef = useRef<HTMLDivElement | null>(null);
+  const slideRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const [activeSlideIndex, setActiveSlideIndex] = useState<0 | 1 | 2>(0);
+
+  useEffect(() => {
+    const root = slidesContainerRef.current;
+    if (!root) return;
+
+    const nodes = slideRefs.current;
+    if (!nodes[0] || !nodes[1] || !nodes[2]) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.filter((e) => e.isIntersecting);
+        if (visible.length === 0) return;
+        visible.sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+        const top = visible[0];
+        if (!top) return;
+        const indexAttr = (top.target as HTMLElement).getAttribute('data-slide-index');
+        const idx = indexAttr ? Number(indexAttr) : 0;
+        if (idx === 0 || idx === 1 || idx === 2) setActiveSlideIndex(idx);
+      },
+      {
+        root,
+        threshold: [0.5, 0.6, 0.7, 0.8],
+      },
+    );
+
+    nodes.forEach((n) => n && observer.observe(n));
+    return () => observer.disconnect();
+  }, []);
+
+  const scrollToSlide = (index: 0 | 1 | 2) => {
+    slideRefs.current[index]?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+  };
 
   const [noteActionError, setNoteActionError] = useState<string | null>(null);
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
@@ -155,8 +197,40 @@ export default function DashboardPage() {
         <div id="sn-create-slot" />
       </header>
 
-      <div className="flex overflow-x-auto snap-x snap-mandatory gap-6">
-        <div className="flex-none w-full snap-start">
+      <div className="sticky top-0 z-10 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
+          <button
+            type="button"
+            onClick={() => scrollToSlide(0)}
+            className={`px-3 py-1 text-sm ${activeSlideIndex === 0 ? 'bg-accent font-semibold' : ''}`}
+          >
+            To-Dos ({todoActiveCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => scrollToSlide(1)}
+            className={`px-3 py-1 text-sm ${activeSlideIndex === 1 ? 'bg-accent font-semibold' : ''}`}
+          >
+            Notes ({notesFavoriteCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => scrollToSlide(2)}
+            className={`px-3 py-1 text-sm ${activeSlideIndex === 2 ? 'bg-accent font-semibold' : ''}`}
+          >
+            Tâches ({tasksFavoriteCount})
+          </button>
+        </div>
+      </div>
+
+      <div ref={slidesContainerRef} className="flex overflow-x-auto snap-x snap-mandatory gap-6">
+        <div
+          ref={(el) => {
+            slideRefs.current[0] = el;
+          }}
+          data-slide-index="0"
+          className="flex-none w-full snap-start"
+        >
           <section>
             <h2 className="text-lg font-semibold mb-2">Tes ToDo importantes</h2>
             {favoriteTodos.length === 0 && (
@@ -219,7 +293,13 @@ export default function DashboardPage() {
           </section>
         </div>
 
-        <div className="flex-none w-full snap-start">
+        <div
+          ref={(el) => {
+            slideRefs.current[1] = el;
+          }}
+          data-slide-index="1"
+          className="flex-none w-full snap-start"
+        >
           <section>
             <h2 className="text-lg font-semibold mb-2">Tes notes importantes</h2>
             {notesLoading && (
@@ -316,7 +396,13 @@ export default function DashboardPage() {
           </section>
         </div>
 
-        <div className="flex-none w-full snap-start">
+        <div
+          ref={(el) => {
+            slideRefs.current[2] = el;
+          }}
+          data-slide-index="2"
+          className="flex-none w-full snap-start"
+        >
           <section>
             <h2 className="text-lg font-semibold mb-2">Tes tâches importantes</h2>
             {tasksLoading && (
