@@ -172,6 +172,8 @@ export interface AssistantDecisionDoc {
   objectId: string;
   action: 'accepted' | 'edited_then_accepted' | 'rejected';
   createdCoreObjects: { type: 'task' | 'taskReminder'; id: string }[];
+  beforePayload?: AssistantSuggestionDoc['payload'];
+  finalPayload?: AssistantSuggestionDoc['payload'];
   pipelineVersion: 1;
   createdAt?: Timestamp | FieldValue;
   updatedAt?: Timestamp | FieldValue;

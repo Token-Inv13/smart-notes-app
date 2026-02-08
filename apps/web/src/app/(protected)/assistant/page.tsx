@@ -26,6 +26,7 @@ export default function AssistantPage() {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busySuggestionId, setBusySuggestionId] = useState<string | null>(null);
+  const [showAllStatuses, setShowAllStatuses] = useState(false);
 
   const enabled = assistantSettings?.enabled === true;
 
@@ -171,6 +172,11 @@ export default function AssistantPage() {
     return arr;
   }, [suggestions]);
 
+  const visible = useMemo(() => {
+    if (showAllStatuses) return sorted;
+    return sorted.filter((s) => s.status === "proposed");
+  }, [sorted, showAllStatuses]);
+
   if (assistantError) {
     return <div className="sn-alert sn-alert--error">Impossible de charger l’assistant.</div>;
   }
@@ -184,14 +190,22 @@ export default function AssistantPage() {
             {assistantLoading ? "Chargement…" : enabled ? "Assistant activé" : "Assistant désactivé"}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void handleEnable()}
-          disabled={assistantLoading || saving || enabled}
-          className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
-        >
-          {saving ? "Activation…" : enabled ? "Activé" : "Activer l’assistant"}
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            href="/assistant/history"
+            className="px-3 py-2 rounded-md border border-input text-sm hover:bg-accent"
+          >
+            Historique
+          </a>
+          <button
+            type="button"
+            onClick={() => void handleEnable()}
+            disabled={assistantLoading || saving || enabled}
+            className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+          >
+            {saving ? "Activation…" : enabled ? "Activé" : "Activer l’assistant"}
+          </button>
+        </div>
       </div>
 
       {message && <div className="sn-alert">{message}</div>}
@@ -209,20 +223,29 @@ export default function AssistantPage() {
         <div className="flex items-center justify-between gap-3">
           <div className="text-sm font-medium">Inbox</div>
           <div className="text-xs text-muted-foreground">
-            {suggestionsLoading ? "Chargement…" : `${sorted.length} suggestion(s)`}
+            {suggestionsLoading ? "Chargement…" : `${visible.length} suggestion(s)`}
           </div>
         </div>
+
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={showAllStatuses}
+            onChange={(e) => setShowAllStatuses(e.target.checked)}
+          />
+          Afficher aussi les acceptées/refusées
+        </label>
 
         {suggestionsError && (
           <div className="sn-alert sn-alert--error">Impossible de charger les suggestions.</div>
         )}
 
-        {!suggestionsLoading && !suggestionsError && sorted.length === 0 && (
+        {!suggestionsLoading && !suggestionsError && visible.length === 0 && (
           <div className="text-sm text-muted-foreground">Aucune suggestion pour le moment.</div>
         )}
 
         <div className="space-y-3">
-          {sorted.map((s) => {
+          {visible.map((s) => {
             const suggestionId = s.id ?? s.dedupeKey;
             const isBusy = !!suggestionId && busySuggestionId === suggestionId;
             const proposed = s.status === "proposed";

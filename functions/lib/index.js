@@ -965,6 +965,9 @@ exports.assistantApplySuggestion = functions.https.onCall(async (data, context) 
     if (!suggestionId) {
         throw new functions.https.HttpsError('invalid-argument', 'Missing suggestionId.');
     }
+    const overrides = typeof (data === null || data === void 0 ? void 0 : data.overrides) === 'object' && data.overrides
+        ? data.overrides
+        : null;
     const db = admin.firestore();
     const userRef = db.collection('users').doc(userId);
     const suggestionRef = userRef.collection('assistantSuggestions').doc(suggestionId);
@@ -976,6 +979,7 @@ exports.assistantApplySuggestion = functions.https.onCall(async (data, context) 
     let decisionId = null;
     const createdCoreObjects = [];
     await db.runTransaction(async (tx) => {
+        var _a, _b, _c, _d, _e, _f, _g, _h;
         createdCoreObjects.length = 0;
         const suggestionSnap = await tx.get(suggestionRef);
         if (!suggestionSnap.exists) {
@@ -989,18 +993,104 @@ exports.assistantApplySuggestion = functions.https.onCall(async (data, context) 
             throw new functions.https.HttpsError('failed-precondition', 'Suggestion expired.');
         }
         const payload = suggestion.payload;
-        const title = typeof (payload === null || payload === void 0 ? void 0 : payload.title) === 'string' ? payload.title.trim() : '';
-        if (!title) {
+        const baseTitle = typeof (payload === null || payload === void 0 ? void 0 : payload.title) === 'string' ? payload.title.trim() : '';
+        if (!baseTitle) {
             throw new functions.https.HttpsError('invalid-argument', 'Invalid payload.title');
         }
         const kind = suggestion.kind;
         if (kind !== 'create_task' && kind !== 'create_reminder') {
             throw new functions.https.HttpsError('invalid-argument', 'Unknown suggestion kind.');
         }
+        if (overrides) {
+            const allowed = kind === 'create_task'
+                ? new Set(['title', 'dueDate', 'priority'])
+                : new Set(['title', 'remindAt', 'priority']);
+            for (const key of Object.keys(overrides)) {
+                if (!allowed.has(key)) {
+                    throw new functions.https.HttpsError('invalid-argument', `Invalid overrides key: ${key}`);
+                }
+            }
+        }
         const priority = payload === null || payload === void 0 ? void 0 : payload.priority;
-        const priorityValue = priority === 'low' || priority === 'medium' || priority === 'high' ? priority : null;
-        const dueDate = (payload === null || payload === void 0 ? void 0 : payload.dueDate) instanceof admin.firestore.Timestamp ? payload.dueDate : null;
-        const remindAt = (payload === null || payload === void 0 ? void 0 : payload.remindAt) instanceof admin.firestore.Timestamp ? payload.remindAt : null;
+        const basePriorityValue = priority === 'low' || priority === 'medium' || priority === 'high' ? priority : null;
+        const baseDueDate = (payload === null || payload === void 0 ? void 0 : payload.dueDate) instanceof admin.firestore.Timestamp ? payload.dueDate : null;
+        const baseRemindAt = (payload === null || payload === void 0 ? void 0 : payload.remindAt) instanceof admin.firestore.Timestamp ? payload.remindAt : null;
+        const parseOverrideTimestamp = (value) => {
+            if (value === null)
+                return null;
+            if (typeof value === 'number' && Number.isFinite(value)) {
+                return admin.firestore.Timestamp.fromMillis(value);
+            }
+            if (typeof value === 'object' && value) {
+                const candidate = value;
+                const seconds = typeof candidate.seconds === 'number' ? candidate.seconds : typeof candidate._seconds === 'number' ? candidate._seconds : null;
+                const nanos = typeof candidate.nanoseconds === 'number' ? candidate.nanoseconds : typeof candidate._nanoseconds === 'number' ? candidate._nanoseconds : 0;
+                if (seconds !== null && Number.isFinite(seconds) && Number.isFinite(nanos)) {
+                    return new admin.firestore.Timestamp(seconds, nanos);
+                }
+            }
+            throw new functions.https.HttpsError('invalid-argument', 'Invalid overrides timestamp value.');
+        };
+        const overrideTitleRaw = overrides ? overrides.title : undefined;
+        const overrideTitle = typeof overrideTitleRaw === 'undefined'
+            ? undefined
+            : typeof overrideTitleRaw === 'string'
+                ? overrideTitleRaw.trim()
+                : null;
+        if (overrideTitle === '') {
+            throw new functions.https.HttpsError('invalid-argument', 'overrides.title cannot be empty.');
+        }
+        if (overrideTitle === null) {
+            throw new functions.https.HttpsError('invalid-argument', 'Invalid overrides.title');
+        }
+        const overridePriorityRaw = overrides ? overrides.priority : undefined;
+        const overridePriorityValue = typeof overridePriorityRaw === 'undefined'
+            ? undefined
+            : overridePriorityRaw === null
+                ? null
+                : overridePriorityRaw === 'low' || overridePriorityRaw === 'medium' || overridePriorityRaw === 'high'
+                    ? overridePriorityRaw
+                    : null;
+        if (typeof overridePriorityRaw !== 'undefined' &&
+            overridePriorityRaw !== null &&
+            overridePriorityRaw !== 'low' &&
+            overridePriorityRaw !== 'medium' &&
+            overridePriorityRaw !== 'high') {
+            throw new functions.https.HttpsError('invalid-argument', 'Invalid overrides.priority');
+        }
+        const overrideDueDate = overrides && Object.prototype.hasOwnProperty.call(overrides, 'dueDate') ? parseOverrideTimestamp(overrides.dueDate) : undefined;
+        const overrideRemindAt = overrides && Object.prototype.hasOwnProperty.call(overrides, 'remindAt') ? parseOverrideTimestamp(overrides.remindAt) : undefined;
+        const finalTitle = typeof overrideTitle === 'string' ? overrideTitle : baseTitle;
+        const finalDueDate = typeof overrideDueDate === 'undefined' ? baseDueDate : overrideDueDate;
+        const finalRemindAt = typeof overrideRemindAt === 'undefined' ? baseRemindAt : overrideRemindAt;
+        const finalPriorityValue = typeof overridePriorityValue === 'undefined' ? basePriorityValue : overridePriorityValue;
+        const isEdited = (typeof overrideTitle !== 'undefined' && overrideTitle !== baseTitle) ||
+            (typeof overrideDueDate !== 'undefined' && ((_b = (_a = overrideDueDate === null || overrideDueDate === void 0 ? void 0 : overrideDueDate.toMillis) === null || _a === void 0 ? void 0 : _a.call(overrideDueDate)) !== null && _b !== void 0 ? _b : null) !== ((_d = (_c = baseDueDate === null || baseDueDate === void 0 ? void 0 : baseDueDate.toMillis) === null || _c === void 0 ? void 0 : _c.call(baseDueDate)) !== null && _d !== void 0 ? _d : null)) ||
+            (typeof overrideRemindAt !== 'undefined' && ((_f = (_e = overrideRemindAt === null || overrideRemindAt === void 0 ? void 0 : overrideRemindAt.toMillis) === null || _e === void 0 ? void 0 : _e.call(overrideRemindAt)) !== null && _f !== void 0 ? _f : null) !== ((_h = (_g = baseRemindAt === null || baseRemindAt === void 0 ? void 0 : baseRemindAt.toMillis) === null || _g === void 0 ? void 0 : _g.call(baseRemindAt)) !== null && _h !== void 0 ? _h : null)) ||
+            (typeof overridePriorityValue !== 'undefined' && overridePriorityValue !== basePriorityValue);
+        if (kind === 'create_reminder' && !finalRemindAt) {
+            throw new functions.https.HttpsError('invalid-argument', 'remindAt is required for reminders.');
+        }
+        const beforePayload = suggestion.payload;
+        const finalPayload = (() => {
+            if (!isEdited)
+                return null;
+            const next = Object.assign({}, beforePayload);
+            next.title = finalTitle;
+            if (finalDueDate)
+                next.dueDate = finalDueDate;
+            else
+                delete next.dueDate;
+            if (finalRemindAt)
+                next.remindAt = finalRemindAt;
+            else
+                delete next.remindAt;
+            if (finalPriorityValue)
+                next.priority = finalPriorityValue;
+            else
+                delete next.priority;
+            return next;
+        })();
         let userPlan = null;
         const userSnap = await tx.get(userRef);
         if (userSnap.exists) {
@@ -1010,15 +1100,15 @@ exports.assistantApplySuggestion = functions.https.onCall(async (data, context) 
         const isPro = userPlan === 'pro';
         const createdAt = admin.firestore.FieldValue.serverTimestamp();
         const updatedAt = admin.firestore.FieldValue.serverTimestamp();
-        const effectiveTaskDue = kind === 'create_reminder' ? remindAt !== null && remindAt !== void 0 ? remindAt : dueDate : dueDate;
+        const effectiveTaskDue = kind === 'create_reminder' ? finalRemindAt !== null && finalRemindAt !== void 0 ? finalRemindAt : finalDueDate : finalDueDate;
         tx.create(taskRef, {
             userId,
-            title,
+            title: finalTitle,
             status: 'todo',
             workspaceId: null,
             startDate: null,
             dueDate: effectiveTaskDue,
-            priority: priorityValue,
+            priority: finalPriorityValue,
             favorite: false,
             archived: false,
             source: {
@@ -1031,13 +1121,10 @@ exports.assistantApplySuggestion = functions.https.onCall(async (data, context) 
         });
         createdCoreObjects.push({ type: 'task', id: taskRef.id });
         if (kind === 'create_reminder') {
-            if (!remindAt) {
-                throw new functions.https.HttpsError('invalid-argument', 'payload.remindAt is required for reminders.');
-            }
             if (!isPro) {
                 throw new functions.https.HttpsError('failed-precondition', 'Plan pro requis pour créer un rappel.');
             }
-            const remindAtIso = remindAt.toDate().toISOString();
+            const remindAtIso = finalRemindAt.toDate().toISOString();
             tx.create(reminderRef, {
                 userId,
                 taskId: taskRef.id,
@@ -1058,8 +1145,10 @@ exports.assistantApplySuggestion = functions.https.onCall(async (data, context) 
         const decisionDoc = {
             suggestionId,
             objectId: suggestion.objectId,
-            action: 'accepted',
+            action: isEdited ? 'edited_then_accepted' : 'accepted',
             createdCoreObjects: [...createdCoreObjects],
+            beforePayload,
+            finalPayload: finalPayload !== null && finalPayload !== void 0 ? finalPayload : undefined,
             pipelineVersion: 1,
             createdAt,
             updatedAt,
@@ -1100,6 +1189,7 @@ exports.assistantRejectSuggestion = functions.https.onCall(async (data, context)
         if (suggestion.status !== 'proposed') {
             throw new functions.https.HttpsError('failed-precondition', 'Suggestion is not proposed.');
         }
+        const beforePayload = suggestion.payload;
         const nowServer = admin.firestore.FieldValue.serverTimestamp();
         decisionId = decisionRef.id;
         const decisionDoc = {
@@ -1107,6 +1197,7 @@ exports.assistantRejectSuggestion = functions.https.onCall(async (data, context)
             objectId: suggestion.objectId,
             action: 'rejected',
             createdCoreObjects: [],
+            beforePayload,
             pipelineVersion: 1,
             createdAt: nowServer,
             updatedAt: nowServer,
