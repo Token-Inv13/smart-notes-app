@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { FirebaseError } from "firebase/app";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { parseLocalDateToTimestamp } from "@/lib/datetime";
 import type { TodoDoc } from "@/types/firestore";
 
 type Props = {
@@ -27,6 +28,9 @@ export default function TodoCreateForm({
   const [newItemText, setNewItemText] = useState("");
   const [itemsDraft, setItemsDraft] = useState<NonNullable<TodoDoc["items"]>>([]);
   const [itemsOpen, setItemsOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [dueDateDraft, setDueDateDraft] = useState("");
+  const [priorityDraft, setPriorityDraft] = useState<"" | NonNullable<TodoDoc["priority"]>>("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -46,6 +50,10 @@ export default function TodoCreateForm({
   useEffect(() => {
     if (itemsDraft.length > 0) setItemsOpen(true);
   }, [itemsDraft.length]);
+
+  useEffect(() => {
+    if (dueDateDraft || priorityDraft) setOptionsOpen(true);
+  }, [dueDateDraft, priorityDraft]);
 
   const canSubmit = useMemo(() => !!title.trim(), [title]);
 
@@ -84,11 +92,15 @@ export default function TodoCreateForm({
     setCreateError(null);
     setCreating(true);
     try {
+      const dueTimestamp = dueDateDraft ? parseLocalDateToTimestamp(dueDateDraft) : null;
+
       const payload: Omit<TodoDoc, "id"> = {
         userId: user.uid,
         workspaceId: typeof initialWorkspaceId === "string" ? initialWorkspaceId : null,
         title: trimmed,
         items: itemsDraft,
+        dueDate: dueTimestamp,
+        priority: priorityDraft || null,
         completed: false,
         favorite: initialFavorite === true,
         createdAt: serverTimestamp(),
@@ -99,6 +111,8 @@ export default function TodoCreateForm({
       setTitle("");
       setNewItemText("");
       setItemsDraft([]);
+      setDueDateDraft("");
+      setPriorityDraft("");
       onCreated?.(ref.id);
     } catch (e) {
       console.error("Error creating todo", e);
@@ -152,6 +166,57 @@ export default function TodoCreateForm({
           }}
         />
       </div>
+
+      {showActions && (
+        <details
+          className="rounded-md border border-border bg-card"
+          open={optionsOpen}
+          onToggle={(e) => setOptionsOpen((e.currentTarget as HTMLDetailsElement).open)}
+        >
+          <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium">
+            Options
+            <span className="text-muted-foreground font-normal"> (planification)</span>
+          </summary>
+
+          <div className="px-3 pb-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium" htmlFor="todo-due-date">
+                Échéance
+              </label>
+              <input
+                id="todo-due-date"
+                type="date"
+                value={dueDateDraft}
+                onChange={(e) => setDueDateDraft(e.target.value)}
+                className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                disabled={creating}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium" htmlFor="todo-priority">
+                Priorité
+              </label>
+              <select
+                id="todo-priority"
+                value={priorityDraft}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "low" || v === "medium" || v === "high") setPriorityDraft(v);
+                  else setPriorityDraft("");
+                }}
+                className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                disabled={creating}
+              >
+                <option value="">—</option>
+                <option value="low">Basse</option>
+                <option value="medium">Moyenne</option>
+                <option value="high">Haute</option>
+              </select>
+            </div>
+          </div>
+        </details>
+      )}
 
       {showActions && (
         <details

@@ -20,6 +20,27 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [todoView, setTodoView] = useState<"active" | "completed">("active");
 
+  const formatDueDate = (ts: TodoDoc["dueDate"] | null | undefined) => {
+    if (!ts) return "";
+    try {
+      return ts.toDate().toLocaleDateString();
+    } catch {
+      return "";
+    }
+  };
+
+  const priorityLabel = (p: NonNullable<TodoDoc["priority"]>) => {
+    if (p === "high") return "Haute";
+    if (p === "medium") return "Moyenne";
+    return "Basse";
+  };
+
+  const priorityDotClass = (p: NonNullable<TodoDoc["priority"]>) => {
+    if (p === "high") return "bg-red-500/80";
+    if (p === "medium") return "bg-amber-500/80";
+    return "bg-emerald-500/80";
+  };
+
   const activeTodos = useMemo(() => todos.filter((t) => t.completed !== true), [todos]);
   const completedTodos = useMemo(() => todos.filter((t) => t.completed === true), [todos]);
 
@@ -163,7 +184,25 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                           onClick={(e) => e.stopPropagation()}
                           className="pointer-events-auto"
                         />
-                        <span className={`truncate select-text ${todo.completed ? "line-through text-muted-foreground" : ""}`}>{todo.title}</span>
+                        <div className="min-w-0">
+                          <div className={`truncate select-text ${todo.completed ? "line-through text-muted-foreground" : ""}`}>{todo.title}</div>
+                          {(todo.dueDate || todo.priority) && (
+                            <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                              {todo.dueDate && (
+                                <span title={`Échéance: ${formatDueDate(todo.dueDate)}`} className="inline-flex items-center gap-1">
+                                  <span aria-hidden>📅</span>
+                                  <span>{formatDueDate(todo.dueDate)}</span>
+                                </span>
+                              )}
+                              {todo.priority && (
+                                <span title={`Priorité: ${priorityLabel(todo.priority)}`} className="inline-flex items-center gap-1">
+                                  <span className={`h-2 w-2 rounded-full ${priorityDotClass(todo.priority)}`} aria-hidden />
+                                  <span>{priorityLabel(todo.priority)}</span>
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       <button

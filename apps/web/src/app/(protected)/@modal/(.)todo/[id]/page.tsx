@@ -3,6 +3,7 @@
 import { use, useEffect, useMemo, useState } from "react";
 import { deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { formatTimestampForDateInput, parseLocalDateToTimestamp } from "@/lib/datetime";
 import type { TodoDoc } from "@/types/firestore";
 import Modal from "../../../Modal";
 
@@ -23,6 +24,10 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
   const [deleting, setDeleting] = useState(false);
 
   const [newItemText, setNewItemText] = useState("");
+
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [dueDateDraft, setDueDateDraft] = useState("");
+  const [priorityDraft, setPriorityDraft] = useState<"" | NonNullable<TodoDoc["priority"]>>("");
 
   useEffect(() => {
     let cancelled = false;
@@ -75,11 +80,20 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
   const activeItems = useMemo(() => items.filter((it) => it.done !== true), [items]);
   const doneItems = useMemo(() => items.filter((it) => it.done === true), [items]);
 
+  useEffect(() => {
+    if (!todo) return;
+    setDueDateDraft(formatTimestampForDateInput(todo.dueDate ?? null));
+    setPriorityDraft(todo.priority ?? "");
+    if (todo.dueDate || todo.priority) setOptionsOpen(true);
+  }, [todo]);
+
   const persistTodo = async (next: {
     title?: string;
     items?: NonNullable<TodoDoc["items"]>;
     favorite?: boolean;
     completed?: boolean;
+    dueDate?: TodoDoc["dueDate"] | null;
+    priority?: TodoDoc["priority"] | null;
   }) => {
     if (!todo?.id) return;
     const user = auth.currentUser;
@@ -92,6 +106,8 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
       const nextItems = next.items ?? (todo.items ?? []);
       const nextFavorite = typeof next.favorite === "boolean" ? next.favorite : todo.favorite === true;
       const nextCompleted = typeof next.completed === "boolean" ? next.completed : todo.completed === true;
+      const nextDueDate = typeof next.dueDate !== "undefined" ? next.dueDate : (todo.dueDate ?? null);
+      const nextPriority = typeof next.priority !== "undefined" ? next.priority : (todo.priority ?? null);
 
       await updateDoc(doc(db, "todos", todo.id), {
         userId: todo.userId,
@@ -100,6 +116,8 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
         completed: nextCompleted,
         favorite: nextFavorite,
         items: nextItems,
+        dueDate: nextDueDate,
+        priority: nextPriority,
         updatedAt: serverTimestamp(),
       });
       setTodo((prev) =>
@@ -110,6 +128,8 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
               items: nextItems,
               favorite: nextFavorite,
               completed: nextCompleted,
+              dueDate: nextDueDate,
+              priority: nextPriority,
             }
           : prev,
       );
@@ -137,6 +157,12 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
       setTitleDraft(trimmed);
     }
     await persistTodo({ title: trimmed });
+  };
+
+  const commitDueDate = async () => {
+    if (!todo) return;
+    const ts = dueDateDraft ? parseLocalDateToTimestamp(dueDateDraft) : null;
+    await persistTodo({ dueDate: ts });
   };
 
   const addItem = async () => {
@@ -259,6 +285,61 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                   </button>
                 </div>
               </div>
+
+              <details
+                className="rounded-md border border-border bg-card"
+                open={optionsOpen}
+                onToggle={(e) => setOptionsOpen((e.currentTarget as HTMLDetailsElement).open)}
+              >
+                <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium">
+                  Options
+                  <span className="text-muted-foreground font-normal"> (planification)</span>
+                </summary>
+
+                <div className="px-3 pb-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium" htmlFor="todo-modal-due">
+                      Échéance
+                    </label>
+                    <input
+                      id="todo-modal-due"
+                      type="date"
+                      value={dueDateDraft}
+                      onChange={(e) => setDueDateDraft(e.target.value)}
+                      onBlur={() => void commitDueDate()}
+                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      disabled={saving}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium" htmlFor="todo-modal-priority">
+                      Priorité
+                    </label>
+                    <select
+                      id="todo-modal-priority"
+                      value={priorityDraft}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === "low" || v === "medium" || v === "high") {
+                          setPriorityDraft(v);
+                          void persistTodo({ priority: v });
+                        } else {
+                          setPriorityDraft("");
+                          void persistTodo({ priority: null });
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      disabled={saving}
+                    >
+                      <option value="">—</option>
+                      <option value="low">Basse</option>
+                      <option value="medium">Moyenne</option>
+                      <option value="high">Haute</option>
+                    </select>
+                  </div>
+                </div>
+              </details>
 
               <div className="sn-card sn-card--muted p-3">
                 <div className="flex items-center gap-2">
