@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
@@ -79,6 +79,20 @@ export default function NoteDetailPage(props: any) {
   const createdLabel = useMemo(() => formatFrDateTime(note?.createdAt ?? null), [note?.createdAt]);
   const updatedLabel = useMemo(() => formatFrDateTime(note?.updatedAt ?? null), [note?.updatedAt]);
 
+  const handleRichTextLinkClick = (e: MouseEvent<HTMLElement>) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    const a = target.closest("a") as HTMLAnchorElement | null;
+    if (!a) return;
+
+    const href = a.getAttribute("href");
+    if (!href) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    window.open(href, "_blank", "noopener,noreferrer");
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
@@ -114,6 +128,7 @@ export default function NoteDetailPage(props: any) {
             <div
               aria-label="Contenu de la note"
               className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm sn-richtext-content"
+              onClick={handleRichTextLinkClick}
             >
               <div dangerouslySetInnerHTML={{ __html: sanitizeNoteHtml(note.content ?? "") }} />
             </div>

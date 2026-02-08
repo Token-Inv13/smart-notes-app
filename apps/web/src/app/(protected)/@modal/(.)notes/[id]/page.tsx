@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Timestamp, deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { useRouter } from "next/navigation";
@@ -129,6 +129,20 @@ export default function NoteDetailModal(props: any) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [, setIsDirty] = useState(false);
+
+  const handleRichTextLinkClick = (e: MouseEvent<HTMLElement>) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    const a = target.closest("a") as HTMLAnchorElement | null;
+    if (!a) return;
+
+    const href = a.getAttribute("href");
+    if (!href) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    window.open(href, "_blank", "noopener,noreferrer");
+  };
   const isDirtyRef = useRef(false);
   const lastSavedSnapshotRef = useRef<string>("");
 
@@ -852,6 +866,7 @@ export default function NoteDetailModal(props: any) {
                     <div
                       aria-label="Contenu de la note"
                       className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm sn-richtext-content select-text"
+                      onClick={handleRichTextLinkClick}
                       onDoubleClick={() => startEdit()}
                       onTouchStart={scheduleLongPressToEdit}
                       onTouchMove={cancelLongPressIfMoved}
