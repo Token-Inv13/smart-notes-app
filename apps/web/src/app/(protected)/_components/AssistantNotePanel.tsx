@@ -25,16 +25,20 @@ export default function AssistantNotePanel({ noteId }: Props) {
   } = useAssistantSettings();
   const enabled = assistantSettings?.enabled === true;
 
+  const [showExpired, setShowExpired] = useState(false);
+
   const {
     data: suggestions,
     loading: suggestionsLoading,
     error: suggestionsError,
     refetch: refetchSuggestions,
-  } = useNoteAssistantSuggestions(noteId, { limit: 10 });
+  } = useNoteAssistantSuggestions(noteId, { limit: 10, includeExpired: showExpired });
 
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busySuggestionId, setBusySuggestionId] = useState<string | null>(null);
+  const [busyReanalysis, setBusyReanalysis] = useState(false);
+  const [reanalyzeCooldownUntil, setReanalyzeCooldownUntil] = useState<number>(0);
 
   const [editing, setEditing] = useState<AssistantSuggestionDoc | null>(null);
   const [editTitle, setEditTitle] = useState<string>("");
@@ -73,6 +77,35 @@ export default function AssistantNotePanel({ noteId }: Props) {
   const handleRefresh = () => {
     refetchAssistant();
     refetchSuggestions();
+  };
+
+  const cooldownActive = Date.now() < reanalyzeCooldownUntil;
+
+  const handleReanalyze = async () => {
+    if (!noteId) return;
+    if (busyReanalysis) return;
+    if (cooldownActive) return;
+
+    setBusyReanalysis(true);
+    setActionMessage(null);
+    setActionError(null);
+
+    try {
+      const fn = httpsCallable<{ noteId: string }, { jobId: string }>(fbFunctions, "assistantRequestReanalysis");
+      const res = await fn({ noteId });
+      setActionMessage(`Réanalyse demandée (job: ${res.data.jobId}).`);
+      setReanalyzeCooldownUntil(Date.now() + 30_000);
+    } catch (e) {
+      if (isCallableUnauthenticated(e)) {
+        void invalidateAuthSession();
+        return;
+      }
+      if (e instanceof FirebaseError) setActionError(`${e.code}: ${e.message}`);
+      else if (e instanceof Error) setActionError(e.message);
+      else setActionError("Impossible de lancer la réanalyse.");
+    } finally {
+      setBusyReanalysis(false);
+    }
   };
 
   type ApplySuggestionResult = {
@@ -250,11 +283,26 @@ export default function AssistantNotePanel({ noteId }: Props) {
     <div className="sn-card p-4 space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm font-semibold">Assistant</div>
-        <div className="text-xs text-muted-foreground">{noteId ? `Note: ${noteId}` : ""}</div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void handleReanalyze()}
+            disabled={!noteId || busyReanalysis || cooldownActive}
+            className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+          >
+            {busyReanalysis ? "Réanalyse…" : cooldownActive ? "Réanalyser (cooldown)" : "Réanalyser"}
+          </button>
+          <div className="text-xs text-muted-foreground">{noteId ? `Note: ${noteId}` : ""}</div>
+        </div>
       </div>
 
       {actionMessage && <div className="sn-alert">{actionMessage}</div>}
       {actionError && <div className="sn-alert sn-alert--error">{actionError}</div>}
+
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={showExpired} onChange={(e) => setShowExpired(e.target.checked)} />
+        Afficher expirées
+      </label>
 
       {suggestionsError && (
         <div className="space-y-2">
@@ -289,11 +337,15 @@ export default function AssistantNotePanel({ noteId }: Props) {
 
             const dueLabel = s.kind === "create_task" ? formatTs(s.payload?.dueDate ?? null) : "";
             const remindLabel = s.kind === "create_reminder" ? formatTs(s.payload?.remindAt ?? null) : "";
+            const expired = s.status === "expired";
 
             return (
               <div key={suggestionId ?? s.dedupeKey} className="border border-border rounded-md p-3 space-y-2">
                 <div className="space-y-1">
-                  <div className="text-sm font-semibold">{s.payload?.title}</div>
+                  <div className="text-sm font-semibold">
+                    {s.payload?.title}
+                    {expired ? <span className="ml-2 text-xs text-muted-foreground">(expirée)</span> : null}
+                  </div>
                   <div className="text-xs text-muted-foreground">{s.payload?.explanation}</div>
                   {s.payload?.origin?.fromText ? (
                     <div className="text-xs text-muted-foreground">Extrait: “{s.payload.origin.fromText}”</div>
@@ -306,7 +358,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
                   <button
                     type="button"
                     onClick={() => void handleAccept(s)}
-                    disabled={isBusy}
+                    disabled={isBusy || expired}
                     className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
                   >
                     {isBusy ? "Traitement…" : "Accepter"}
@@ -314,7 +366,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
                   <button
                     type="button"
                     onClick={() => void handleReject(s)}
-                    disabled={isBusy}
+                    disabled={isBusy || expired}
                     className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
                   >
                     Refuser
@@ -322,7 +374,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
                   <button
                     type="button"
                     onClick={() => openEdit(s)}
-                    disabled={isBusy}
+                    disabled={isBusy || expired}
                     className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
                   >
                     Modifier

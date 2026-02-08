@@ -7,6 +7,7 @@ import {
   where,
   orderBy,
   limit as fsLimit,
+  where as fsWhere,
   type Query,
   type CollectionReference,
   type QueryConstraint,
@@ -18,6 +19,7 @@ import type { AssistantSuggestionDoc } from '@/types/firestore';
 
 type UseNoteAssistantSuggestionsParams = {
   limit?: number;
+  includeExpired?: boolean;
 };
 
 export function useNoteAssistantSuggestions(noteId: string | undefined, params?: UseNoteAssistantSuggestionsParams) {
@@ -39,7 +41,7 @@ export function useNoteAssistantSuggestions(noteId: string | undefined, params?:
 
     const constraints: QueryConstraint[] = [
       where('objectId', '==', objectId),
-      where('status', '==', 'proposed'),
+      params?.includeExpired ? fsWhere('status', 'in', ['proposed', 'expired']) : where('status', '==', 'proposed'),
       orderBy('updatedAt', 'desc'),
     ];
 
@@ -48,7 +50,7 @@ export function useNoteAssistantSuggestions(noteId: string | undefined, params?:
     }
 
     return query(baseRef, ...constraints) as Query<AssistantSuggestionDoc>;
-  }, [userUid, noteId, params?.limit]);
+  }, [userUid, noteId, params?.limit, params?.includeExpired]);
 
   return useCollection<AssistantSuggestionDoc>(suggestionsQuery);
 }
