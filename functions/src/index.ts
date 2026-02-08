@@ -32,6 +32,7 @@ type AssistantObjectDoc = {
   type: 'note';
   coreRef: AssistantCoreRef;
   textHash: string;
+  pendingTextHash?: string | null;
   pipelineVersion: 1;
   status: AssistantObjectStatus;
   lastAnalyzedAt?: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue | null;
@@ -45,6 +46,7 @@ type AssistantJobDoc = {
   pipelineVersion: 1;
   status: AssistantJobStatus;
   attempts: number;
+  pendingTextHash?: string | null;
   lockedUntil?: FirebaseFirestore.Timestamp;
   createdAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
   updatedAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
@@ -104,6 +106,50 @@ type AssistantDecisionDoc = {
   createdAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
   updatedAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
 };
+
+const ASSISTANT_REANALYSIS_FREE_DAILY_LIMIT = 10;
+const ASSISTANT_REANALYSIS_PRO_DAILY_LIMIT = 200;
+
+function utcDayKey(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function assistantCurrentJobIdForObject(objectId: string): string {
+  return `current_${objectId}`;
+}
+
+function assistantMetricsRef(db: FirebaseFirestore.Firestore, userId: string) {
+  return db.collection('users').doc(userId).collection('assistantMetrics').doc('main');
+}
+
+function assistantUsageRef(db: FirebaseFirestore.Firestore, userId: string, dayKey: string) {
+  return db.collection('users').doc(userId).collection('assistantUsage').doc(dayKey);
+}
+
+type AssistantMetricsDoc = {
+  suggestionsCreated?: number;
+  suggestionsAccepted?: number;
+  suggestionsRejected?: number;
+  suggestionsEditedAccepted?: number;
+  reanalysisRequested?: number;
+  decisionsCount?: number;
+  totalTimeToDecisionMs?: number;
+  jobsProcessed?: number;
+  jobErrors?: number;
+  updatedAt?: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
+};
+
+function metricsIncrements(inc: Partial<Record<keyof AssistantMetricsDoc, number>>) {
+  const out: Record<string, any> = {
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+  for (const [k, v] of Object.entries(inc)) {
+    if (typeof v === 'number' && Number.isFinite(v) && v !== 0) {
+      out[k] = admin.firestore.FieldValue.increment(v);
+    }
+  }
+  return out;
+}
 
 function normalizeAssistantText(raw: unknown): string {
   const s = typeof raw === 'string' ? raw : '';
@@ -795,6 +841,73 @@ export const checkAndSendReminders = functions.pubsub
     }
   });
 
+export const assistantExpireSuggestions = functions.pubsub
+  .schedule('every 24 hours')
+  .onRun(async (context) => {
+    const db = admin.firestore();
+    const nowTs = admin.firestore.Timestamp.now();
+    const nowServer = admin.firestore.FieldValue.serverTimestamp();
+
+    let expiredCount = 0;
+
+    while (true) {
+      const snap = await db
+        .collectionGroup('assistantSuggestions')
+        .where('status', '==', 'proposed')
+        .where('expiresAt', '<=', nowTs)
+        .orderBy('expiresAt', 'asc')
+        .limit(500)
+        .get();
+
+      if (snap.empty) break;
+
+      const batch = db.batch();
+      for (const d of snap.docs) {
+        batch.update(d.ref, { status: 'expired', updatedAt: nowServer });
+      }
+      await batch.commit();
+      expiredCount += snap.size;
+
+      if (snap.size < 500) break;
+    }
+
+    console.log('assistantExpireSuggestions done', { expiredCount });
+  });
+
+export const assistantPurgeExpiredSuggestions = functions.pubsub
+  .schedule('every monday 02:00')
+  .onRun(async (context) => {
+    const db = admin.firestore();
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffTs = admin.firestore.Timestamp.fromDate(cutoff);
+
+    let deletedCount = 0;
+
+    while (true) {
+      const snap = await db
+        .collectionGroup('assistantSuggestions')
+        .where('status', '==', 'expired')
+        .where('updatedAt', '<=', cutoffTs)
+        .orderBy('updatedAt', 'asc')
+        .limit(500)
+        .get();
+
+      if (snap.empty) break;
+
+      const batch = db.batch();
+      for (const d of snap.docs) {
+        batch.delete(d.ref);
+      }
+      await batch.commit();
+      deletedCount += snap.size;
+
+      if (snap.size < 500) break;
+    }
+
+    console.log('assistantPurgeExpiredSuggestions done', { deletedCount });
+  });
+
 // Optional: Clean up old reminders
 export const cleanupOldReminders = functions.pubsub
   .schedule('every 24 hours')
@@ -981,17 +1094,58 @@ export const assistantEnqueueNoteJob = functions.firestore
 
     await db.runTransaction(async (tx) => {
       const objectSnap = await tx.get(objectRef);
-      const prevHash = objectSnap.exists ? (objectSnap.data() as any)?.textHash : null;
+      const objectData = objectSnap.exists ? (objectSnap.data() as any) : null;
+      const prevHash =
+        objectData && typeof objectData?.pendingTextHash === 'string'
+          ? (objectData.pendingTextHash as string)
+          : objectData && typeof objectData?.textHash === 'string'
+            ? (objectData.textHash as string)
+            : null;
       if (typeof prevHash === 'string' && prevHash === textHash) {
         return;
       }
 
+      const jobRef = jobsCol.doc(assistantCurrentJobIdForObject(objectId));
+      const jobSnap = await tx.get(jobRef);
+      if (jobSnap.exists) {
+        const data = jobSnap.data() as any;
+        const st = data?.status as AssistantJobStatus | undefined;
+        const pending = typeof data?.pendingTextHash === 'string' ? (data.pendingTextHash as string) : null;
+        if ((st === 'queued' || st === 'processing') && pending === textHash) {
+          // Already enqueued for this content.
+          return;
+        }
+        if (st === 'queued' || st === 'processing') {
+          // Already has an active job; don't create a second one.
+          // But keep the newest content hash so the current job effectively targets the latest version.
+          tx.set(
+            objectRef,
+            {
+              pendingTextHash: textHash,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+          tx.set(
+            jobRef,
+            {
+              pendingTextHash: textHash,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+          return;
+        }
+      }
+
       const now = admin.firestore.FieldValue.serverTimestamp();
+      const existingTextHash = objectData && typeof objectData?.textHash === 'string' ? (objectData.textHash as string) : null;
       const objectPayload: Partial<AssistantObjectDoc> = {
         objectId,
         type: 'note',
         coreRef: { collection: 'notes', id: noteId },
-        textHash,
+        textHash: existingTextHash ?? textHash,
+        pendingTextHash: textHash,
         pipelineVersion: 1,
         status: 'queued',
         updatedAt: now,
@@ -1004,18 +1158,23 @@ export const assistantEnqueueNoteJob = functions.firestore
 
       tx.set(objectRef, objectPayload, { merge: true });
 
-      const jobRef = jobsCol.doc();
       const jobPayload: AssistantJobDoc = {
         objectId,
         jobType: 'analyze_intents_v1',
         pipelineVersion: 1,
         status: 'queued',
         attempts: 0,
+        pendingTextHash: textHash,
         lockedUntil: lockedUntilReady,
         createdAt: now,
         updatedAt: now,
       };
-      tx.create(jobRef, jobPayload);
+
+      if (jobSnap.exists) {
+        tx.set(jobRef, jobPayload, { merge: true });
+      } else {
+        tx.create(jobRef, jobPayload);
+      }
     });
   });
 
@@ -1119,6 +1278,11 @@ export const assistantRunJobQueue = functions.pubsub
           pipelineVersion: claimed.pipelineVersion,
         });
 
+        const metricsRef = assistantMetricsRef(db, userId);
+
+        let processedTextHash: string | null =
+          typeof (claimed as any)?.pendingTextHash === 'string' ? String((claimed as any).pendingTextHash) : null;
+
         if (claimed.jobType === 'analyze_intents_v1') {
           const objectSnap = await objectRef.get();
           const objectData = objectSnap.exists ? (objectSnap.data() as any) : null;
@@ -1133,6 +1297,9 @@ export const assistantRunJobQueue = functions.pubsub
             if (note && noteUserId === userId) {
               const noteTitle = typeof note?.title === 'string' ? note.title : '';
               const noteContent = typeof note?.content === 'string' ? note.content : '';
+
+              const normalized = normalizeAssistantText(`${noteTitle}\n${noteContent}`);
+              processedTextHash = sha256Hex(normalized);
 
               const detected = detectIntentsV1({ title: noteTitle, content: noteContent, now: nowDate });
               if (detected.length > 0) {
@@ -1172,6 +1339,8 @@ export const assistantRunJobQueue = functions.pubsub
                         updatedAt: nowServer,
                         expiresAt,
                       });
+
+                      tx.set(metricsRef, metricsIncrements({ suggestionsCreated: 1 }), { merge: true });
                       return;
                     }
 
@@ -1200,27 +1369,66 @@ export const assistantRunJobQueue = functions.pubsub
                     };
 
                     tx.create(sugRef, doc);
+                    tx.set(metricsRef, metricsIncrements({ suggestionsCreated: 1 }), { merge: true });
                   });
                 }
               }
+
+              await objectRef.set(
+                {
+                  textHash: processedTextHash,
+                },
+                { merge: true },
+              );
             }
           }
         }
 
-        await jobDoc.ref.update({
-          status: 'done',
-          lockedUntil: admin.firestore.Timestamp.fromMillis(0),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+        const objectAfter = await objectRef.get();
+        const pendingAfter =
+          objectAfter.exists && typeof (objectAfter.data() as any)?.pendingTextHash === 'string'
+            ? String((objectAfter.data() as any).pendingTextHash)
+            : null;
 
-        await objectRef.set(
-          {
-            status: 'done',
-            lastAnalyzedAt: admin.firestore.FieldValue.serverTimestamp(),
+        if (pendingAfter && (!processedTextHash || pendingAfter !== processedTextHash)) {
+          await jobDoc.ref.update({
+            status: 'queued',
+            lockedUntil: admin.firestore.Timestamp.fromMillis(0),
+            pendingTextHash: pendingAfter,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true },
-        );
+          });
+
+          await objectRef.set(
+            {
+              status: 'queued',
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        } else {
+          await jobDoc.ref.update({
+            status: 'done',
+            lockedUntil: admin.firestore.Timestamp.fromMillis(0),
+            pendingTextHash: null,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+
+          await objectRef.set(
+            {
+              status: 'done',
+              lastAnalyzedAt: admin.firestore.FieldValue.serverTimestamp(),
+              pendingTextHash: null,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        }
+
+        try {
+          await metricsRef.set(metricsIncrements({ jobsProcessed: 1 }), { merge: true });
+        } catch {
+          // ignore
+        }
       } catch (e) {
         console.error('assistant job failed', {
           userId,
@@ -1250,6 +1458,13 @@ export const assistantRunJobQueue = functions.pubsub
         } catch {
           // ignore
         }
+
+        try {
+          const metricsRef = assistantMetricsRef(db, userId);
+          await metricsRef.set(metricsIncrements({ jobsProcessed: 1, jobErrors: 1 }), { merge: true });
+        } catch {
+          // ignore
+        }
       }
     });
 
@@ -1276,6 +1491,7 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
   const userRef = db.collection('users').doc(userId);
   const suggestionRef = userRef.collection('assistantSuggestions').doc(suggestionId);
   const decisionsCol = userRef.collection('assistantDecisions');
+  const metricsRef = assistantMetricsRef(db, userId);
 
   const taskRef = db.collection('tasks').doc();
   const reminderRef = db.collection('taskReminders').doc();
@@ -1303,6 +1519,9 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
     if (!suggestion.expiresAt || suggestion.expiresAt.toMillis() <= nowTs.toMillis()) {
       throw new functions.https.HttpsError('failed-precondition', 'Suggestion expired.');
     }
+
+    const suggestionCreatedAt = (suggestion as any)?.createdAt instanceof admin.firestore.Timestamp ? ((suggestion as any).createdAt as admin.firestore.Timestamp) : null;
+    const timeToDecisionMs = suggestionCreatedAt ? Math.max(0, nowTs.toMillis() - suggestionCreatedAt.toMillis()) : null;
 
     const payload = suggestion.payload as any;
     const baseTitle = typeof payload?.title === 'string' ? payload.title.trim() : '';
@@ -1491,6 +1710,17 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
 
     tx.create(decisionRef, decisionDoc);
 
+    tx.set(
+      metricsRef,
+      metricsIncrements({
+        suggestionsAccepted: isEdited ? 0 : 1,
+        suggestionsEditedAccepted: isEdited ? 1 : 0,
+        decisionsCount: 1,
+        totalTimeToDecisionMs: timeToDecisionMs ? timeToDecisionMs : 0,
+      }),
+      { merge: true },
+    );
+
     tx.update(suggestionRef, {
       status: 'accepted',
       updatedAt,
@@ -1518,6 +1748,7 @@ export const assistantRejectSuggestion = functions.https.onCall(async (data, con
   const userRef = db.collection('users').doc(userId);
   const suggestionRef = userRef.collection('assistantSuggestions').doc(suggestionId);
   const decisionsCol = userRef.collection('assistantDecisions');
+  const metricsRef = assistantMetricsRef(db, userId);
 
   const decisionRef = decisionsCol.doc();
 
@@ -1533,6 +1764,10 @@ export const assistantRejectSuggestion = functions.https.onCall(async (data, con
     if (suggestion.status !== 'proposed') {
       throw new functions.https.HttpsError('failed-precondition', 'Suggestion is not proposed.');
     }
+
+    const nowTs = admin.firestore.Timestamp.now();
+    const suggestionCreatedAt = (suggestion as any)?.createdAt instanceof admin.firestore.Timestamp ? ((suggestion as any).createdAt as admin.firestore.Timestamp) : null;
+    const timeToDecisionMs = suggestionCreatedAt ? Math.max(0, nowTs.toMillis() - suggestionCreatedAt.toMillis()) : null;
 
     const beforePayload = suggestion.payload as AssistantSuggestionDoc['payload'];
 
@@ -1552,6 +1787,16 @@ export const assistantRejectSuggestion = functions.https.onCall(async (data, con
 
     tx.create(decisionRef, decisionDoc);
 
+    tx.set(
+      metricsRef,
+      metricsIncrements({
+        suggestionsRejected: 1,
+        decisionsCount: 1,
+        totalTimeToDecisionMs: timeToDecisionMs ? timeToDecisionMs : 0,
+      }),
+      { merge: true },
+    );
+
     tx.update(suggestionRef, {
       status: 'rejected',
       updatedAt: nowServer,
@@ -1559,4 +1804,146 @@ export const assistantRejectSuggestion = functions.https.onCall(async (data, con
   });
 
   return { decisionId };
+});
+
+export const assistantRequestReanalysis = functions.https.onCall(async (data, context) => {
+  const userId = context.auth?.uid;
+  if (!userId) {
+    throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+  }
+
+  const noteId = typeof (data as any)?.noteId === 'string' ? String((data as any).noteId) : null;
+  if (!noteId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Missing noteId.');
+  }
+
+  const db = admin.firestore();
+  const enabled = await isAssistantEnabledForUser(db, userId);
+  if (!enabled) {
+    throw new functions.https.HttpsError('failed-precondition', 'Assistant disabled.');
+  }
+
+  const noteSnap = await db.collection('notes').doc(noteId).get();
+  if (!noteSnap.exists) {
+    throw new functions.https.HttpsError('not-found', 'Note not found.');
+  }
+
+  const note = noteSnap.data() as any;
+  const noteUserId = typeof note?.userId === 'string' ? note.userId : null;
+  if (noteUserId !== userId) {
+    throw new functions.https.HttpsError('permission-denied', 'Not allowed.');
+  }
+
+  const title = typeof note?.title === 'string' ? note.title : '';
+  const content = typeof note?.content === 'string' ? note.content : '';
+  const normalized = normalizeAssistantText(`${title}\n${content}`);
+  const textHash = sha256Hex(normalized);
+
+  const nowDate = new Date();
+  const dayKey = utcDayKey(nowDate);
+
+  const userRef = db.collection('users').doc(userId);
+  const objectId = assistantObjectIdForNote(noteId);
+  const objectRef = userRef.collection('assistantObjects').doc(objectId);
+  const jobRef = userRef.collection('assistantJobs').doc(assistantCurrentJobIdForObject(objectId));
+  const usageRef = assistantUsageRef(db, userId, dayKey);
+  const metricsRef = assistantMetricsRef(db, userId);
+
+  const lockedUntilReady = admin.firestore.Timestamp.fromMillis(0);
+  const nowServer = admin.firestore.FieldValue.serverTimestamp();
+
+  await db.runTransaction(async (tx) => {
+    const jobSnap = await tx.get(jobRef);
+    const jobData = jobSnap.exists ? (jobSnap.data() as any) : null;
+    const st = jobData?.status as AssistantJobStatus | undefined;
+    const pending = typeof jobData?.pendingTextHash === 'string' ? (jobData.pendingTextHash as string) : null;
+    const isActive = st === 'queued' || st === 'processing';
+
+    // Double click / already scheduled for the same content.
+    if (isActive && pending === textHash) {
+      return;
+    }
+
+    const userSnap = await tx.get(userRef);
+    const plan = userSnap.exists && typeof (userSnap.data() as any)?.plan === 'string' ? String((userSnap.data() as any).plan) : 'free';
+    const dailyLimit = plan === 'pro' ? ASSISTANT_REANALYSIS_PRO_DAILY_LIMIT : ASSISTANT_REANALYSIS_FREE_DAILY_LIMIT;
+
+    const usageSnap = await tx.get(usageRef);
+    const prevCount = usageSnap.exists && typeof (usageSnap.data() as any)?.reanalysisCount === 'number' ? Number((usageSnap.data() as any).reanalysisCount) : 0;
+    if (prevCount >= dailyLimit) {
+      throw new functions.https.HttpsError('resource-exhausted', 'Daily reanalysis limit reached.');
+    }
+
+    tx.set(
+      usageRef,
+      {
+        reanalysisCount: admin.firestore.FieldValue.increment(1),
+        lastUpdatedAt: nowServer,
+      },
+      { merge: true },
+    );
+
+    tx.set(metricsRef, metricsIncrements({ reanalysisRequested: 1 }), { merge: true });
+
+    // If a job is already active, we only update pendingTextHash (no duplicate job).
+    if (isActive) {
+      tx.set(
+        objectRef,
+        {
+          pendingTextHash: textHash,
+          updatedAt: nowServer,
+        },
+        { merge: true },
+      );
+      tx.set(
+        jobRef,
+        {
+          pendingTextHash: textHash,
+          updatedAt: nowServer,
+        },
+        { merge: true },
+      );
+      return;
+    }
+
+    const objectSnap = await tx.get(objectRef);
+    const objectData = objectSnap.exists ? (objectSnap.data() as any) : null;
+    const existingTextHash = objectData && typeof objectData?.textHash === 'string' ? (objectData.textHash as string) : null;
+
+    const objectPayload: Partial<AssistantObjectDoc> = {
+      objectId,
+      type: 'note',
+      coreRef: { collection: 'notes', id: noteId },
+      textHash: existingTextHash ?? textHash,
+      pendingTextHash: textHash,
+      pipelineVersion: 1,
+      status: 'queued',
+      updatedAt: nowServer,
+    };
+    if (!objectSnap.exists) {
+      objectPayload.createdAt = nowServer;
+      objectPayload.lastAnalyzedAt = null;
+    }
+    tx.set(objectRef, objectPayload, { merge: true });
+
+    const jobPayload: AssistantJobDoc = {
+      objectId,
+      jobType: 'analyze_intents_v1',
+      pipelineVersion: 1,
+      status: 'queued',
+      attempts: 0,
+      pendingTextHash: textHash,
+      lockedUntil: lockedUntilReady,
+      createdAt: nowServer,
+      updatedAt: nowServer,
+    };
+
+    if (jobSnap.exists) {
+      tx.set(jobRef, jobPayload);
+    } else {
+      tx.create(jobRef, jobPayload);
+    }
+  });
+
+  return { jobId: jobRef.id };
 });
