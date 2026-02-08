@@ -12,6 +12,7 @@ export default tseslint.config(
     ignores: [
       '.next/**',
       'public/**',
+      'android/**',
       'next-env.d.ts',
     ],
   },
