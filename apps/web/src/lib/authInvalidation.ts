@@ -13,11 +13,12 @@ function getErrorCode(err: unknown): string | null {
 
 export function isAuthInvalidError(err: unknown): boolean {
   const code = getErrorCode(err);
-  return code === 'permission-denied' || code === 'unauthenticated';
+  return code === 'unauthenticated';
 }
 
 export async function invalidateAuthSession(): Promise<void> {
   if (invalidationInFlight) return;
+  if (auth.currentUser) return;
   invalidationInFlight = true;
 
   try {

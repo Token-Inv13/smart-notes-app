@@ -51,7 +51,7 @@ export default function TasksPage() {
   const { data: workspaces } = useUserWorkspaces();
   const {
     reminders,
-  } = useUserTaskReminders();
+  } = useUserTaskReminders({ enabled: isPro });
 
   const [statusFilter] = useState<TaskStatusFilter>("all");
   const [workspaceFilter, setWorkspaceFilter] = useState<WorkspaceFilter>("all");

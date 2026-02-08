@@ -14,18 +14,24 @@ import { useAuth } from '@/hooks/useAuth';
 import { useCollection } from '@/hooks/useCollection';
 import type { TaskReminderDoc } from '@/types/firestore';
 
-export function useUserTaskReminders() {
+type UseUserTaskRemindersParams = {
+  enabled?: boolean;
+};
+
+export function useUserTaskReminders(params?: UseUserTaskRemindersParams) {
   const { user } = useAuth();
   const userUid = user?.uid;
+  const enabled = params?.enabled !== false;
 
   const remindersQuery: Query<TaskReminderDoc> | null = useMemo(() => {
     if (!userUid) return null;
+    if (!enabled) return null;
 
     const baseRef = collection(db, 'taskReminders') as CollectionReference<TaskReminderDoc>;
     const constraints: QueryConstraint[] = [where('userId', '==', userUid)];
 
     return query(baseRef, ...constraints) as Query<TaskReminderDoc>;
-  }, [userUid]);
+  }, [enabled, userUid]);
 
   const { data, loading, error, refetch } = useCollection<TaskReminderDoc>(remindersQuery);
 
