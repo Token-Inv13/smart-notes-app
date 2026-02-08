@@ -23,6 +23,212 @@ function normalizeAssistantText(raw) {
 function sha256Hex(input) {
     return (0, crypto_1.createHash)('sha256').update(input).digest('hex');
 }
+function clampFromText(raw, maxLen) {
+    const s = (raw !== null && raw !== void 0 ? raw : '').trim();
+    if (s.length <= maxLen)
+        return s;
+    return `${s.slice(0, maxLen - 1).trim()}…`;
+}
+function normalizeForIntentMatch(raw) {
+    return normalizeAssistantText(raw);
+}
+function addDays(d, days) {
+    const next = new Date(d.getTime());
+    next.setDate(next.getDate() + days);
+    return next;
+}
+function startOfDay(d) {
+    const x = new Date(d.getTime());
+    x.setHours(0, 0, 0, 0);
+    return x;
+}
+function nextOccurrenceOfWeekday(now, weekday) {
+    const today = now.getDay();
+    let delta = (weekday - today + 7) % 7;
+    if (delta === 0)
+        delta = 7;
+    return addDays(startOfDay(now), delta);
+}
+function parseTimeInText(text) {
+    const m1 = text.match(/\b(\d{1,2})\s*h(?:\s*([0-5]\d))?\b/i);
+    if (m1 && m1.index != null) {
+        const hours = Number(m1[1]);
+        const minutes = m1[2] ? Number(m1[2]) : 0;
+        if (Number.isFinite(hours) && Number.isFinite(minutes) && hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+            return { hours, minutes, index: m1.index };
+        }
+    }
+    const m2 = text.match(/\b(\d{1,2}):([0-5]\d)\b/);
+    if (m2 && m2.index != null) {
+        const hours = Number(m2[1]);
+        const minutes = Number(m2[2]);
+        if (Number.isFinite(hours) && Number.isFinite(minutes) && hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+            return { hours, minutes, index: m2.index };
+        }
+    }
+    return null;
+}
+function parseDateInText(text, now) {
+    const t = normalizeForIntentMatch(text);
+    const idxToday = t.indexOf("aujourd'hui");
+    if (idxToday >= 0) {
+        return { date: startOfDay(now), index: idxToday };
+    }
+    const idxTomorrow = t.indexOf('demain');
+    if (idxTomorrow >= 0) {
+        return { date: startOfDay(addDays(now, 1)), index: idxTomorrow };
+    }
+    const weekdayMap = {
+        dimanche: 0,
+        lundi: 1,
+        mardi: 2,
+        mercredi: 3,
+        jeudi: 4,
+        vendredi: 5,
+        samedi: 6,
+    };
+    for (const [k, v] of Object.entries(weekdayMap)) {
+        const idx = t.indexOf(k);
+        if (idx >= 0) {
+            return { date: nextOccurrenceOfWeekday(now, v), index: idx };
+        }
+    }
+    const m = text.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
+    if (m && m.index != null) {
+        const dd = Number(m[1]);
+        const mm = Number(m[2]);
+        let yyyy;
+        if (m[3]) {
+            const raw = Number(m[3]);
+            yyyy = raw < 100 ? 2000 + raw : raw;
+        }
+        else {
+            yyyy = now.getFullYear();
+        }
+        if (dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12 && yyyy >= 1970 && yyyy <= 2100) {
+            const d = new Date(yyyy, mm - 1, dd, 0, 0, 0, 0);
+            if (Number.isFinite(d.getTime())) {
+                if (!m[3] && d.getTime() < startOfDay(now).getTime()) {
+                    d.setFullYear(yyyy + 1);
+                }
+                return { date: startOfDay(d), index: m.index };
+            }
+        }
+    }
+    return null;
+}
+function composeDateTime(params) {
+    const { now, baseDate, time } = params;
+    if (!baseDate && !time)
+        return null;
+    const day = baseDate ? startOfDay(baseDate) : startOfDay(now);
+    const hours = time ? time.hours : 9;
+    const minutes = time ? time.minutes : 0;
+    const dt = new Date(day.getTime());
+    dt.setHours(hours, minutes, 0, 0);
+    if (!baseDate && time) {
+        if (dt.getTime() <= now.getTime()) {
+            return addDays(dt, 1);
+        }
+    }
+    return dt;
+}
+function buildSuggestionDedupeKey(params) {
+    var _a, _b;
+    const { objectId, kind, minimal } = params;
+    const payloadMinimal = JSON.stringify({
+        title: normalizeAssistantText(minimal.title),
+        dueDateMs: (_a = minimal.dueDateMs) !== null && _a !== void 0 ? _a : null,
+        remindAtMs: (_b = minimal.remindAtMs) !== null && _b !== void 0 ? _b : null,
+    });
+    return sha256Hex(`${objectId}|${kind}|${payloadMinimal}`);
+}
+function detectIntentsV1(params) {
+    var _a, _b, _c;
+    const { title, content, now } = params;
+    const rawText = `${title}\n${content}`;
+    const textNorm = normalizeForIntentMatch(rawText);
+    const dateHit = parseDateInText(rawText, now);
+    const timeHit = parseTimeInText(rawText);
+    const dt = composeDateTime({
+        now,
+        baseDate: dateHit ? dateHit.date : null,
+        time: timeHit ? { hours: timeHit.hours, minutes: timeHit.minutes } : null,
+    });
+    const dtTs = dt ? admin.firestore.Timestamp.fromDate(dt) : null;
+    const intents = [];
+    const add = (next) => {
+        var _a;
+        const confidence = next.confidence;
+        if (confidence < 0.7)
+            return;
+        const minimal = (_a = next.dedupeMinimal) !== null && _a !== void 0 ? _a : {
+            title: next.title,
+            dueDateMs: next.dueDate ? next.dueDate.toMillis() : undefined,
+            remindAtMs: next.remindAt ? next.remindAt.toMillis() : undefined,
+        };
+        intents.push(Object.assign(Object.assign({}, next), { confidence, dedupeMinimal: minimal }));
+    };
+    const payHasKeyword = textNorm.includes('payer') ||
+        textNorm.includes('regler') ||
+        textNorm.includes('facture') ||
+        textNorm.includes('loyer') ||
+        textNorm.includes('impots') ||
+        textNorm.includes('abonnement');
+    const mPay = rawText.match(/\b(payer|r[ée]gler)\b\s+([^\n\r\.,;]+)/i);
+    if (mPay || payHasKeyword) {
+        const obj = mPay ? String((_a = mPay[2]) !== null && _a !== void 0 ? _a : '').trim() : '';
+        const objTitle = obj ? obj : 'facture';
+        const sugTitle = `Payer ${objTitle}`.replace(/\s+/g, ' ').trim();
+        const kind = dtTs && timeHit ? 'create_reminder' : 'create_task';
+        add({
+            intent: 'PAYER',
+            title: sugTitle,
+            originFromText: clampFromText(mPay ? mPay[0] : 'payer', 120),
+            explanation: `Détecté une intention de paiement dans la note.`,
+            kind,
+            dueDate: kind === 'create_task' && dtTs ? dtTs : undefined,
+            remindAt: kind === 'create_reminder' && dtTs ? dtTs : undefined,
+            confidence: 0.8,
+        });
+    }
+    const mCall = rawText.match(/\b(appeler|t[ée]l[ée]phoner|tel|phone)\b\s+([^\n\r\.,;]+)/i);
+    if (mCall) {
+        const obj = String((_b = mCall[2]) !== null && _b !== void 0 ? _b : '').trim();
+        const objTitle = obj ? obj : 'quelqu’un';
+        const sugTitle = `Appeler ${objTitle}`.replace(/\s+/g, ' ').trim();
+        const kind = dtTs && timeHit ? 'create_reminder' : 'create_task';
+        add({
+            intent: 'APPELER',
+            title: sugTitle,
+            originFromText: clampFromText(mCall[0], 120),
+            explanation: `Détecté une intention d’appel dans la note.`,
+            kind,
+            dueDate: kind === 'create_task' && dtTs ? dtTs : undefined,
+            remindAt: kind === 'create_reminder' && dtTs ? dtTs : undefined,
+            confidence: 0.8,
+        });
+    }
+    const mRdv = rawText.match(/\b(prendre\s+rdv|prendre\s+rendez-vous|rdv|rendez-vous|r[ée]server)\b\s*([^\n\r\.,;]+)?/i);
+    if (mRdv) {
+        const obj = String((_c = mRdv[2]) !== null && _c !== void 0 ? _c : '').trim();
+        const objTitle = obj ? obj : '';
+        const baseTitle = objTitle ? `Prendre RDV ${objTitle}` : 'Prendre RDV';
+        const sugTitle = baseTitle.replace(/\s+/g, ' ').trim();
+        const kind = dtTs && timeHit ? 'create_reminder' : 'create_task';
+        add({
+            intent: 'PRENDRE_RDV',
+            title: sugTitle,
+            originFromText: clampFromText(mRdv[0], 120),
+            explanation: `Détecté une intention de rendez-vous dans la note.`,
+            kind,
+            dueDate: kind === 'create_task' && dtTs ? dtTs : undefined,
+            remindAt: kind === 'create_reminder' && dtTs ? dtTs : undefined,
+            confidence: 0.8,
+        });
+    }
+    return intents;
+}
 function assistantObjectIdForNote(noteId) {
     return `note_${noteId}`;
 }
@@ -522,6 +728,7 @@ exports.assistantEnqueueNoteJob = functions.firestore
     const userRef = db.collection('users').doc(userId);
     const objectRef = userRef.collection('assistantObjects').doc(objectId);
     const jobsCol = userRef.collection('assistantJobs');
+    const lockedUntilReady = admin.firestore.Timestamp.fromMillis(0);
     await db.runTransaction(async (tx) => {
         var _a;
         const objectSnap = await tx.get(objectRef);
@@ -551,7 +758,7 @@ exports.assistantEnqueueNoteJob = functions.firestore
             pipelineVersion: 1,
             status: 'queued',
             attempts: 0,
-            lockedUntil: admin.firestore.Timestamp.fromMillis(0),
+            lockedUntil: lockedUntilReady,
             createdAt: now,
             updatedAt: now,
         };
@@ -642,6 +849,71 @@ exports.assistantRunJobQueue = functions.pubsub
                 jobType: claimed.jobType,
                 pipelineVersion: claimed.pipelineVersion,
             });
+            if (claimed.jobType === 'analyze_intents_v1') {
+                const objectSnap = await objectRef.get();
+                const objectData = objectSnap.exists ? objectSnap.data() : null;
+                const coreRef = objectData === null || objectData === void 0 ? void 0 : objectData.coreRef;
+                const noteId = (coreRef === null || coreRef === void 0 ? void 0 : coreRef.collection) === 'notes' && typeof (coreRef === null || coreRef === void 0 ? void 0 : coreRef.id) === 'string' ? coreRef.id : null;
+                if (noteId) {
+                    const noteSnap = await db.collection('notes').doc(noteId).get();
+                    const note = noteSnap.exists ? noteSnap.data() : null;
+                    const noteUserId = typeof (note === null || note === void 0 ? void 0 : note.userId) === 'string' ? note.userId : null;
+                    if (note && noteUserId === userId) {
+                        const noteTitle = typeof (note === null || note === void 0 ? void 0 : note.title) === 'string' ? note.title : '';
+                        const noteContent = typeof (note === null || note === void 0 ? void 0 : note.content) === 'string' ? note.content : '';
+                        const detected = detectIntentsV1({ title: noteTitle, content: noteContent, now: nowDate });
+                        if (detected.length > 0) {
+                            const suggestionsCol = db.collection('users').doc(userId).collection('assistantSuggestions');
+                            const expiresAt = admin.firestore.Timestamp.fromMillis(nowDate.getTime() + 14 * 24 * 60 * 60 * 1000);
+                            const nowServer = admin.firestore.FieldValue.serverTimestamp();
+                            for (const d of detected) {
+                                const dedupeKey = buildSuggestionDedupeKey({ objectId, kind: d.kind, minimal: d.dedupeMinimal });
+                                const sugRef = suggestionsCol.doc(dedupeKey);
+                                await db.runTransaction(async (tx) => {
+                                    var _a;
+                                    const existing = await tx.get(sugRef);
+                                    if (existing.exists) {
+                                        const st = (_a = existing.data()) === null || _a === void 0 ? void 0 : _a.status;
+                                        if (st === 'proposed' || st === 'accepted')
+                                            return;
+                                        const payload = Object.assign(Object.assign(Object.assign({ title: d.title }, (d.dueDate ? { dueDate: d.dueDate } : {})), (d.remindAt ? { remindAt: d.remindAt } : {})), { origin: {
+                                                fromText: d.originFromText,
+                                            }, confidence: d.confidence, explanation: d.explanation });
+                                        tx.update(sugRef, {
+                                            objectId,
+                                            source: { type: 'note', id: noteId },
+                                            kind: d.kind,
+                                            payload,
+                                            status: 'proposed',
+                                            pipelineVersion: 1,
+                                            dedupeKey,
+                                            updatedAt: nowServer,
+                                            expiresAt,
+                                        });
+                                        return;
+                                    }
+                                    const payload = Object.assign(Object.assign(Object.assign({ title: d.title }, (d.dueDate ? { dueDate: d.dueDate } : {})), (d.remindAt ? { remindAt: d.remindAt } : {})), { origin: {
+                                            fromText: d.originFromText,
+                                        }, confidence: d.confidence, explanation: d.explanation });
+                                    const doc = {
+                                        objectId,
+                                        source: { type: 'note', id: noteId },
+                                        kind: d.kind,
+                                        payload,
+                                        status: 'proposed',
+                                        pipelineVersion: 1,
+                                        dedupeKey,
+                                        createdAt: nowServer,
+                                        updatedAt: nowServer,
+                                        expiresAt,
+                                    };
+                                    tx.create(sugRef, doc);
+                                });
+                            }
+                        }
+                    }
+                }
+            }
             await jobDoc.ref.update({
                 status: 'done',
                 lockedUntil: admin.firestore.Timestamp.fromMillis(0),
