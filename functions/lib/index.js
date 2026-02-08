@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.assistantRunJobQueue = exports.assistantEnqueueNoteJob = exports.testSendReminderEmail = exports.cleanupOldReminders = exports.checkAndSendReminders = void 0;
+exports.assistantRejectSuggestion = exports.assistantApplySuggestion = exports.assistantRunJobQueue = exports.assistantEnqueueNoteJob = exports.testSendReminderEmail = exports.cleanupOldReminders = exports.checkAndSendReminders = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
@@ -954,5 +954,169 @@ exports.assistantRunJobQueue = functions.pubsub
         }
     });
     await Promise.all(tasks);
+});
+exports.assistantApplySuggestion = functions.https.onCall(async (data, context) => {
+    var _a;
+    const userId = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid;
+    if (!userId) {
+        throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+    }
+    const suggestionId = typeof (data === null || data === void 0 ? void 0 : data.suggestionId) === 'string' ? String(data.suggestionId) : null;
+    if (!suggestionId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing suggestionId.');
+    }
+    const db = admin.firestore();
+    const userRef = db.collection('users').doc(userId);
+    const suggestionRef = userRef.collection('assistantSuggestions').doc(suggestionId);
+    const decisionsCol = userRef.collection('assistantDecisions');
+    const taskRef = db.collection('tasks').doc();
+    const reminderRef = db.collection('taskReminders').doc();
+    const decisionRef = decisionsCol.doc();
+    const nowTs = admin.firestore.Timestamp.now();
+    let decisionId = null;
+    const createdCoreObjects = [];
+    await db.runTransaction(async (tx) => {
+        createdCoreObjects.length = 0;
+        const suggestionSnap = await tx.get(suggestionRef);
+        if (!suggestionSnap.exists) {
+            throw new functions.https.HttpsError('not-found', 'Suggestion not found.');
+        }
+        const suggestion = suggestionSnap.data();
+        if (suggestion.status !== 'proposed') {
+            throw new functions.https.HttpsError('failed-precondition', 'Suggestion is not proposed.');
+        }
+        if (!suggestion.expiresAt || suggestion.expiresAt.toMillis() <= nowTs.toMillis()) {
+            throw new functions.https.HttpsError('failed-precondition', 'Suggestion expired.');
+        }
+        const payload = suggestion.payload;
+        const title = typeof (payload === null || payload === void 0 ? void 0 : payload.title) === 'string' ? payload.title.trim() : '';
+        if (!title) {
+            throw new functions.https.HttpsError('invalid-argument', 'Invalid payload.title');
+        }
+        const kind = suggestion.kind;
+        if (kind !== 'create_task' && kind !== 'create_reminder') {
+            throw new functions.https.HttpsError('invalid-argument', 'Unknown suggestion kind.');
+        }
+        const priority = payload === null || payload === void 0 ? void 0 : payload.priority;
+        const priorityValue = priority === 'low' || priority === 'medium' || priority === 'high' ? priority : null;
+        const dueDate = (payload === null || payload === void 0 ? void 0 : payload.dueDate) instanceof admin.firestore.Timestamp ? payload.dueDate : null;
+        const remindAt = (payload === null || payload === void 0 ? void 0 : payload.remindAt) instanceof admin.firestore.Timestamp ? payload.remindAt : null;
+        let userPlan = null;
+        const userSnap = await tx.get(userRef);
+        if (userSnap.exists) {
+            const userData = userSnap.data();
+            userPlan = typeof (userData === null || userData === void 0 ? void 0 : userData.plan) === 'string' ? userData.plan : null;
+        }
+        const isPro = userPlan === 'pro';
+        const createdAt = admin.firestore.FieldValue.serverTimestamp();
+        const updatedAt = admin.firestore.FieldValue.serverTimestamp();
+        const effectiveTaskDue = kind === 'create_reminder' ? remindAt !== null && remindAt !== void 0 ? remindAt : dueDate : dueDate;
+        tx.create(taskRef, {
+            userId,
+            title,
+            status: 'todo',
+            workspaceId: null,
+            startDate: null,
+            dueDate: effectiveTaskDue,
+            priority: priorityValue,
+            favorite: false,
+            archived: false,
+            source: {
+                assistant: true,
+                suggestionId,
+                objectId: suggestion.objectId,
+            },
+            createdAt,
+            updatedAt,
+        });
+        createdCoreObjects.push({ type: 'task', id: taskRef.id });
+        if (kind === 'create_reminder') {
+            if (!remindAt) {
+                throw new functions.https.HttpsError('invalid-argument', 'payload.remindAt is required for reminders.');
+            }
+            if (!isPro) {
+                throw new functions.https.HttpsError('failed-precondition', 'Plan pro requis pour créer un rappel.');
+            }
+            const remindAtIso = remindAt.toDate().toISOString();
+            tx.create(reminderRef, {
+                userId,
+                taskId: taskRef.id,
+                dueDate: remindAtIso,
+                reminderTime: remindAtIso,
+                sent: false,
+                createdAt,
+                updatedAt,
+                source: {
+                    assistant: true,
+                    suggestionId,
+                    objectId: suggestion.objectId,
+                },
+            });
+            createdCoreObjects.push({ type: 'taskReminder', id: reminderRef.id });
+        }
+        decisionId = decisionRef.id;
+        const decisionDoc = {
+            suggestionId,
+            objectId: suggestion.objectId,
+            action: 'accepted',
+            createdCoreObjects: [...createdCoreObjects],
+            pipelineVersion: 1,
+            createdAt,
+            updatedAt,
+        };
+        tx.create(decisionRef, decisionDoc);
+        tx.update(suggestionRef, {
+            status: 'accepted',
+            updatedAt,
+        });
+    });
+    return {
+        createdCoreObjects,
+        decisionId,
+    };
+});
+exports.assistantRejectSuggestion = functions.https.onCall(async (data, context) => {
+    var _a;
+    const userId = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid;
+    if (!userId) {
+        throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+    }
+    const suggestionId = typeof (data === null || data === void 0 ? void 0 : data.suggestionId) === 'string' ? String(data.suggestionId) : null;
+    if (!suggestionId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing suggestionId.');
+    }
+    const db = admin.firestore();
+    const userRef = db.collection('users').doc(userId);
+    const suggestionRef = userRef.collection('assistantSuggestions').doc(suggestionId);
+    const decisionsCol = userRef.collection('assistantDecisions');
+    const decisionRef = decisionsCol.doc();
+    let decisionId = null;
+    await db.runTransaction(async (tx) => {
+        const suggestionSnap = await tx.get(suggestionRef);
+        if (!suggestionSnap.exists) {
+            throw new functions.https.HttpsError('not-found', 'Suggestion not found.');
+        }
+        const suggestion = suggestionSnap.data();
+        if (suggestion.status !== 'proposed') {
+            throw new functions.https.HttpsError('failed-precondition', 'Suggestion is not proposed.');
+        }
+        const nowServer = admin.firestore.FieldValue.serverTimestamp();
+        decisionId = decisionRef.id;
+        const decisionDoc = {
+            suggestionId,
+            objectId: suggestion.objectId,
+            action: 'rejected',
+            createdCoreObjects: [],
+            pipelineVersion: 1,
+            createdAt: nowServer,
+            updatedAt: nowServer,
+        };
+        tx.create(decisionRef, decisionDoc);
+        tx.update(suggestionRef, {
+            status: 'rejected',
+            updatedAt: nowServer,
+        });
+    });
+    return { decisionId };
 });
 //# sourceMappingURL=index.js.map

@@ -50,7 +50,7 @@ type AssistantJobDoc = {
   updatedAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
 };
 
-type AssistantSuggestionStatus = 'proposed' | 'accepted' | 'rejected' | 'dismissed' | 'expired';
+type AssistantSuggestionStatus = 'proposed' | 'accepted' | 'rejected' | 'expired';
 
 type AssistantSuggestionKind = 'create_task' | 'create_reminder';
 
@@ -84,6 +84,23 @@ type AssistantSuggestionDoc = {
   createdAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
   updatedAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
   expiresAt: FirebaseFirestore.Timestamp;
+};
+
+type AssistantDecisionAction = 'accepted' | 'edited_then_accepted' | 'rejected';
+
+type AssistantDecisionCoreObject = {
+  type: 'task' | 'taskReminder';
+  id: string;
+};
+
+type AssistantDecisionDoc = {
+  suggestionId: string;
+  objectId: string;
+  action: AssistantDecisionAction;
+  createdCoreObjects: AssistantDecisionCoreObject[];
+  pipelineVersion: 1;
+  createdAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
+  updatedAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
 };
 
 function normalizeAssistantText(raw: unknown): string {
@@ -1236,3 +1253,208 @@ export const assistantRunJobQueue = functions.pubsub
 
     await Promise.all(tasks);
   });
+
+export const assistantApplySuggestion = functions.https.onCall(async (data, context) => {
+  const userId = context.auth?.uid;
+  if (!userId) {
+    throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+  }
+
+  const suggestionId = typeof (data as any)?.suggestionId === 'string' ? String((data as any).suggestionId) : null;
+  if (!suggestionId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Missing suggestionId.');
+  }
+
+  const db = admin.firestore();
+  const userRef = db.collection('users').doc(userId);
+  const suggestionRef = userRef.collection('assistantSuggestions').doc(suggestionId);
+  const decisionsCol = userRef.collection('assistantDecisions');
+
+  const taskRef = db.collection('tasks').doc();
+  const reminderRef = db.collection('taskReminders').doc();
+  const decisionRef = decisionsCol.doc();
+
+  const nowTs = admin.firestore.Timestamp.now();
+
+  let decisionId: string | null = null;
+  const createdCoreObjects: AssistantDecisionCoreObject[] = [];
+
+  await db.runTransaction(async (tx) => {
+    createdCoreObjects.length = 0;
+
+    const suggestionSnap = await tx.get(suggestionRef);
+    if (!suggestionSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Suggestion not found.');
+    }
+
+    const suggestion = suggestionSnap.data() as AssistantSuggestionDoc;
+
+    if (suggestion.status !== 'proposed') {
+      throw new functions.https.HttpsError('failed-precondition', 'Suggestion is not proposed.');
+    }
+
+    if (!suggestion.expiresAt || suggestion.expiresAt.toMillis() <= nowTs.toMillis()) {
+      throw new functions.https.HttpsError('failed-precondition', 'Suggestion expired.');
+    }
+
+    const payload = suggestion.payload as any;
+    const title = typeof payload?.title === 'string' ? payload.title.trim() : '';
+    if (!title) {
+      throw new functions.https.HttpsError('invalid-argument', 'Invalid payload.title');
+    }
+
+    const kind = suggestion.kind;
+    if (kind !== 'create_task' && kind !== 'create_reminder') {
+      throw new functions.https.HttpsError('invalid-argument', 'Unknown suggestion kind.');
+    }
+
+    const priority = payload?.priority;
+    const priorityValue: 'low' | 'medium' | 'high' | null =
+      priority === 'low' || priority === 'medium' || priority === 'high' ? priority : null;
+
+    const dueDate = payload?.dueDate instanceof admin.firestore.Timestamp ? (payload.dueDate as admin.firestore.Timestamp) : null;
+    const remindAt = payload?.remindAt instanceof admin.firestore.Timestamp ? (payload.remindAt as admin.firestore.Timestamp) : null;
+
+    let userPlan: string | null = null;
+    const userSnap = await tx.get(userRef);
+    if (userSnap.exists) {
+      const userData = userSnap.data() as any;
+      userPlan = typeof userData?.plan === 'string' ? userData.plan : null;
+    }
+
+    const isPro = userPlan === 'pro';
+
+    const createdAt = admin.firestore.FieldValue.serverTimestamp();
+    const updatedAt = admin.firestore.FieldValue.serverTimestamp();
+
+    const effectiveTaskDue = kind === 'create_reminder' ? remindAt ?? dueDate : dueDate;
+
+    tx.create(taskRef, {
+      userId,
+      title,
+      status: 'todo',
+      workspaceId: null,
+      startDate: null,
+      dueDate: effectiveTaskDue,
+      priority: priorityValue,
+      favorite: false,
+      archived: false,
+      source: {
+        assistant: true,
+        suggestionId,
+        objectId: suggestion.objectId,
+      },
+      createdAt,
+      updatedAt,
+    });
+
+    createdCoreObjects.push({ type: 'task', id: taskRef.id });
+
+    if (kind === 'create_reminder') {
+      if (!remindAt) {
+        throw new functions.https.HttpsError('invalid-argument', 'payload.remindAt is required for reminders.');
+      }
+      if (!isPro) {
+        throw new functions.https.HttpsError('failed-precondition', 'Plan pro requis pour créer un rappel.');
+      }
+
+      const remindAtIso = remindAt.toDate().toISOString();
+
+      tx.create(reminderRef, {
+        userId,
+        taskId: taskRef.id,
+        dueDate: remindAtIso,
+        reminderTime: remindAtIso,
+        sent: false,
+        createdAt,
+        updatedAt,
+        source: {
+          assistant: true,
+          suggestionId,
+          objectId: suggestion.objectId,
+        },
+      });
+
+      createdCoreObjects.push({ type: 'taskReminder', id: reminderRef.id });
+    }
+
+    decisionId = decisionRef.id;
+
+    const decisionDoc: AssistantDecisionDoc = {
+      suggestionId,
+      objectId: suggestion.objectId,
+      action: 'accepted',
+      createdCoreObjects: [...createdCoreObjects],
+      pipelineVersion: 1,
+      createdAt,
+      updatedAt,
+    };
+
+    tx.create(decisionRef, decisionDoc);
+
+    tx.update(suggestionRef, {
+      status: 'accepted',
+      updatedAt,
+    });
+  });
+
+  return {
+    createdCoreObjects,
+    decisionId,
+  };
+});
+
+export const assistantRejectSuggestion = functions.https.onCall(async (data, context) => {
+  const userId = context.auth?.uid;
+  if (!userId) {
+    throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+  }
+
+  const suggestionId = typeof (data as any)?.suggestionId === 'string' ? String((data as any).suggestionId) : null;
+  if (!suggestionId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Missing suggestionId.');
+  }
+
+  const db = admin.firestore();
+  const userRef = db.collection('users').doc(userId);
+  const suggestionRef = userRef.collection('assistantSuggestions').doc(suggestionId);
+  const decisionsCol = userRef.collection('assistantDecisions');
+
+  const decisionRef = decisionsCol.doc();
+
+  let decisionId: string | null = null;
+
+  await db.runTransaction(async (tx) => {
+    const suggestionSnap = await tx.get(suggestionRef);
+    if (!suggestionSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Suggestion not found.');
+    }
+
+    const suggestion = suggestionSnap.data() as AssistantSuggestionDoc;
+    if (suggestion.status !== 'proposed') {
+      throw new functions.https.HttpsError('failed-precondition', 'Suggestion is not proposed.');
+    }
+
+    const nowServer = admin.firestore.FieldValue.serverTimestamp();
+    decisionId = decisionRef.id;
+
+    const decisionDoc: AssistantDecisionDoc = {
+      suggestionId,
+      objectId: suggestion.objectId,
+      action: 'rejected',
+      createdCoreObjects: [],
+      pipelineVersion: 1,
+      createdAt: nowServer,
+      updatedAt: nowServer,
+    };
+
+    tx.create(decisionRef, decisionDoc);
+
+    tx.update(suggestionRef, {
+      status: 'rejected',
+      updatedAt: nowServer,
+    });
+  });
+
+  return { decisionId };
+});

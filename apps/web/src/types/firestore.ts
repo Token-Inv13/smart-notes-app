@@ -131,3 +131,49 @@ export interface TaskReminderDoc {
   processingBy?: string;
   [key: string]: unknown;
 }
+
+export type AssistantSuggestionStatus = 'proposed' | 'accepted' | 'rejected' | 'expired';
+
+export type AssistantSuggestionKind = 'create_task' | 'create_reminder';
+
+export interface AssistantSuggestionDoc {
+  id?: string;
+  objectId: string;
+  source: {
+    type: 'note';
+    id: string;
+  };
+  kind: AssistantSuggestionKind;
+  payload: {
+    title: string;
+    details?: string;
+    dueDate?: Timestamp;
+    remindAt?: Timestamp;
+    priority?: Priority;
+    labels?: string[];
+    origin: {
+      fromText: string;
+    };
+    confidence: number;
+    explanation: string;
+  };
+  status: AssistantSuggestionStatus;
+  pipelineVersion: 1;
+  dedupeKey: string;
+  createdAt?: Timestamp | FieldValue;
+  updatedAt?: Timestamp | FieldValue;
+  expiresAt: Timestamp;
+  [key: string]: unknown;
+}
+
+export interface AssistantDecisionDoc {
+  id?: string;
+  suggestionId: string;
+  objectId: string;
+  action: 'accepted' | 'edited_then_accepted' | 'rejected';
+  createdCoreObjects: { type: 'task' | 'taskReminder'; id: string }[];
+  pipelineVersion: 1;
+  createdAt?: Timestamp | FieldValue;
+  updatedAt?: Timestamp | FieldValue;
+  [key: string]: unknown;
+}

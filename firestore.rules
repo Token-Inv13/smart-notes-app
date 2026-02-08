@@ -71,16 +71,20 @@ service cloud.firestore {
         allow read, write: if isAuthenticated() && isOwner(userId);
       }
       match /assistantObjects/{docId} {
-        allow read, write: if isAuthenticated() && isOwner(userId);
+        allow read: if isAuthenticated() && isOwner(userId);
+        allow write: if false;
       }
       match /assistantJobs/{docId} {
-        allow read, write: if isAuthenticated() && isOwner(userId);
+        allow read: if isAuthenticated() && isOwner(userId);
+        allow write: if false;
       }
       match /assistantSuggestions/{docId} {
-        allow read, write: if isAuthenticated() && isOwner(userId);
+        allow read: if isAuthenticated() && isOwner(userId);
+        allow write: if false;
       }
       match /assistantDecisions/{docId} {
-        allow read, write: if isAuthenticated() && isOwner(userId);
+        allow read: if isAuthenticated() && isOwner(userId);
+        allow write: if false;
       }
       match /assistantEvents/{docId} {
         allow read, write: if isAuthenticated() && isOwner(userId);

@@ -17,6 +17,11 @@ import {
   connectFirestoreEmulator,
 } from 'firebase/firestore';
 import {
+  getFunctions,
+  type Functions,
+  connectFunctionsEmulator,
+} from 'firebase/functions';
+import {
   getStorage,
   type FirebaseStorage,
   connectStorageEmulator,
@@ -57,6 +62,7 @@ const useEmulators = process.env.NEXT_PUBLIC_USE_EMULATORS === 'true';
 let app: FirebaseApp;
 let auth: Auth;
 let db: Firestore;
+let functions: Functions;
 let storage: FirebaseStorage;
 let messagingPromise: Promise<Messaging | null> | null = null;
 let analyticsPromise: Promise<Analytics | null> | null = null;
@@ -89,6 +95,7 @@ function initFirebase() {
 
   auth = getAuth(app);
   db = getFirestore(app);
+  functions = getFunctions(app);
   storage = getStorage(app);
 
   const canUseEmulators =
@@ -99,6 +106,7 @@ function initFirebase() {
   if (canUseEmulators) {
     connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
     connectFirestoreEmulator(db, 'localhost', 8080);
+    connectFunctionsEmulator(functions, 'localhost', 5001);
     connectStorageEmulator(storage, 'localhost', 9199);
   }
 
@@ -115,7 +123,7 @@ function initFirebase() {
 
 initFirebase();
 
-export { app, auth, db, storage, onAuthStateChanged, getToken, onMessage };
+export { app, auth, db, functions, storage, onAuthStateChanged, getToken, onMessage };
 export type { User, Messaging };
 
 export async function getMessagingInstance(): Promise<Messaging | null> {
