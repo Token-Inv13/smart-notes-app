@@ -270,18 +270,45 @@ export default function NoteDetailModal(props: any) {
   };
 
   const handleDownloadAttachment = async (att: NoteAttachment) => {
+    setAttachmentError(null);
+    setBusyAttachmentId(att.id);
     try {
       const url = await getDownloadURL(ref(storage, normalizeStoragePath(att.storagePath)));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = att.name;
-      a.rel = "noopener";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+
+      try {
+        const res = await fetch(url);
+        if (!res.ok) {
+          throw new Error(`Téléchargement impossible (${res.status})`);
+        }
+
+        const blob = await res.blob();
+        const objectUrl = URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = objectUrl;
+        a.download = att.name;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        URL.revokeObjectURL(objectUrl);
+      } catch (e) {
+        console.warn("Attachment download via fetch failed; falling back to opening in a new tab", e);
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
     } catch (e) {
       console.error("Error downloading attachment", e);
       setAttachmentError(e instanceof Error ? e.message : "Erreur lors du téléchargement.");
+    } finally {
+      setBusyAttachmentId(null);
     }
   };
 
