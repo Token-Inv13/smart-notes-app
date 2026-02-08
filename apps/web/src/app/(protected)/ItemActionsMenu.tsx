@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-type MenuAction = "edit" | "archive" | "share" | "export_pdf" | "export_md" | "delete";
+type MenuAction = "edit" | "archive" | "share" | "export_pdf" | "export_md" | "fullscreen" | "delete";
 
 interface ItemActionsMenuProps {
   onEdit: () => void;
@@ -10,6 +10,8 @@ interface ItemActionsMenuProps {
   onShare: () => void;
   onExportPdf: () => void;
   onExportMarkdown: () => void;
+  onToggleFullscreen?: () => void;
+  fullscreen?: boolean;
   onDelete: () => void;
   archived?: boolean;
 }
@@ -20,6 +22,8 @@ export default function ItemActionsMenu({
   onShare,
   onExportPdf,
   onExportMarkdown,
+  onToggleFullscreen,
+  fullscreen,
   onDelete,
   archived,
 }: ItemActionsMenuProps) {
@@ -59,6 +63,7 @@ export default function ItemActionsMenu({
     if (action === "share") onShare();
     if (action === "export_pdf") onExportPdf();
     if (action === "export_md") onExportMarkdown();
+    if (action === "fullscreen") onToggleFullscreen?.();
     if (action === "delete") onDelete();
     setOpen(false);
   };
@@ -125,6 +130,17 @@ export default function ItemActionsMenu({
           >
             Exporter Markdown
           </button>
+
+          {onToggleFullscreen ? (
+            <button
+              type="button"
+              className="w-full text-left px-3 py-2 text-sm rounded hover:bg-accent"
+              role="menuitem"
+              onClick={() => run("fullscreen")}
+            >
+              {fullscreen ? "Quitter le plein écran" : "Ouvrir en plein écran"}
+            </button>
+          ) : null}
 
           <div className="my-1 border-t border-border" />
 

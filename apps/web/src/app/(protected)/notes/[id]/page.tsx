@@ -99,10 +99,10 @@ export default function NoteDetailPage(props: any) {
         <h1 className="text-xl font-semibold truncate">Détail de la note</h1>
         <button
           type="button"
-          onClick={() => router.push(`/dashboard${suffix}`)}
+          onClick={() => router.push(`/notes${suffix}`)}
           className="border border-border rounded px-3 py-2 bg-background text-sm hover:bg-accent"
         >
-          Retour au dashboard
+          Retour aux notes
         </button>
       </div>
 

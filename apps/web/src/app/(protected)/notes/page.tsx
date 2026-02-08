@@ -211,6 +211,16 @@ export default function NotesPage() {
   );
 
   const hrefSuffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
+
+  const openNoteModal = useCallback(
+    (id: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("noteId", id);
+      const qs = params.toString();
+      router.push(qs ? `${pathname}?${qs}` : pathname);
+    },
+    [pathname, router, searchParams],
+  );
   const tabs = (
     <div
       className="mb-4 max-w-full overflow-x-auto"
@@ -530,7 +540,6 @@ export default function NotesPage() {
           <ul className="space-y-2">
             {visibleNotes.map((note) => {
               const workspaceName = workspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";
-              const hrefSuffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
 
               const archivedLabel = (() => {
                 const ts = note.archivedAt ?? note.updatedAt;
@@ -547,7 +556,7 @@ export default function NotesPage() {
                     className="sn-card sn-card--note sn-card--muted p-4 cursor-pointer"
                     onClick={() => {
                       if (!note.id) return;
-                      router.push(`/notes/${note.id}${hrefSuffix}`);
+                      openNoteModal(note.id);
                     }}
                   >
                     <div className="sn-card-header">
@@ -584,7 +593,6 @@ export default function NotesPage() {
           <ul className="space-y-2">
             {visibleNotes.map((note) => {
               const workspaceName = workspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";
-              const hrefSuffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
 
               return (
                 <li key={note.id}>
@@ -592,7 +600,7 @@ export default function NotesPage() {
                     className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4`}
                     onClick={() => {
                       if (!note.id) return;
-                      router.push(`/notes/${note.id}${hrefSuffix}`);
+                      openNoteModal(note.id);
                     }}
                   >
                     <div className="space-y-3">
@@ -634,7 +642,6 @@ export default function NotesPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {visibleNotes.map((note) => {
               const workspaceName = workspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";
-              const hrefSuffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
 
               return (
                 <div
@@ -642,7 +649,7 @@ export default function NotesPage() {
                   className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4 min-w-0`}
                   onClick={() => {
                     if (!note.id) return;
-                    router.push(`/notes/${note.id}${hrefSuffix}`);
+                    openNoteModal(note.id);
                   }}
                 >
                   <div className="flex flex-col gap-3">

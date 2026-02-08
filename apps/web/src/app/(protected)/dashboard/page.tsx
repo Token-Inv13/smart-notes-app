@@ -443,7 +443,14 @@ export default function DashboardPage() {
             {!notesLoading && !notesError && activeFavoriteNotes.length > 0 && (
               <ul className="space-y-1">
                 {activeFavoriteNotes.map((note) => {
-                  const href = note.id ? `/notes/${encodeURIComponent(note.id)}${suffix}` : null;
+                  const href = note.id
+                    ? (() => {
+                        const params = new URLSearchParams(suffix.startsWith("?") ? suffix.slice(1) : suffix);
+                        params.set("noteId", note.id);
+                        const qs = params.toString();
+                        return qs ? `/notes?${qs}` : "/notes";
+                      })()
+                    : null;
                   return (
                     <li
                       key={note.id}

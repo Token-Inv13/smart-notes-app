@@ -105,6 +105,8 @@ const editNoteSchema = z.object({
 export default function NoteDetailModal(props: any) {
   const router = useRouter();
   const noteId: string | undefined = props?.params?.id;
+  const fallbackHref: string | undefined = typeof props?.fallbackHref === "string" ? props.fallbackHref : undefined;
+  const fullscreen: boolean = props?.fullscreen === true;
 
   const { data: workspaces } = useUserWorkspaces();
   const { data: userSettings } = useUserSettings();
@@ -573,6 +575,28 @@ export default function NoteDetailModal(props: any) {
   const createdLabel = useMemo(() => formatFrDateTime(note?.createdAt ?? null), [note?.createdAt]);
   const updatedLabel = useMemo(() => formatFrDateTime(note?.updatedAt ?? null), [note?.updatedAt]);
 
+  const handleOpenFullscreen = () => {
+    if (!note?.id) return;
+
+    const params = new URLSearchParams();
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.forEach((v, k) => {
+        if (k === "noteId" || k === "fullscreen") return;
+        params.set(k, v);
+      });
+    } catch {
+      // ignore
+    }
+
+    params.set("noteId", note.id);
+    if (fullscreen) params.delete("fullscreen");
+    else params.set("fullscreen", "1");
+
+    const qs = params.toString();
+    router.push(qs ? `/notes?${qs}` : "/notes");
+  };
+
   const startEdit = () => {
     if (!note) return;
     setMode("edit");
@@ -689,11 +713,19 @@ export default function NoteDetailModal(props: any) {
       void saveEdits({ setView: false });
     };
 
+    const warnIfDirty = (e: BeforeUnloadEvent) => {
+      if (!isDirtyRef.current) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+
     window.addEventListener("beforeunload", flush);
+    window.addEventListener("beforeunload", warnIfDirty);
     window.addEventListener("pagehide", flush);
 
     return () => {
       window.removeEventListener("beforeunload", flush);
+      window.removeEventListener("beforeunload", warnIfDirty);
       window.removeEventListener("pagehide", flush);
       flush();
     };
@@ -754,10 +786,10 @@ export default function NoteDetailModal(props: any) {
 
   return (
     <Modal
-      hideHeader
+      title="Note"
+      fallbackHref={fallbackHref}
+      fullscreen={fullscreen}
       onBeforeClose={async () => {
-        if (mode !== "edit") return true;
-
         if (!isDirtyRef.current) return true;
         return await saveEdits({ setView: false });
       }}
@@ -825,6 +857,8 @@ export default function NoteDetailModal(props: any) {
                         onShare={handleShare}
                         onExportPdf={handleExportPdf}
                         onExportMarkdown={handleExport}
+                        onToggleFullscreen={handleOpenFullscreen}
+                        fullscreen={fullscreen}
                         archived={note.archived === true}
                         onDelete={handleDelete}
                       />

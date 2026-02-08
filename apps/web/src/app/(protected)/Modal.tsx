@@ -8,9 +8,18 @@ interface ModalProps {
   children: React.ReactNode | ((ctx: { close: () => void }) => React.ReactNode);
   onBeforeClose?: () => void | boolean | Promise<void | boolean>;
   hideHeader?: boolean;
+  fallbackHref?: string;
+  fullscreen?: boolean;
 }
 
-export default function Modal({ title, children, onBeforeClose, hideHeader = false }: ModalProps) {
+export default function Modal({
+  title,
+  children,
+  onBeforeClose,
+  hideHeader = false,
+  fallbackHref = "/dashboard",
+  fullscreen = false,
+}: ModalProps) {
   const router = useRouter();
   const panelRef = useRef<HTMLDivElement | null>(null);
 
@@ -25,7 +34,7 @@ export default function Modal({ title, children, onBeforeClose, hideHeader = fal
     }
 
     if (typeof window !== "undefined" && window.history.length <= 1) {
-      router.push("/dashboard");
+      router.push(fallbackHref);
       return;
     }
     router.back();
@@ -48,9 +57,17 @@ export default function Modal({ title, children, onBeforeClose, hideHeader = fal
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const wrapperClassName = fullscreen
+    ? "fixed inset-0 z-50 bg-background px-4 py-6"
+    : "fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6";
+
+  const panelClassName = fullscreen
+    ? "w-full h-full rounded-lg border border-border bg-card shadow-lg outline-none"
+    : "w-full max-w-2xl rounded-lg border border-border bg-card shadow-lg outline-none";
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6"
+      className={wrapperClassName}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) void close();
       }}
@@ -61,7 +78,7 @@ export default function Modal({ title, children, onBeforeClose, hideHeader = fal
       <div
         ref={panelRef}
         tabIndex={-1}
-        className="w-full max-w-2xl rounded-lg border border-border bg-card shadow-lg outline-none"
+        className={panelClassName}
         onMouseDown={(e) => e.stopPropagation()}
       >
         {!hideHeader && (
