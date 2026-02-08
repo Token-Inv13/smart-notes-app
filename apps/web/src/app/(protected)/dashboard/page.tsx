@@ -264,14 +264,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <div
-      className="space-y-6 min-h-[calc(100svh-2rem)]"
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-      onTouchCancel={() => {
-        swipeStartRef.current = null;
-      }}
-    >
+    <div className="space-y-6 min-h-[calc(100svh-2rem)]">
       <header className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Dashboard</h1>
         <div id="sn-create-slot" data-dashboard-slide-index={activeSlideIndex} />
@@ -309,7 +302,15 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div ref={slidesContainerRef} className="flex overflow-x-auto snap-x snap-mandatory gap-6">
+      <div
+        ref={slidesContainerRef}
+        className="flex overflow-x-auto snap-x snap-mandatory gap-6"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={() => {
+          swipeStartRef.current = null;
+        }}
+      >
         <div
           ref={(el) => {
             slideRefs.current[0] = el;

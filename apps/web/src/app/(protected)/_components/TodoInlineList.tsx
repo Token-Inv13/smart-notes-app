@@ -6,6 +6,7 @@ import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
+import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import type { TodoDoc } from "@/types/firestore";
 
 interface TodoInlineListProps {
@@ -21,6 +22,11 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
   const [editError, setEditError] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [todoView, setTodoView] = useState<"active" | "completed">("active");
+
+  const todoTabsSwipeHandlers = useSwipeNavigation<HTMLDivElement>({
+    onSwipeLeft: () => setTodoView("completed"),
+    onSwipeRight: () => setTodoView("active"),
+  });
 
   type TodoPriorityFilter = "all" | NonNullable<TodoDoc["priority"]>;
   type DueFilter = "all" | "today" | "overdue";
@@ -247,7 +253,10 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
 
       {!loading && !error && (
         <div className="space-y-4">
-          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
+          <div
+            className="inline-flex rounded-md border border-border bg-background overflow-hidden"
+            {...todoTabsSwipeHandlers}
+          >
             <button
               type="button"
               onClick={() => setTodoView("active")}

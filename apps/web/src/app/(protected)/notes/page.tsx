@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FirebaseError } from "firebase/app";
 import {
@@ -14,6 +14,7 @@ import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
+import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import type { NoteDoc } from "@/types/firestore";
 import { htmlToPlainText } from "@/lib/richText";
 import Link from "next/link";
@@ -26,8 +27,6 @@ export default function NotesPage() {
   const workspaceId = searchParams.get("workspaceId") || undefined;
   const createParam = searchParams.get("create");
   const { data: workspaces } = useUserWorkspaces();
-
-  const tabsTouchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [archiveView, setArchiveView] = useState<"active" | "archived">("active");
@@ -212,6 +211,18 @@ export default function NotesPage() {
 
   const hrefSuffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
 
+  const workspaceTabsSwipeHandlers = useSwipeNavigation<HTMLDivElement>({
+    onSwipeLeft: () => {
+      router.push(`/tasks${hrefSuffix}`);
+    },
+    disabled: !workspaceId,
+  });
+
+  const archiveTabsSwipeHandlers = useSwipeNavigation<HTMLDivElement>({
+    onSwipeLeft: () => setArchiveView("archived"),
+    onSwipeRight: () => setArchiveView("active"),
+  });
+
   const openNoteModal = useCallback(
     (id: string) => {
       const params = new URLSearchParams(searchParams.toString());
@@ -224,26 +235,7 @@ export default function NotesPage() {
   const tabs = (
     <div
       className="mb-4 max-w-full overflow-x-auto"
-      onTouchStart={(e) => {
-        const t = e.touches[0];
-        if (!t) return;
-        tabsTouchStartRef.current = { x: t.clientX, y: t.clientY };
-      }}
-      onTouchEnd={(e) => {
-        const start = tabsTouchStartRef.current;
-        tabsTouchStartRef.current = null;
-        const t = e.changedTouches[0];
-        if (!start || !t) return;
-
-        const dx = t.clientX - start.x;
-        const dy = t.clientY - start.y;
-        if (Math.abs(dx) < 60) return;
-        if (Math.abs(dx) < Math.abs(dy)) return;
-
-        if (dx < 0) {
-          router.push(`/tasks${hrefSuffix}`);
-        }
-      }}
+      {...workspaceTabsSwipeHandlers}
     >
       <div className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap">
         <button
@@ -325,7 +317,10 @@ export default function NotesPage() {
         </div>
 
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap w-fit">
+          <div
+            className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap w-fit"
+            {...archiveTabsSwipeHandlers}
+          >
             <button
               type="button"
               onClick={() => setArchiveView("active")}

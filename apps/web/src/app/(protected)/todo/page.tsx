@@ -1,19 +1,18 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import TodoInlineList from "../_components/TodoInlineList";
 import { useUserNotes } from "@/hooks/useUserNotes";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserTodos } from "@/hooks/useUserTodos";
+import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 
 export default function TodoPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId") || undefined;
-
-  const tabsTouchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const { data: notesForCounter } = useUserNotes({ workspaceId });
   const { data: tasksForCounter } = useUserTasks({ workspaceId });
@@ -33,30 +32,18 @@ export default function TodoPage() {
   );
 
   const hrefSuffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
+
+  const workspaceTabsSwipeHandlers = useSwipeNavigation<HTMLDivElement>({
+    onSwipeRight: () => {
+      router.push(`/tasks${hrefSuffix}`);
+    },
+    disabled: !workspaceId,
+  });
+
   const tabs = (
     <div
       className="mb-4 max-w-full overflow-x-auto"
-      onTouchStart={(e) => {
-        const t = e.touches[0];
-        if (!t) return;
-        tabsTouchStartRef.current = { x: t.clientX, y: t.clientY };
-      }}
-      onTouchEnd={(e) => {
-        const start = tabsTouchStartRef.current;
-        tabsTouchStartRef.current = null;
-        const t = e.changedTouches[0];
-        if (!start || !t) return;
-
-        const dx = t.clientX - start.x;
-        const dy = t.clientY - start.y;
-        if (Math.abs(dx) < 60) return;
-        if (Math.abs(dx) < Math.abs(dy)) return;
-
-        // Order: Notes -> Tasks -> ToDo
-        if (dx > 0) {
-          router.push(`/tasks${hrefSuffix}`);
-        }
-      }}
+      {...workspaceTabsSwipeHandlers}
     >
       <div className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap">
         <button

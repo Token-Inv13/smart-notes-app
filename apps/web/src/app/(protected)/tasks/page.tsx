@@ -19,6 +19,7 @@ import { useUserNotes } from "@/hooks/useUserNotes";
 import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
+import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import { registerFcmToken } from "@/lib/fcm";
 import type { TaskDoc } from "@/types/firestore";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -107,8 +108,6 @@ export default function TasksPage() {
   const [optimisticStatusById, setOptimisticStatusById] = useState<Record<string, TaskStatus>>({});
 
   const suppressNextKanbanClickRef = useRef(false);
-
-  const tabsTouchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const toMillisSafe = (ts: unknown) => {
     const maybeTs = ts as { toMillis?: () => number };
@@ -372,33 +371,26 @@ export default function TasksPage() {
 
   const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
 
+  const workspaceTabsSwipeHandlers = useSwipeNavigation<HTMLDivElement>({
+    onSwipeRight: () => {
+      router.push(`/notes${hrefSuffix}`);
+    },
+    onSwipeLeft: () => {
+      router.push(`/todo${hrefSuffix}`);
+    },
+    disabled: !!draggingTaskId || !workspaceIdParam,
+  });
+
+  const archiveTabsSwipeHandlers = useSwipeNavigation<HTMLDivElement>({
+    onSwipeLeft: () => setArchiveView("archived"),
+    onSwipeRight: () => setArchiveView("active"),
+    disabled: !!draggingTaskId,
+  });
+
   const tabs = (
     <div
       className="mb-4 max-w-full overflow-x-auto"
-      onTouchStart={(e) => {
-        const t = e.touches[0];
-        if (!t) return;
-        tabsTouchStartRef.current = { x: t.clientX, y: t.clientY };
-      }}
-      onTouchEnd={(e) => {
-        const start = tabsTouchStartRef.current;
-        tabsTouchStartRef.current = null;
-        const t = e.changedTouches[0];
-        if (!start || !t) return;
-
-        const dx = t.clientX - start.x;
-        const dy = t.clientY - start.y;
-        if (Math.abs(dx) < 60) return;
-        if (Math.abs(dx) < Math.abs(dy)) return;
-
-        if (dx > 0) {
-          router.push(`/notes${hrefSuffix}`);
-        }
-
-        if (dx < 0) {
-          router.push(`/todo${hrefSuffix}`);
-        }
-      }}
+      {...workspaceTabsSwipeHandlers}
     >
       <div className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap">
         <button
@@ -605,24 +597,29 @@ export default function TasksPage() {
       <header className="flex flex-col gap-2 mb-4">
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-xl font-semibold">Tâches</h1>
-          <div id="sn-create-slot" />
+          <div id="sn-create-slot" data-task-view-mode={viewMode} />
         </div>
 
-        <div className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap w-fit">
-          <button
-            type="button"
-            onClick={() => setArchiveView("active")}
-            className={`px-3 py-1 text-sm ${archiveView === "active" ? "bg-accent" : ""}`}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+          <div
+            className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap w-fit"
+            {...archiveTabsSwipeHandlers}
           >
-            Actives ({activeArchiveCount})
-          </button>
-          <button
-            type="button"
-            onClick={() => setArchiveView("archived")}
-            className={`px-3 py-1 text-sm ${archiveView === "archived" ? "bg-accent" : ""}`}
-          >
-            Archivées ({archivedArchiveCount})
-          </button>
+            <button
+              type="button"
+              onClick={() => setArchiveView("active")}
+              className={`px-3 py-1 text-sm ${archiveView === "active" ? "bg-accent" : ""}`}
+            >
+              Actives ({activeArchiveCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setArchiveView("archived")}
+              className={`px-3 py-1 text-sm ${archiveView === "archived" ? "bg-accent" : ""}`}
+            >
+              Archivées ({archivedArchiveCount})
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
