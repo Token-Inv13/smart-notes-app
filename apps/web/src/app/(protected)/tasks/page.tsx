@@ -28,6 +28,10 @@ type TaskStatus = "todo" | "doing" | "done";
 type TaskStatusFilter = "all" | TaskStatus;
 type WorkspaceFilter = "all" | string;
 
+type TaskPriorityFilter = "all" | NonNullable<TaskDoc["priority"]>;
+type DueFilter = "all" | "today" | "overdue";
+type TaskSortBy = "dueDate" | "updatedAt" | "createdAt";
+
 export default function TasksPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -79,7 +83,15 @@ export default function TasksPage() {
   const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
   const { data: workspaces } = useUserWorkspaces();
 
-  const [statusFilter] = useState<TaskStatusFilter>("all");
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>("all");
+  const [priorityFilter, setPriorityFilter] = useState<TaskPriorityFilter>("all");
+  const [dueFilter, setDueFilter] = useState<DueFilter>("all");
+  const [sortBy, setSortBy] = useState<TaskSortBy>("dueDate");
+
   const [workspaceFilter, setWorkspaceFilter] = useState<WorkspaceFilter>("all");
   const [archiveView, setArchiveView] = useState<"active" | "archived">("active");
 
@@ -105,6 +117,47 @@ export default function TasksPage() {
     }
     return 0;
   };
+
+  const normalizeText = (raw: string) => {
+    try {
+      return raw
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim();
+    } catch {
+      return raw.toLowerCase().trim();
+    }
+  };
+
+  const workspaceNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const ws of workspaces) {
+      if (ws.id) m.set(ws.id, ws.name);
+    }
+    return m;
+  }, [workspaces]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setDebouncedSearch(searchInput.trim());
+    }, 150);
+    return () => window.clearTimeout(t);
+  }, [searchInput]);
+
+  const pushWorkspaceFilterToUrl = useCallback(
+    (next: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (next === "all") {
+        params.delete("workspaceId");
+      } else {
+        params.set("workspaceId", next);
+      }
+      const qs = params.toString();
+      router.push(qs ? `${pathname}?${qs}` : pathname);
+    },
+    [pathname, router, searchParams],
+  );
 
   const userId = auth.currentUser?.uid;
   const showMicroGuide = !!userId && !getOnboardingFlag(userId, "tasks_microguide_v1");
@@ -140,45 +193,89 @@ export default function TasksPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceIdParam]);
 
+  const isSameLocalDay = (a: Date, b: Date) => {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  };
+
   const filteredTasks = useMemo(() => {
+    const now = new Date();
+    const q = normalizeText(debouncedSearch);
+
     let result = tasks;
 
     result = result.filter((t) => (archiveView === "archived" ? t.archived === true : t.archived !== true));
-
-    if (statusFilter !== "all") {
-      result = result.filter((task) => {
-        const status = (task.status ?? "todo") as TaskStatus;
-        return status === statusFilter;
-      });
-    }
 
     if (workspaceFilter !== "all") {
       result = result.filter((task) => task.workspaceId === workspaceFilter);
     }
 
-    const sorted = result
-      .slice()
-      .sort((a, b) => {
+    if (priorityFilter !== "all") {
+      result = result.filter((task) => task.priority === priorityFilter);
+    }
+
+    if (q) {
+      result = result.filter((task) => {
+        const workspaceName = task.workspaceId ? workspaceNameById.get(task.workspaceId) ?? "" : "";
+        const text = normalizeText(`${task.title}\n${task.description ?? ""}\n${workspaceName}`);
+        return text.includes(q);
+      });
+    }
+
+    if (dueFilter !== "all") {
+      result = result.filter((task) => {
+        const status = ((task.status as TaskStatus | undefined) ?? "todo") as TaskStatus;
+        if (status === "done") return false;
+        if (!task.dueDate) return false;
+        let due: Date;
+        try {
+          due = task.dueDate.toDate();
+        } catch {
+          return false;
+        }
+
+        if (dueFilter === "today") return isSameLocalDay(due, now);
+        return due.getTime() < now.getTime();
+      });
+    }
+
+    if (statusFilter !== "all") {
+      result = result.filter((task) => {
+        const status = ((task.status as TaskStatus | undefined) ?? "todo") as TaskStatus;
+        return status === statusFilter;
+      });
+    }
+
+    const sorted = result.slice().sort((a, b) => {
+      if (sortBy === "dueDate") {
         const aDue = a.dueDate ? a.dueDate.toMillis() : null;
         const bDue = b.dueDate ? b.dueDate.toMillis() : null;
 
         const aHasDue = aDue !== null;
         const bHasDue = bDue !== null;
 
-        if (aHasDue && bHasDue) {
-          return aDue! - bDue!; // dueDate asc
-        }
-
+        if (aHasDue && bHasDue) return aDue! - bDue!;
         if (aHasDue && !bHasDue) return -1;
         if (!aHasDue && bHasDue) return 1;
 
         const aUpdated = toMillisSafe(a.updatedAt);
         const bUpdated = toMillisSafe(b.updatedAt);
-        return bUpdated - aUpdated; // updatedAt desc
-      });
+        return bUpdated - aUpdated;
+      }
+
+      const aMillis = sortBy === "createdAt" ? toMillisSafe(a.createdAt) : toMillisSafe(a.updatedAt);
+      const bMillis = sortBy === "createdAt" ? toMillisSafe(b.createdAt) : toMillisSafe(b.updatedAt);
+      if (aMillis !== bMillis) return bMillis - aMillis;
+
+      const aDue = a.dueDate ? a.dueDate.toMillis() : null;
+      const bDue = b.dueDate ? b.dueDate.toMillis() : null;
+      if (aDue !== null && bDue !== null && aDue !== bDue) return aDue - bDue;
+      if (aDue !== null && bDue === null) return -1;
+      if (aDue === null && bDue !== null) return 1;
+      return 0;
+    });
 
     return sorted;
-  }, [tasks, statusFilter, workspaceFilter, archiveView]);
+  }, [tasks, archiveView, workspaceFilter, priorityFilter, debouncedSearch, dueFilter, statusFilter, sortBy, workspaceNameById]);
 
   useEffect(() => {
     setOptimisticStatusById((prev) => {
@@ -222,32 +319,31 @@ export default function TasksPage() {
     return filteredTasks.filter((t) => statusForTask(t) !== "done");
   }, [filteredTasks, statusForTask]);
 
-  const completedTasks = useMemo(
-    () => {
-      // Completed list should respect workspace filter, but ignore statusFilter.
-      let result = tasks;
+  const completedTasks = useMemo(() => {
+    return filteredTasks.filter((t) => statusForTask(t) === "done");
+  }, [filteredTasks, statusForTask]);
 
-      result = result.filter((t) => (archiveView === "archived" ? t.archived === true : t.archived !== true));
+  const mainTasks = useMemo(() => {
+    if (statusFilter === "done") return completedTasks;
+    return activeTasks;
+  }, [activeTasks, completedTasks, statusFilter]);
 
-      if (workspaceFilter !== "all") {
-        result = result.filter((task) => task.workspaceId === workspaceFilter);
-      }
-      return result
-        .filter((t) => statusForTask(t) === "done")
-        .slice()
-        .sort((a, b) => {
-          const aUpdated = toMillisSafe(a.updatedAt);
-          const bUpdated = toMillisSafe(b.updatedAt);
-          return bUpdated - aUpdated;
-        });
-    },
-    [tasks, workspaceFilter, archiveView, statusForTask],
-  );
+  const hasActiveSearchOrFilters = useMemo(() => {
+    const q = debouncedSearch.trim();
+    return (
+      q.length > 0 ||
+      statusFilter !== "all" ||
+      priorityFilter !== "all" ||
+      dueFilter !== "all" ||
+      workspaceFilter !== "all"
+    );
+  }, [debouncedSearch, dueFilter, priorityFilter, statusFilter, workspaceFilter]);
 
   const visibleTasksCount = useMemo(
     () => activeTasks.length + completedTasks.length,
     [activeTasks.length, completedTasks.length],
   );
+
   const visibleNotesCount = useMemo(
     () => notesForCounter.filter((n) => n.archived !== true).length,
     [notesForCounter],
@@ -275,6 +371,7 @@ export default function TasksPage() {
   }, [tasks, workspaceFilter]);
 
   const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
+
   const tabs = (
     <div
       className="mb-4 max-w-full overflow-x-auto"
@@ -528,6 +625,171 @@ export default function TasksPage() {
           </button>
         </div>
 
+        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+          <div className="relative flex-1 min-w-0">
+            <input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Rechercher (titre, contenu, dossier)…"
+              className="w-full border border-input rounded-md px-3 py-2 pr-10 bg-background text-sm"
+              aria-label="Rechercher dans les tâches"
+            />
+            {searchInput.trim().length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSearchInput("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 sn-icon-btn"
+                aria-label="Effacer la recherche"
+                title="Effacer"
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setFiltersOpen(true)}
+            className="inline-flex items-center justify-center h-10 px-3 rounded-md border border-border bg-background hover:bg-accent text-sm"
+          >
+            Filtrer
+          </button>
+        </div>
+
+        {filtersOpen && (
+          <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Filtres tâches">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/40"
+              onClick={() => setFiltersOpen(false)}
+              aria-label="Fermer les filtres"
+            />
+            <div className="absolute left-0 right-0 bottom-0 w-full sm:left-1/2 sm:top-1/2 sm:right-auto sm:bottom-auto sm:w-[min(92vw,520px)] sm:-translate-x-1/2 sm:-translate-y-1/2 rounded-t-lg sm:rounded-lg border border-border bg-card shadow-lg max-h-[85dvh] overflow-y-auto">
+              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                <div className="text-sm font-semibold">Filtres</div>
+                <button
+                  type="button"
+                  onClick={() => setFiltersOpen(false)}
+                  className="sn-icon-btn"
+                  aria-label="Fermer"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="p-4 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">Statut</div>
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value as TaskStatusFilter)}
+                      aria-label="Filtrer par statut"
+                      className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                    >
+                      <option value="all">Tous</option>
+                      <option value="todo">À faire</option>
+                      <option value="doing">En cours</option>
+                      <option value="done">Terminée</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">Priorité</div>
+                    <select
+                      value={priorityFilter}
+                      onChange={(e) => setPriorityFilter(e.target.value as TaskPriorityFilter)}
+                      aria-label="Filtrer par priorité"
+                      className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                    >
+                      <option value="all">Toutes</option>
+                      <option value="high">Haute</option>
+                      <option value="medium">Moyenne</option>
+                      <option value="low">Basse</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">Échéance</div>
+                    <select
+                      value={dueFilter}
+                      onChange={(e) => setDueFilter(e.target.value as DueFilter)}
+                      aria-label="Filtrer par échéance"
+                      className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                    >
+                      <option value="all">Toutes</option>
+                      <option value="today">Aujourd’hui</option>
+                      <option value="overdue">En retard</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">Tri</div>
+                    <select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value as TaskSortBy)}
+                      aria-label="Trier les tâches"
+                      className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                    >
+                      <option value="dueDate">Échéance</option>
+                      <option value="updatedAt">Dernière modification</option>
+                      <option value="createdAt">Date de création</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="text-xs text-muted-foreground">Dossier</div>
+                  <select
+                    value={workspaceFilter}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setWorkspaceFilter(next as WorkspaceFilter);
+                      pushWorkspaceFilterToUrl(next);
+                    }}
+                    aria-label="Filtrer par dossier"
+                    className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                  >
+                    <option value="all">Tous les dossiers</option>
+                    {workspaces.map((ws) => (
+                      <option key={ws.id ?? ws.name} value={ws.id ?? ""} disabled={!ws.id}>
+                        {ws.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 pt-2">
+                  <button
+                    type="button"
+                    className="sn-text-btn"
+                    onClick={() => {
+                      setStatusFilter("all");
+                      setPriorityFilter("all");
+                      setDueFilter("all");
+                      setSortBy("dueDate");
+                      const base = workspaceIdParam ?? "all";
+                      setWorkspaceFilter(base as WorkspaceFilter);
+                      pushWorkspaceFilterToUrl(base);
+                    }}
+                  >
+                    Réinitialiser
+                  </button>
+
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+                    onClick={() => setFiltersOpen(false)}
+                  >
+                    Appliquer
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {notificationPermission !== "granted" && (
           <div className="space-y-2">
             {notificationPermission === "unsupported" && (
@@ -598,10 +860,12 @@ export default function TasksPage() {
 
       {error && <div className="sn-alert sn-alert--error">Impossible de charger les tâches pour le moment.</div>}
 
-      {!loading && !error && archiveView === "active" && activeTasks.length === 0 && (
+      {!loading && !error && archiveView === "active" && mainTasks.length === 0 && (
         <div className="sn-empty">
-          <div className="sn-empty-title">Aucune tâche pour le moment</div>
-          <div className="sn-empty-desc">Commence par créer une tâche.</div>
+          <div className="sn-empty-title">{hasActiveSearchOrFilters ? "Aucun résultat" : "Aucune tâche pour le moment"}</div>
+          <div className="sn-empty-desc">
+            {hasActiveSearchOrFilters ? "Essaie d’effacer la recherche ou de réinitialiser les filtres." : "Commence par créer une tâche."}
+          </div>
         </div>
       )}
 
@@ -678,16 +942,15 @@ export default function TasksPage() {
         </ul>
       )}
 
-      {!loading && !error && archiveView === "active" && viewMode === "list" && activeTasks.length > 0 && (
+      {!loading && !error && archiveView === "active" && viewMode === "list" && mainTasks.length > 0 && (
         <ul className="space-y-2">
-          {activeTasks.map((task) => {
+          {mainTasks.map((task) => {
             const status = (task.status as TaskStatus | undefined) ?? "todo";
             const workspaceName =
               workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
+            const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
             const dueLabel = formatDueDate(task.dueDate ?? null);
             const startLabel = formatStartDate(task.startDate ?? null);
-
-            const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
 
             return (
               <li key={task.id} id={task.id ? `task-${task.id}` : undefined}>
@@ -753,9 +1016,9 @@ export default function TasksPage() {
         </ul>
       )}
 
-      {!loading && !error && archiveView === "active" && viewMode === "grid" && activeTasks.length > 0 && (
+      {!loading && !error && archiveView === "active" && viewMode === "grid" && mainTasks.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {activeTasks.map((task) => {
+          {mainTasks.map((task) => {
             const status = (task.status as TaskStatus | undefined) ?? "todo";
             const workspaceName =
               workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
@@ -980,7 +1243,7 @@ export default function TasksPage() {
         </section>
       )}
 
-      {!loading && !error && archiveView === "active" && viewMode !== "kanban" && completedTasks.length > 0 && (
+      {!loading && !error && archiveView === "active" && viewMode !== "kanban" && statusFilter === "all" && completedTasks.length > 0 && (
         <section>
           <h2 className="text-lg font-semibold mt-6 mb-2">Terminées</h2>
           <ul className="space-y-2">
