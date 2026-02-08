@@ -786,7 +786,8 @@ export default function NoteDetailModal(props: any) {
 
   return (
     <Modal
-      title="Note"
+      title={note?.title ?? "Note"}
+      hideHeader
       fallbackHref={fallbackHref}
       fullscreen={fullscreen}
       onBeforeClose={async () => {
