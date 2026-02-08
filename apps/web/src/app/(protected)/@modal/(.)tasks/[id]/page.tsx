@@ -18,9 +18,15 @@ import { z } from "zod";
 import { auth, db } from "@/lib/firebase";
 import type { TaskDoc } from "@/types/firestore";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
+import { useUserSettings } from "@/hooks/useUserSettings";
 import { exportTaskPdf } from "@/lib/pdf/exportPdf";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
-import { formatTimestampForInput, parseLocalDateTimeToTimestamp } from "@/lib/datetime";
+import {
+  formatTimestampForDateInput,
+  formatTimestampForInput,
+  parseLocalDateTimeToTimestamp,
+  parseLocalDateToTimestamp,
+} from "@/lib/datetime";
 import Modal from "../../../Modal";
 import ItemActionsMenu from "../../../ItemActionsMenu";
 
@@ -29,6 +35,20 @@ function formatFrDateTime(ts?: TaskDoc["dueDate"] | null) {
   const d = ts.toDate();
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatFrDate(ts?: TaskDoc["startDate"] | null) {
+  if (!ts) return "";
+  const d = ts.toDate();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+function priorityLabel(p?: TaskDoc["priority"] | null) {
+  if (p === "high") return "Haute";
+  if (p === "medium") return "Moyenne";
+  if (p === "low") return "Basse";
+  return "";
 }
 
 function statusLabel(s?: TaskDoc["status"] | null) {
@@ -43,7 +63,9 @@ const editTaskSchema = z.object({
   title: z.string().min(1, "Le titre est requis."),
   status: z.union([z.literal("todo"), z.literal("doing"), z.literal("done")]),
   workspaceId: z.string().optional(),
+  startDate: z.string().optional(),
   dueDate: z.string().optional(),
+  priority: z.union([z.literal("low"), z.literal("medium"), z.literal("high")]).optional(),
 });
 
 export default function TaskDetailModal(props: { params: Promise<{ id: string }> }) {
@@ -52,6 +74,8 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
   const taskId: string | undefined = params?.id;
 
   const { data: workspaces } = useUserWorkspaces();
+  const { data: userSettings } = useUserSettings();
+  const isPro = userSettings?.plan === "pro";
 
   const [task, setTask] = useState<TaskDoc | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,7 +85,9 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
   const [editTitle, setEditTitle] = useState("");
   const [editStatus, setEditStatus] = useState<TaskStatus>("todo");
   const [editWorkspaceId, setEditWorkspaceId] = useState("");
+  const [editStartDate, setEditStartDate] = useState("");
   const [editDueDate, setEditDueDate] = useState("");
+  const [editPriority, setEditPriority] = useState<"" | NonNullable<TaskDoc["priority"]>>("");
   const [saving, setSaving] = useState(false);
   const [, setDeleting] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -233,7 +259,9 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     setEditTitle(task.title ?? "");
     setEditStatus(((task.status as TaskStatus | undefined) ?? "todo") as TaskStatus);
     setEditWorkspaceId(typeof task.workspaceId === "string" ? task.workspaceId : "");
+    setEditStartDate(formatTimestampForDateInput(task.startDate ?? null));
     setEditDueDate(formatTimestampForInput(task.dueDate ?? null));
+    setEditPriority(task.priority ?? "");
     setEditError(null);
     setShareFeedback(null);
     setExportFeedback(null);
@@ -242,15 +270,27 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       title: task.title ?? "",
       status: ((task.status as TaskStatus | undefined) ?? "todo") as TaskStatus,
       workspaceId: typeof task.workspaceId === "string" ? task.workspaceId : "",
+      startDate: formatTimestampForDateInput(task.startDate ?? null),
       dueDate: formatTimestampForInput(task.dueDate ?? null),
+      priority: task.priority ?? "",
     });
     setDirty(false);
   }, [task]);
 
   const dueLabel = useMemo(() => formatFrDateTime(task?.dueDate ?? null), [task?.dueDate]);
+  const startLabel = useMemo(() => formatFrDate(task?.startDate ?? null), [task?.startDate]);
+  const editDateWarning = useMemo(() => {
+    if (!editStartDate || !editDueDate) return null;
+    const startTs = parseLocalDateToTimestamp(editStartDate);
+    const dueTs = parseLocalDateTimeToTimestamp(editDueDate);
+    if (!startTs || !dueTs) return null;
+    if (startTs.toMillis() > dueTs.toMillis()) return "La date de début est après la date de fin.";
+    return null;
+  }, [editDueDate, editStartDate]);
 
   const handleSnooze = async (preset: '10m' | '1h' | 'tomorrow') => {
     if (!task?.id) return;
+    if (!isPro) return;
 
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) {
@@ -321,7 +361,9 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     setEditTitle(task.title ?? "");
     setEditStatus(((task.status as TaskStatus | undefined) ?? "todo") as TaskStatus);
     setEditWorkspaceId(typeof task.workspaceId === "string" ? task.workspaceId : "");
+    setEditStartDate(formatTimestampForDateInput(task.startDate ?? null));
     setEditDueDate(formatTimestampForInput(task.dueDate ?? null));
+    setEditPriority(task.priority ?? "");
     setEditError(null);
     setDirty(false);
   };
@@ -345,7 +387,9 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       title: editTitle,
       status: editStatus,
       workspaceId: editWorkspaceId || undefined,
+      startDate: editStartDate || undefined,
       dueDate: editDueDate || undefined,
+      priority: editPriority || undefined,
     });
 
     if (!validation.success) {
@@ -361,7 +405,9 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       title: validation.data.title,
       status: validation.data.status,
       workspaceId: validation.data.workspaceId ?? "",
+      startDate: editStartDate,
       dueDate: editDueDate,
+      priority: editPriority,
     });
 
     if (lastSavedSnapshotRef.current === nextSnapshot) {
@@ -371,9 +417,13 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       return true;
     }
 
+    const startTimestamp = validation.data.startDate
+      ? parseLocalDateToTimestamp(validation.data.startDate)
+      : null;
     const dueTimestamp = validation.data.dueDate
       ? parseLocalDateTimeToTimestamp(validation.data.dueDate)
       : null;
+    const priority = validation.data.priority ?? null;
 
     setSaving(true);
     setEditError(null);
@@ -388,48 +438,56 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
         title: validation.data.title,
         status: validation.data.status,
         workspaceId: validation.data.workspaceId ?? null,
+        startDate: startTimestamp,
         dueDate: dueTimestamp,
+        priority,
         updatedAt: serverTimestamp(),
       });
 
       console.info("[task modal] saveEdits success", { taskId: task.id });
 
-      const remindersRef = collection(db, "taskReminders");
-      const remindersSnap = await getDocs(
-        query(
-          remindersRef,
-          where("userId", "==", user.uid),
-          where("taskId", "==", task.id),
-        ),
-      );
+      if (isPro) {
+        try {
+          const remindersRef = collection(db, "taskReminders");
+          const remindersSnap = await getDocs(
+            query(
+              remindersRef,
+              where("userId", "==", user.uid),
+              where("taskId", "==", task.id),
+            ),
+          );
 
-      const existingDocs = remindersSnap.docs;
+          const existingDocs = remindersSnap.docs;
 
-      if (!validation.data.dueDate) {
-        await Promise.all(existingDocs.map((d) => deleteDoc(d.ref)));
-      } else {
-        const reminderDate = new Date(validation.data.dueDate);
-        if (!Number.isNaN(reminderDate.getTime())) {
-          const primary = existingDocs[0] ?? null;
-          if (primary) {
-            await updateDoc(primary.ref, {
-              dueDate: dueTimestamp ? dueTimestamp.toDate().toISOString() : "",
-              reminderTime: reminderDate.toISOString(),
-              sent: false,
-            });
-            if (existingDocs.length > 1) {
-              await Promise.all(existingDocs.slice(1).map((d) => deleteDoc(d.ref)));
-            }
+          if (!validation.data.dueDate) {
+            await Promise.all(existingDocs.map((d) => deleteDoc(d.ref)));
           } else {
-            await addDoc(remindersRef, {
-              userId: user.uid,
-              taskId: task.id,
-              dueDate: dueTimestamp ? dueTimestamp.toDate().toISOString() : "",
-              reminderTime: reminderDate.toISOString(),
-              sent: false,
-              createdAt: serverTimestamp(),
-            });
+            const reminderDate = new Date(validation.data.dueDate);
+            if (!Number.isNaN(reminderDate.getTime())) {
+              const primary = existingDocs[0] ?? null;
+              if (primary) {
+                await updateDoc(primary.ref, {
+                  dueDate: dueTimestamp ? dueTimestamp.toDate().toISOString() : "",
+                  reminderTime: reminderDate.toISOString(),
+                  sent: false,
+                });
+                if (existingDocs.length > 1) {
+                  await Promise.all(existingDocs.slice(1).map((d) => deleteDoc(d.ref)));
+                }
+              } else {
+                await addDoc(remindersRef, {
+                  userId: user.uid,
+                  taskId: task.id,
+                  dueDate: dueTimestamp ? dueTimestamp.toDate().toISOString() : "",
+                  reminderTime: reminderDate.toISOString(),
+                  sent: false,
+                  createdAt: serverTimestamp(),
+                });
+              }
+            }
           }
+        } catch (e) {
+          console.error("Error syncing task reminder (modal)", e);
         }
       }
 
@@ -440,7 +498,9 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
               title: validation.data.title,
               status: validation.data.status,
               workspaceId: validation.data.workspaceId ?? null,
+              startDate: startTimestamp,
               dueDate: dueTimestamp,
+              priority,
             }
           : prev,
       );
@@ -631,8 +691,8 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                     <span className="font-medium">Statut:</span> {statusLabel(task.status ?? null)}
                   </div>
                   <div>
-                    <span className="font-medium">Rappel:</span> {dueLabel || "Aucun rappel"}
-                    {dueLabel && (
+                    <span className="font-medium">Date de fin / échéance:</span> {dueLabel || "—"}
+                    {isPro && dueLabel && (
                       <details className="mt-2">
                         <summary className="cursor-pointer text-sm">Rappeler plus tard</summary>
                         <div className="mt-2 flex flex-wrap gap-2">
@@ -664,6 +724,12 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                       </details>
                     )}
                   </div>
+                  <div>
+                    <span className="font-medium">Date de début:</span> {startLabel || "—"}
+                  </div>
+                  <div>
+                    <span className="font-medium">Priorité:</span> {priorityLabel(task.priority ?? null) || "—"}
+                  </div>
                 </div>
                 <div className="text-sm">
                   <span className="font-medium">Dossier:</span>{" "}
@@ -688,7 +754,9 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                           title: nextTitle,
                           status: editStatus,
                           workspaceId: editWorkspaceId,
+                          startDate: editStartDate,
                           dueDate: editDueDate,
+                          priority: editPriority,
                         });
                         setDirty(snap !== lastSavedSnapshotRef.current);
                       }}
@@ -711,7 +779,9 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                           title: editTitle,
                           status: nextStatus,
                           workspaceId: editWorkspaceId,
+                          startDate: editStartDate,
                           dueDate: editDueDate,
+                          priority: editPriority,
                         });
                         setDirty(snap !== lastSavedSnapshotRef.current);
                       }}
@@ -725,7 +795,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
                   <div className="space-y-1">
                     <label className="text-sm font-medium" htmlFor="task-modal-due">
-                      Rappel
+                      Date de fin / échéance
                     </label>
                     <input
                       id="task-modal-due"
@@ -738,7 +808,9 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                           title: editTitle,
                           status: editStatus,
                           workspaceId: editWorkspaceId,
+                          startDate: editStartDate,
                           dueDate: nextDueDate,
+                          priority: editPriority,
                         });
                         setDirty(snap !== lastSavedSnapshotRef.current);
                       }}
@@ -746,6 +818,69 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                     />
                   </div>
                 </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 items-end">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium" htmlFor="task-modal-start">
+                      Date de début
+                    </label>
+                    <input
+                      id="task-modal-start"
+                      type="date"
+                      value={editStartDate}
+                      onChange={(e) => {
+                        const nextStartDate = e.target.value;
+                        setEditStartDate(nextStartDate);
+                        const snap = JSON.stringify({
+                          title: editTitle,
+                          status: editStatus,
+                          workspaceId: editWorkspaceId,
+                          startDate: nextStartDate,
+                          dueDate: editDueDate,
+                          priority: editPriority,
+                        });
+                        setDirty(snap !== lastSavedSnapshotRef.current);
+                      }}
+                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium" htmlFor="task-modal-priority">
+                      Priorité
+                    </label>
+                    <select
+                      id="task-modal-priority"
+                      value={editPriority}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        const nextPriority = v === "low" || v === "medium" || v === "high" ? v : "";
+                        setEditPriority(nextPriority);
+                        const snap = JSON.stringify({
+                          title: editTitle,
+                          status: editStatus,
+                          workspaceId: editWorkspaceId,
+                          startDate: editStartDate,
+                          dueDate: editDueDate,
+                          priority: nextPriority,
+                        });
+                        setDirty(snap !== lastSavedSnapshotRef.current);
+                      }}
+                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                    >
+                      <option value="">—</option>
+                      <option value="low">Basse</option>
+                      <option value="medium">Moyenne</option>
+                      <option value="high">Haute</option>
+                    </select>
+                  </div>
+                </div>
+
+                {editDateWarning && (
+                  <div className="sn-alert" role="status" aria-live="polite">
+                    {editDateWarning}
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 items-end">
                   <div className="space-y-1">
@@ -762,7 +897,9 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                           title: editTitle,
                           status: editStatus,
                           workspaceId: nextWorkspaceId,
+                          startDate: editStartDate,
                           dueDate: editDueDate,
+                          priority: editPriority,
                         });
                         setDirty(snap !== lastSavedSnapshotRef.current);
                       }}

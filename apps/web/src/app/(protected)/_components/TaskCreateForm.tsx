@@ -8,7 +8,7 @@ import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
-import { parseLocalDateTimeToTimestamp } from "@/lib/datetime";
+import { parseLocalDateTimeToTimestamp, parseLocalDateToTimestamp } from "@/lib/datetime";
 import type { TaskDoc } from "@/types/firestore";
 
 type TaskStatus = "todo" | "doing" | "done";
@@ -23,7 +23,9 @@ const newTaskSchema = z.object({
   title: z.string().min(1, "Le titre est requis."),
   status: z.union([z.literal("todo"), z.literal("doing"), z.literal("done")]),
   workspaceId: z.string().optional(),
+  startDate: z.string().optional(),
   dueDate: z.string().optional(),
+  priority: z.union([z.literal("low"), z.literal("medium"), z.literal("high")]).optional(),
 });
 
 export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, onCreated }: Props) {
@@ -39,7 +41,9 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
   const [newTitle, setNewTitle] = useState("");
   const [newStatus, setNewStatus] = useState<TaskStatus>("todo");
   const [newWorkspaceId, setNewWorkspaceId] = useState<string>(initialWorkspaceId ?? "");
+  const [newStartDate, setNewStartDate] = useState<string>("");
   const [newDueDate, setNewDueDate] = useState<string>("");
+  const [newPriority, setNewPriority] = useState<"" | NonNullable<TaskDoc["priority"]>>("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -61,13 +65,17 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
         title?: string;
         status?: TaskStatus;
         workspaceId?: string;
+        startDate?: string;
         dueDate?: string;
+        priority?: TaskDoc["priority"] | null;
       };
 
       setNewTitle((prev) => prev || (typeof parsed.title === "string" ? parsed.title : ""));
       setNewStatus((prev) => prev || (parsed.status === "todo" || parsed.status === "doing" || parsed.status === "done" ? parsed.status : prev));
       setNewWorkspaceId((prev) => prev || (typeof parsed.workspaceId === "string" ? parsed.workspaceId : ""));
+      setNewStartDate((prev) => prev || (typeof parsed.startDate === "string" ? parsed.startDate : ""));
       setNewDueDate((prev) => prev || (typeof parsed.dueDate === "string" ? parsed.dueDate : ""));
+      setNewPriority((prev) => prev || (parsed.priority === "low" || parsed.priority === "medium" || parsed.priority === "high" ? parsed.priority : ""));
       lastSavedDraftRef.current = raw;
     } catch {
       // ignore
@@ -82,7 +90,9 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
       title: newTitle,
       status: newStatus,
       workspaceId: newWorkspaceId,
+      startDate: newStartDate,
       dueDate: newDueDate,
+      priority: newPriority || null,
     });
 
     if (draft === lastSavedDraftRef.current) return;
@@ -101,7 +111,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
       if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
       draftTimerRef.current = null;
     };
-  }, [newTitle, newStatus, newWorkspaceId, newDueDate]);
+  }, [newTitle, newStatus, newWorkspaceId, newStartDate, newDueDate, newPriority]);
 
   const canCreate = useMemo(
     () =>
@@ -109,10 +119,21 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
         title: newTitle,
         status: newStatus,
         workspaceId: newWorkspaceId || undefined,
+        startDate: newStartDate || undefined,
         dueDate: newDueDate || undefined,
+        priority: newPriority || undefined,
       }).success,
-    [newTitle, newStatus, newWorkspaceId, newDueDate],
+    [newTitle, newStatus, newWorkspaceId, newStartDate, newDueDate, newPriority],
   );
+
+  const dateWarning = useMemo(() => {
+    if (!newStartDate || !newDueDate) return null;
+    const startTs = parseLocalDateToTimestamp(newStartDate);
+    const dueTs = parseLocalDateTimeToTimestamp(newDueDate);
+    if (!startTs || !dueTs) return null;
+    if (startTs.toMillis() > dueTs.toMillis()) return "La date de début est après la date de fin.";
+    return null;
+  }, [newStartDate, newDueDate]);
 
   const handleCreateTask = async () => {
     const user = auth.currentUser;
@@ -131,7 +152,9 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
       title: newTitle,
       status: newStatus,
       workspaceId: newWorkspaceId || undefined,
+      startDate: newStartDate || undefined,
       dueDate: newDueDate || undefined,
+      priority: newPriority || undefined,
     });
 
     if (!validation.success) {
@@ -141,6 +164,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
 
     setCreateError(null);
 
+    const startTimestamp = validation.data.startDate ? parseLocalDateToTimestamp(validation.data.startDate) : null;
     const dueTimestamp = validation.data.dueDate ? parseLocalDateTimeToTimestamp(validation.data.dueDate) : null;
 
     setCreating(true);
@@ -154,7 +178,9 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
         title: validation.data.title,
         status: validation.data.status,
         workspaceId: validation.data.workspaceId ?? null,
+        startDate: startTimestamp,
         dueDate: dueTimestamp,
+        priority: validation.data.priority ?? null,
         favorite: canFavoriteNow,
         archived: false,
         createdAt: serverTimestamp(),
@@ -175,17 +201,21 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
         }
       }
 
-      if (validation.data.dueDate) {
+      if (isPro && validation.data.dueDate) {
         const reminderDate = new Date(validation.data.dueDate);
         if (!Number.isNaN(reminderDate.getTime())) {
-          await addDoc(collection(db, "taskReminders"), {
-            userId: user.uid,
-            taskId: taskRef.id,
-            dueDate: dueTimestamp ? dueTimestamp.toDate().toISOString() : "",
-            reminderTime: reminderDate.toISOString(),
-            sent: false,
-            createdAt: serverTimestamp(),
-          });
+          try {
+            await addDoc(collection(db, "taskReminders"), {
+              userId: user.uid,
+              taskId: taskRef.id,
+              dueDate: dueTimestamp ? dueTimestamp.toDate().toISOString() : "",
+              reminderTime: reminderDate.toISOString(),
+              sent: false,
+              createdAt: serverTimestamp(),
+            });
+          } catch (e) {
+            console.error("Error creating task reminder", e);
+          }
         }
       }
 
@@ -198,7 +228,9 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
       setNewTitle("");
       setNewStatus("todo");
       setNewWorkspaceId("");
+      setNewStartDate("");
       setNewDueDate("");
+      setNewPriority("");
 
       onCreated?.();
     } catch (e) {
@@ -250,7 +282,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
 
         <div className="space-y-1">
           <label className="text-sm font-medium" htmlFor="task-new-due">
-            Rappel
+            Date de fin / échéance
           </label>
           <input
             id="task-new-due"
@@ -261,6 +293,48 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
           />
         </div>
       </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 items-end">
+        <div className="space-y-1">
+          <label className="text-sm font-medium" htmlFor="task-new-start">
+            Date de début
+          </label>
+          <input
+            id="task-new-start"
+            type="date"
+            value={newStartDate}
+            onChange={(e) => setNewStartDate(e.target.value)}
+            className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-sm font-medium" htmlFor="task-new-priority">
+            Priorité
+          </label>
+          <select
+            id="task-new-priority"
+            value={newPriority}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "low" || v === "medium" || v === "high") setNewPriority(v);
+              else setNewPriority("");
+            }}
+            className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+          >
+            <option value="">—</option>
+            <option value="low">Basse</option>
+            <option value="medium">Moyenne</option>
+            <option value="high">Haute</option>
+          </select>
+        </div>
+      </div>
+
+      {dateWarning && (
+        <div className="sn-alert" role="status" aria-live="polite">
+          {dateWarning}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 items-end">
         <div className="space-y-1">

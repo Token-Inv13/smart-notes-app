@@ -19,7 +19,6 @@ import { useUserNotes } from "@/hooks/useUserNotes";
 import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
-import { useUserTaskReminders } from "@/hooks/useUserTaskReminders";
 import { registerFcmToken } from "@/lib/fcm";
 import type { TaskDoc } from "@/types/firestore";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -47,11 +46,38 @@ export default function TasksPage() {
     return "Terminée";
   };
 
+  const formatDueDate = (ts: TaskDoc["dueDate"] | null | undefined) => {
+    if (!ts) return "";
+    try {
+      return ts.toDate().toLocaleString();
+    } catch {
+      return "";
+    }
+  };
+
+  const formatStartDate = (ts: TaskDoc["startDate"] | null | undefined) => {
+    if (!ts) return "";
+    try {
+      return ts.toDate().toLocaleDateString();
+    } catch {
+      return "";
+    }
+  };
+
+  const priorityLabel = (p: NonNullable<TaskDoc["priority"]>) => {
+    if (p === "high") return "Haute";
+    if (p === "medium") return "Moyenne";
+    return "Basse";
+  };
+
+  const priorityDotClass = (p: NonNullable<TaskDoc["priority"]>) => {
+    if (p === "high") return "bg-red-500/80";
+    if (p === "medium") return "bg-amber-500/80";
+    return "bg-emerald-500/80";
+  };
+
   const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
   const { data: workspaces } = useUserWorkspaces();
-  const {
-    reminders,
-  } = useUserTaskReminders({ enabled: isPro });
 
   const [statusFilter] = useState<TaskStatusFilter>("all");
   const [workspaceFilter, setWorkspaceFilter] = useState<WorkspaceFilter>("all");
@@ -592,6 +618,8 @@ export default function TasksPage() {
             const status = (task.status as TaskStatus | undefined) ?? "todo";
             const workspaceName = workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
             const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
+            const dueLabel = formatDueDate(task.dueDate ?? null);
+            const startLabel = formatStartDate(task.startDate ?? null);
 
             const archivedLabel = (() => {
               const ts = task.archivedAt ?? task.updatedAt;
@@ -617,6 +645,14 @@ export default function TasksPage() {
                       <div className="sn-card-meta">
                         <span className="sn-badge">{workspaceName}</span>
                         <span className="sn-badge">{statusLabel(status)}</span>
+                        {startLabel && <span className="sn-badge">Début: {startLabel}</span>}
+                        {dueLabel && <span className="sn-badge">Échéance: {dueLabel}</span>}
+                        {task.priority && (
+                          <span className="sn-badge inline-flex items-center gap-2">
+                            <span className={`h-2 w-2 rounded-full ${priorityDotClass(task.priority)}`} aria-hidden />
+                            <span>Priorité: {priorityLabel(task.priority)}</span>
+                          </span>
+                        )}
                         {archivedLabel && <span className="sn-badge">Archivée: {archivedLabel}</span>}
                       </div>
                     </div>
@@ -648,11 +684,8 @@ export default function TasksPage() {
             const status = (task.status as TaskStatus | undefined) ?? "todo";
             const workspaceName =
               workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
-            const taskReminders = reminders.filter((r) => r.taskId === task.id);
-            const nextReminder = taskReminders
-              .slice()
-              .sort((a, b) => new Date(a.reminderTime).getTime() - new Date(b.reminderTime).getTime())[0];
-            const reminderLabel = nextReminder ? new Date(nextReminder.reminderTime).toLocaleString() : null;
+            const dueLabel = formatDueDate(task.dueDate ?? null);
+            const startLabel = formatStartDate(task.startDate ?? null);
 
             const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
 
@@ -674,10 +707,13 @@ export default function TasksPage() {
                         <div className="sn-card-meta">
                           <span className="sn-badge">{workspaceName}</span>
                           <span className="sn-badge">{statusLabel(status)}</span>
-                          {reminderLabel ? (
-                            <span className="sn-badge">Rappel: {reminderLabel}</span>
-                          ) : (
-                            <span className="sn-badge">Aucun rappel</span>
+                          {startLabel && <span className="sn-badge">Début: {startLabel}</span>}
+                          {dueLabel && <span className="sn-badge">Échéance: {dueLabel}</span>}
+                          {task.priority && (
+                            <span className="sn-badge inline-flex items-center gap-2">
+                              <span className={`h-2 w-2 rounded-full ${priorityDotClass(task.priority)}`} aria-hidden />
+                              <span>Priorité: {priorityLabel(task.priority)}</span>
+                            </span>
                           )}
                         </div>
                       </div>
@@ -724,11 +760,8 @@ export default function TasksPage() {
             const workspaceName =
               workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
             const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
-            const taskReminders = reminders.filter((r) => r.taskId === task.id);
-            const nextReminder = taskReminders
-              .slice()
-              .sort((a, b) => new Date(a.reminderTime).getTime() - new Date(b.reminderTime).getTime())[0];
-            const reminderLabel = nextReminder ? new Date(nextReminder.reminderTime).toLocaleString() : null;
+            const dueLabel = formatDueDate(task.dueDate ?? null);
+            const startLabel = formatStartDate(task.startDate ?? null);
 
             return (
               <div
@@ -750,10 +783,13 @@ export default function TasksPage() {
                         <div className="sn-card-meta">
                           <span className="sn-badge">{workspaceName}</span>
                           <span className="sn-badge">{statusLabel(status)}</span>
-                          {reminderLabel ? (
-                            <span className="sn-badge">Rappel: {reminderLabel}</span>
-                          ) : (
-                            <span className="sn-badge">Aucun rappel</span>
+                          {startLabel && <span className="sn-badge">Début: {startLabel}</span>}
+                          {dueLabel && <span className="sn-badge">Échéance: {dueLabel}</span>}
+                          {task.priority && (
+                            <span className="sn-badge inline-flex items-center gap-2">
+                              <span className={`h-2 w-2 rounded-full ${priorityDotClass(task.priority)}`} aria-hidden />
+                              <span>Priorité: {priorityLabel(task.priority)}</span>
+                            </span>
                           )}
                         </div>
                       </div>
@@ -826,11 +862,9 @@ export default function TasksPage() {
 
               <div className="space-y-2">
                 {groupedTasks[colStatus].map((task) => {
-                  const taskReminders = reminders.filter((r) => r.taskId === task.id);
-                  const nextReminder = taskReminders
-                    .slice()
-                    .sort((a, b) => new Date(a.reminderTime).getTime() - new Date(b.reminderTime).getTime())[0];
-                  const reminderLabel = nextReminder ? new Date(nextReminder.reminderTime).toLocaleString() : null;
+                  const dueLabel = formatDueDate(task.dueDate ?? null);
+                  const startLabel = formatStartDate(task.startDate ?? null);
+                  const priorityText = task.priority ? priorityLabel(task.priority) : "";
 
                   const openTaskModal = () => {
                     if (!task.id) return;
@@ -873,9 +907,28 @@ export default function TasksPage() {
                           aria-label={`Ouvrir la tâche : ${task.title}`}
                         >
                           <div className="text-sm font-medium truncate">{task.title}</div>
-                          <div className="text-xs text-muted-foreground mt-0.5">
-                            {reminderLabel ? `Rappel : ${reminderLabel}` : "Aucun rappel"}
-                          </div>
+                          {(startLabel || dueLabel || task.priority) && (
+                            <div className="text-xs text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                              {startLabel && (
+                                <span className="inline-flex items-center gap-1">
+                                  <span aria-hidden>🟢</span>
+                                  <span>{startLabel}</span>
+                                </span>
+                              )}
+                              {dueLabel && (
+                                <span className="inline-flex items-center gap-1">
+                                  <span aria-hidden>📅</span>
+                                  <span>{dueLabel}</span>
+                                </span>
+                              )}
+                              {task.priority && (
+                                <span className="inline-flex items-center gap-1">
+                                  <span className={`h-2 w-2 rounded-full ${priorityDotClass(task.priority)}`} aria-hidden />
+                                  <span>{priorityText}</span>
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </button>
                         <div className="flex items-center gap-2 shrink-0">
                           <select
