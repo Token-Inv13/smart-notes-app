@@ -1,5 +1,7 @@
 import type { FieldValue, Timestamp } from 'firebase/firestore';
 
+export type Priority = 'low' | 'medium' | 'high';
+
 export interface UserDoc {
   uid: string;
   email: string | null;
@@ -62,7 +64,9 @@ export interface TaskDoc {
   title: string;
   description?: string;
   status?: 'todo' | 'doing' | 'done';
+  startDate?: Timestamp | null;
   dueDate?: Timestamp | null;
+  priority?: Priority | null;
   favorite?: boolean;
   completed?: boolean;
   archived?: boolean;
@@ -83,6 +87,8 @@ export interface TodoDoc {
     done: boolean;
     createdAt?: number;
   }[];
+  dueDate?: Timestamp | null;
+  priority?: Priority | null;
   completed?: boolean;
   favorite?: boolean;
   createdAt?: Timestamp | FieldValue;

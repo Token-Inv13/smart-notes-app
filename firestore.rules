@@ -27,6 +27,10 @@ service cloud.firestore {
       return value == null || value is timestamp;
     }
 
+    function isNullOrPriority(value) {
+      return value == null || (value is string && value in ['low', 'medium', 'high']);
+    }
+
     function isOptionalBool(value) {
       return value == null || value is bool;
     }
@@ -100,6 +104,8 @@ service cloud.firestore {
         && ('workspaceId' in request.resource.data)
         && isNullOrString(request.resource.data.workspaceId)
         && isNonEmptyString(request.resource.data.title)
+        && (!('dueDate' in request.resource.data) || isNullOrTimestamp(request.resource.data.dueDate))
+        && (!('priority' in request.resource.data) || isNullOrPriority(request.resource.data.priority))
         && isOptionalBool(request.resource.data.completed)
         && isOptionalBool(request.resource.data.favorite)
         && isServerTimestamp(request.resource.data.createdAt)
@@ -111,6 +117,8 @@ service cloud.firestore {
         && ('workspaceId' in request.resource.data)
         && isNullOrString(request.resource.data.workspaceId)
         && isNonEmptyString(request.resource.data.title)
+        && (!('dueDate' in request.resource.data) || isNullOrTimestamp(request.resource.data.dueDate))
+        && (!('priority' in request.resource.data) || isNullOrPriority(request.resource.data.priority))
         && isOptionalBool(request.resource.data.completed)
         && isOptionalBool(request.resource.data.favorite)
         && isServerTimestamp(request.resource.data.updatedAt);
@@ -128,7 +136,9 @@ service cloud.firestore {
         && isNullOrString(request.resource.data.workspaceId)
         && isNonEmptyString(request.resource.data.title)
         && (request.resource.data.status in ['todo', 'doing', 'done'])
+        && (!('startDate' in request.resource.data) || isNullOrTimestamp(request.resource.data.startDate))
         && isNullOrTimestamp(request.resource.data.dueDate)
+        && (!('priority' in request.resource.data) || isNullOrPriority(request.resource.data.priority))
         && isOptionalBool(request.resource.data.favorite)
         && isServerTimestamp(request.resource.data.createdAt)
         && isServerTimestamp(request.resource.data.updatedAt);
@@ -139,7 +149,9 @@ service cloud.firestore {
         && isNullOrString(request.resource.data.workspaceId)
         && isNonEmptyString(request.resource.data.title)
         && (request.resource.data.status in ['todo', 'doing', 'done'])
+        && (!('startDate' in request.resource.data) || isNullOrTimestamp(request.resource.data.startDate))
         && isNullOrTimestamp(request.resource.data.dueDate)
+        && (!('priority' in request.resource.data) || isNullOrPriority(request.resource.data.priority))
         && isOptionalBool(request.resource.data.favorite)
         && isServerTimestamp(request.resource.data.updatedAt);
 
