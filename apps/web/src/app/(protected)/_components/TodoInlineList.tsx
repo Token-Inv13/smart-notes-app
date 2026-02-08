@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTodos } from "@/hooks/useUserTodos";
+import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import type { TodoDoc } from "@/types/firestore";
 
 interface TodoInlineListProps {
@@ -16,9 +17,70 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: todos, loading, error } = useUserTodos({ workspaceId });
+  const { data: workspaces } = useUserWorkspaces();
   const [editError, setEditError] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [todoView, setTodoView] = useState<"active" | "completed">("active");
+
+  type TodoPriorityFilter = "all" | NonNullable<TodoDoc["priority"]>;
+  type DueFilter = "all" | "today" | "overdue";
+  type TodoSortBy = "updatedAt" | "createdAt" | "dueDate";
+
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [workspaceFilter, setWorkspaceFilter] = useState<string>(workspaceId ?? "all");
+  const [priorityFilter, setPriorityFilter] = useState<TodoPriorityFilter>("all");
+  const [dueFilter, setDueFilter] = useState<DueFilter>("all");
+  const [sortBy, setSortBy] = useState<TodoSortBy>("updatedAt");
+
+  const toMillisSafe = (ts: unknown) => {
+    const maybeTs = ts as { toMillis?: () => number };
+    if (maybeTs && typeof maybeTs.toMillis === "function") {
+      return maybeTs.toMillis();
+    }
+    return 0;
+  };
+
+  const normalizeText = (raw: string) => {
+    try {
+      return raw
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim();
+    } catch {
+      return raw.toLowerCase().trim();
+    }
+  };
+
+  const isSameLocalDay = (a: Date, b: Date) => {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  };
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setDebouncedSearch(searchInput.trim());
+    }, 150);
+    return () => window.clearTimeout(t);
+  }, [searchInput]);
+
+  useEffect(() => {
+    const nextFilter = workspaceId ?? "all";
+    if (workspaceFilter !== nextFilter) {
+      setWorkspaceFilter(nextFilter);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
+
+  const workspaceNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const ws of workspaces) {
+      if (ws.id) m.set(ws.id, ws.name);
+    }
+    return m;
+  }, [workspaces]);
 
   const formatDueDate = (ts: TodoDoc["dueDate"] | null | undefined) => {
     if (!ts) return "";
@@ -44,13 +106,71 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
   const activeTodos = useMemo(() => todos.filter((t) => t.completed !== true), [todos]);
   const completedTodos = useMemo(() => todos.filter((t) => t.completed === true), [todos]);
 
-  const visibleTodos = useMemo(() => {
-    return todoView === "completed" ? completedTodos : activeTodos;
-  }, [activeTodos, completedTodos, todoView]);
+  const filteredTodos = useMemo(() => {
+    const now = new Date();
+    const q = normalizeText(debouncedSearch);
+    let result = todoView === "completed" ? completedTodos : activeTodos;
 
-  const sortedTodos = useMemo(() => {
-    return visibleTodos.slice();
-  }, [visibleTodos]);
+    if (workspaceFilter !== "all") {
+      result = result.filter((t) => t.workspaceId === workspaceFilter);
+    }
+
+    if (priorityFilter !== "all") {
+      result = result.filter((t) => t.priority === priorityFilter);
+    }
+
+    if (q) {
+      result = result.filter((t) => {
+        const workspaceName = t.workspaceId ? workspaceNameById.get(t.workspaceId) ?? "" : "";
+        const itemsText = (t.items ?? []).map((i) => i.text ?? "").join("\n");
+        const text = normalizeText(`${t.title}\n${itemsText}\n${workspaceName}`);
+        return text.includes(q);
+      });
+    }
+
+    if (dueFilter !== "all") {
+      result = result.filter((t) => {
+        if (!t.dueDate) return false;
+        let due: Date;
+        try {
+          due = t.dueDate.toDate();
+        } catch {
+          return false;
+        }
+        if (dueFilter === "today") return isSameLocalDay(due, now);
+        return due.getTime() < now.getTime();
+      });
+    }
+
+    const sorted = result.slice().sort((a, b) => {
+      if (sortBy === "dueDate") {
+        const aDue = a.dueDate ? a.dueDate.toMillis() : null;
+        const bDue = b.dueDate ? b.dueDate.toMillis() : null;
+
+        const aHasDue = aDue !== null;
+        const bHasDue = bDue !== null;
+
+        if (aHasDue && bHasDue) return aDue! - bDue!;
+        if (aHasDue && !bHasDue) return -1;
+        if (!aHasDue && bHasDue) return 1;
+
+        const aUpdated = toMillisSafe(a.updatedAt);
+        const bUpdated = toMillisSafe(b.updatedAt);
+        return bUpdated - aUpdated;
+      }
+
+      const aMillis = sortBy === "createdAt" ? toMillisSafe(a.createdAt) : toMillisSafe(a.updatedAt);
+      const bMillis = sortBy === "createdAt" ? toMillisSafe(b.createdAt) : toMillisSafe(b.updatedAt);
+      return bMillis - aMillis;
+    });
+
+    return sorted;
+  }, [activeTodos, completedTodos, debouncedSearch, dueFilter, priorityFilter, sortBy, todoView, workspaceFilter, workspaceNameById]);
+
+  const hasActiveSearchOrFilters = useMemo(() => {
+    const q = debouncedSearch.trim();
+    return q.length > 0 || workspaceFilter !== "all" || priorityFilter !== "all" || dueFilter !== "all" || sortBy !== "updatedAt";
+  }, [debouncedSearch, dueFilter, priorityFilter, sortBy, workspaceFilter]);
 
   const toggleCompleted = async (todo: TodoDoc, nextCompleted: boolean) => {
     if (!todo.id) return;
@@ -125,11 +245,154 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
         </div>
       )}
 
-      {!loading && !error && sortedTodos.length === 0 && (
+      {!loading && !error && (
+        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+          <div className="relative flex-1 min-w-0">
+            <input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Rechercher (titre, items, dossier)…"
+              className="w-full border border-input rounded-md px-3 py-2 pr-10 bg-background text-sm"
+              aria-label="Rechercher dans les ToDo"
+            />
+            {searchInput.trim().length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSearchInput("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 sn-icon-btn"
+                aria-label="Effacer la recherche"
+                title="Effacer"
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setFiltersOpen(true)}
+            className="inline-flex items-center justify-center h-10 px-3 rounded-md border border-border bg-background hover:bg-accent text-sm"
+          >
+            Filtrer
+          </button>
+        </div>
+      )}
+
+      {filtersOpen && (
+        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Filtres ToDo">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setFiltersOpen(false)}
+            aria-label="Fermer les filtres"
+          />
+          <div className="absolute left-0 right-0 bottom-0 w-full sm:left-1/2 sm:top-1/2 sm:right-auto sm:bottom-auto sm:w-[min(92vw,520px)] sm:-translate-x-1/2 sm:-translate-y-1/2 rounded-t-lg sm:rounded-lg border border-border bg-card shadow-lg max-h-[85dvh] overflow-y-auto">
+            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+              <div className="text-sm font-semibold">Filtres</div>
+              <button type="button" onClick={() => setFiltersOpen(false)} className="sn-icon-btn" aria-label="Fermer">
+                ×
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div className="space-y-1">
+                <div className="text-xs text-muted-foreground">Dossier</div>
+                <select
+                  value={workspaceFilter}
+                  onChange={(e) => setWorkspaceFilter(e.target.value)}
+                  aria-label="Filtrer par dossier"
+                  className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                >
+                  <option value="all">Tous les dossiers</option>
+                  {workspaces.map((ws) => (
+                    <option key={ws.id ?? ws.name} value={ws.id ?? ""} disabled={!ws.id}>
+                      {ws.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <div className="text-xs text-muted-foreground">Priorité</div>
+                  <select
+                    value={priorityFilter}
+                    onChange={(e) => setPriorityFilter(e.target.value as TodoPriorityFilter)}
+                    aria-label="Filtrer par priorité"
+                    className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                  >
+                    <option value="all">Toutes</option>
+                    <option value="high">Haute</option>
+                    <option value="medium">Moyenne</option>
+                    <option value="low">Basse</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="text-xs text-muted-foreground">Échéance</div>
+                  <select
+                    value={dueFilter}
+                    onChange={(e) => setDueFilter(e.target.value as DueFilter)}
+                    aria-label="Filtrer par échéance"
+                    className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                  >
+                    <option value="all">Toutes</option>
+                    <option value="today">Aujourd’hui</option>
+                    <option value="overdue">En retard</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="text-xs text-muted-foreground">Tri</div>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as TodoSortBy)}
+                  aria-label="Trier les ToDo"
+                  className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                >
+                  <option value="updatedAt">Dernière modification</option>
+                  <option value="createdAt">Date de création</option>
+                  <option value="dueDate">Échéance</option>
+                </select>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 pt-2">
+                <button
+                  type="button"
+                  className="sn-text-btn"
+                  onClick={() => {
+                    setWorkspaceFilter(workspaceId ?? "all");
+                    setPriorityFilter("all");
+                    setDueFilter("all");
+                    setSortBy("updatedAt");
+                  }}
+                >
+                  Réinitialiser
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+                  onClick={() => setFiltersOpen(false)}
+                >
+                  Appliquer
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!loading && !error && filteredTodos.length === 0 && (
         <div className="sn-empty">
-          <div className="sn-empty-title">{todoView === "completed" ? "Aucune ToDo terminée" : "Aucune ToDo"}</div>
+          <div className="sn-empty-title">
+            {hasActiveSearchOrFilters ? "Aucun résultat" : todoView === "completed" ? "Aucune ToDo terminée" : "Aucune ToDo"}
+          </div>
           <div className="sn-empty-desc">
-            {todoView === "completed" ? "Marque une ToDo comme terminée pour la retrouver ici." : "Appuie sur + pour en créer une."}
+            {hasActiveSearchOrFilters
+              ? "Essaie d’effacer la recherche ou de réinitialiser les filtres."
+              : todoView === "completed"
+                ? "Marque une ToDo comme terminée pour la retrouver ici."
+                : "Appuie sur + pour en créer une."}
           </div>
         </div>
       )}
@@ -153,9 +416,9 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
             </button>
           </div>
 
-          {sortedTodos.length > 0 && (
+          {filteredTodos.length > 0 && (
             <ul className="space-y-2">
-              {sortedTodos.map((todo) => (
+              {filteredTodos.map((todo) => (
                 <li key={todo.id}>
                   <div
                     className={`sn-card p-4 relative ${todo.completed ? "opacity-80" : ""} ${todo.id ? "cursor-pointer" : ""}`}
