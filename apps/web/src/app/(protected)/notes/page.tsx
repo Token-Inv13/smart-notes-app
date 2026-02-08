@@ -315,7 +315,6 @@ export default function NotesPage() {
         </div>
 
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-          <h2 className="text-lg font-semibold">Tes notes récentes</h2>
           <div className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap w-fit">
             <button
               type="button"
