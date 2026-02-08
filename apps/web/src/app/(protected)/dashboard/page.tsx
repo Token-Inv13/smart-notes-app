@@ -24,6 +24,29 @@ function formatFrDateTime(ts?: unknown | null) {
   )}`;
 }
 
+function formatFrDate(ts?: unknown | null) {
+  if (!ts) return '';
+  const maybeTs = ts as { toDate?: () => Date };
+  if (typeof maybeTs?.toDate !== 'function') return '';
+  const d = maybeTs.toDate();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+function priorityLabel(p?: TaskDoc['priority'] | TodoDoc['priority'] | null) {
+  if (p === 'high') return 'Haute';
+  if (p === 'medium') return 'Moyenne';
+  if (p === 'low') return 'Basse';
+  return '';
+}
+
+function priorityDotClass(p?: TaskDoc['priority'] | TodoDoc['priority'] | null) {
+  if (p === 'high') return 'bg-red-500/80';
+  if (p === 'medium') return 'bg-amber-500/80';
+  if (p === 'low') return 'bg-emerald-500/80';
+  return 'bg-muted-foreground/40';
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -306,6 +329,8 @@ export default function DashboardPage() {
               <ul className="space-y-1">
                 {favoriteTodos.map((todo) => {
                   const href = todo.id ? `/todo/${encodeURIComponent(todo.id)}${suffix}` : null;
+                  const dueLabel = todo.dueDate ? formatFrDate(todo.dueDate) : '';
+                  const prioText = todo.priority ? priorityLabel(todo.priority) : '';
                   return (
                     <li
                       key={todo.id}
@@ -332,7 +357,25 @@ export default function DashboardPage() {
                             onChange={(e) => toggleTodoCompleted(todo, e.target.checked)}
                             aria-label="Marquer comme terminée"
                           />
-                          <span className="truncate">{todo.title}</span>
+                          <span className="min-w-0">
+                            <span className="truncate block">{todo.title}</span>
+                            {(dueLabel || todo.priority) && (
+                              <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                                {dueLabel && (
+                                  <span className="inline-flex items-center gap-1">
+                                    <span aria-hidden>📅</span>
+                                    <span>{dueLabel}</span>
+                                  </span>
+                                )}
+                                {todo.priority && (
+                                  <span className="inline-flex items-center gap-1">
+                                    <span className={`h-2 w-2 rounded-full ${priorityDotClass(todo.priority)}`} aria-hidden />
+                                    <span>{prioText}</span>
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                          </span>
                         </label>
                         <button
                           type="button"
@@ -505,6 +548,8 @@ export default function DashboardPage() {
                 {activeFavoriteTasks.map((task) => {
                   const href = task.id ? `/tasks/${encodeURIComponent(task.id)}${suffix}` : null;
                   const dueLabel = formatFrDateTime(task.dueDate ?? null);
+                  const startLabel = formatFrDate(task.startDate ?? null);
+                  const prioText = task.priority ? priorityLabel(task.priority) : '';
                   return (
                     <li
                       key={task.id}
@@ -534,7 +579,14 @@ export default function DashboardPage() {
                                   {workspaceNameById.get(task.workspaceId) ?? task.workspaceId}
                                 </span>
                               )}
-                              <span className="sn-badge">{dueLabel || "Aucun rappel"}</span>
+                              {startLabel && <span className="sn-badge">Début: {startLabel}</span>}
+                              {dueLabel && <span className="sn-badge">Échéance: {dueLabel}</span>}
+                              {task.priority && (
+                                <span className="sn-badge inline-flex items-center gap-2">
+                                  <span className={`h-2 w-2 rounded-full ${priorityDotClass(task.priority)}`} aria-hidden />
+                                  <span>Priorité: {prioText}</span>
+                                </span>
+                              )}
                               {task.favorite && <span className="sn-badge">Favori</span>}
                             </div>
                           </div>
