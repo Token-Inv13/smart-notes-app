@@ -168,6 +168,134 @@ function buildSuggestionDedupeKey(params) {
     });
     return sha256Hex(`${objectId}|${kind}|${payloadMinimal}`);
 }
+function buildBundleDedupeKey(params) {
+    const { objectId, minimal } = params;
+    const payloadMinimal = JSON.stringify({
+        title: normalizeAssistantText(minimal.title),
+        tasksSig: minimal.tasksSig,
+    });
+    return sha256Hex(`${objectId}|create_task_bundle|${payloadMinimal}`);
+}
+function extractBundleTaskTitlesFromText(rawText) {
+    var _a, _b, _c, _d, _e, _f;
+    const out = [];
+    const add = (title, originFromText) => {
+        const t = title.replace(/\s+/g, ' ').trim();
+        if (!t)
+            return;
+        out.push({ title: t, originFromText: clampFromText(originFromText, 120) });
+    };
+    const payRe = /\b(payer|r[ée]gler)\b\s+([^\n\r\.,;]+)/gi;
+    for (const m of rawText.matchAll(payRe)) {
+        const obj = String((_a = m[2]) !== null && _a !== void 0 ? _a : '').trim();
+        add(`Payer ${obj || 'facture'}`, String((_b = m[0]) !== null && _b !== void 0 ? _b : 'payer'));
+    }
+    const callRe = /\b(appeler|t[ée]l[ée]phoner|t[ée]l[ée]phone|tel|phone)\b\s+([^\n\r\.,;]+)/gi;
+    for (const m of rawText.matchAll(callRe)) {
+        const obj = String((_c = m[2]) !== null && _c !== void 0 ? _c : '').trim();
+        add(`Appeler ${obj || 'quelqu’un'}`, String((_d = m[0]) !== null && _d !== void 0 ? _d : 'appeler'));
+    }
+    const rdvRe = /\b(prendre\s+rdv|prendre\s+rendez-vous|rdv|rendez-vous|r[ée]server)\b\s*([^\n\r\.,;]+)?/gi;
+    for (const m of rawText.matchAll(rdvRe)) {
+        const obj = String((_e = m[2]) !== null && _e !== void 0 ? _e : '').trim();
+        const base = obj ? `Prendre RDV ${obj}` : 'Prendre RDV';
+        add(base, String((_f = m[0]) !== null && _f !== void 0 ? _f : 'rdv'));
+    }
+    const lines = rawText.split(/\r?\n/);
+    for (const lineRaw of lines) {
+        const line = lineRaw.trim();
+        if (!line)
+            continue;
+        const todoLike = /^\s*([-*•]|\d+[\.)]|\[ \]|\[x\]|\[X\]|todo\s*:)/i.test(line) ||
+            /\bTODO\b/i.test(line);
+        if (!todoLike)
+            continue;
+        const cleaned = line
+            .replace(/^\s*([-*•]|\d+[\.)]|\[ \]|\[x\]|\[X\]|todo\s*:)+\s*/i, '')
+            .trim();
+        if (!cleaned)
+            continue;
+        const normalized = cleaned.replace(/^[\-–—]+\s*/, '').trim();
+        if (!normalized)
+            continue;
+        add(normalized, lineRaw);
+    }
+    const seen = new Set();
+    const deduped = [];
+    for (const item of out) {
+        const key = normalizeAssistantText(item.title);
+        if (!key)
+            continue;
+        if (seen.has(key))
+            continue;
+        seen.add(key);
+        deduped.push(item);
+    }
+    return deduped;
+}
+function detectIntentsV2(params) {
+    var _a, _b, _c, _d;
+    const { title, content, now } = params;
+    const rawText = `${title}\n${content}`;
+    const items = extractBundleTaskTitlesFromText(rawText);
+    if (items.length === 0) {
+        return { single: null, bundle: null };
+    }
+    if (items.length === 1) {
+        const v1 = detectIntentsV1({ title, content, now });
+        if (v1.length === 1)
+            return { single: v1[0], bundle: null };
+        const only = items[0];
+        const sugTitle = only.title;
+        const dtHit = parseDateInText(rawText, now);
+        const timeHit = parseTimeInText(rawText);
+        const dt = composeDateTime({
+            now,
+            baseDate: dtHit ? dtHit.date : null,
+            time: timeHit ? { hours: timeHit.hours, minutes: timeHit.minutes } : null,
+        });
+        const dtTs = dt ? admin.firestore.Timestamp.fromDate(dt) : null;
+        const kind = dtTs && timeHit ? 'create_reminder' : 'create_task';
+        const single = {
+            intent: 'PAYER',
+            title: sugTitle,
+            originFromText: only.originFromText,
+            explanation: `Détecté une action dans la note.`,
+            kind,
+            dueDate: kind === 'create_task' && dtTs ? dtTs : undefined,
+            remindAt: kind === 'create_reminder' && dtTs ? dtTs : undefined,
+            confidence: 0.75,
+            dedupeMinimal: {
+                title: sugTitle,
+                dueDateMs: kind === 'create_task' && dtTs ? dtTs.toMillis() : undefined,
+                remindAtMs: kind === 'create_reminder' && dtTs ? dtTs.toMillis() : undefined,
+            },
+        };
+        return { single, bundle: null };
+    }
+    const limited = items.slice(0, 6);
+    const extraCount = Math.max(0, items.length - limited.length);
+    const tasks = limited.map((it) => ({
+        title: it.title,
+        origin: { fromText: it.originFromText },
+    }));
+    const bundleTitle = `Plan d’action — ${(_b = (_a = limited[0]) === null || _a === void 0 ? void 0 : _a.title) !== null && _b !== void 0 ? _b : 'Votre note'}`;
+    const tasksSig = sha256Hex(limited.map((t) => normalizeAssistantText(t.title)).join('|'));
+    const explanation = extraCount > 0 ? `Plan d’action détecté (+${extraCount} autres).` : `Plan d’action détecté.`;
+    const bundle = {
+        title: bundleTitle,
+        tasks,
+        bundleMode: 'multiple_tasks',
+        originFromText: (_d = (_c = limited[0]) === null || _c === void 0 ? void 0 : _c.originFromText) !== null && _d !== void 0 ? _d : clampFromText(rawText, 120),
+        explanation,
+        confidence: 0.8,
+        dedupeMinimal: {
+            title: bundleTitle,
+            tasksSig,
+        },
+    };
+    return { single: null, bundle };
+}
 function detectIntentsV1(params) {
     var _a, _b, _c;
     const { title, content, now } = params;
@@ -865,7 +993,7 @@ exports.assistantEnqueueNoteJob = functions.firestore
         tx.set(objectRef, objectPayload, { merge: true });
         const jobPayload = {
             objectId,
-            jobType: 'analyze_intents_v1',
+            jobType: 'analyze_intents_v2',
             pipelineVersion: 1,
             status: 'queued',
             attempts: 0,
@@ -969,7 +1097,7 @@ exports.assistantRunJobQueue = functions.pubsub
             });
             const metricsRef = assistantMetricsRef(db, userId);
             let processedTextHash = typeof (claimed === null || claimed === void 0 ? void 0 : claimed.pendingTextHash) === 'string' ? String(claimed.pendingTextHash) : null;
-            if (claimed.jobType === 'analyze_intents_v1') {
+            if (claimed.jobType === 'analyze_intents_v1' || claimed.jobType === 'analyze_intents_v2') {
                 const objectSnap = await objectRef.get();
                 const objectData = objectSnap.exists ? objectSnap.data() : null;
                 const coreRef = objectData === null || objectData === void 0 ? void 0 : objectData.coreRef;
@@ -983,14 +1111,43 @@ exports.assistantRunJobQueue = functions.pubsub
                         const noteContent = typeof (note === null || note === void 0 ? void 0 : note.content) === 'string' ? note.content : '';
                         const normalized = normalizeAssistantText(`${noteTitle}\n${noteContent}`);
                         processedTextHash = sha256Hex(normalized);
-                        const detected = detectIntentsV1({ title: noteTitle, content: noteContent, now: nowDate });
-                        if (detected.length > 0) {
+                        const v2 = detectIntentsV2({ title: noteTitle, content: noteContent, now: nowDate });
+                        const detectedSingle = v2.single ? [v2.single] : [];
+                        const detectedBundle = v2.bundle;
+                        if (detectedSingle.length > 0 || detectedBundle) {
                             const suggestionsCol = db.collection('users').doc(userId).collection('assistantSuggestions');
                             const expiresAt = admin.firestore.Timestamp.fromMillis(nowDate.getTime() + 14 * 24 * 60 * 60 * 1000);
                             const nowServer = admin.firestore.FieldValue.serverTimestamp();
-                            for (const d of detected) {
-                                const dedupeKey = buildSuggestionDedupeKey({ objectId, kind: d.kind, minimal: d.dedupeMinimal });
-                                const sugRef = suggestionsCol.doc(dedupeKey);
+                            const candidates = [];
+                            if (detectedBundle) {
+                                const dedupeKey = buildBundleDedupeKey({ objectId, minimal: detectedBundle.dedupeMinimal });
+                                const payload = {
+                                    title: detectedBundle.title,
+                                    tasks: detectedBundle.tasks,
+                                    bundleMode: detectedBundle.bundleMode,
+                                    noteId,
+                                    origin: { fromText: detectedBundle.originFromText },
+                                    confidence: detectedBundle.confidence,
+                                    explanation: detectedBundle.explanation,
+                                };
+                                candidates.push({
+                                    kind: 'create_task_bundle',
+                                    payload,
+                                    dedupeKey,
+                                    metricsInc: { bundlesCreated: 1 },
+                                });
+                            }
+                            else {
+                                for (const d of detectedSingle) {
+                                    const dedupeKey = buildSuggestionDedupeKey({ objectId, kind: d.kind, minimal: d.dedupeMinimal });
+                                    const payload = Object.assign(Object.assign(Object.assign({ title: d.title }, (d.dueDate ? { dueDate: d.dueDate } : {})), (d.remindAt ? { remindAt: d.remindAt } : {})), { origin: {
+                                            fromText: d.originFromText,
+                                        }, confidence: d.confidence, explanation: d.explanation });
+                                    candidates.push({ kind: d.kind, payload, dedupeKey, metricsInc: { suggestionsCreated: 1 } });
+                                }
+                            }
+                            for (const c of candidates) {
+                                const sugRef = suggestionsCol.doc(c.dedupeKey);
                                 await db.runTransaction(async (tx) => {
                                     var _a;
                                     const existing = await tx.get(sugRef);
@@ -998,40 +1155,34 @@ exports.assistantRunJobQueue = functions.pubsub
                                         const st = (_a = existing.data()) === null || _a === void 0 ? void 0 : _a.status;
                                         if (st === 'proposed' || st === 'accepted')
                                             return;
-                                        const payload = Object.assign(Object.assign(Object.assign({ title: d.title }, (d.dueDate ? { dueDate: d.dueDate } : {})), (d.remindAt ? { remindAt: d.remindAt } : {})), { origin: {
-                                                fromText: d.originFromText,
-                                            }, confidence: d.confidence, explanation: d.explanation });
                                         tx.update(sugRef, {
                                             objectId,
                                             source: { type: 'note', id: noteId },
-                                            kind: d.kind,
-                                            payload,
+                                            kind: c.kind,
+                                            payload: c.payload,
                                             status: 'proposed',
                                             pipelineVersion: 1,
-                                            dedupeKey,
+                                            dedupeKey: c.dedupeKey,
                                             updatedAt: nowServer,
                                             expiresAt,
                                         });
-                                        tx.set(metricsRef, metricsIncrements({ suggestionsCreated: 1 }), { merge: true });
+                                        tx.set(metricsRef, metricsIncrements(c.metricsInc), { merge: true });
                                         return;
                                     }
-                                    const payload = Object.assign(Object.assign(Object.assign({ title: d.title }, (d.dueDate ? { dueDate: d.dueDate } : {})), (d.remindAt ? { remindAt: d.remindAt } : {})), { origin: {
-                                            fromText: d.originFromText,
-                                        }, confidence: d.confidence, explanation: d.explanation });
                                     const doc = {
                                         objectId,
                                         source: { type: 'note', id: noteId },
-                                        kind: d.kind,
-                                        payload,
+                                        kind: c.kind,
+                                        payload: c.payload,
                                         status: 'proposed',
                                         pipelineVersion: 1,
-                                        dedupeKey,
+                                        dedupeKey: c.dedupeKey,
                                         createdAt: nowServer,
                                         updatedAt: nowServer,
                                         expiresAt,
                                     };
                                     tx.create(sugRef, doc);
-                                    tx.set(metricsRef, metricsIncrements({ suggestionsCreated: 1 }), { merge: true });
+                                    tx.set(metricsRef, metricsIncrements(c.metricsInc), { merge: true });
                                 });
                             }
                         }
@@ -1133,8 +1284,6 @@ exports.assistantApplySuggestion = functions.https.onCall(async (data, context) 
     const suggestionRef = userRef.collection('assistantSuggestions').doc(suggestionId);
     const decisionsCol = userRef.collection('assistantDecisions');
     const metricsRef = assistantMetricsRef(db, userId);
-    const taskRef = db.collection('tasks').doc();
-    const reminderRef = db.collection('taskReminders').doc();
     const decisionRef = decisionsCol.doc();
     const nowTs = admin.firestore.Timestamp.now();
     let decisionId = null;
@@ -1161,8 +1310,11 @@ exports.assistantApplySuggestion = functions.https.onCall(async (data, context) 
             throw new functions.https.HttpsError('invalid-argument', 'Invalid payload.title');
         }
         const kind = suggestion.kind;
-        if (kind !== 'create_task' && kind !== 'create_reminder') {
+        if (kind !== 'create_task' && kind !== 'create_reminder' && kind !== 'create_task_bundle') {
             throw new functions.https.HttpsError('invalid-argument', 'Unknown suggestion kind.');
+        }
+        if (kind === 'create_task_bundle' && overrides) {
+            throw new functions.https.HttpsError('failed-precondition', 'Overrides not supported for bundles.');
         }
         if (overrides) {
             const allowed = kind === 'create_task'
@@ -1263,52 +1415,97 @@ exports.assistantApplySuggestion = functions.https.onCall(async (data, context) 
         const isPro = userPlan === 'pro';
         const createdAt = admin.firestore.FieldValue.serverTimestamp();
         const updatedAt = admin.firestore.FieldValue.serverTimestamp();
-        const effectiveTaskDue = kind === 'create_reminder' ? finalRemindAt !== null && finalRemindAt !== void 0 ? finalRemindAt : finalDueDate : finalDueDate;
-        tx.create(taskRef, {
-            userId,
-            title: finalTitle,
-            status: 'todo',
-            workspaceId: null,
-            startDate: null,
-            dueDate: effectiveTaskDue,
-            priority: finalPriorityValue,
-            favorite: false,
-            archived: false,
-            source: {
-                assistant: true,
-                suggestionId,
-                objectId: suggestion.objectId,
-            },
-            createdAt,
-            updatedAt,
-        });
-        createdCoreObjects.push({ type: 'task', id: taskRef.id });
-        if (kind === 'create_reminder') {
+        if (kind === 'create_task_bundle') {
             if (!isPro) {
-                throw new functions.https.HttpsError('failed-precondition', 'Plan pro requis pour créer un rappel.');
+                throw new functions.https.HttpsError('failed-precondition', 'Plan pro requis pour accepter un plan d’action.');
             }
-            const remindAtIso = finalRemindAt.toDate().toISOString();
-            tx.create(reminderRef, {
+            const tasks = Array.isArray(payload === null || payload === void 0 ? void 0 : payload.tasks) ? payload.tasks : null;
+            if (!tasks || tasks.length < 2) {
+                throw new functions.https.HttpsError('invalid-argument', 'Invalid payload.tasks');
+            }
+            const tasksCol = db.collection('tasks');
+            const limited = tasks.slice(0, 6);
+            for (const t of limited) {
+                const tTitle = typeof (t === null || t === void 0 ? void 0 : t.title) === 'string' ? String(t.title).trim() : '';
+                if (!tTitle)
+                    continue;
+                const tDue = (t === null || t === void 0 ? void 0 : t.dueDate) instanceof admin.firestore.Timestamp ? t.dueDate : null;
+                const tPriority = (t === null || t === void 0 ? void 0 : t.priority) === 'low' || (t === null || t === void 0 ? void 0 : t.priority) === 'medium' || (t === null || t === void 0 ? void 0 : t.priority) === 'high' ? t.priority : null;
+                const taskRef = tasksCol.doc();
+                tx.create(taskRef, {
+                    userId,
+                    title: tTitle,
+                    status: 'todo',
+                    workspaceId: null,
+                    startDate: null,
+                    dueDate: tDue,
+                    priority: tPriority,
+                    favorite: false,
+                    archived: false,
+                    source: {
+                        assistant: true,
+                        suggestionId,
+                        objectId: suggestion.objectId,
+                    },
+                    createdAt,
+                    updatedAt,
+                });
+                createdCoreObjects.push({ type: 'task', id: taskRef.id });
+            }
+            if (createdCoreObjects.length < 2) {
+                throw new functions.https.HttpsError('failed-precondition', 'No valid tasks to create.');
+            }
+        }
+        else {
+            const effectiveTaskDue = kind === 'create_reminder' ? finalRemindAt !== null && finalRemindAt !== void 0 ? finalRemindAt : finalDueDate : finalDueDate;
+            const taskRef = db.collection('tasks').doc();
+            tx.create(taskRef, {
                 userId,
-                taskId: taskRef.id,
-                dueDate: remindAtIso,
-                reminderTime: remindAtIso,
-                sent: false,
-                createdAt,
-                updatedAt,
+                title: finalTitle,
+                status: 'todo',
+                workspaceId: null,
+                startDate: null,
+                dueDate: effectiveTaskDue,
+                priority: finalPriorityValue,
+                favorite: false,
+                archived: false,
                 source: {
                     assistant: true,
                     suggestionId,
                     objectId: suggestion.objectId,
                 },
+                createdAt,
+                updatedAt,
             });
-            createdCoreObjects.push({ type: 'taskReminder', id: reminderRef.id });
+            createdCoreObjects.push({ type: 'task', id: taskRef.id });
+            if (kind === 'create_reminder') {
+                if (!isPro) {
+                    throw new functions.https.HttpsError('failed-precondition', 'Plan pro requis pour créer un rappel.');
+                }
+                const remindAtIso = finalRemindAt.toDate().toISOString();
+                const reminderRef = db.collection('taskReminders').doc();
+                tx.create(reminderRef, {
+                    userId,
+                    taskId: taskRef.id,
+                    dueDate: remindAtIso,
+                    reminderTime: remindAtIso,
+                    sent: false,
+                    createdAt,
+                    updatedAt,
+                    source: {
+                        assistant: true,
+                        suggestionId,
+                        objectId: suggestion.objectId,
+                    },
+                });
+                createdCoreObjects.push({ type: 'taskReminder', id: reminderRef.id });
+            }
         }
         decisionId = decisionRef.id;
         const decisionDoc = {
             suggestionId,
             objectId: suggestion.objectId,
-            action: isEdited ? 'edited_then_accepted' : 'accepted',
+            action: kind === 'create_task_bundle' ? 'accepted' : isEdited ? 'edited_then_accepted' : 'accepted',
             createdCoreObjects: [...createdCoreObjects],
             beforePayload,
             finalPayload: finalPayload !== null && finalPayload !== void 0 ? finalPayload : undefined,
@@ -1317,12 +1514,19 @@ exports.assistantApplySuggestion = functions.https.onCall(async (data, context) 
             updatedAt,
         };
         tx.create(decisionRef, decisionDoc);
-        tx.set(metricsRef, metricsIncrements({
-            suggestionsAccepted: isEdited ? 0 : 1,
-            suggestionsEditedAccepted: isEdited ? 1 : 0,
-            decisionsCount: 1,
-            totalTimeToDecisionMs: timeToDecisionMs ? timeToDecisionMs : 0,
-        }), { merge: true });
+        tx.set(metricsRef, metricsIncrements(kind === 'create_task_bundle'
+            ? {
+                bundlesAccepted: 1,
+                tasksCreatedViaBundle: createdCoreObjects.filter((o) => o.type === 'task').length,
+                decisionsCount: 1,
+                totalTimeToDecisionMs: timeToDecisionMs ? timeToDecisionMs : 0,
+            }
+            : {
+                suggestionsAccepted: isEdited ? 0 : 1,
+                suggestionsEditedAccepted: isEdited ? 1 : 0,
+                decisionsCount: 1,
+                totalTimeToDecisionMs: timeToDecisionMs ? timeToDecisionMs : 0,
+            }), { merge: true });
         tx.update(suggestionRef, {
             status: 'accepted',
             updatedAt,
@@ -1482,7 +1686,7 @@ exports.assistantRequestReanalysis = functions.https.onCall(async (data, context
         tx.set(objectRef, objectPayload, { merge: true });
         const jobPayload = {
             objectId,
-            jobType: 'analyze_intents_v1',
+            jobType: 'analyze_intents_v2',
             pipelineVersion: 1,
             status: 'queued',
             attempts: 0,

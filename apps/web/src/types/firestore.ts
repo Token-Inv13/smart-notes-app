@@ -134,7 +134,46 @@ export interface TaskReminderDoc {
 
 export type AssistantSuggestionStatus = 'proposed' | 'accepted' | 'rejected' | 'expired';
 
-export type AssistantSuggestionKind = 'create_task' | 'create_reminder';
+export type AssistantSuggestionKind = 'create_task' | 'create_reminder' | 'create_task_bundle';
+
+export type AssistantTaskBundleMode = 'multiple_tasks';
+
+export type AssistantTaskBundleTask = {
+  title: string;
+  dueDate?: Timestamp;
+  remindAt?: Timestamp;
+  priority?: Priority;
+  labels?: string[];
+  origin?: {
+    fromText?: string;
+  };
+};
+
+export type AssistantSuggestionPayload =
+  | {
+      title: string;
+      details?: string;
+      dueDate?: Timestamp;
+      remindAt?: Timestamp;
+      priority?: Priority;
+      labels?: string[];
+      origin: {
+        fromText: string;
+      };
+      confidence: number;
+      explanation: string;
+    }
+  | {
+      title: string;
+      tasks: AssistantTaskBundleTask[];
+      bundleMode: AssistantTaskBundleMode;
+      noteId?: string;
+      origin: {
+        fromText: string;
+      };
+      confidence: number;
+      explanation: string;
+    };
 
 export interface AssistantSuggestionDoc {
   id?: string;
@@ -144,19 +183,7 @@ export interface AssistantSuggestionDoc {
     id: string;
   };
   kind: AssistantSuggestionKind;
-  payload: {
-    title: string;
-    details?: string;
-    dueDate?: Timestamp;
-    remindAt?: Timestamp;
-    priority?: Priority;
-    labels?: string[];
-    origin: {
-      fromText: string;
-    };
-    confidence: number;
-    explanation: string;
-  };
+  payload: AssistantSuggestionPayload;
   status: AssistantSuggestionStatus;
   pipelineVersion: 1;
   dedupeKey: string;
