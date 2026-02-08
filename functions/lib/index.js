@@ -1,10 +1,41 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.testSendReminderEmail = exports.cleanupOldReminders = exports.checkAndSendReminders = void 0;
+exports.assistantRunJobQueue = exports.assistantEnqueueNoteJob = exports.testSendReminderEmail = exports.cleanupOldReminders = exports.checkAndSendReminders = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
+const crypto_1 = require("crypto");
 admin.initializeApp();
+function normalizeAssistantText(raw) {
+    const s = typeof raw === 'string' ? raw : '';
+    try {
+        return s
+            .toLowerCase()
+            .normalize('NFKD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+    catch (_a) {
+        return s.toLowerCase().replace(/\s+/g, ' ').trim();
+    }
+}
+function sha256Hex(input) {
+    return (0, crypto_1.createHash)('sha256').update(input).digest('hex');
+}
+function assistantObjectIdForNote(noteId) {
+    return `note_${noteId}`;
+}
+async function isAssistantEnabledForUser(db, userId) {
+    var _a;
+    const snap = await db
+        .collection('users')
+        .doc(userId)
+        .collection('assistantSettings')
+        .doc('main')
+        .get();
+    return snap.exists && ((_a = snap.data()) === null || _a === void 0 ? void 0 : _a.enabled) === true;
+}
 function getSmtpEnv() {
     var _a, _b, _c, _d, _e, _f;
     const cfg = functions.config();
@@ -466,5 +497,190 @@ exports.testSendReminderEmail = functions.https.onRequest(async (req, res) => {
             error: e instanceof Error ? e.message : 'Unknown error',
         });
     }
+});
+exports.assistantEnqueueNoteJob = functions.firestore
+    .document('notes/{noteId}')
+    .onWrite(async (change, context) => {
+    const after = change.after.exists ? change.after.data() : null;
+    if (!after)
+        return;
+    const noteId = typeof context.params.noteId === 'string' ? context.params.noteId : null;
+    if (!noteId)
+        return;
+    const userId = typeof after.userId === 'string' ? after.userId : null;
+    if (!userId)
+        return;
+    const db = admin.firestore();
+    const enabled = await isAssistantEnabledForUser(db, userId);
+    if (!enabled)
+        return;
+    const title = typeof after.title === 'string' ? after.title : '';
+    const content = typeof after.content === 'string' ? after.content : '';
+    const normalized = normalizeAssistantText(`${title}\n${content}`);
+    const textHash = sha256Hex(normalized);
+    const objectId = assistantObjectIdForNote(noteId);
+    const userRef = db.collection('users').doc(userId);
+    const objectRef = userRef.collection('assistantObjects').doc(objectId);
+    const jobsCol = userRef.collection('assistantJobs');
+    await db.runTransaction(async (tx) => {
+        var _a;
+        const objectSnap = await tx.get(objectRef);
+        const prevHash = objectSnap.exists ? (_a = objectSnap.data()) === null || _a === void 0 ? void 0 : _a.textHash : null;
+        if (typeof prevHash === 'string' && prevHash === textHash) {
+            return;
+        }
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        const objectPayload = {
+            objectId,
+            type: 'note',
+            coreRef: { collection: 'notes', id: noteId },
+            textHash,
+            pipelineVersion: 1,
+            status: 'queued',
+            updatedAt: now,
+        };
+        if (!objectSnap.exists) {
+            objectPayload.createdAt = now;
+            objectPayload.lastAnalyzedAt = null;
+        }
+        tx.set(objectRef, objectPayload, { merge: true });
+        const jobRef = jobsCol.doc();
+        const jobPayload = {
+            objectId,
+            jobType: 'analyze_intents_v1',
+            pipelineVersion: 1,
+            status: 'queued',
+            attempts: 0,
+            lockedUntil: admin.firestore.Timestamp.fromMillis(0),
+            createdAt: now,
+            updatedAt: now,
+        };
+        tx.create(jobRef, jobPayload);
+    });
+});
+const ASSISTANT_JOB_LOCK_MS = 2 * 60 * 1000;
+const ASSISTANT_JOB_MAX_ATTEMPTS = 3;
+async function claimAssistantJob(params) {
+    const { db, ref, now } = params;
+    return await db.runTransaction(async (tx) => {
+        var _a;
+        const snap = await tx.get(ref);
+        if (!snap.exists)
+            return null;
+        const data = snap.data();
+        const status = data === null || data === void 0 ? void 0 : data.status;
+        if (status !== 'queued')
+            return null;
+        const attempts = typeof (data === null || data === void 0 ? void 0 : data.attempts) === 'number' ? data.attempts : 0;
+        if (attempts >= ASSISTANT_JOB_MAX_ATTEMPTS) {
+            tx.update(ref, {
+                status: 'error',
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            return null;
+        }
+        const lockedUntil = (_a = data === null || data === void 0 ? void 0 : data.lockedUntil) !== null && _a !== void 0 ? _a : null;
+        if (lockedUntil && lockedUntil.toMillis() > now.toMillis())
+            return null;
+        const nextLocked = admin.firestore.Timestamp.fromMillis(now.toMillis() + ASSISTANT_JOB_LOCK_MS);
+        tx.update(ref, {
+            status: 'processing',
+            attempts: attempts + 1,
+            lockedUntil: nextLocked,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return snap.data();
+    });
+}
+exports.assistantRunJobQueue = functions.pubsub
+    .schedule('every 2 minutes')
+    .onRun(async (context) => {
+    const db = admin.firestore();
+    const nowDate = new Date();
+    const nowTs = admin.firestore.Timestamp.fromDate(nowDate);
+    const snap = await db
+        .collectionGroup('assistantJobs')
+        .where('status', '==', 'queued')
+        .where('lockedUntil', '<=', nowTs)
+        .orderBy('lockedUntil', 'asc')
+        .limit(25)
+        .get();
+    if (snap.empty) {
+        console.log('assistantRunJobQueue: no queued jobs');
+        return;
+    }
+    console.log(`assistantRunJobQueue: queued=${snap.size}`);
+    const tasks = snap.docs.map(async (jobDoc) => {
+        const userRef = jobDoc.ref.parent.parent;
+        const userId = userRef === null || userRef === void 0 ? void 0 : userRef.id;
+        if (!userId)
+            return;
+        const enabled = await isAssistantEnabledForUser(db, userId);
+        if (!enabled)
+            return;
+        const claimed = await claimAssistantJob({ db, ref: jobDoc.ref, now: nowTs });
+        if (!claimed)
+            return;
+        const objectId = typeof claimed.objectId === 'string' ? claimed.objectId : null;
+        if (!objectId)
+            return;
+        const objectRef = db.collection('users').doc(userId).collection('assistantObjects').doc(objectId);
+        try {
+            await objectRef.set({
+                status: 'processing',
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }, { merge: true });
+        }
+        catch (_a) {
+            // ignore
+        }
+        try {
+            console.log('assistant job processing', {
+                userId,
+                jobId: jobDoc.id,
+                objectId,
+                jobType: claimed.jobType,
+                pipelineVersion: claimed.pipelineVersion,
+            });
+            await jobDoc.ref.update({
+                status: 'done',
+                lockedUntil: admin.firestore.Timestamp.fromMillis(0),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            await objectRef.set({
+                status: 'done',
+                lastAnalyzedAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }, { merge: true });
+        }
+        catch (e) {
+            console.error('assistant job failed', {
+                userId,
+                jobId: jobDoc.id,
+                error: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : e,
+            });
+            try {
+                await jobDoc.ref.update({
+                    status: 'error',
+                    lockedUntil: admin.firestore.Timestamp.fromMillis(0),
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+            }
+            catch (_b) {
+                // ignore
+            }
+            try {
+                const objectRef = db.collection('users').doc(userId).collection('assistantObjects').doc(objectId);
+                await objectRef.set({
+                    status: 'error',
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                }, { merge: true });
+            }
+            catch (_c) {
+                // ignore
+            }
+        }
+    });
+    await Promise.all(tasks);
 });
 //# sourceMappingURL=index.js.map
