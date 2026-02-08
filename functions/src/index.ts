@@ -106,6 +106,7 @@ type AssistantSuggestionPayload =
       tasks: AssistantTaskBundleTask[];
       bundleMode: AssistantTaskBundleMode;
       noteId?: string;
+      selectedIndexes?: number[];
       origin: {
         fromText: string;
       };
@@ -171,7 +172,10 @@ type AssistantMetricsDoc = {
   suggestionsRejected?: number;
   suggestionsEditedAccepted?: number;
   bundlesAccepted?: number;
+  bundlesEditedAccepted?: number;
   tasksCreatedViaBundle?: number;
+  bundleItemsCreated?: number;
+  bundleItemsDeselected?: number;
   reanalysisRequested?: number;
   decisionsCount?: number;
   totalTimeToDecisionMs?: number;
@@ -1727,11 +1731,9 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
       throw new functions.https.HttpsError('invalid-argument', 'Unknown suggestion kind.');
     }
 
-    if (kind === 'create_task_bundle' && overrides) {
-      throw new functions.https.HttpsError('failed-precondition', 'Overrides not supported for bundles.');
-    }
+    const overridesRaw = overrides && typeof overrides === 'object' ? (overrides as Record<string, unknown>) : null;
 
-    if (overrides) {
+    if (overrides && kind !== 'create_task_bundle') {
       const allowed =
         kind === 'create_task'
           ? new Set(['title', 'dueDate', 'priority'])
@@ -1853,25 +1855,94 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
         throw new functions.https.HttpsError('invalid-argument', 'Invalid payload.tasks');
       }
 
-      const tasksCol = db.collection('tasks');
-      const limited = tasks.slice(0, 6);
-      for (const t of limited) {
-        const tTitle = typeof t?.title === 'string' ? String(t.title).trim() : '';
-        if (!tTitle) continue;
+      const limitedOriginal = tasks.slice(0, 6);
+      const originalCount = limitedOriginal.length;
 
-        const tDue = t?.dueDate instanceof admin.firestore.Timestamp ? (t.dueDate as admin.firestore.Timestamp) : null;
-        const tPriority: 'low' | 'medium' | 'high' | null =
+      const selectedIndexesRaw = overridesRaw && Array.isArray((overridesRaw as any).selectedIndexes) ? ((overridesRaw as any).selectedIndexes as unknown[]) : null;
+      const selectedIndexes = (selectedIndexesRaw ?? limitedOriginal.map((_, idx) => idx))
+        .map((v) => (typeof v === 'number' && Number.isFinite(v) ? Math.trunc(v) : NaN))
+        .filter((v) => Number.isFinite(v));
+
+      const selectedUnique: number[] = [];
+      const selectedSet = new Set<number>();
+      for (const i of selectedIndexes) {
+        if (i < 0 || i >= originalCount) {
+          throw new functions.https.HttpsError('invalid-argument', 'Invalid selectedIndexes.');
+        }
+        if (selectedSet.has(i)) continue;
+        selectedSet.add(i);
+        selectedUnique.push(i);
+      }
+
+      if (selectedUnique.length === 0) {
+        throw new functions.https.HttpsError('failed-precondition', 'At least one item must be selected.');
+      }
+
+      const tasksOverridesRaw = overridesRaw && typeof (overridesRaw as any).tasksOverrides === 'object' && (overridesRaw as any).tasksOverrides ? ((overridesRaw as any).tasksOverrides as Record<string, any>) : null;
+      if (tasksOverridesRaw) {
+        for (const k of Object.keys(tasksOverridesRaw)) {
+          const idx = Number(k);
+          if (!Number.isFinite(idx) || Math.trunc(idx) !== idx || idx < 0 || idx >= originalCount) {
+            throw new functions.https.HttpsError('invalid-argument', 'Invalid tasksOverrides index.');
+          }
+        }
+      }
+
+      const tasksCol = db.collection('tasks');
+      const reminderCol = db.collection('taskReminders');
+
+      const finalTasks: AssistantTaskBundleTask[] = [];
+      let anyEdit = selectedUnique.length !== originalCount;
+
+      for (const i of selectedUnique) {
+        const t = limitedOriginal[i];
+        const baseTaskTitle = typeof t?.title === 'string' ? String(t.title).trim() : '';
+        const baseTaskDue = t?.dueDate instanceof admin.firestore.Timestamp ? (t.dueDate as admin.firestore.Timestamp) : null;
+        const baseTaskRemind = t?.remindAt instanceof admin.firestore.Timestamp ? (t.remindAt as admin.firestore.Timestamp) : null;
+        const baseTaskPriority: 'low' | 'medium' | 'high' | null =
           t?.priority === 'low' || t?.priority === 'medium' || t?.priority === 'high' ? (t.priority as any) : null;
+        const baseTaskOrigin = t?.origin && typeof t?.origin === 'object' ? t.origin : undefined;
+
+        const o = tasksOverridesRaw ? tasksOverridesRaw[String(i)] : null;
+        const nextTitleRaw = typeof o?.title === 'string' ? String(o.title).trim() : null;
+        const nextTitle = nextTitleRaw !== null ? nextTitleRaw : baseTaskTitle;
+        if (!nextTitle) {
+          throw new functions.https.HttpsError('invalid-argument', 'Task title cannot be empty.');
+        }
+
+        const overrideDue = o && Object.prototype.hasOwnProperty.call(o, 'dueDate') ? parseOverrideTimestamp(o.dueDate) : undefined;
+        const overrideRemind = o && Object.prototype.hasOwnProperty.call(o, 'remindAt') ? parseOverrideTimestamp(o.remindAt) : undefined;
+        const nextDue = typeof overrideDue === 'undefined' ? baseTaskDue : overrideDue;
+        const nextRemind = typeof overrideRemind === 'undefined' ? baseTaskRemind : overrideRemind;
+
+        const nextPriorityRaw = o?.priority;
+        const nextPriority: 'low' | 'medium' | 'high' | null =
+          typeof nextPriorityRaw === 'undefined'
+            ? baseTaskPriority
+            : nextPriorityRaw === null
+              ? null
+              : nextPriorityRaw === 'low' || nextPriorityRaw === 'medium' || nextPriorityRaw === 'high'
+                ? (nextPriorityRaw as any)
+                : null;
+        if (typeof nextPriorityRaw !== 'undefined' && nextPriorityRaw !== null && nextPriority === null) {
+          throw new functions.https.HttpsError('invalid-argument', 'Invalid task priority.');
+        }
+
+        if (nextTitle !== baseTaskTitle) anyEdit = true;
+        if ((nextDue?.toMillis?.() ?? null) !== (baseTaskDue?.toMillis?.() ?? null)) anyEdit = true;
+        if ((nextRemind?.toMillis?.() ?? null) !== (baseTaskRemind?.toMillis?.() ?? null)) anyEdit = true;
+        if (nextPriority !== baseTaskPriority) anyEdit = true;
 
         const taskRef = tasksCol.doc();
+        const effectiveDue = nextRemind ?? nextDue;
         tx.create(taskRef, {
           userId,
-          title: tTitle,
+          title: nextTitle,
           status: 'todo',
           workspaceId: null,
           startDate: null,
-          dueDate: tDue,
-          priority: tPriority,
+          dueDate: effectiveDue,
+          priority: nextPriority,
           favorite: false,
           archived: false,
           source: {
@@ -1882,13 +1953,83 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
           createdAt,
           updatedAt,
         });
-
         createdCoreObjects.push({ type: 'task', id: taskRef.id });
+
+        if (nextRemind) {
+          const remindAtIso = nextRemind.toDate().toISOString();
+          const reminderRef = reminderCol.doc();
+          tx.create(reminderRef, {
+            userId,
+            taskId: taskRef.id,
+            dueDate: remindAtIso,
+            reminderTime: remindAtIso,
+            sent: false,
+            createdAt,
+            updatedAt,
+            source: {
+              assistant: true,
+              suggestionId,
+              objectId: suggestion.objectId,
+            },
+          });
+          createdCoreObjects.push({ type: 'taskReminder', id: reminderRef.id });
+        }
+
+        finalTasks.push({
+          title: nextTitle,
+          ...(nextDue ? { dueDate: nextDue } : {}),
+          ...(nextRemind ? { remindAt: nextRemind } : {}),
+          ...(nextPriority ? { priority: nextPriority } : {}),
+          ...(baseTaskOrigin ? { origin: baseTaskOrigin } : {}),
+        });
       }
 
       if (createdCoreObjects.length < 2) {
         throw new functions.https.HttpsError('failed-precondition', 'No valid tasks to create.');
       }
+
+      const beforePayload = suggestion.payload as AssistantSuggestionDoc['payload'];
+      const finalPayload: AssistantSuggestionDoc['payload'] = {
+        ...(beforePayload as any),
+        tasks: finalTasks,
+        selectedIndexes: selectedUnique,
+      };
+
+      decisionId = decisionRef.id;
+      const decisionDoc: AssistantDecisionDoc = {
+        suggestionId,
+        objectId: suggestion.objectId,
+        action: anyEdit ? 'edited_then_accepted' : 'accepted',
+        createdCoreObjects: [...createdCoreObjects],
+        beforePayload,
+        finalPayload,
+        pipelineVersion: 1,
+        createdAt,
+        updatedAt,
+      };
+      tx.create(decisionRef, decisionDoc);
+
+      const itemsDeselected = originalCount - selectedUnique.length;
+      tx.set(
+        metricsRef,
+        metricsIncrements({
+          bundlesAccepted: anyEdit ? 0 : 1,
+          bundlesEditedAccepted: anyEdit ? 1 : 0,
+          tasksCreatedViaBundle: finalTasks.length,
+          bundleItemsCreated: finalTasks.length,
+          bundleItemsDeselected: itemsDeselected,
+          decisionsCount: 1,
+          totalTimeToDecisionMs: timeToDecisionMs ? timeToDecisionMs : 0,
+        }),
+        { merge: true },
+      );
+
+      tx.update(suggestionRef, {
+        status: 'accepted',
+        updatedAt,
+      });
+
+      return;
     } else {
       const effectiveTaskDue = kind === 'create_reminder' ? finalRemindAt ?? finalDueDate : finalDueDate;
       const taskRef = db.collection('tasks').doc();
@@ -1945,7 +2086,7 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
     const decisionDoc: AssistantDecisionDoc = {
       suggestionId,
       objectId: suggestion.objectId,
-      action: kind === 'create_task_bundle' ? 'accepted' : isEdited ? 'edited_then_accepted' : 'accepted',
+      action: isEdited ? 'edited_then_accepted' : 'accepted',
       createdCoreObjects: [...createdCoreObjects],
       beforePayload,
       finalPayload: finalPayload ?? undefined,
@@ -1959,19 +2100,12 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
     tx.set(
       metricsRef,
       metricsIncrements(
-        kind === 'create_task_bundle'
-          ? {
-              bundlesAccepted: 1,
-              tasksCreatedViaBundle: createdCoreObjects.filter((o) => o.type === 'task').length,
-              decisionsCount: 1,
-              totalTimeToDecisionMs: timeToDecisionMs ? timeToDecisionMs : 0,
-            }
-          : {
-              suggestionsAccepted: isEdited ? 0 : 1,
-              suggestionsEditedAccepted: isEdited ? 1 : 0,
-              decisionsCount: 1,
-              totalTimeToDecisionMs: timeToDecisionMs ? timeToDecisionMs : 0,
-            },
+        {
+          suggestionsAccepted: isEdited ? 0 : 1,
+          suggestionsEditedAccepted: isEdited ? 1 : 0,
+          decisionsCount: 1,
+          totalTimeToDecisionMs: timeToDecisionMs ? timeToDecisionMs : 0,
+        },
       ),
       { merge: true },
     );

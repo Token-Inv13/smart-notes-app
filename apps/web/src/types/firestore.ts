@@ -168,6 +168,7 @@ export type AssistantSuggestionPayload =
       tasks: AssistantTaskBundleTask[];
       bundleMode: AssistantTaskBundleMode;
       noteId?: string;
+      selectedIndexes?: number[];
       origin: {
         fromText: string;
       };
