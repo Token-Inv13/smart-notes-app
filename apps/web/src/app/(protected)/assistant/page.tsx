@@ -29,6 +29,7 @@ export default function AssistantPage() {
   const [showAllStatuses, setShowAllStatuses] = useState(false);
 
   const enabled = assistantSettings?.enabled === true;
+  const isPro = assistantSettings?.plan === "pro";
 
   const plan = useMemo(() => {
     const raw = userSettings?.plan;
@@ -110,6 +111,11 @@ export default function AssistantPage() {
     if (!suggestionId) return;
     if (busySuggestionId) return;
 
+    if (s.kind === "create_task_bundle" && !isPro) {
+      setActionError("Plan Pro requis pour accepter ce plan d’action.");
+      return;
+    }
+
     setBusySuggestionId(suggestionId);
     setActionMessage(null);
     setActionError(null);
@@ -176,6 +182,8 @@ export default function AssistantPage() {
     if (showAllStatuses) return sorted;
     return sorted.filter((s) => s.status === "proposed");
   }, [sorted, showAllStatuses]);
+
+  const [expandedBundleId, setExpandedBundleId] = useState<string | null>(null);
 
   if (assistantError) {
     return <div className="sn-alert sn-alert--error">Impossible de charger l’assistant.</div>;
@@ -250,8 +258,13 @@ export default function AssistantPage() {
             const isBusy = !!suggestionId && busySuggestionId === suggestionId;
             const proposed = s.status === "proposed";
 
-            const dueLabel = s.payload?.dueDate ? formatTs(s.payload.dueDate) : "";
-            const remindLabel = s.payload?.remindAt ? formatTs(s.payload.remindAt) : "";
+            const isBundle = s.kind === "create_task_bundle";
+            const payload = s.payload;
+            const bundleTasks = isBundle && "tasks" in payload ? payload.tasks : [];
+            const isExpanded = !!suggestionId && expandedBundleId === suggestionId;
+
+            const dueLabel = s.kind === "create_task" && "dueDate" in payload && payload.dueDate ? formatTs(payload.dueDate) : "";
+            const remindLabel = s.kind === "create_reminder" && "remindAt" in payload && payload.remindAt ? formatTs(payload.remindAt) : "";
 
             return (
               <div key={suggestionId ?? s.dedupeKey} className="border border-border rounded-md p-3 space-y-2">
@@ -262,8 +275,37 @@ export default function AssistantPage() {
                     {s.payload?.origin?.fromText ? (
                       <div className="text-xs text-muted-foreground">Extrait: “{s.payload.origin.fromText}”</div>
                     ) : null}
-                    {dueLabel ? <div className="text-xs text-muted-foreground">Échéance: {dueLabel}</div> : null}
-                    {remindLabel ? <div className="text-xs text-muted-foreground">Rappel: {remindLabel}</div> : null}
+                    {!isBundle && dueLabel ? <div className="text-xs text-muted-foreground">Échéance: {dueLabel}</div> : null}
+                    {!isBundle && remindLabel ? <div className="text-xs text-muted-foreground">Rappel: {remindLabel}</div> : null}
+                    {isBundle ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-xs text-muted-foreground">{bundleTasks.length} tâche(s)</div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!suggestionId) return;
+                              setExpandedBundleId((prev) => (prev === suggestionId ? null : suggestionId));
+                            }}
+                            className="px-2 py-1 rounded-md border border-input text-xs"
+                          >
+                            {isExpanded ? "Réduire" : "Voir"}
+                          </button>
+                        </div>
+                        {isExpanded ? (
+                          <div className="text-sm">
+                            <ol className="list-decimal pl-5 space-y-1">
+                              {bundleTasks.slice(0, 6).map((t, idx) => (
+                                <li key={`${suggestionId ?? "bundle"}_${idx}`}>{t.title}</li>
+                              ))}
+                            </ol>
+                            {!isPro ? (
+                              <div className="mt-2 text-xs text-muted-foreground">Disponible avec le plan Pro.</div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <div className="text-xs text-muted-foreground">Statut: {s.status}</div>
                   </div>
 
@@ -274,7 +316,7 @@ export default function AssistantPage() {
                       disabled={!proposed || isBusy}
                       className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
                     >
-                      {isBusy && proposed ? "Traitement…" : "Accepter"}
+                      {isBusy && proposed ? "Traitement…" : isBundle ? "Accepter le plan" : "Accepter"}
                     </button>
                     <button
                       type="button"

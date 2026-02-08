@@ -24,6 +24,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
     refetch: refetchAssistant,
   } = useAssistantSettings();
   const enabled = assistantSettings?.enabled === true;
+  const isPro = assistantSettings?.plan === "pro";
 
   const [showExpired, setShowExpired] = useState(false);
 
@@ -45,6 +46,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
   const [editDate, setEditDate] = useState<string>("");
   const [editPriority, setEditPriority] = useState<"" | Priority>("");
   const [editError, setEditError] = useState<string | null>(null);
+  const [expandedBundleSuggestionId, setExpandedBundleSuggestionId] = useState<string | null>(null);
 
   const sorted = useMemo(() => {
     const arr = (suggestions ?? []).slice();
@@ -167,15 +169,17 @@ export default function AssistantNotePanel({ noteId }: Props) {
   };
 
   const openEdit = (s: AssistantSuggestionDoc) => {
+    if (s.kind === "create_task_bundle") return;
     setEditing(s);
     setEditError(null);
-    setEditTitle(s.payload?.title ?? "");
+    const payload = s.payload;
+    setEditTitle(payload?.title ?? "");
     if (s.kind === "create_task") {
-      setEditDate(formatTimestampForInput(s.payload?.dueDate ?? null));
+      setEditDate("dueDate" in payload ? formatTimestampForInput(payload.dueDate ?? null) : "");
     } else {
-      setEditDate(formatTimestampForInput(s.payload?.remindAt ?? null));
+      setEditDate("remindAt" in payload ? formatTimestampForInput(payload.remindAt ?? null) : "");
     }
-    const p = s.payload?.priority;
+    const p = "priority" in payload ? payload.priority : undefined;
     setEditPriority(p === "low" || p === "medium" || p === "high" ? p : "");
   };
 
@@ -212,7 +216,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
       overrides.remindAt = dt ? dt.toMillis() : null;
     }
 
-    if (typeof editing.payload?.priority !== "undefined") {
+    if ("priority" in editing.payload) {
       overrides.priority = editPriority ? editPriority : null;
     }
 
@@ -335,9 +339,27 @@ export default function AssistantNotePanel({ noteId }: Props) {
             const suggestionId = s.id ?? s.dedupeKey;
             const isBusy = !!suggestionId && busySuggestionId === suggestionId;
 
-            const dueLabel = s.kind === "create_task" ? formatTs(s.payload?.dueDate ?? null) : "";
-            const remindLabel = s.kind === "create_reminder" ? formatTs(s.payload?.remindAt ?? null) : "";
+            const isBundle = s.kind === "create_task_bundle";
+            const payload = s.payload;
+            const dueLabel = s.kind === "create_task" && "dueDate" in payload ? formatTs(payload.dueDate ?? null) : "";
+            const remindLabel = s.kind === "create_reminder" && "remindAt" in payload ? formatTs(payload.remindAt ?? null) : "";
             const expired = s.status === "expired";
+
+            const bundleTasks = isBundle && "tasks" in payload ? payload.tasks : [];
+            const isBundleExpanded = expandedBundleSuggestionId === (suggestionId ?? null);
+
+            const handleAcceptClick = () => {
+              if (isBundle && !isPro) {
+                setActionError("Plan Pro requis pour accepter ce plan d’action.");
+                return;
+              }
+              void handleAccept(s);
+            };
+
+            const handleToggleBundle = () => {
+              if (!suggestionId) return;
+              setExpandedBundleSuggestionId((prev) => (prev === suggestionId ? null : suggestionId));
+            };
 
             return (
               <div key={suggestionId ?? s.dedupeKey} className="border border-border rounded-md p-3 space-y-2">
@@ -350,18 +372,44 @@ export default function AssistantNotePanel({ noteId }: Props) {
                   {s.payload?.origin?.fromText ? (
                     <div className="text-xs text-muted-foreground">Extrait: “{s.payload.origin.fromText}”</div>
                   ) : null}
-                  {dueLabel ? <div className="text-xs text-muted-foreground">Échéance: {dueLabel}</div> : null}
-                  {remindLabel ? <div className="text-xs text-muted-foreground">Rappel: {remindLabel}</div> : null}
+                  {!isBundle && dueLabel ? <div className="text-xs text-muted-foreground">Échéance: {dueLabel}</div> : null}
+                  {!isBundle && remindLabel ? <div className="text-xs text-muted-foreground">Rappel: {remindLabel}</div> : null}
+                  {isBundle ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-xs text-muted-foreground">{bundleTasks.length} tâche(s)</div>
+                        <button
+                          type="button"
+                          onClick={handleToggleBundle}
+                          className="px-2 py-1 rounded-md border border-input text-xs"
+                        >
+                          {isBundleExpanded ? "Réduire" : "Voir"}
+                        </button>
+                      </div>
+                      {isBundleExpanded ? (
+                        <div className="text-sm">
+                          <ol className="list-decimal pl-5 space-y-1">
+                            {bundleTasks.slice(0, 6).map((t, idx) => (
+                              <li key={`${suggestionId ?? "bundle"}_${idx}`}>{typeof t?.title === "string" ? t.title : ""}</li>
+                            ))}
+                          </ol>
+                          {!isPro ? (
+                            <div className="mt-2 text-xs text-muted-foreground">Disponible avec le plan Pro.</div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => void handleAccept(s)}
+                    onClick={handleAcceptClick}
                     disabled={isBusy || expired}
                     className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
                   >
-                    {isBusy ? "Traitement…" : "Accepter"}
+                    {isBusy ? "Traitement…" : isBundle ? "Accepter le plan" : "Accepter"}
                   </button>
                   <button
                     type="button"
@@ -374,7 +422,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
                   <button
                     type="button"
                     onClick={() => openEdit(s)}
-                    disabled={isBusy || expired}
+                    disabled={isBusy || expired || isBundle}
                     className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
                   >
                     Modifier
@@ -420,7 +468,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
               </div>
             </div>
 
-            {typeof editing.payload?.priority !== "undefined" && (
+            {"priority" in editing.payload && (
               <div className="space-y-1">
                 <label className="text-sm font-medium" htmlFor="assistant-edit-priority">
                   Priorité
