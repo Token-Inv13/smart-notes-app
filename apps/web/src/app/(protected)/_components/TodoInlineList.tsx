@@ -1,13 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTodos } from "@/hooks/useUserTodos";
 import type { TodoDoc } from "@/types/firestore";
-import { TODO_CREATE_EVENT } from "./todoEvents";
-import TodoCreateForm from "./TodoCreateForm";
 
 interface TodoInlineListProps {
   workspaceId?: string;
@@ -22,8 +20,6 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [todoView, setTodoView] = useState<"active" | "completed">("active");
 
-  const [isCreating, setIsCreating] = useState(false);
-
   const activeTodos = useMemo(() => todos.filter((t) => t.completed !== true), [todos]);
   const completedTodos = useMemo(() => todos.filter((t) => t.completed === true), [todos]);
 
@@ -31,24 +27,9 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
     return todoView === "completed" ? completedTodos : activeTodos;
   }, [activeTodos, completedTodos, todoView]);
 
-  useEffect(() => {
-    const onCreate = () => {
-      setIsCreating(true);
-      setTodoView("active");
-    };
-
-    window.addEventListener(TODO_CREATE_EVENT, onCreate);
-    return () => window.removeEventListener(TODO_CREATE_EVENT, onCreate);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const sortedTodos = useMemo(() => {
     return visibleTodos.slice();
   }, [visibleTodos]);
-
-  const cancelCreate = () => {
-    setIsCreating(false);
-  };
 
   const toggleCompleted = async (todo: TodoDoc, nextCompleted: boolean) => {
     if (!todo.id) return;
@@ -123,7 +104,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
         </div>
       )}
 
-      {!loading && !error && sortedTodos.length === 0 && !isCreating && (
+      {!loading && !error && sortedTodos.length === 0 && (
         <div className="sn-empty">
           <div className="sn-empty-title">{todoView === "completed" ? "Aucune ToDo terminée" : "Aucune ToDo"}</div>
           <div className="sn-empty-desc">
@@ -150,24 +131,6 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
               Terminées ({completedTodos.length})
             </button>
           </div>
-
-          {isCreating && (
-            <div className="sn-card p-3">
-              <TodoCreateForm
-                initialWorkspaceId={workspaceId}
-                autoFocus
-                onCancel={cancelCreate}
-                onCreated={(todoId) => {
-                  cancelCreate();
-                  const qs = new URLSearchParams(searchParams.toString());
-                  if (workspaceId) qs.set("workspaceId", workspaceId);
-                  else qs.delete("workspaceId");
-                  const href = qs.toString();
-                  router.push(`/todo/${encodeURIComponent(todoId)}${href ? `?${href}` : ""}`);
-                }}
-              />
-            </div>
-          )}
 
           {sortedTodos.length > 0 && (
             <ul className="space-y-2">

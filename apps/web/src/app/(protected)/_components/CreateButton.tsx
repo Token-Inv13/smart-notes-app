@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
-import { dispatchCreateTodoEvent } from "./todoEvents";
 
 type CreateContext = "notes" | "tasks";
 
@@ -79,7 +78,11 @@ export default function CreateButton({ mobileHidden }: Props) {
     }
 
     if (pathname.startsWith("/todo")) {
-      dispatchCreateTodoEvent("create");
+      const workspaceId = searchParams.get("workspaceId");
+      const qs = new URLSearchParams();
+      if (workspaceId) qs.set("workspaceId", workspaceId);
+      const href = qs.toString();
+      router.push(href ? `/todo/new?${href}` : "/todo/new");
       return;
     }
 

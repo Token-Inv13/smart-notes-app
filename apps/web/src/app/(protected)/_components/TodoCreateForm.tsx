@@ -26,6 +26,7 @@ export default function TodoCreateForm({
   const [title, setTitle] = useState("");
   const [newItemText, setNewItemText] = useState("");
   const [itemsDraft, setItemsDraft] = useState<NonNullable<TodoDoc["items"]>>([]);
+  const [itemsOpen, setItemsOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -41,6 +42,10 @@ export default function TodoCreateForm({
     const t = window.setTimeout(() => inputRef.current?.focus(), 0);
     return () => window.clearTimeout(t);
   }, [autoFocus]);
+
+  useEffect(() => {
+    if (itemsDraft.length > 0) setItemsOpen(true);
+  }, [itemsDraft.length]);
 
   const canSubmit = useMemo(() => !!title.trim(), [title]);
 
@@ -111,90 +116,114 @@ export default function TodoCreateForm({
 
   return (
     <div className="space-y-3">
-      <input
-        ref={inputRef}
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="Nouvelle ToDo"
-        className="w-full bg-background text-foreground text-sm outline-none"
-        disabled={creating}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.preventDefault();
-            onCancel?.();
-          }
-          if (e.key === "Enter") {
-            e.preventDefault();
-            if (showActions) {
-              itemInputRef.current?.focus();
+      <div className="space-y-1">
+        <label className="text-sm font-medium" htmlFor="todo-title">
+          Titre
+        </label>
+        <input
+          id="todo-title"
+          ref={inputRef}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Ex: Préparer la semaine"
+          className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-base font-medium focus:outline-none focus:ring-2 focus:ring-primary"
+          disabled={creating}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              onCancel?.();
+            }
+            if (e.key === "Enter") {
+              e.preventDefault();
+              if (showActions) {
+                itemInputRef.current?.focus();
+                return;
+              }
+              void submit();
+            }
+          }}
+          onBlur={() => {
+            if (showActions) return;
+            if (!title.trim()) {
+              onCancel?.();
               return;
             }
             void submit();
-          }
-        }}
-        onBlur={() => {
-          if (showActions) return;
-          if (!title.trim()) {
-            onCancel?.();
-            return;
-          }
-          void submit();
-        }}
-      />
+          }}
+        />
+      </div>
 
       {showActions && (
-        <div className="space-y-2">
-          <div className="text-sm font-semibold">Sous-tâches / éléments</div>
-          <div className="flex items-center gap-2">
-            <input
-              ref={itemInputRef}
-              value={newItemText}
-              onChange={(e) => setNewItemText(e.target.value)}
-              placeholder="Ajouter un élément"
-              className="flex-1 bg-background text-foreground text-sm outline-none"
-              disabled={creating}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addDraftItem();
-                }
-              }}
-            />
-            <button
-              type="button"
-              onClick={addDraftItem}
-              disabled={creating || !canAddItem}
-              className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-            >
-              Ajouter
-            </button>
-          </div>
+        <details
+          className="rounded-md border border-border bg-card"
+          open={itemsOpen}
+          onToggle={(e) => setItemsOpen((e.currentTarget as HTMLDetailsElement).open)}
+        >
+          <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium">
+            Ajouter des sous-tâches
+            <span className="text-muted-foreground font-normal"> (optionnel)</span>
+            {itemsDraft.length > 0 ? <span className="text-muted-foreground font-normal"> · {itemsDraft.length}</span> : null}
+          </summary>
 
-          {itemsDraft.length > 0 && (
-            <div className="space-y-2">
-              {itemsDraft.map((it) => (
-                <div key={it.id} className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2">
-                  <div className="text-sm min-w-0 flex-1 truncate">{it.text}</div>
-                  <button
-                    type="button"
-                    onClick={() => removeDraftItem(it.id)}
-                    disabled={creating}
-                    className="sn-text-btn"
-                    aria-label="Supprimer l’élément"
-                  >
-                    Supprimer
-                  </button>
-                </div>
-              ))}
+          <div className="px-3 pb-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <input
+                ref={itemInputRef}
+                value={newItemText}
+                onChange={(e) => setNewItemText(e.target.value)}
+                placeholder="Ex: Appeler le client"
+                className="flex-1 px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                disabled={creating}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addDraftItem();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={addDraftItem}
+                disabled={creating || !canAddItem}
+                className="h-10 inline-flex items-center justify-center px-3 rounded-md border border-input text-sm disabled:opacity-50"
+              >
+                Ajouter
+              </button>
             </div>
-          )}
-        </div>
+
+            {itemsDraft.length > 0 && (
+              <div className="space-y-2">
+                {itemsDraft.map((it) => (
+                  <div
+                    key={it.id}
+                    className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2"
+                  >
+                    <div className="text-sm min-w-0 flex-1 truncate">{it.text}</div>
+                    <button
+                      type="button"
+                      onClick={() => removeDraftItem(it.id)}
+                      disabled={creating}
+                      className="sn-text-btn"
+                      aria-label="Supprimer l’élément"
+                    >
+                      Supprimer
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </details>
       )}
 
       {showActions && (
         <div className="flex justify-end gap-2">
           {onCancel && (
-            <button type="button" onClick={onCancel} className="px-3 py-2 rounded-md border border-input text-sm">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="h-10 inline-flex items-center justify-center px-4 rounded-md border border-input text-sm"
+            >
               Annuler
             </button>
           )}
@@ -202,7 +231,7 @@ export default function TodoCreateForm({
             type="button"
             onClick={() => void submit()}
             disabled={creating || !canSubmit}
-            className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
+            className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {creating ? "Création…" : "Créer"}
           </button>

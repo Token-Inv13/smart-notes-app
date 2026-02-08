@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import TodoInlineList from "../_components/TodoInlineList";
-import { dispatchCreateTodoEvent } from "../_components/todoEvents";
 import { useUserNotes } from "@/hooks/useUserNotes";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserTodos } from "@/hooks/useUserTodos";
@@ -13,7 +12,6 @@ export default function TodoPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId") || undefined;
-  const createParam = searchParams.get("create");
 
   const tabsTouchStartRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -85,18 +83,6 @@ export default function TodoPage() {
       </div>
     </div>
   );
-
-  useEffect(() => {
-    if (createParam !== "1") return;
-
-    const nextHref = workspaceId ? `/todo?workspaceId=${encodeURIComponent(workspaceId)}` : "/todo";
-    const t = window.setTimeout(() => {
-      dispatchCreateTodoEvent();
-      router.replace(nextHref);
-    }, 0);
-
-    return () => window.clearTimeout(t);
-  }, [createParam, router, workspaceId]);
 
   return (
     <div className="space-y-4">
