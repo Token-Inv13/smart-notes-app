@@ -12,6 +12,7 @@ import { sanitizeNoteHtml } from "@/lib/richText";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import type { NoteAttachment, NoteDoc } from "@/types/firestore";
+import AssistantNotePanel from "@/app/(protected)/_components/AssistantNotePanel";
 import Modal from "../../../Modal";
 import ItemActionsMenu from "../../../ItemActionsMenu";
 import RichTextEditor from "../../../_components/RichTextEditor";
@@ -1079,6 +1080,8 @@ export default function NoteDetailModal(props: any) {
                   </div>
                 )}
               </div>
+
+              <AssistantNotePanel noteId={note.id} />
             </div>
           </div>
         );

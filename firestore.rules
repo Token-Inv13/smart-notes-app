@@ -65,6 +65,26 @@ service cloud.firestore {
           'fcmTokens',
           'updatedAt'
         ]);
+
+      // Assistant namespace (user-scoped)
+      match /assistantSettings/{docId} {
+        allow read, write: if isAuthenticated() && isOwner(userId);
+      }
+      match /assistantObjects/{docId} {
+        allow read, write: if isAuthenticated() && isOwner(userId);
+      }
+      match /assistantJobs/{docId} {
+        allow read, write: if isAuthenticated() && isOwner(userId);
+      }
+      match /assistantSuggestions/{docId} {
+        allow read, write: if isAuthenticated() && isOwner(userId);
+      }
+      match /assistantDecisions/{docId} {
+        allow read, write: if isAuthenticated() && isOwner(userId);
+      }
+      match /assistantEvents/{docId} {
+        allow read, write: if isAuthenticated() && isOwner(userId);
+      }
     }
     
     // Notes collection

@@ -31,6 +31,16 @@ export interface UserDoc {
   [key: string]: unknown;
 }
 
+export interface AssistantSettingsDoc {
+  enabled?: boolean;
+  plan?: string;
+  autoAnalyze?: boolean;
+  consentVersion?: number;
+  createdAt?: Timestamp | FieldValue;
+  updatedAt?: Timestamp | FieldValue;
+  [key: string]: unknown;
+}
+
 export interface NoteDoc {
   id?: string;
   userId: string;

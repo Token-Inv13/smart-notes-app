@@ -6,6 +6,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import type { NoteDoc } from "@/types/firestore";
 import { sanitizeNoteHtml } from "@/lib/richText";
+import AssistantNotePanel from "@/app/(protected)/_components/AssistantNotePanel";
 
 function formatFrDateTime(ts?: NoteDoc["updatedAt"] | NoteDoc["createdAt"] | null) {
   if (!ts) return "—";
@@ -117,32 +118,36 @@ export default function NoteDetailPage(props: any) {
       {error && <div className="sn-alert sn-alert--error">{error}</div>}
 
       {!loading && !error && note && (
-        <div className="sn-card p-4 space-y-3">
-          <div className="space-y-1">
-            <div className="text-sm font-medium">Titre</div>
-            <div className="text-sm">{note.title}</div>
+        <>
+          <div className="sn-card p-4 space-y-3">
+            <div className="space-y-1">
+              <div className="text-sm font-medium">Titre</div>
+              <div className="text-sm">{note.title}</div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-sm font-medium">Contenu</div>
+              <div
+                aria-label="Contenu de la note"
+                className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm sn-richtext-content"
+                onClick={handleRichTextLinkClick}
+              >
+                <div dangerouslySetInnerHTML={{ __html: sanitizeNoteHtml(note.content ?? "") }} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+              <div>
+                <span className="font-medium">Créée le:</span> {createdLabel}
+              </div>
+              <div>
+                <span className="font-medium">Dernière mise à jour:</span> {updatedLabel}
+              </div>
+            </div>
           </div>
 
-          <div className="space-y-1">
-            <div className="text-sm font-medium">Contenu</div>
-            <div
-              aria-label="Contenu de la note"
-              className="w-full min-h-[240px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm sn-richtext-content"
-              onClick={handleRichTextLinkClick}
-            >
-              <div dangerouslySetInnerHTML={{ __html: sanitizeNoteHtml(note.content ?? "") }} />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-            <div>
-              <span className="font-medium">Créée le:</span> {createdLabel}
-            </div>
-            <div>
-              <span className="font-medium">Dernière mise à jour:</span> {updatedLabel}
-            </div>
-          </div>
-        </div>
+          <AssistantNotePanel noteId={note.id} />
+        </>
       )}
     </div>
   );
