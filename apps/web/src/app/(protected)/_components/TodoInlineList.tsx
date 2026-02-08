@@ -246,158 +246,6 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
       )}
 
       {!loading && !error && (
-        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-          <div className="relative flex-1 min-w-0">
-            <input
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Rechercher (titre, items, dossier)…"
-              className="w-full border border-input rounded-md px-3 py-2 pr-10 bg-background text-sm"
-              aria-label="Rechercher dans les ToDo"
-            />
-            {searchInput.trim().length > 0 && (
-              <button
-                type="button"
-                onClick={() => setSearchInput("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 sn-icon-btn"
-                aria-label="Effacer la recherche"
-                title="Effacer"
-              >
-                ×
-              </button>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setFiltersOpen(true)}
-            className="inline-flex items-center justify-center h-10 px-3 rounded-md border border-border bg-background hover:bg-accent text-sm"
-          >
-            Filtrer
-          </button>
-        </div>
-      )}
-
-      {filtersOpen && (
-        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Filtres ToDo">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setFiltersOpen(false)}
-            aria-label="Fermer les filtres"
-          />
-          <div className="absolute left-0 right-0 bottom-0 w-full sm:left-1/2 sm:top-1/2 sm:right-auto sm:bottom-auto sm:w-[min(92vw,520px)] sm:-translate-x-1/2 sm:-translate-y-1/2 rounded-t-lg sm:rounded-lg border border-border bg-card shadow-lg max-h-[85dvh] overflow-y-auto">
-            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-              <div className="text-sm font-semibold">Filtres</div>
-              <button type="button" onClick={() => setFiltersOpen(false)} className="sn-icon-btn" aria-label="Fermer">
-                ×
-              </button>
-            </div>
-            <div className="p-4 space-y-4">
-              <div className="space-y-1">
-                <div className="text-xs text-muted-foreground">Dossier</div>
-                <select
-                  value={workspaceFilter}
-                  onChange={(e) => setWorkspaceFilter(e.target.value)}
-                  aria-label="Filtrer par dossier"
-                  className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-                >
-                  <option value="all">Tous les dossiers</option>
-                  {workspaces.map((ws) => (
-                    <option key={ws.id ?? ws.name} value={ws.id ?? ""} disabled={!ws.id}>
-                      {ws.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <div className="text-xs text-muted-foreground">Priorité</div>
-                  <select
-                    value={priorityFilter}
-                    onChange={(e) => setPriorityFilter(e.target.value as TodoPriorityFilter)}
-                    aria-label="Filtrer par priorité"
-                    className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-                  >
-                    <option value="all">Toutes</option>
-                    <option value="high">Haute</option>
-                    <option value="medium">Moyenne</option>
-                    <option value="low">Basse</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="text-xs text-muted-foreground">Échéance</div>
-                  <select
-                    value={dueFilter}
-                    onChange={(e) => setDueFilter(e.target.value as DueFilter)}
-                    aria-label="Filtrer par échéance"
-                    className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-                  >
-                    <option value="all">Toutes</option>
-                    <option value="today">Aujourd’hui</option>
-                    <option value="overdue">En retard</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <div className="text-xs text-muted-foreground">Tri</div>
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as TodoSortBy)}
-                  aria-label="Trier les ToDo"
-                  className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-                >
-                  <option value="updatedAt">Dernière modification</option>
-                  <option value="createdAt">Date de création</option>
-                  <option value="dueDate">Échéance</option>
-                </select>
-              </div>
-
-              <div className="flex items-center justify-between gap-3 pt-2">
-                <button
-                  type="button"
-                  className="sn-text-btn"
-                  onClick={() => {
-                    setWorkspaceFilter(workspaceId ?? "all");
-                    setPriorityFilter("all");
-                    setDueFilter("all");
-                    setSortBy("updatedAt");
-                  }}
-                >
-                  Réinitialiser
-                </button>
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium"
-                  onClick={() => setFiltersOpen(false)}
-                >
-                  Appliquer
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {!loading && !error && filteredTodos.length === 0 && (
-        <div className="sn-empty">
-          <div className="sn-empty-title">
-            {hasActiveSearchOrFilters ? "Aucun résultat" : todoView === "completed" ? "Aucune ToDo terminée" : "Aucune ToDo"}
-          </div>
-          <div className="sn-empty-desc">
-            {hasActiveSearchOrFilters
-              ? "Essaie d’effacer la recherche ou de réinitialiser les filtres."
-              : todoView === "completed"
-                ? "Marque une ToDo comme terminée pour la retrouver ici."
-                : "Appuie sur + pour en créer une."}
-          </div>
-        </div>
-      )}
-
-      {!loading && !error && (
         <div className="space-y-4">
           <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
             <button
@@ -415,6 +263,156 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
               Terminées ({completedTodos.length})
             </button>
           </div>
+
+          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+            <div className="relative flex-1 min-w-0">
+              <input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Rechercher (titre, items, dossier)…"
+                className="w-full border border-input rounded-md px-3 py-2 pr-10 bg-background text-sm"
+                aria-label="Rechercher dans les ToDo"
+              />
+              {searchInput.trim().length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSearchInput("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 sn-icon-btn"
+                  aria-label="Effacer la recherche"
+                  title="Effacer"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setFiltersOpen(true)}
+              className="inline-flex items-center justify-center h-10 px-3 rounded-md border border-border bg-background hover:bg-accent text-sm"
+            >
+              Filtrer
+            </button>
+          </div>
+
+          {filtersOpen && (
+            <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Filtres ToDo">
+              <button
+                type="button"
+                className="absolute inset-0 bg-black/40"
+                onClick={() => setFiltersOpen(false)}
+                aria-label="Fermer les filtres"
+              />
+              <div className="absolute left-0 right-0 bottom-0 w-full sm:left-1/2 sm:top-1/2 sm:right-auto sm:bottom-auto sm:w-[min(92vw,520px)] sm:-translate-x-1/2 sm:-translate-y-1/2 rounded-t-lg sm:rounded-lg border border-border bg-card shadow-lg max-h-[85dvh] overflow-y-auto">
+                <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                  <div className="text-sm font-semibold">Filtres</div>
+                  <button type="button" onClick={() => setFiltersOpen(false)} className="sn-icon-btn" aria-label="Fermer">
+                    ×
+                  </button>
+                </div>
+                <div className="p-4 space-y-4">
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">Dossier</div>
+                    <select
+                      value={workspaceFilter}
+                      onChange={(e) => setWorkspaceFilter(e.target.value)}
+                      aria-label="Filtrer par dossier"
+                      className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                    >
+                      <option value="all">Tous les dossiers</option>
+                      {workspaces.map((ws) => (
+                        <option key={ws.id ?? ws.name} value={ws.id ?? ""} disabled={!ws.id}>
+                          {ws.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">Priorité</div>
+                      <select
+                        value={priorityFilter}
+                        onChange={(e) => setPriorityFilter(e.target.value as TodoPriorityFilter)}
+                        aria-label="Filtrer par priorité"
+                        className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                      >
+                        <option value="all">Toutes</option>
+                        <option value="high">Haute</option>
+                        <option value="medium">Moyenne</option>
+                        <option value="low">Basse</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">Échéance</div>
+                      <select
+                        value={dueFilter}
+                        onChange={(e) => setDueFilter(e.target.value as DueFilter)}
+                        aria-label="Filtrer par échéance"
+                        className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                      >
+                        <option value="all">Toutes</option>
+                        <option value="today">Aujourd’hui</option>
+                        <option value="overdue">En retard</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">Tri</div>
+                    <select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value as TodoSortBy)}
+                      aria-label="Trier les ToDo"
+                      className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                    >
+                      <option value="updatedAt">Dernière modification</option>
+                      <option value="createdAt">Date de création</option>
+                      <option value="dueDate">Échéance</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 pt-2">
+                    <button
+                      type="button"
+                      className="sn-text-btn"
+                      onClick={() => {
+                        setWorkspaceFilter(workspaceId ?? "all");
+                        setPriorityFilter("all");
+                        setDueFilter("all");
+                        setSortBy("updatedAt");
+                      }}
+                    >
+                      Réinitialiser
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+                      onClick={() => setFiltersOpen(false)}
+                    >
+                      Appliquer
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {filteredTodos.length === 0 && (
+            <div className="sn-empty">
+              <div className="sn-empty-title">
+                {hasActiveSearchOrFilters ? "Aucun résultat" : todoView === "completed" ? "Aucune ToDo terminée" : "Aucune ToDo"}
+              </div>
+              <div className="sn-empty-desc">
+                {hasActiveSearchOrFilters
+                  ? "Essaie d’effacer la recherche ou de réinitialiser les filtres."
+                  : todoView === "completed"
+                    ? "Marque une ToDo comme terminée pour la retrouver ici."
+                    : "Appuie sur + pour en créer une."}
+              </div>
+            </div>
+          )}
 
           {filteredTodos.length > 0 && (
             <ul className="space-y-2">

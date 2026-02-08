@@ -306,37 +306,15 @@ export default function NotesPage() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       {workspaceId && tabs}
-      <header className="flex items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold">Notes</h1>
-        <div id="sn-create-slot" />
-      </header>
-
-      {showMicroGuide && (
-        <div>
-          <div className="sn-card sn-card--muted p-4">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-sm font-semibold">Astuce</div>
-                <div className="text-sm text-muted-foreground">
-                  Un titre clair suffit. Tu peux compléter le contenu plus tard et épingler l’essentiel en favori ⭐.
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => userId && setOnboardingFlag(userId, "notes_microguide_v1", true)}
-                className="sn-text-btn shrink-0"
-              >
-                OK, compris
-              </button>
-            </div>
-          </div>
+      <header className="flex flex-col gap-2 mb-4">
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="text-xl font-semibold">Notes</h1>
+          <div id="sn-create-slot" />
         </div>
-      )}
 
-      <section>
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
           <h2 className="text-lg font-semibold">Tes notes récentes</h2>
           <div className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap w-fit">
             <button
@@ -356,7 +334,7 @@ export default function NotesPage() {
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-2 sm:items-center mb-3">
+        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
           <div className="relative flex-1 min-w-0">
             <input
               value={searchInput}
@@ -478,6 +456,31 @@ export default function NotesPage() {
             </div>
           </div>
         )}
+      </header>
+
+      {showMicroGuide && (
+        <div>
+          <div className="sn-card sn-card--muted p-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">Astuce</div>
+                <div className="text-sm text-muted-foreground">
+                  Un titre clair suffit. Tu peux compléter le contenu plus tard et épingler l’essentiel en favori ⭐.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => userId && setOnboardingFlag(userId, "notes_microguide_v1", true)}
+                className="sn-text-btn shrink-0"
+              >
+                OK, compris
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <section>
         {loading && (
           <div className="sn-empty sn-animate-in">
             <div className="space-y-3">
