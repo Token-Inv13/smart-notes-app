@@ -27,6 +27,15 @@ export default function AssistantPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [busySuggestionId, setBusySuggestionId] = useState<string | null>(null);
   const [showAllStatuses, setShowAllStatuses] = useState(false);
+  const [expandedBundleId, setExpandedBundleId] = useState<string | null>(null);
+
+  const [customizing, setCustomizing] = useState<AssistantSuggestionDoc | null>(null);
+  const [customSelected, setCustomSelected] = useState<Record<number, boolean>>({});
+  const [customTitles, setCustomTitles] = useState<Record<number, string>>({});
+  const [customDueDates, setCustomDueDates] = useState<Record<number, string>>({});
+  const [customRemindAts, setCustomRemindAts] = useState<Record<number, string>>({});
+  const [customPriorities, setCustomPriorities] = useState<Record<number, "" | "low" | "medium" | "high">>({});
+  const [customizeError, setCustomizeError] = useState<string | null>(null);
 
   const enabled = assistantSettings?.enabled === true;
   const isPro = assistantSettings?.plan === "pro";
@@ -112,7 +121,7 @@ export default function AssistantPage() {
     if (busySuggestionId) return;
 
     if (s.kind === "create_task_bundle" && !isPro) {
-      setActionError("Plan Pro requis pour accepter ce plan d’action.");
+      window.location.href = "/upgrade";
       return;
     }
 
@@ -183,7 +192,138 @@ export default function AssistantPage() {
     return sorted.filter((s) => s.status === "proposed");
   }, [sorted, showAllStatuses]);
 
-  const [expandedBundleId, setExpandedBundleId] = useState<string | null>(null);
+  const openCustomize = (s: AssistantSuggestionDoc) => {
+    if (s.kind !== "create_task_bundle") return;
+    if (!isPro) {
+      window.location.href = "/upgrade";
+      return;
+    }
+    setCustomizing(s);
+    setCustomizeError(null);
+
+    const payload = s.payload;
+    if (!("tasks" in payload)) return;
+    const tasks = payload.tasks.slice(0, 6);
+
+    const selected: Record<number, boolean> = {};
+    const titles: Record<number, string> = {};
+    const dueDates: Record<number, string> = {};
+    const remindAts: Record<number, string> = {};
+    const priorities: Record<number, "" | "low" | "medium" | "high"> = {};
+
+    tasks.forEach((t, idx) => {
+      selected[idx] = true;
+      titles[idx] = t.title ?? "";
+      dueDates[idx] = t.dueDate ? new Date(t.dueDate.toMillis()).toISOString().slice(0, 16) : "";
+      remindAts[idx] = t.remindAt ? new Date(t.remindAt.toMillis()).toISOString().slice(0, 16) : "";
+      const p = t.priority;
+      priorities[idx] = p === "low" || p === "medium" || p === "high" ? p : "";
+    });
+
+    setCustomSelected(selected);
+    setCustomTitles(titles);
+    setCustomDueDates(dueDates);
+    setCustomRemindAts(remindAts);
+    setCustomPriorities(priorities);
+  };
+
+  const closeCustomize = () => {
+    setCustomizing(null);
+    setCustomizeError(null);
+  };
+
+  const selectedCount = useMemo(() => {
+    if (!customizing) return 0;
+    const payload = customizing.payload;
+    if (!("tasks" in payload)) return 0;
+    const max = Math.min(6, payload.tasks.length);
+    let c = 0;
+    for (let i = 0; i < max; i++) {
+      if (customSelected[i]) c++;
+    }
+    return c;
+  }, [customSelected, customizing]);
+
+  const toMillisFromInput = (value: string) => {
+    if (!value) return null;
+    const d = new Date(value);
+    const ms = d.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  };
+
+  const handleCreateCustomized = async () => {
+    if (!customizing) return;
+    const suggestionId = customizing.id ?? customizing.dedupeKey;
+    if (!suggestionId) return;
+    if (busySuggestionId) return;
+
+    const payload = customizing.payload;
+    if (!("tasks" in payload)) return;
+    const max = Math.min(6, payload.tasks.length);
+
+    const selectedIndexes: number[] = [];
+    for (let i = 0; i < max; i++) {
+      if (customSelected[i]) selectedIndexes.push(i);
+    }
+    if (selectedIndexes.length === 0) {
+      setCustomizeError("Sélectionne au moins une tâche.");
+      return;
+    }
+
+    const tasksOverrides: Record<number, Record<string, unknown>> = {};
+    for (const i of selectedIndexes) {
+      const base = payload.tasks[i];
+      if (!base) {
+        setCustomizeError("Item invalide.");
+        return;
+      }
+      const nextTitle = (customTitles[i] ?? "").trim();
+      if (!nextTitle) {
+        setCustomizeError("Le titre ne peut pas être vide.");
+        return;
+      }
+
+      const row: Record<string, unknown> = {};
+      if (nextTitle !== (base.title ?? "")) row.title = nextTitle;
+
+      const nextDueMs = toMillisFromInput(customDueDates[i] ?? "");
+      const nextRemindMs = toMillisFromInput(customRemindAts[i] ?? "");
+      if ((base.dueDate?.toMillis?.() ?? null) !== nextDueMs) row.dueDate = nextDueMs;
+      if ((base.remindAt?.toMillis?.() ?? null) !== nextRemindMs) row.remindAt = nextRemindMs;
+
+      const nextPriority = customPriorities[i] ?? "";
+      const basePriority = base.priority ?? "";
+      if (basePriority !== nextPriority) row.priority = nextPriority ? nextPriority : null;
+
+      if (Object.keys(row).length > 0) tasksOverrides[i] = row;
+    }
+
+    setBusySuggestionId(suggestionId);
+    setActionMessage(null);
+    setActionError(null);
+    setCustomizeError(null);
+
+    try {
+      const fn = httpsCallable<
+        { suggestionId: string; overrides: { selectedIndexes: number[]; tasksOverrides?: Record<number, Record<string, unknown>> } },
+        ApplySuggestionResult
+      >(fbFunctions, "assistantApplySuggestion");
+      const res = await fn({ suggestionId, overrides: { selectedIndexes, tasksOverrides } });
+      const createdCount = Array.isArray(res.data?.createdCoreObjects) ? res.data.createdCoreObjects.length : 0;
+      setActionMessage(createdCount > 0 ? `Plan créé (${createdCount} objet(s) créé(s)).` : "Plan créé.");
+      closeCustomize();
+    } catch (e) {
+      if (isCallableUnauthenticated(e)) {
+        void invalidateAuthSession();
+        return;
+      }
+      if (e instanceof FirebaseError) setCustomizeError(`${e.code}: ${e.message}`);
+      else if (e instanceof Error) setCustomizeError(e.message);
+      else setCustomizeError("Impossible de créer le plan.");
+    } finally {
+      setBusySuggestionId(null);
+    }
+  };
 
   if (assistantError) {
     return <div className="sn-alert sn-alert--error">Impossible de charger l’assistant.</div>;
@@ -316,8 +456,18 @@ export default function AssistantPage() {
                       disabled={!proposed || isBusy}
                       className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
                     >
-                      {isBusy && proposed ? "Traitement…" : isBundle ? "Accepter le plan" : "Accepter"}
+                      {isBusy && proposed ? "Traitement…" : isBundle ? (isPro ? "Accepter le plan" : "Débloquer avec Pro") : "Accepter"}
                     </button>
+                    {isBundle && isPro ? (
+                      <button
+                        type="button"
+                        onClick={() => openCustomize(s)}
+                        disabled={!proposed || isBusy}
+                        className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+                      >
+                        Personnaliser
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => void handleReject(s)}
@@ -342,6 +492,100 @@ export default function AssistantPage() {
           })}
         </div>
       </div>
+
+      {customizing && (
+        <div className="sn-card p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm font-semibold">Personnaliser le plan</div>
+            <button type="button" onClick={closeCustomize} className="px-3 py-2 rounded-md border border-input text-sm">
+              Fermer
+            </button>
+          </div>
+
+          {customizeError ? <div className="sn-alert sn-alert--error">{customizeError}</div> : null}
+
+          {(() => {
+            const payload = customizing.payload;
+            if (!("tasks" in payload)) return null;
+            const tasks = payload.tasks.slice(0, 6);
+            const suggestionId = customizing.id ?? customizing.dedupeKey;
+            const busy = !!suggestionId && busySuggestionId === suggestionId;
+            return (
+              <div className="space-y-3">
+                {tasks.map((_, idx) => {
+                  const checked = !!customSelected[idx];
+                  return (
+                    <div key={idx} className="border border-border rounded-md p-3 space-y-2">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => setCustomSelected((prev) => ({ ...prev, [idx]: e.target.checked }))}
+                        />
+                        #{idx + 1}
+                      </label>
+
+                      <input
+                        type="text"
+                        value={customTitles[idx] ?? ""}
+                        onChange={(e) => setCustomTitles((prev) => ({ ...prev, [idx]: e.target.value }))}
+                        disabled={!checked}
+                        className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm disabled:opacity-50"
+                      />
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <input
+                          type="datetime-local"
+                          value={customDueDates[idx] ?? ""}
+                          onChange={(e) => setCustomDueDates((prev) => ({ ...prev, [idx]: e.target.value }))}
+                          disabled={!checked}
+                          className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm disabled:opacity-50"
+                        />
+                        <input
+                          type="datetime-local"
+                          value={customRemindAts[idx] ?? ""}
+                          onChange={(e) => setCustomRemindAts((prev) => ({ ...prev, [idx]: e.target.value }))}
+                          disabled={!checked}
+                          className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm disabled:opacity-50"
+                        />
+                      </div>
+
+                      <select
+                        value={customPriorities[idx] ?? ""}
+                        onChange={(e) => setCustomPriorities((prev) => ({ ...prev, [idx]: e.target.value as any }))}
+                        disabled={!checked}
+                        className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm disabled:opacity-50"
+                      >
+                        <option value="">Aucune</option>
+                        <option value="low">Basse</option>
+                        <option value="medium">Moyenne</option>
+                        <option value="high">Haute</option>
+                      </select>
+                    </div>
+                  );
+                })}
+
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm text-muted-foreground">Créer {selectedCount} tâche(s)</div>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={closeCustomize} className="px-3 py-2 rounded-md border border-input text-sm">
+                      Annuler
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleCreateCustomized()}
+                      disabled={busy || selectedCount === 0}
+                      className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+                    >
+                      {busy ? "Création…" : `Créer ${selectedCount} tâche(s)`}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
     </div>
   );
 }
