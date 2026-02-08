@@ -24,10 +24,17 @@ export default function TodoCreateForm({
   showActions,
 }: Props) {
   const [title, setTitle] = useState("");
+  const [newItemText, setNewItemText] = useState("");
+  const [itemsDraft, setItemsDraft] = useState<NonNullable<TodoDoc["items"]>>([]);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const itemInputRef = useRef<HTMLInputElement | null>(null);
+
+  const safeItemId = () => {
+    return `it_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+  };
 
   useEffect(() => {
     if (!autoFocus) return;
@@ -36,6 +43,21 @@ export default function TodoCreateForm({
   }, [autoFocus]);
 
   const canSubmit = useMemo(() => !!title.trim(), [title]);
+
+  const canAddItem = useMemo(() => !!newItemText.trim(), [newItemText]);
+
+  const addDraftItem = () => {
+    const text = newItemText.trim();
+    if (!text) return;
+
+    setItemsDraft((prev) => prev.concat({ id: safeItemId(), text, done: false, createdAt: Date.now() }));
+    setNewItemText("");
+    window.setTimeout(() => itemInputRef.current?.focus(), 0);
+  };
+
+  const removeDraftItem = (id: string) => {
+    setItemsDraft((prev) => prev.filter((it) => it.id !== id));
+  };
 
   const submit = async () => {
     const user = auth.currentUser;
@@ -61,7 +83,7 @@ export default function TodoCreateForm({
         userId: user.uid,
         workspaceId: typeof initialWorkspaceId === "string" ? initialWorkspaceId : null,
         title: trimmed,
-        items: [],
+        items: itemsDraft,
         completed: false,
         favorite: initialFavorite === true,
         createdAt: serverTimestamp(),
@@ -70,6 +92,8 @@ export default function TodoCreateForm({
 
       const ref = await addDoc(collection(db, "todos"), payload);
       setTitle("");
+      setNewItemText("");
+      setItemsDraft([]);
       onCreated?.(ref.id);
     } catch (e) {
       console.error("Error creating todo", e);
@@ -101,6 +125,10 @@ export default function TodoCreateForm({
           }
           if (e.key === "Enter") {
             e.preventDefault();
+            if (showActions) {
+              itemInputRef.current?.focus();
+              return;
+            }
             void submit();
           }
         }}
@@ -113,6 +141,55 @@ export default function TodoCreateForm({
           void submit();
         }}
       />
+
+      {showActions && (
+        <div className="space-y-2">
+          <div className="text-sm font-semibold">Sous-tâches / éléments</div>
+          <div className="flex items-center gap-2">
+            <input
+              ref={itemInputRef}
+              value={newItemText}
+              onChange={(e) => setNewItemText(e.target.value)}
+              placeholder="Ajouter un élément"
+              className="flex-1 bg-background text-foreground text-sm outline-none"
+              disabled={creating}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addDraftItem();
+                }
+              }}
+            />
+            <button
+              type="button"
+              onClick={addDraftItem}
+              disabled={creating || !canAddItem}
+              className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+            >
+              Ajouter
+            </button>
+          </div>
+
+          {itemsDraft.length > 0 && (
+            <div className="space-y-2">
+              {itemsDraft.map((it) => (
+                <div key={it.id} className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2">
+                  <div className="text-sm min-w-0 flex-1 truncate">{it.text}</div>
+                  <button
+                    type="button"
+                    onClick={() => removeDraftItem(it.id)}
+                    disabled={creating}
+                    className="sn-text-btn"
+                    aria-label="Supprimer l’élément"
+                  >
+                    Supprimer
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {showActions && (
         <div className="flex justify-end gap-2">
