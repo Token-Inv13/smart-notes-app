@@ -1876,6 +1876,12 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
   let decisionId: string | null = null;
   const createdCoreObjects: AssistantDecisionCoreObject[] = [];
 
+  let followupTasks: Array<{ taskId: string; dueDate: admin.firestore.Timestamp | null; hasReminder: boolean }> = [];
+  let followupIsPro = false;
+  let followupReminderHour: number | null = null;
+  let followupEnabled = false;
+  let followupObjectId = '';
+
   await db.runTransaction(async (tx) => {
     createdCoreObjects.length = 0;
 
@@ -1888,6 +1894,22 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
     }
 
     const suggestion = suggestionSnap.data() as AssistantSuggestionDoc;
+    followupObjectId = typeof suggestion?.objectId === 'string' ? suggestion.objectId : '';
+
+    const [userSnap, memorySnap] = await Promise.all([
+      tx.get(userRef),
+      tx.get(memoryLiteRef),
+    ]);
+
+    const userPlan = userSnap.exists && typeof (userSnap.data() as any)?.plan === 'string' ? String((userSnap.data() as any).plan) : null;
+    const isPro = userPlan === 'pro';
+    followupIsPro = isPro;
+    followupEnabled = suggestion.source.type === 'note';
+
+    const existingMemory = memorySnap.exists ? (memorySnap.data() as AssistantMemoryLiteDoc) : ({} as AssistantMemoryLiteDoc);
+    const existingMemoryHourRaw = existingMemory?.defaultReminderHour;
+    const existingMemoryHour = typeof existingMemoryHourRaw === 'number' && Number.isFinite(existingMemoryHourRaw) ? Math.trunc(existingMemoryHourRaw) : null;
+    followupReminderHour = existingMemoryHour !== null && existingMemoryHour >= 0 && existingMemoryHour <= 23 ? existingMemoryHour : null;
 
     if (suggestion.status !== 'proposed') {
       throw new functions.https.HttpsError('failed-precondition', 'Suggestion is not proposed.');
@@ -2080,15 +2102,6 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
       return next as AssistantSuggestionDoc['payload'];
     })();
 
-    let userPlan: string | null = null;
-    const userSnap = await tx.get(userRef);
-    if (userSnap.exists) {
-      const userData = userSnap.data() as any;
-      userPlan = typeof userData?.plan === 'string' ? userData.plan : null;
-    }
-
-    const isPro = userPlan === 'pro';
-
     const createdAt = admin.firestore.FieldValue.serverTimestamp();
     const updatedAt = admin.firestore.FieldValue.serverTimestamp();
 
@@ -2137,7 +2150,6 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
 
       const tasksCol = db.collection('tasks');
       const reminderCol = db.collection('taskReminders');
-      const suggestionsCol = userRef.collection('assistantSuggestions');
 
       const finalTasks: AssistantTaskBundleTask[] = [];
       const createdTaskInfos: Array<{ taskId: string; dueDate: admin.firestore.Timestamp | null; hasReminder: boolean }> = [];
@@ -2246,6 +2258,8 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
         throw new functions.https.HttpsError('failed-precondition', 'No valid tasks to create.');
       }
 
+      followupTasks = createdTaskInfos.map((t) => ({ taskId: t.taskId, dueDate: t.dueDate, hasReminder: t.hasReminder }));
+
       const beforePayload = suggestion.payload as AssistantSuggestionDoc['payload'];
       const finalPayload: AssistantSuggestionDoc['payload'] = {
         ...(beforePayload as any),
@@ -2283,8 +2297,7 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
       );
 
       if (memoryPriorityUses.length > 0 || memoryReminderHourUses.length > 0) {
-        const memorySnap = await tx.get(memoryLiteRef);
-        const existing = memorySnap.exists ? (memorySnap.data() as AssistantMemoryLiteDoc) : ({} as AssistantMemoryLiteDoc);
+        const existing = existingMemory;
         const prevPriorityCounts = existing?.stats?.priorityCounts;
         const nextPriorityCounts: { low: number; medium: number; high: number } = {
           low: typeof prevPriorityCounts?.low === 'number' && Number.isFinite(prevPriorityCounts.low) ? prevPriorityCounts.low : 0,
@@ -2337,6 +2350,11 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
           changed = true;
         }
 
+        if (typeof nextDefaultReminderHour === 'number' && Number.isFinite(nextDefaultReminderHour)) {
+          const h = Math.trunc(nextDefaultReminderHour);
+          if (h >= 0 && h <= 23) followupReminderHour = h;
+        }
+
         if (changed) {
           tx.set(
             memoryLiteRef,
@@ -2360,148 +2378,6 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
         status: 'accepted',
         updatedAt,
       });
-
-      let followupReminderHour: number | null = null;
-      try {
-        const memSnap = await tx.get(memoryLiteRef);
-        if (memSnap.exists) {
-          const mem = memSnap.data() as AssistantMemoryLiteDoc;
-          const hRaw = mem?.defaultReminderHour;
-          const h = typeof hRaw === 'number' && Number.isFinite(hRaw) ? Math.trunc(hRaw) : null;
-          if (h !== null && h >= 0 && h <= 23) followupReminderHour = h;
-        }
-      } catch {
-        // ignore
-      }
-
-      for (const info of createdTaskInfos) {
-        const favoriteKey = buildFollowupDedupeKey({
-          taskId: info.taskId,
-          kind: 'update_task_meta',
-          minimal: { favorite: true },
-        });
-        const favoriteRef = suggestionsCol.doc(favoriteKey);
-        const favoriteExisting = await tx.get(favoriteRef);
-        const favoriteStatus = favoriteExisting.exists ? ((favoriteExisting.data() as any)?.status as AssistantSuggestionStatus | undefined) : undefined;
-        const favoriteUpdatedAt = favoriteExisting.exists ? ((favoriteExisting.data() as any)?.updatedAt as admin.firestore.Timestamp | null) : null;
-        const favoriteRejectedTooRecent =
-          favoriteStatus === 'rejected' && favoriteUpdatedAt instanceof admin.firestore.Timestamp
-            ? nowTs.toMillis() - favoriteUpdatedAt.toMillis() < ASSISTANT_FOLLOWUP_REJECT_COOLDOWN_MS
-            : false;
-
-        if (!favoriteExisting.exists) {
-          const doc: AssistantSuggestionDoc = {
-            objectId: suggestion.objectId,
-            source: { type: 'task', id: info.taskId, fromSuggestionId: suggestionId },
-            kind: 'update_task_meta',
-            payload: {
-              title: 'Marquer cette tâche comme favorite ?',
-              taskId: info.taskId,
-              favorite: true,
-              origin: { fromText: 'follow-up' },
-              confidence: 0.9,
-              explanation: 'Suggestion de suivi (optionnelle).',
-            },
-            status: 'proposed',
-            pipelineVersion: 1,
-            dedupeKey: favoriteKey,
-            createdAt,
-            updatedAt,
-            expiresAt: admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 14 * 24 * 60 * 60 * 1000),
-          };
-          tx.create(favoriteRef, doc);
-          tx.set(metricsRef, metricsIncrements({ followupSuggestionsCreated: 1 }), { merge: true });
-        } else if (favoriteStatus !== 'proposed' && favoriteStatus !== 'accepted' && !favoriteRejectedTooRecent) {
-          tx.update(favoriteRef, {
-            objectId: suggestion.objectId,
-            source: { type: 'task', id: info.taskId, fromSuggestionId: suggestionId },
-            kind: 'update_task_meta',
-            payload: {
-              title: 'Marquer cette tâche comme favorite ?',
-              taskId: info.taskId,
-              favorite: true,
-              origin: { fromText: 'follow-up' },
-              confidence: 0.9,
-              explanation: 'Suggestion de suivi (optionnelle).',
-            },
-            status: 'proposed',
-            pipelineVersion: 1,
-            dedupeKey: favoriteKey,
-            updatedAt,
-            expiresAt: admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 14 * 24 * 60 * 60 * 1000),
-          });
-          tx.set(metricsRef, metricsIncrements({ followupSuggestionsCreated: 1 }), { merge: true });
-        }
-
-        if (isPro && followupReminderHour !== null && info.dueDate && !info.hasReminder) {
-          const due = info.dueDate.toDate();
-          const remind = new Date(due.getTime());
-          remind.setDate(remind.getDate() - 1);
-          remind.setHours(followupReminderHour, 0, 0, 0);
-          if (Number.isFinite(remind.getTime()) && remind.getTime() > nowTs.toMillis()) {
-            const remindAt = admin.firestore.Timestamp.fromDate(remind);
-
-            const reminderKey = buildFollowupDedupeKey({
-              taskId: info.taskId,
-              kind: 'create_reminder',
-              minimal: { remindAtMs: remindAt.toMillis() },
-            });
-            const reminderRef = suggestionsCol.doc(reminderKey);
-            const reminderExisting = await tx.get(reminderRef);
-            const reminderStatus = reminderExisting.exists ? ((reminderExisting.data() as any)?.status as AssistantSuggestionStatus | undefined) : undefined;
-            const reminderUpdatedAt = reminderExisting.exists ? ((reminderExisting.data() as any)?.updatedAt as admin.firestore.Timestamp | null) : null;
-            const reminderRejectedTooRecent =
-              reminderStatus === 'rejected' && reminderUpdatedAt instanceof admin.firestore.Timestamp
-                ? nowTs.toMillis() - reminderUpdatedAt.toMillis() < ASSISTANT_FOLLOWUP_REJECT_COOLDOWN_MS
-                : false;
-
-            if (!reminderExisting.exists) {
-              const doc: AssistantSuggestionDoc = {
-                objectId: suggestion.objectId,
-                source: { type: 'task', id: info.taskId, fromSuggestionId: suggestionId },
-                kind: 'create_reminder',
-                payload: {
-                  title: 'Ajouter un rappel la veille à 18h ?',
-                  taskId: info.taskId,
-                  remindAt,
-                  origin: { fromText: 'follow-up' },
-                  confidence: 0.9,
-                  explanation: 'Suggestion de suivi (optionnelle).',
-                },
-                status: 'proposed',
-                pipelineVersion: 1,
-                dedupeKey: reminderKey,
-                createdAt,
-                updatedAt,
-                expiresAt: admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 14 * 24 * 60 * 60 * 1000),
-              };
-              tx.create(reminderRef, doc);
-              tx.set(metricsRef, metricsIncrements({ followupSuggestionsCreated: 1 }), { merge: true });
-            } else if (reminderStatus !== 'proposed' && reminderStatus !== 'accepted' && !reminderRejectedTooRecent) {
-              tx.update(reminderRef, {
-                objectId: suggestion.objectId,
-                source: { type: 'task', id: info.taskId, fromSuggestionId: suggestionId },
-                kind: 'create_reminder',
-                payload: {
-                  title: 'Ajouter un rappel la veille à 18h ?',
-                  taskId: info.taskId,
-                  remindAt,
-                  origin: { fromText: 'follow-up' },
-                  confidence: 0.9,
-                  explanation: 'Suggestion de suivi (optionnelle).',
-                },
-                status: 'proposed',
-                pipelineVersion: 1,
-                dedupeKey: reminderKey,
-                updatedAt,
-                expiresAt: admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 14 * 24 * 60 * 60 * 1000),
-              });
-              tx.set(metricsRef, metricsIncrements({ followupSuggestionsCreated: 1 }), { merge: true });
-            }
-          }
-        }
-      }
-
       return;
     } else {
       const isTaskFollowup = suggestion.source.type === 'task';
@@ -2610,148 +2486,8 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
           hasReminder = true;
         }
 
-        if (suggestion.source.type === 'note') {
-          const suggestionsCol = userRef.collection('assistantSuggestions');
+        followupTasks = [{ taskId: taskRef.id, dueDate: finalDueDate ?? null, hasReminder }];
 
-          const favoriteKey = buildFollowupDedupeKey({
-            taskId: taskRef.id,
-            kind: 'update_task_meta',
-            minimal: { favorite: true },
-          });
-          const favoriteRef = suggestionsCol.doc(favoriteKey);
-          const favoriteExisting = await tx.get(favoriteRef);
-          const favoriteStatus = favoriteExisting.exists ? ((favoriteExisting.data() as any)?.status as AssistantSuggestionStatus | undefined) : undefined;
-          const favoriteUpdatedAt = favoriteExisting.exists ? ((favoriteExisting.data() as any)?.updatedAt as admin.firestore.Timestamp | null) : null;
-          const favoriteRejectedTooRecent =
-            favoriteStatus === 'rejected' && favoriteUpdatedAt instanceof admin.firestore.Timestamp
-              ? nowTs.toMillis() - favoriteUpdatedAt.toMillis() < ASSISTANT_FOLLOWUP_REJECT_COOLDOWN_MS
-              : false;
-
-          if (!favoriteExisting.exists) {
-            const doc: AssistantSuggestionDoc = {
-              objectId: suggestion.objectId,
-              source: { type: 'task', id: taskRef.id, fromSuggestionId: suggestionId },
-              kind: 'update_task_meta',
-              payload: {
-                title: 'Marquer cette tâche comme favorite ?',
-                taskId: taskRef.id,
-                favorite: true,
-                origin: { fromText: 'follow-up' },
-                confidence: 0.9,
-                explanation: 'Suggestion de suivi (optionnelle).',
-              },
-              status: 'proposed',
-              pipelineVersion: 1,
-              dedupeKey: favoriteKey,
-              createdAt,
-              updatedAt,
-              expiresAt: admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 14 * 24 * 60 * 60 * 1000),
-            };
-            tx.create(favoriteRef, doc);
-            tx.set(metricsRef, metricsIncrements({ followupSuggestionsCreated: 1 }), { merge: true });
-          } else if (favoriteStatus !== 'proposed' && favoriteStatus !== 'accepted' && !favoriteRejectedTooRecent) {
-            tx.update(favoriteRef, {
-              objectId: suggestion.objectId,
-              source: { type: 'task', id: taskRef.id, fromSuggestionId: suggestionId },
-              kind: 'update_task_meta',
-              payload: {
-                title: 'Marquer cette tâche comme favorite ?',
-                taskId: taskRef.id,
-                favorite: true,
-                origin: { fromText: 'follow-up' },
-                confidence: 0.9,
-                explanation: 'Suggestion de suivi (optionnelle).',
-              },
-              status: 'proposed',
-              pipelineVersion: 1,
-              dedupeKey: favoriteKey,
-              updatedAt,
-              expiresAt: admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 14 * 24 * 60 * 60 * 1000),
-            });
-            tx.set(metricsRef, metricsIncrements({ followupSuggestionsCreated: 1 }), { merge: true });
-          }
-
-          let followupReminderHour: number | null = null;
-          try {
-            const memSnap = await tx.get(memoryLiteRef);
-            if (memSnap.exists) {
-              const mem = memSnap.data() as AssistantMemoryLiteDoc;
-              const hRaw = mem?.defaultReminderHour;
-              const h = typeof hRaw === 'number' && Number.isFinite(hRaw) ? Math.trunc(hRaw) : null;
-              if (h !== null && h >= 0 && h <= 23) followupReminderHour = h;
-            }
-          } catch {
-            // ignore
-          }
-
-          if (isPro && followupReminderHour !== null && finalDueDate && !hasReminder) {
-            const due = finalDueDate.toDate();
-            const remind = new Date(due.getTime());
-            remind.setDate(remind.getDate() - 1);
-            remind.setHours(followupReminderHour, 0, 0, 0);
-            if (Number.isFinite(remind.getTime()) && remind.getTime() > nowTs.toMillis()) {
-              const remindAt = admin.firestore.Timestamp.fromDate(remind);
-
-              const reminderKey = buildFollowupDedupeKey({
-                taskId: taskRef.id,
-                kind: 'create_reminder',
-                minimal: { remindAtMs: remindAt.toMillis() },
-              });
-              const reminderRef = suggestionsCol.doc(reminderKey);
-              const reminderExisting = await tx.get(reminderRef);
-              const reminderStatus = reminderExisting.exists ? ((reminderExisting.data() as any)?.status as AssistantSuggestionStatus | undefined) : undefined;
-              const reminderUpdatedAt = reminderExisting.exists ? ((reminderExisting.data() as any)?.updatedAt as admin.firestore.Timestamp | null) : null;
-              const reminderRejectedTooRecent =
-                reminderStatus === 'rejected' && reminderUpdatedAt instanceof admin.firestore.Timestamp
-                  ? nowTs.toMillis() - reminderUpdatedAt.toMillis() < ASSISTANT_FOLLOWUP_REJECT_COOLDOWN_MS
-                  : false;
-
-              if (!reminderExisting.exists) {
-                const doc: AssistantSuggestionDoc = {
-                  objectId: suggestion.objectId,
-                  source: { type: 'task', id: taskRef.id, fromSuggestionId: suggestionId },
-                  kind: 'create_reminder',
-                  payload: {
-                    title: 'Ajouter un rappel la veille à 18h ?',
-                    taskId: taskRef.id,
-                    remindAt,
-                    origin: { fromText: 'follow-up' },
-                    confidence: 0.9,
-                    explanation: 'Suggestion de suivi (optionnelle).',
-                  },
-                  status: 'proposed',
-                  pipelineVersion: 1,
-                  dedupeKey: reminderKey,
-                  createdAt,
-                  updatedAt,
-                  expiresAt: admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 14 * 24 * 60 * 60 * 1000),
-                };
-                tx.create(reminderRef, doc);
-                tx.set(metricsRef, metricsIncrements({ followupSuggestionsCreated: 1 }), { merge: true });
-              } else if (reminderStatus !== 'proposed' && reminderStatus !== 'accepted' && !reminderRejectedTooRecent) {
-                tx.update(reminderRef, {
-                  objectId: suggestion.objectId,
-                  source: { type: 'task', id: taskRef.id, fromSuggestionId: suggestionId },
-                  kind: 'create_reminder',
-                  payload: {
-                    title: 'Ajouter un rappel la veille à 18h ?',
-                    taskId: taskRef.id,
-                    remindAt,
-                    origin: { fromText: 'follow-up' },
-                    confidence: 0.9,
-                    explanation: 'Suggestion de suivi (optionnelle).',
-                  },
-                  status: 'proposed',
-                  pipelineVersion: 1,
-                  dedupeKey: reminderKey,
-                  updatedAt,
-                  expiresAt: admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 14 * 24 * 60 * 60 * 1000),
-                });
-                tx.set(metricsRef, metricsIncrements({ followupSuggestionsCreated: 1 }), { merge: true });
-              }
-            }
-          }
-        }
       }
     }
 
@@ -2786,8 +2522,7 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
     );
 
     if (memoryPriorityUses.length > 0 || memoryReminderHourUses.length > 0) {
-      const memorySnap = await tx.get(memoryLiteRef);
-      const existing = memorySnap.exists ? (memorySnap.data() as AssistantMemoryLiteDoc) : ({} as AssistantMemoryLiteDoc);
+      const existing = existingMemory;
       const prevPriorityCounts = existing?.stats?.priorityCounts;
       const nextPriorityCounts: { low: number; medium: number; high: number } = {
         low: typeof prevPriorityCounts?.low === 'number' && Number.isFinite(prevPriorityCounts.low) ? prevPriorityCounts.low : 0,
@@ -2840,6 +2575,11 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
         changed = true;
       }
 
+      if (typeof nextDefaultReminderHour === 'number' && Number.isFinite(nextDefaultReminderHour)) {
+        const h = Math.trunc(nextDefaultReminderHour);
+        if (h >= 0 && h <= 23) followupReminderHour = h;
+      }
+
       if (changed) {
         tx.set(
           memoryLiteRef,
@@ -2864,6 +2604,175 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
       updatedAt,
     });
   });
+
+  if (followupEnabled && followupTasks.length > 0) {
+    if (!followupObjectId) {
+      throw new functions.https.HttpsError('internal', 'Missing followup objectId.');
+    }
+
+    const suggestionsCol = userRef.collection('assistantSuggestions');
+    const expiresAt = admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 14 * 24 * 60 * 60 * 1000);
+
+    const createFavorite = async (taskId: string) => {
+      const favoriteKey = buildFollowupDedupeKey({
+        taskId,
+        kind: 'update_task_meta',
+        minimal: { favorite: true },
+      });
+      const favoriteRef = suggestionsCol.doc(favoriteKey);
+
+      await db.runTransaction(async (tx) => {
+        const existing = await tx.get(favoriteRef);
+        const status = existing.exists ? ((existing.data() as any)?.status as AssistantSuggestionStatus | undefined) : undefined;
+        const updatedAtExisting = existing.exists ? ((existing.data() as any)?.updatedAt as admin.firestore.Timestamp | null) : null;
+        const rejectedTooRecent =
+          status === 'rejected' && updatedAtExisting instanceof admin.firestore.Timestamp
+            ? nowTs.toMillis() - updatedAtExisting.toMillis() < ASSISTANT_FOLLOWUP_REJECT_COOLDOWN_MS
+            : false;
+
+        const createdAt = admin.firestore.FieldValue.serverTimestamp();
+        const updatedAt = admin.firestore.FieldValue.serverTimestamp();
+
+        if (!existing.exists) {
+          const doc: AssistantSuggestionDoc = {
+            objectId: followupObjectId,
+            source: { type: 'task', id: taskId, fromSuggestionId: suggestionId },
+            kind: 'update_task_meta',
+            payload: {
+              title: 'Marquer cette tâche comme favorite ?',
+              taskId,
+              favorite: true,
+              origin: { fromText: 'follow-up' },
+              confidence: 0.9,
+              explanation: 'Suggestion de suivi (optionnelle).',
+            },
+            status: 'proposed',
+            pipelineVersion: 1,
+            dedupeKey: favoriteKey,
+            createdAt,
+            updatedAt,
+            expiresAt,
+          };
+          tx.create(favoriteRef, doc);
+          tx.set(metricsRef, metricsIncrements({ followupSuggestionsCreated: 1 }), { merge: true });
+          return;
+        }
+
+        if (status !== 'proposed' && status !== 'accepted' && !rejectedTooRecent) {
+          tx.update(favoriteRef, {
+            objectId: followupObjectId,
+            source: { type: 'task', id: taskId, fromSuggestionId: suggestionId },
+            kind: 'update_task_meta',
+            payload: {
+              title: 'Marquer cette tâche comme favorite ?',
+              taskId,
+              favorite: true,
+              origin: { fromText: 'follow-up' },
+              confidence: 0.9,
+              explanation: 'Suggestion de suivi (optionnelle).',
+            },
+            status: 'proposed',
+            pipelineVersion: 1,
+            dedupeKey: favoriteKey,
+            updatedAt,
+            expiresAt,
+          });
+          tx.set(metricsRef, metricsIncrements({ followupSuggestionsCreated: 1 }), { merge: true });
+        }
+      });
+    };
+
+    const createReminder = async (params: { taskId: string; dueDate: admin.firestore.Timestamp }) => {
+      if (!followupIsPro) return;
+      if (followupReminderHour === null) return;
+
+      const due = params.dueDate.toDate();
+      const remind = new Date(due.getTime());
+      remind.setDate(remind.getDate() - 1);
+      remind.setHours(followupReminderHour, 0, 0, 0);
+      if (!Number.isFinite(remind.getTime()) || remind.getTime() <= nowTs.toMillis()) return;
+
+      const remindAt = admin.firestore.Timestamp.fromDate(remind);
+      const reminderKey = buildFollowupDedupeKey({
+        taskId: params.taskId,
+        kind: 'create_reminder',
+        minimal: { remindAtMs: remindAt.toMillis() },
+      });
+      const reminderRef = suggestionsCol.doc(reminderKey);
+
+      await db.runTransaction(async (tx) => {
+        const existing = await tx.get(reminderRef);
+        const status = existing.exists ? ((existing.data() as any)?.status as AssistantSuggestionStatus | undefined) : undefined;
+        const updatedAtExisting = existing.exists ? ((existing.data() as any)?.updatedAt as admin.firestore.Timestamp | null) : null;
+        const rejectedTooRecent =
+          status === 'rejected' && updatedAtExisting instanceof admin.firestore.Timestamp
+            ? nowTs.toMillis() - updatedAtExisting.toMillis() < ASSISTANT_FOLLOWUP_REJECT_COOLDOWN_MS
+            : false;
+
+        const createdAt = admin.firestore.FieldValue.serverTimestamp();
+        const updatedAt = admin.firestore.FieldValue.serverTimestamp();
+
+        const title = `Ajouter un rappel la veille à ${followupReminderHour}h ?`;
+
+        if (!existing.exists) {
+          const doc: AssistantSuggestionDoc = {
+            objectId: followupObjectId,
+            source: { type: 'task', id: params.taskId, fromSuggestionId: suggestionId },
+            kind: 'create_reminder',
+            payload: {
+              title,
+              taskId: params.taskId,
+              remindAt,
+              origin: { fromText: 'follow-up' },
+              confidence: 0.9,
+              explanation: 'Suggestion de suivi (optionnelle).',
+            },
+            status: 'proposed',
+            pipelineVersion: 1,
+            dedupeKey: reminderKey,
+            createdAt,
+            updatedAt,
+            expiresAt,
+          };
+          tx.create(reminderRef, doc);
+          tx.set(metricsRef, metricsIncrements({ followupSuggestionsCreated: 1 }), { merge: true });
+          return;
+        }
+
+        if (status !== 'proposed' && status !== 'accepted' && !rejectedTooRecent) {
+          tx.update(reminderRef, {
+            objectId: followupObjectId,
+            source: { type: 'task', id: params.taskId, fromSuggestionId: suggestionId },
+            kind: 'create_reminder',
+            payload: {
+              title,
+              taskId: params.taskId,
+              remindAt,
+              origin: { fromText: 'follow-up' },
+              confidence: 0.9,
+              explanation: 'Suggestion de suivi (optionnelle).',
+            },
+            status: 'proposed',
+            pipelineVersion: 1,
+            dedupeKey: reminderKey,
+            updatedAt,
+            expiresAt,
+          });
+          tx.set(metricsRef, metricsIncrements({ followupSuggestionsCreated: 1 }), { merge: true });
+        }
+      });
+    };
+
+    await Promise.all(
+      followupTasks.flatMap((t) => {
+        const ops: Array<Promise<void>> = [createFavorite(t.taskId)];
+        if (t.dueDate && !t.hasReminder) {
+          ops.push(createReminder({ taskId: t.taskId, dueDate: t.dueDate }));
+        }
+        return ops;
+      }),
+    );
+  }
 
   return {
     createdCoreObjects,
