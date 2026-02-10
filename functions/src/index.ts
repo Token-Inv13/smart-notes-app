@@ -470,6 +470,13 @@ function extractBundleTaskTitlesFromText(rawText: string): { title: string; orig
     add(base, String(m[0] ?? 'rdv'));
   }
 
+  const freeActionRe = /\b(je\s+dois|il\s+faut|a\s+faire|à\s+faire|objectif\s*:|pour\s+but\s+de|pour\s+objectif\s+de)\b\s*(?:d'|de\s+)?([^\n\r\.,;]+)/gi;
+  for (const m of rawText.matchAll(freeActionRe)) {
+    const action = String(m[2] ?? '').trim();
+    if (!action) continue;
+    add(action, String(m[0] ?? action));
+  }
+
   const lines = rawText.split(/\r?\n/);
   for (const lineRaw of lines) {
     const line = lineRaw.trim();
@@ -522,6 +529,8 @@ function detectIntentsV2(params: {
 
   const items = extractBundleTaskTitlesFromText(rawText);
   if (items.length === 0) {
+    const v1 = detectIntentsV1({ title, content, now, memory });
+    if (v1.length >= 1) return { single: v1[0], bundle: null };
     return { single: null, bundle: null };
   }
 
@@ -1625,6 +1634,15 @@ export const assistantRunJobQueue = functions.pubsub
               const v2 = detectIntentsV2({ title: noteTitle, content: noteContent, now: nowDate, memory: memoryDefaults });
               const detectedSingle = v2.single ? [v2.single] : [];
               const detectedBundle = v2.bundle;
+
+              console.log('assistant intents detected', {
+                userId,
+                noteId,
+                objectId,
+                hasSingle: detectedSingle.length > 0,
+                hasBundle: !!detectedBundle,
+              });
+
               if (detectedSingle.length > 0 || detectedBundle) {
                 const suggestionsCol = db.collection('users').doc(userId).collection('assistantSuggestions');
                 const expiresAt = admin.firestore.Timestamp.fromMillis(nowDate.getTime() + 14 * 24 * 60 * 60 * 1000);
@@ -1678,6 +1696,14 @@ export const assistantRunJobQueue = functions.pubsub
                     });
                   }
                 }
+
+                console.log('assistant suggestions candidates', {
+                  userId,
+                  noteId,
+                  objectId,
+                  candidates: candidates.length,
+                  bundleMode: !!detectedBundle ? detectedBundle.bundleMode : null,
+                });
 
                 for (const c of candidates) {
                   const sugRef = suggestionsCol.doc(c.dedupeKey);
