@@ -2285,14 +2285,21 @@ exports.assistantRequestReanalysis = functions.https.onCall(async (data, context
         if (isActive && pending === textHash) {
             return;
         }
-        const userSnap = await tx.get(userRef);
+        // IMPORTANT: Firestore requires that all reads happen before any writes in a transaction.
+        // So we fetch all documents we may need upfront.
+        const [userSnap, usageSnap, objectSnap] = await Promise.all([
+            tx.get(userRef),
+            tx.get(usageRef),
+            tx.get(objectRef),
+        ]);
         const plan = userSnap.exists && typeof ((_a = userSnap.data()) === null || _a === void 0 ? void 0 : _a.plan) === 'string' ? String(userSnap.data().plan) : 'free';
         const dailyLimit = plan === 'pro' ? ASSISTANT_REANALYSIS_PRO_DAILY_LIMIT : ASSISTANT_REANALYSIS_FREE_DAILY_LIMIT;
-        const usageSnap = await tx.get(usageRef);
         const prevCount = usageSnap.exists && typeof ((_b = usageSnap.data()) === null || _b === void 0 ? void 0 : _b.reanalysisCount) === 'number' ? Number(usageSnap.data().reanalysisCount) : 0;
         if (prevCount >= dailyLimit) {
             throw new functions.https.HttpsError('resource-exhausted', 'Daily reanalysis limit reached.');
         }
+        const objectData = objectSnap.exists ? objectSnap.data() : null;
+        const existingTextHash = objectData && typeof (objectData === null || objectData === void 0 ? void 0 : objectData.textHash) === 'string' ? objectData.textHash : null;
         tx.set(usageRef, {
             reanalysisCount: admin.firestore.FieldValue.increment(1),
             lastUpdatedAt: nowServer,
@@ -2310,9 +2317,6 @@ exports.assistantRequestReanalysis = functions.https.onCall(async (data, context
             }, { merge: true });
             return;
         }
-        const objectSnap = await tx.get(objectRef);
-        const objectData = objectSnap.exists ? objectSnap.data() : null;
-        const existingTextHash = objectData && typeof (objectData === null || objectData === void 0 ? void 0 : objectData.textHash) === 'string' ? objectData.textHash : null;
         const objectPayload = {
             objectId,
             type: 'note',

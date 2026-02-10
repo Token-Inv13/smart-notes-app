@@ -2976,15 +2976,24 @@ export const assistantRequestReanalysis = functions.https.onCall(async (data, co
       return;
     }
 
-    const userSnap = await tx.get(userRef);
+    // IMPORTANT: Firestore requires that all reads happen before any writes in a transaction.
+    // So we fetch all documents we may need upfront.
+    const [userSnap, usageSnap, objectSnap] = await Promise.all([
+      tx.get(userRef),
+      tx.get(usageRef),
+      tx.get(objectRef),
+    ]);
+
     const plan = userSnap.exists && typeof (userSnap.data() as any)?.plan === 'string' ? String((userSnap.data() as any).plan) : 'free';
     const dailyLimit = plan === 'pro' ? ASSISTANT_REANALYSIS_PRO_DAILY_LIMIT : ASSISTANT_REANALYSIS_FREE_DAILY_LIMIT;
 
-    const usageSnap = await tx.get(usageRef);
     const prevCount = usageSnap.exists && typeof (usageSnap.data() as any)?.reanalysisCount === 'number' ? Number((usageSnap.data() as any).reanalysisCount) : 0;
     if (prevCount >= dailyLimit) {
       throw new functions.https.HttpsError('resource-exhausted', 'Daily reanalysis limit reached.');
     }
+
+    const objectData = objectSnap.exists ? (objectSnap.data() as any) : null;
+    const existingTextHash = objectData && typeof objectData?.textHash === 'string' ? (objectData.textHash as string) : null;
 
     tx.set(
       usageRef,
@@ -3017,10 +3026,6 @@ export const assistantRequestReanalysis = functions.https.onCall(async (data, co
       );
       return;
     }
-
-    const objectSnap = await tx.get(objectRef);
-    const objectData = objectSnap.exists ? (objectSnap.data() as any) : null;
-    const existingTextHash = objectData && typeof objectData?.textHash === 'string' ? (objectData.textHash as string) : null;
 
     const objectPayload: Partial<AssistantObjectDoc> = {
       objectId,
