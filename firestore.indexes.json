@@ -332,7 +332,7 @@
     },
     {
       "collectionGroup": "assistantJobs",
-      "queryScope": "COLLECTION",
+      "queryScope": "COLLECTION_GROUP",
       "fields": [
         {
           "fieldPath": "status",
