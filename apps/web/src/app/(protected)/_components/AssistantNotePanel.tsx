@@ -326,7 +326,19 @@ export default function AssistantNotePanel({ noteId }: Props) {
     );
   }
 
-  if (!enabled) return null;
+  if (!enabled) {
+    return (
+      <div className="sn-card p-4 space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm font-semibold">Assistant</div>
+          <a href="/assistant" className="px-3 py-2 rounded-md border border-input text-sm hover:bg-accent">
+            Activer
+          </a>
+        </div>
+        <div className="text-sm text-muted-foreground">Assistant désactivé.</div>
+      </div>
+    );
+  }
 
   return (
     <div className="sn-card p-4 space-y-3">
