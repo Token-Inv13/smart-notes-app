@@ -347,6 +347,13 @@ export default function AssistantNotePanel({ noteId }: Props) {
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={handleRefresh}
+            className="px-3 py-2 rounded-md border border-input text-sm hover:bg-accent"
+          >
+            Rafraîchir
+          </button>
+          <button
+            type="button"
             onClick={() => void handleReanalyze()}
             disabled={!noteId || busyReanalysis || cooldownActive}
             className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
