@@ -366,8 +366,19 @@ export default function AssistantNotePanel({ noteId }: Props) {
       </label>
 
       {suggestionsError && (
+        (() => {
+          const suggestionsErrorLabel = (() => {
+            if (suggestionsError instanceof FirebaseError) return `${suggestionsError.code}: ${suggestionsError.message}`;
+            if (suggestionsError instanceof Error) return suggestionsError.message;
+            return "";
+          })();
+
+          return (
         <div className="space-y-2">
-          <div className="sn-alert sn-alert--error">Erreur lors du chargement des suggestions.</div>
+          <div className="sn-alert sn-alert--error">
+            Erreur lors du chargement des suggestions.
+            {suggestionsErrorLabel ? <div className="mt-1 text-xs opacity-80">{suggestionsErrorLabel}</div> : null}
+          </div>
           <button
             type="button"
             onClick={handleRefresh}
@@ -376,6 +387,8 @@ export default function AssistantNotePanel({ noteId }: Props) {
             Rafraîchir
           </button>
         </div>
+          );
+        })()
       )}
 
       {showSkeleton && (
