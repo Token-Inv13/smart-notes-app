@@ -134,7 +134,7 @@ export interface TaskReminderDoc {
 
 export type AssistantSuggestionStatus = 'proposed' | 'accepted' | 'rejected' | 'expired';
 
-export type AssistantSuggestionKind = 'create_task' | 'create_reminder' | 'create_task_bundle';
+export type AssistantSuggestionKind = 'create_task' | 'create_reminder' | 'create_task_bundle' | 'update_task_meta';
 
 export type AssistantTaskBundleMode = 'multiple_tasks';
 
@@ -157,6 +157,8 @@ export type AssistantSuggestionPayload =
       remindAt?: Timestamp;
       priority?: Priority;
       labels?: string[];
+      taskId?: string;
+      favorite?: boolean;
       origin: {
         fromText: string;
       };
@@ -180,8 +182,9 @@ export interface AssistantSuggestionDoc {
   id?: string;
   objectId: string;
   source: {
-    type: 'note';
+    type: 'note' | 'task';
     id: string;
+    fromSuggestionId?: string;
   };
   kind: AssistantSuggestionKind;
   payload: AssistantSuggestionPayload;
