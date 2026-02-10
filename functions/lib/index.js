@@ -17,6 +17,9 @@ function assistantCurrentJobIdForObject(objectId) {
 function assistantMetricsRef(db, userId) {
     return db.collection('users').doc(userId).collection('assistantMetrics').doc('main');
 }
+function assistantMemoryLiteRef(db, userId) {
+    return db.collection('users').doc(userId).collection('assistantMemoryLite').doc('main');
+}
 function assistantUsageRef(db, userId, dayKey) {
     return db.collection('users').doc(userId).collection('assistantUsage').doc(dayKey);
 }
@@ -56,6 +59,20 @@ function clampFromText(raw, maxLen) {
 }
 function normalizeForIntentMatch(raw) {
     return normalizeAssistantText(raw);
+}
+function parsePriorityInText(text) {
+    const t = normalizeForIntentMatch(text);
+    if (t.includes('pas urgent') || t.includes('non urgent') || t.includes('facultatif'))
+        return 'low';
+    if (t.includes('urgent') || t.includes('prioritaire'))
+        return 'high';
+    if (t.includes('important'))
+        return 'medium';
+    return null;
+}
+function hasReminderKeyword(text) {
+    const t = normalizeForIntentMatch(text);
+    return t.includes('rappel') || t.includes('rappeler') || t.includes('me rappeler');
 }
 function addDays(d, days) {
     const next = new Date(d.getTime());
@@ -234,73 +251,71 @@ function extractBundleTaskTitlesFromText(rawText) {
     return deduped;
 }
 function detectIntentsV2(params) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e;
     const { title, content, now } = params;
+    const memory = params.memory;
     const rawText = `${title}\n${content}`;
+    const priorityInText = parsePriorityInText(rawText);
+    const reminderKeyword = hasReminderKeyword(rawText);
     const items = extractBundleTaskTitlesFromText(rawText);
     if (items.length === 0) {
         return { single: null, bundle: null };
     }
     if (items.length === 1) {
-        const v1 = detectIntentsV1({ title, content, now });
+        const v1 = detectIntentsV1({ title, content, now, memory });
         if (v1.length === 1)
             return { single: v1[0], bundle: null };
         const only = items[0];
         const sugTitle = only.title;
         const dtHit = parseDateInText(rawText, now);
         const timeHit = parseTimeInText(rawText);
-        const dt = composeDateTime({
+        let dt = composeDateTime({
             now,
             baseDate: dtHit ? dtHit.date : null,
             time: timeHit ? { hours: timeHit.hours, minutes: timeHit.minutes } : null,
         });
+        let appliedDefaultReminderHour = false;
+        if (dt && dtHit && !timeHit && reminderKeyword && typeof (memory === null || memory === void 0 ? void 0 : memory.defaultReminderHour) === 'number') {
+            const h = Math.trunc(memory.defaultReminderHour);
+            if (Number.isFinite(h) && h >= 0 && h <= 23) {
+                const next = new Date(startOfDay(dtHit.date).getTime());
+                next.setHours(h, 0, 0, 0);
+                dt = next;
+                appliedDefaultReminderHour = true;
+            }
+        }
         const dtTs = dt ? admin.firestore.Timestamp.fromDate(dt) : null;
-        const kind = dtTs && timeHit ? 'create_reminder' : 'create_task';
-        const single = {
-            intent: 'PAYER',
-            title: sugTitle,
-            originFromText: only.originFromText,
-            explanation: `Détecté une action dans la note.`,
-            kind,
-            dueDate: kind === 'create_task' && dtTs ? dtTs : undefined,
-            remindAt: kind === 'create_reminder' && dtTs ? dtTs : undefined,
-            confidence: 0.75,
-            dedupeMinimal: {
+        const kind = dtTs && (timeHit || reminderKeyword) ? 'create_reminder' : 'create_task';
+        const appliedDefaultPriority = !priorityInText && !!(memory === null || memory === void 0 ? void 0 : memory.defaultPriority);
+        const finalPriority = priorityInText !== null && priorityInText !== void 0 ? priorityInText : ((_a = memory === null || memory === void 0 ? void 0 : memory.defaultPriority) !== null && _a !== void 0 ? _a : undefined);
+        const single = Object.assign(Object.assign(Object.assign(Object.assign({ intent: 'PAYER', title: sugTitle, originFromText: only.originFromText, explanation: `Détecté une action dans la note.`, kind, dueDate: kind === 'create_task' && dtTs ? dtTs : undefined, remindAt: kind === 'create_reminder' && dtTs ? dtTs : undefined }, (finalPriority ? { priority: finalPriority } : {})), (appliedDefaultPriority ? { appliedDefaultPriority: true } : {})), (appliedDefaultReminderHour ? { appliedDefaultReminderHour: true } : {})), { confidence: 0.75, dedupeMinimal: {
                 title: sugTitle,
                 dueDateMs: kind === 'create_task' && dtTs ? dtTs.toMillis() : undefined,
                 remindAtMs: kind === 'create_reminder' && dtTs ? dtTs.toMillis() : undefined,
-            },
-        };
+            } });
         return { single, bundle: null };
     }
     const limited = items.slice(0, 6);
     const extraCount = Math.max(0, items.length - limited.length);
-    const tasks = limited.map((it) => ({
-        title: it.title,
-        origin: { fromText: it.originFromText },
-    }));
-    const bundleTitle = `Plan d’action — ${(_b = (_a = limited[0]) === null || _a === void 0 ? void 0 : _a.title) !== null && _b !== void 0 ? _b : 'Votre note'}`;
+    const appliedDefaultPriority = !priorityInText && !!(memory === null || memory === void 0 ? void 0 : memory.defaultPriority);
+    const tasks = limited.map((it) => (Object.assign(Object.assign({ title: it.title }, (appliedDefaultPriority && (memory === null || memory === void 0 ? void 0 : memory.defaultPriority) ? { priority: memory.defaultPriority } : {})), { origin: { fromText: it.originFromText } })));
+    const bundleTitle = `Plan d’action — ${(_c = (_b = limited[0]) === null || _b === void 0 ? void 0 : _b.title) !== null && _c !== void 0 ? _c : 'Votre note'}`;
     const tasksSig = sha256Hex(limited.map((t) => normalizeAssistantText(t.title)).join('|'));
     const explanation = extraCount > 0 ? `Plan d’action détecté (+${extraCount} autres).` : `Plan d’action détecté.`;
-    const bundle = {
-        title: bundleTitle,
-        tasks,
-        bundleMode: 'multiple_tasks',
-        originFromText: (_d = (_c = limited[0]) === null || _c === void 0 ? void 0 : _c.originFromText) !== null && _d !== void 0 ? _d : clampFromText(rawText, 120),
-        explanation,
-        confidence: 0.8,
-        dedupeMinimal: {
+    const bundle = Object.assign(Object.assign({ title: bundleTitle, tasks, bundleMode: 'multiple_tasks', originFromText: (_e = (_d = limited[0]) === null || _d === void 0 ? void 0 : _d.originFromText) !== null && _e !== void 0 ? _e : clampFromText(rawText, 120), explanation, confidence: 0.8 }, (appliedDefaultPriority ? { appliedDefaultPriority: true } : {})), { dedupeMinimal: {
             title: bundleTitle,
             tasksSig,
-        },
-    };
+        } });
     return { single: null, bundle };
 }
 function detectIntentsV1(params) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     const { title, content, now } = params;
+    const memory = params.memory;
     const rawText = `${title}\n${content}`;
     const textNorm = normalizeForIntentMatch(rawText);
+    const priorityInText = parsePriorityInText(rawText);
+    const reminderKeyword = hasReminderKeyword(rawText);
     const dateHit = parseDateInText(rawText, now);
     const timeHit = parseTimeInText(rawText);
     const dt = composeDateTime({
@@ -308,7 +323,18 @@ function detectIntentsV1(params) {
         baseDate: dateHit ? dateHit.date : null,
         time: timeHit ? { hours: timeHit.hours, minutes: timeHit.minutes } : null,
     });
-    const dtTs = dt ? admin.firestore.Timestamp.fromDate(dt) : null;
+    let dtFinal = dt;
+    let appliedDefaultReminderHour = false;
+    if (dtFinal && dateHit && !timeHit && reminderKeyword && typeof (memory === null || memory === void 0 ? void 0 : memory.defaultReminderHour) === 'number') {
+        const h = Math.trunc(memory.defaultReminderHour);
+        if (Number.isFinite(h) && h >= 0 && h <= 23) {
+            const next = new Date(startOfDay(dateHit.date).getTime());
+            next.setHours(h, 0, 0, 0);
+            dtFinal = next;
+            appliedDefaultReminderHour = true;
+        }
+    }
+    const dtTs = dtFinal ? admin.firestore.Timestamp.fromDate(dtFinal) : null;
     const intents = [];
     const add = (next) => {
         var _a;
@@ -322,6 +348,8 @@ function detectIntentsV1(params) {
         };
         intents.push(Object.assign(Object.assign({}, next), { confidence, dedupeMinimal: minimal }));
     };
+    const appliedDefaultPriority = !priorityInText && !!(memory === null || memory === void 0 ? void 0 : memory.defaultPriority);
+    const finalPriority = priorityInText !== null && priorityInText !== void 0 ? priorityInText : ((_a = memory === null || memory === void 0 ? void 0 : memory.defaultPriority) !== null && _a !== void 0 ? _a : undefined);
     const payHasKeyword = textNorm.includes('payer') ||
         textNorm.includes('regler') ||
         textNorm.includes('facture') ||
@@ -330,55 +358,28 @@ function detectIntentsV1(params) {
         textNorm.includes('abonnement');
     const mPay = rawText.match(/\b(payer|r[ée]gler)\b\s+([^\n\r\.,;]+)/i);
     if (mPay || payHasKeyword) {
-        const obj = mPay ? String((_a = mPay[2]) !== null && _a !== void 0 ? _a : '').trim() : '';
+        const obj = mPay ? String((_b = mPay[2]) !== null && _b !== void 0 ? _b : '').trim() : '';
         const objTitle = obj ? obj : 'facture';
         const sugTitle = `Payer ${objTitle}`.replace(/\s+/g, ' ').trim();
-        const kind = dtTs && timeHit ? 'create_reminder' : 'create_task';
-        add({
-            intent: 'PAYER',
-            title: sugTitle,
-            originFromText: clampFromText(mPay ? mPay[0] : 'payer', 120),
-            explanation: `Détecté une intention de paiement dans la note.`,
-            kind,
-            dueDate: kind === 'create_task' && dtTs ? dtTs : undefined,
-            remindAt: kind === 'create_reminder' && dtTs ? dtTs : undefined,
-            confidence: 0.8,
-        });
+        const kind = dtTs && (timeHit || reminderKeyword) ? 'create_reminder' : 'create_task';
+        add(Object.assign(Object.assign(Object.assign(Object.assign({ intent: 'PAYER', title: sugTitle, originFromText: clampFromText(mPay ? mPay[0] : 'payer', 120), explanation: `Détecté une intention de paiement dans la note.`, kind, dueDate: kind === 'create_task' && dtTs ? dtTs : undefined, remindAt: kind === 'create_reminder' && dtTs ? dtTs : undefined }, (finalPriority ? { priority: finalPriority } : {})), (appliedDefaultPriority ? { appliedDefaultPriority: true } : {})), (appliedDefaultReminderHour ? { appliedDefaultReminderHour: true } : {})), { confidence: 0.8 }));
     }
     const mCall = rawText.match(/\b(appeler|t[ée]l[ée]phoner|tel|phone)\b\s+([^\n\r\.,;]+)/i);
     if (mCall) {
-        const obj = String((_b = mCall[2]) !== null && _b !== void 0 ? _b : '').trim();
+        const obj = String((_c = mCall[2]) !== null && _c !== void 0 ? _c : '').trim();
         const objTitle = obj ? obj : 'quelqu’un';
         const sugTitle = `Appeler ${objTitle}`.replace(/\s+/g, ' ').trim();
-        const kind = dtTs && timeHit ? 'create_reminder' : 'create_task';
-        add({
-            intent: 'APPELER',
-            title: sugTitle,
-            originFromText: clampFromText(mCall[0], 120),
-            explanation: `Détecté une intention d’appel dans la note.`,
-            kind,
-            dueDate: kind === 'create_task' && dtTs ? dtTs : undefined,
-            remindAt: kind === 'create_reminder' && dtTs ? dtTs : undefined,
-            confidence: 0.8,
-        });
+        const kind = dtTs && (timeHit || reminderKeyword) ? 'create_reminder' : 'create_task';
+        add(Object.assign(Object.assign(Object.assign(Object.assign({ intent: 'APPELER', title: sugTitle, originFromText: clampFromText(mCall[0], 120), explanation: `Détecté une intention d’appel dans la note.`, kind, dueDate: kind === 'create_task' && dtTs ? dtTs : undefined, remindAt: kind === 'create_reminder' && dtTs ? dtTs : undefined }, (finalPriority ? { priority: finalPriority } : {})), (appliedDefaultPriority ? { appliedDefaultPriority: true } : {})), (appliedDefaultReminderHour ? { appliedDefaultReminderHour: true } : {})), { confidence: 0.8 }));
     }
     const mRdv = rawText.match(/\b(prendre\s+rdv|prendre\s+rendez-vous|rdv|rendez-vous|r[ée]server)\b\s*([^\n\r\.,;]+)?/i);
     if (mRdv) {
-        const obj = String((_c = mRdv[2]) !== null && _c !== void 0 ? _c : '').trim();
+        const obj = String((_d = mRdv[2]) !== null && _d !== void 0 ? _d : '').trim();
         const objTitle = obj ? obj : '';
         const baseTitle = objTitle ? `Prendre RDV ${objTitle}` : 'Prendre RDV';
         const sugTitle = baseTitle.replace(/\s+/g, ' ').trim();
-        const kind = dtTs && timeHit ? 'create_reminder' : 'create_task';
-        add({
-            intent: 'PRENDRE_RDV',
-            title: sugTitle,
-            originFromText: clampFromText(mRdv[0], 120),
-            explanation: `Détecté une intention de rendez-vous dans la note.`,
-            kind,
-            dueDate: kind === 'create_task' && dtTs ? dtTs : undefined,
-            remindAt: kind === 'create_reminder' && dtTs ? dtTs : undefined,
-            confidence: 0.8,
-        });
+        const kind = dtTs && (timeHit || reminderKeyword) ? 'create_reminder' : 'create_task';
+        add(Object.assign(Object.assign(Object.assign(Object.assign({ intent: 'PRENDRE_RDV', title: sugTitle, originFromText: clampFromText(mRdv[0], 120), explanation: `Détecté une intention de rendez-vous dans la note.`, kind, dueDate: kind === 'create_task' && dtTs ? dtTs : undefined, remindAt: kind === 'create_reminder' && dtTs ? dtTs : undefined }, (finalPriority ? { priority: finalPriority } : {})), (appliedDefaultPriority ? { appliedDefaultPriority: true } : {})), (appliedDefaultReminderHour ? { appliedDefaultReminderHour: true } : {})), { confidence: 0.8 }));
     }
     return intents;
 }
@@ -1111,7 +1112,20 @@ exports.assistantRunJobQueue = functions.pubsub
                         const noteContent = typeof (note === null || note === void 0 ? void 0 : note.content) === 'string' ? note.content : '';
                         const normalized = normalizeAssistantText(`${noteTitle}\n${noteContent}`);
                         processedTextHash = sha256Hex(normalized);
-                        const v2 = detectIntentsV2({ title: noteTitle, content: noteContent, now: nowDate });
+                        let memoryDefaults = undefined;
+                        try {
+                            const memSnap = await assistantMemoryLiteRef(db, userId).get();
+                            if (memSnap.exists) {
+                                const mem = memSnap.data();
+                                const dp = mem === null || mem === void 0 ? void 0 : mem.defaultPriority;
+                                const drh = mem === null || mem === void 0 ? void 0 : mem.defaultReminderHour;
+                                memoryDefaults = Object.assign(Object.assign({}, (dp === 'low' || dp === 'medium' || dp === 'high' ? { defaultPriority: dp } : {})), (typeof drh === 'number' && Number.isFinite(drh) ? { defaultReminderHour: Math.trunc(drh) } : {}));
+                            }
+                        }
+                        catch (_c) {
+                            // ignore
+                        }
+                        const v2 = detectIntentsV2({ title: noteTitle, content: noteContent, now: nowDate, memory: memoryDefaults });
                         const detectedSingle = v2.single ? [v2.single] : [];
                         const detectedBundle = v2.bundle;
                         if (detectedSingle.length > 0 || detectedBundle) {
@@ -1134,16 +1148,28 @@ exports.assistantRunJobQueue = functions.pubsub
                                     kind: 'create_task_bundle',
                                     payload,
                                     dedupeKey,
-                                    metricsInc: { bundlesCreated: 1 },
+                                    metricsInc: {
+                                        bundlesCreated: 1,
+                                        defaultPriorityAppliedCount: detectedBundle.appliedDefaultPriority ? 1 : 0,
+                                    },
                                 });
                             }
                             else {
                                 for (const d of detectedSingle) {
                                     const dedupeKey = buildSuggestionDedupeKey({ objectId, kind: d.kind, minimal: d.dedupeMinimal });
-                                    const payload = Object.assign(Object.assign(Object.assign({ title: d.title }, (d.dueDate ? { dueDate: d.dueDate } : {})), (d.remindAt ? { remindAt: d.remindAt } : {})), { origin: {
+                                    const payload = Object.assign(Object.assign(Object.assign(Object.assign({ title: d.title }, (d.dueDate ? { dueDate: d.dueDate } : {})), (d.remindAt ? { remindAt: d.remindAt } : {})), (d.priority ? { priority: d.priority } : {})), { origin: {
                                             fromText: d.originFromText,
                                         }, confidence: d.confidence, explanation: d.explanation });
-                                    candidates.push({ kind: d.kind, payload, dedupeKey, metricsInc: { suggestionsCreated: 1 } });
+                                    candidates.push({
+                                        kind: d.kind,
+                                        payload,
+                                        dedupeKey,
+                                        metricsInc: {
+                                            suggestionsCreated: 1,
+                                            defaultPriorityAppliedCount: d.appliedDefaultPriority ? 1 : 0,
+                                            defaultReminderHourAppliedCount: d.appliedDefaultReminderHour ? 1 : 0,
+                                        },
+                                    });
                                 }
                             }
                             for (const c of candidates) {
@@ -1225,7 +1251,7 @@ exports.assistantRunJobQueue = functions.pubsub
             try {
                 await metricsRef.set(metricsIncrements({ jobsProcessed: 1 }), { merge: true });
             }
-            catch (_c) {
+            catch (_d) {
                 // ignore
             }
         }
@@ -1242,7 +1268,7 @@ exports.assistantRunJobQueue = functions.pubsub
                     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 });
             }
-            catch (_d) {
+            catch (_e) {
                 // ignore
             }
             try {
@@ -1252,14 +1278,14 @@ exports.assistantRunJobQueue = functions.pubsub
                     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 }, { merge: true });
             }
-            catch (_e) {
+            catch (_f) {
                 // ignore
             }
             try {
                 const metricsRef = assistantMetricsRef(db, userId);
                 await metricsRef.set(metricsIncrements({ jobsProcessed: 1, jobErrors: 1 }), { merge: true });
             }
-            catch (_f) {
+            catch (_g) {
                 // ignore
             }
         }
@@ -1284,13 +1310,16 @@ exports.assistantApplySuggestion = functions.https.onCall(async (data, context) 
     const suggestionRef = userRef.collection('assistantSuggestions').doc(suggestionId);
     const decisionsCol = userRef.collection('assistantDecisions');
     const metricsRef = assistantMetricsRef(db, userId);
+    const memoryLiteRef = assistantMemoryLiteRef(db, userId);
     const decisionRef = decisionsCol.doc();
     const nowTs = admin.firestore.Timestamp.now();
     let decisionId = null;
     const createdCoreObjects = [];
     await db.runTransaction(async (tx) => {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x;
         createdCoreObjects.length = 0;
+        const memoryPriorityUses = [];
+        const memoryReminderHourUses = [];
         const suggestionSnap = await tx.get(suggestionRef);
         if (!suggestionSnap.exists) {
             throw new functions.https.HttpsError('not-found', 'Suggestion not found.');
@@ -1511,6 +1540,14 @@ exports.assistantApplySuggestion = functions.https.onCall(async (data, context) 
                     updatedAt,
                 });
                 createdCoreObjects.push({ type: 'task', id: taskRef.id });
+                if (nextPriority) {
+                    memoryPriorityUses.push(nextPriority);
+                }
+                if (nextRemind) {
+                    const h = nextRemind.toDate().getHours();
+                    if (Number.isFinite(h) && h >= 0 && h <= 23)
+                        memoryReminderHourUses.push(h);
+                }
                 if (nextRemind) {
                     const remindAtIso = nextRemind.toDate().toISOString();
                     const reminderRef = reminderCol.doc();
@@ -1560,6 +1597,61 @@ exports.assistantApplySuggestion = functions.https.onCall(async (data, context) 
                 decisionsCount: 1,
                 totalTimeToDecisionMs: timeToDecisionMs ? timeToDecisionMs : 0,
             }), { merge: true });
+            if (memoryPriorityUses.length > 0 || memoryReminderHourUses.length > 0) {
+                const memorySnap = await tx.get(memoryLiteRef);
+                const existing = memorySnap.exists ? memorySnap.data() : {};
+                const prevPriorityCounts = (_s = existing === null || existing === void 0 ? void 0 : existing.stats) === null || _s === void 0 ? void 0 : _s.priorityCounts;
+                const nextPriorityCounts = {
+                    low: typeof (prevPriorityCounts === null || prevPriorityCounts === void 0 ? void 0 : prevPriorityCounts.low) === 'number' && Number.isFinite(prevPriorityCounts.low) ? prevPriorityCounts.low : 0,
+                    medium: typeof (prevPriorityCounts === null || prevPriorityCounts === void 0 ? void 0 : prevPriorityCounts.medium) === 'number' && Number.isFinite(prevPriorityCounts.medium) ? prevPriorityCounts.medium : 0,
+                    high: typeof (prevPriorityCounts === null || prevPriorityCounts === void 0 ? void 0 : prevPriorityCounts.high) === 'number' && Number.isFinite(prevPriorityCounts.high) ? prevPriorityCounts.high : 0,
+                };
+                const prevReminderCounts = (_t = existing === null || existing === void 0 ? void 0 : existing.stats) === null || _t === void 0 ? void 0 : _t.reminderHourCounts;
+                const nextReminderCounts = Object.assign({}, (prevReminderCounts && typeof prevReminderCounts === 'object' ? prevReminderCounts : {}));
+                let changed = false;
+                for (const p of memoryPriorityUses) {
+                    nextPriorityCounts[p] = ((_u = nextPriorityCounts[p]) !== null && _u !== void 0 ? _u : 0) + 1;
+                    changed = true;
+                }
+                for (const hour of memoryReminderHourUses) {
+                    const k = String(hour);
+                    const prev = typeof nextReminderCounts[k] === 'number' && Number.isFinite(nextReminderCounts[k]) ? nextReminderCounts[k] : 0;
+                    nextReminderCounts[k] = prev + 1;
+                    changed = true;
+                }
+                const totalP = nextPriorityCounts.low + nextPriorityCounts.medium + nextPriorityCounts.high;
+                const topP = nextPriorityCounts.high >= nextPriorityCounts.medium && nextPriorityCounts.high >= nextPriorityCounts.low
+                    ? { p: 'high', c: nextPriorityCounts.high }
+                    : nextPriorityCounts.medium >= nextPriorityCounts.low
+                        ? { p: 'medium', c: nextPriorityCounts.medium }
+                        : { p: 'low', c: nextPriorityCounts.low };
+                const nextDefaultPriority = totalP >= 5 && topP.c / totalP > 0.6 ? topP.p : existing === null || existing === void 0 ? void 0 : existing.defaultPriority;
+                if (typeof nextDefaultPriority !== 'undefined' && nextDefaultPriority !== (existing === null || existing === void 0 ? void 0 : existing.defaultPriority)) {
+                    changed = true;
+                }
+                let nextDefaultReminderHour = existing === null || existing === void 0 ? void 0 : existing.defaultReminderHour;
+                const reminderEntries = Object.entries(nextReminderCounts)
+                    .map(([k, v]) => ({ hour: Number(k), count: v }))
+                    .filter((x) => Number.isFinite(x.hour) && x.hour >= 0 && x.hour <= 23 && typeof x.count === 'number' && Number.isFinite(x.count));
+                const totalR = reminderEntries.reduce((acc, x) => acc + x.count, 0);
+                if (totalR >= 5) {
+                    reminderEntries.sort((a, b) => b.count - a.count);
+                    const top = reminderEntries[0];
+                    if (top && top.count / totalR > 0.6) {
+                        nextDefaultReminderHour = top.hour;
+                    }
+                }
+                if (typeof nextDefaultReminderHour !== 'undefined' && nextDefaultReminderHour !== (existing === null || existing === void 0 ? void 0 : existing.defaultReminderHour)) {
+                    changed = true;
+                }
+                if (changed) {
+                    tx.set(memoryLiteRef, Object.assign(Object.assign(Object.assign({}, (typeof nextDefaultPriority !== 'undefined' ? { defaultPriority: nextDefaultPriority } : {})), (typeof nextDefaultReminderHour !== 'undefined' ? { defaultReminderHour: nextDefaultReminderHour } : {})), { stats: {
+                            priorityCounts: nextPriorityCounts,
+                            reminderHourCounts: nextReminderCounts,
+                        }, updatedAt }), { merge: true });
+                    tx.set(metricsRef, metricsIncrements({ memoryUpdatesCount: 1 }), { merge: true });
+                }
+            }
             tx.update(suggestionRef, {
                 status: 'accepted',
                 updatedAt,
@@ -1588,6 +1680,14 @@ exports.assistantApplySuggestion = functions.https.onCall(async (data, context) 
                 updatedAt,
             });
             createdCoreObjects.push({ type: 'task', id: taskRef.id });
+            if (finalPriorityValue) {
+                memoryPriorityUses.push(finalPriorityValue);
+            }
+            if (finalRemindAt) {
+                const h = finalRemindAt.toDate().getHours();
+                if (Number.isFinite(h) && h >= 0 && h <= 23)
+                    memoryReminderHourUses.push(h);
+            }
             if (kind === 'create_reminder') {
                 if (!isPro) {
                     throw new functions.https.HttpsError('failed-precondition', 'Plan pro requis pour créer un rappel.');
@@ -1630,6 +1730,61 @@ exports.assistantApplySuggestion = functions.https.onCall(async (data, context) 
             decisionsCount: 1,
             totalTimeToDecisionMs: timeToDecisionMs ? timeToDecisionMs : 0,
         }), { merge: true });
+        if (memoryPriorityUses.length > 0 || memoryReminderHourUses.length > 0) {
+            const memorySnap = await tx.get(memoryLiteRef);
+            const existing = memorySnap.exists ? memorySnap.data() : {};
+            const prevPriorityCounts = (_v = existing === null || existing === void 0 ? void 0 : existing.stats) === null || _v === void 0 ? void 0 : _v.priorityCounts;
+            const nextPriorityCounts = {
+                low: typeof (prevPriorityCounts === null || prevPriorityCounts === void 0 ? void 0 : prevPriorityCounts.low) === 'number' && Number.isFinite(prevPriorityCounts.low) ? prevPriorityCounts.low : 0,
+                medium: typeof (prevPriorityCounts === null || prevPriorityCounts === void 0 ? void 0 : prevPriorityCounts.medium) === 'number' && Number.isFinite(prevPriorityCounts.medium) ? prevPriorityCounts.medium : 0,
+                high: typeof (prevPriorityCounts === null || prevPriorityCounts === void 0 ? void 0 : prevPriorityCounts.high) === 'number' && Number.isFinite(prevPriorityCounts.high) ? prevPriorityCounts.high : 0,
+            };
+            const prevReminderCounts = (_w = existing === null || existing === void 0 ? void 0 : existing.stats) === null || _w === void 0 ? void 0 : _w.reminderHourCounts;
+            const nextReminderCounts = Object.assign({}, (prevReminderCounts && typeof prevReminderCounts === 'object' ? prevReminderCounts : {}));
+            let changed = false;
+            for (const p of memoryPriorityUses) {
+                nextPriorityCounts[p] = ((_x = nextPriorityCounts[p]) !== null && _x !== void 0 ? _x : 0) + 1;
+                changed = true;
+            }
+            for (const hour of memoryReminderHourUses) {
+                const k = String(hour);
+                const prev = typeof nextReminderCounts[k] === 'number' && Number.isFinite(nextReminderCounts[k]) ? nextReminderCounts[k] : 0;
+                nextReminderCounts[k] = prev + 1;
+                changed = true;
+            }
+            const totalP = nextPriorityCounts.low + nextPriorityCounts.medium + nextPriorityCounts.high;
+            const topP = nextPriorityCounts.high >= nextPriorityCounts.medium && nextPriorityCounts.high >= nextPriorityCounts.low
+                ? { p: 'high', c: nextPriorityCounts.high }
+                : nextPriorityCounts.medium >= nextPriorityCounts.low
+                    ? { p: 'medium', c: nextPriorityCounts.medium }
+                    : { p: 'low', c: nextPriorityCounts.low };
+            const nextDefaultPriority = totalP >= 5 && topP.c / totalP > 0.6 ? topP.p : existing === null || existing === void 0 ? void 0 : existing.defaultPriority;
+            if (typeof nextDefaultPriority !== 'undefined' && nextDefaultPriority !== (existing === null || existing === void 0 ? void 0 : existing.defaultPriority)) {
+                changed = true;
+            }
+            let nextDefaultReminderHour = existing === null || existing === void 0 ? void 0 : existing.defaultReminderHour;
+            const reminderEntries = Object.entries(nextReminderCounts)
+                .map(([k, v]) => ({ hour: Number(k), count: v }))
+                .filter((x) => Number.isFinite(x.hour) && x.hour >= 0 && x.hour <= 23 && typeof x.count === 'number' && Number.isFinite(x.count));
+            const totalR = reminderEntries.reduce((acc, x) => acc + x.count, 0);
+            if (totalR >= 5) {
+                reminderEntries.sort((a, b) => b.count - a.count);
+                const top = reminderEntries[0];
+                if (top && top.count / totalR > 0.6) {
+                    nextDefaultReminderHour = top.hour;
+                }
+            }
+            if (typeof nextDefaultReminderHour !== 'undefined' && nextDefaultReminderHour !== (existing === null || existing === void 0 ? void 0 : existing.defaultReminderHour)) {
+                changed = true;
+            }
+            if (changed) {
+                tx.set(memoryLiteRef, Object.assign(Object.assign(Object.assign({}, (typeof nextDefaultPriority !== 'undefined' ? { defaultPriority: nextDefaultPriority } : {})), (typeof nextDefaultReminderHour !== 'undefined' ? { defaultReminderHour: nextDefaultReminderHour } : {})), { stats: {
+                        priorityCounts: nextPriorityCounts,
+                        reminderHourCounts: nextReminderCounts,
+                    }, updatedAt }), { merge: true });
+                tx.set(metricsRef, metricsIncrements({ memoryUpdatesCount: 1 }), { merge: true });
+            }
+        }
         tx.update(suggestionRef, {
             status: 'accepted',
             updatedAt,
