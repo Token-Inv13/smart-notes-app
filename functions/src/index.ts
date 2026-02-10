@@ -2335,6 +2335,19 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
         updatedAt,
       });
 
+      let followupReminderHour: number | null = null;
+      try {
+        const memSnap = await tx.get(memoryLiteRef);
+        if (memSnap.exists) {
+          const mem = memSnap.data() as AssistantMemoryLiteDoc;
+          const hRaw = mem?.defaultReminderHour;
+          const h = typeof hRaw === 'number' && Number.isFinite(hRaw) ? Math.trunc(hRaw) : null;
+          if (h !== null && h >= 0 && h <= 23) followupReminderHour = h;
+        }
+      } catch {
+        // ignore
+      }
+
       for (const info of createdTaskInfos) {
         const favoriteKey = buildFollowupDedupeKey({
           taskId: info.taskId,
@@ -2394,11 +2407,11 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
           tx.set(metricsRef, metricsIncrements({ followupSuggestionsCreated: 1 }), { merge: true });
         }
 
-        if (isPro && info.dueDate && !info.hasReminder) {
+        if (isPro && followupReminderHour !== null && info.dueDate && !info.hasReminder) {
           const due = info.dueDate.toDate();
           const remind = new Date(due.getTime());
           remind.setDate(remind.getDate() - 1);
-          remind.setHours(18, 0, 0, 0);
+          remind.setHours(followupReminderHour, 0, 0, 0);
           if (Number.isFinite(remind.getTime()) && remind.getTime() > nowTs.toMillis()) {
             const remindAt = admin.firestore.Timestamp.fromDate(remind);
 
@@ -2632,11 +2645,24 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
             tx.set(metricsRef, metricsIncrements({ followupSuggestionsCreated: 1 }), { merge: true });
           }
 
-          if (isPro && finalDueDate && !hasReminder) {
+          let followupReminderHour: number | null = null;
+          try {
+            const memSnap = await tx.get(memoryLiteRef);
+            if (memSnap.exists) {
+              const mem = memSnap.data() as AssistantMemoryLiteDoc;
+              const hRaw = mem?.defaultReminderHour;
+              const h = typeof hRaw === 'number' && Number.isFinite(hRaw) ? Math.trunc(hRaw) : null;
+              if (h !== null && h >= 0 && h <= 23) followupReminderHour = h;
+            }
+          } catch {
+            // ignore
+          }
+
+          if (isPro && followupReminderHour !== null && finalDueDate && !hasReminder) {
             const due = finalDueDate.toDate();
             const remind = new Date(due.getTime());
             remind.setDate(remind.getDate() - 1);
-            remind.setHours(18, 0, 0, 0);
+            remind.setHours(followupReminderHour, 0, 0, 0);
             if (Number.isFinite(remind.getTime()) && remind.getTime() > nowTs.toMillis()) {
               const remindAt = admin.firestore.Timestamp.fromDate(remind);
 
