@@ -300,6 +300,12 @@ export default function AssistantNotePanel({ noteId }: Props) {
   }
 
   if (assistantError) {
+    const assistantErrorLabel = (() => {
+      if (assistantError instanceof FirebaseError) return `${assistantError.code}: ${assistantError.message}`;
+      if (assistantError instanceof Error) return assistantError.message;
+      return "";
+    })();
+
     return (
       <div className="sn-card p-4 space-y-2">
         <div className="flex items-center justify-between gap-3">
@@ -312,7 +318,10 @@ export default function AssistantNotePanel({ noteId }: Props) {
             Rafraîchir
           </button>
         </div>
-        <div className="sn-alert sn-alert--error">Erreur lors du chargement de l’assistant.</div>
+        <div className="sn-alert sn-alert--error">
+          Erreur lors du chargement de l’assistant.
+          {assistantErrorLabel ? <div className="mt-1 text-xs opacity-80">{assistantErrorLabel}</div> : null}
+        </div>
       </div>
     );
   }
