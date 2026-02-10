@@ -223,7 +223,7 @@ function extractBundleTaskTitlesFromText(rawText) {
         const base = obj ? `Prendre RDV ${obj}` : 'Prendre RDV';
         add(base, String((_f = m[0]) !== null && _f !== void 0 ? _f : 'rdv'));
     }
-    const freeActionRe = /\b(je\s+dois|il\s+faut|a\s+faire|à\s+faire|objectif\s*:|pour\s+but\s+de|pour\s+objectif\s+de)\b\s*(?:d'|de\s+)?([^\n\r\.,;]+)/gi;
+    const freeActionRe = /\b(je\s+dois|il\s+faut|a\s+faire|à\s+faire|objectif\s*:|pour\s+but|pour\s+objectif)\b\s*(?:d'|de\s+)?([^\n\r\.,;]+)/gi;
     for (const m of rawText.matchAll(freeActionRe)) {
         const action = String((_g = m[2]) !== null && _g !== void 0 ? _g : '').trim();
         if (!action)

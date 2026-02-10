@@ -470,7 +470,7 @@ function extractBundleTaskTitlesFromText(rawText: string): { title: string; orig
     add(base, String(m[0] ?? 'rdv'));
   }
 
-  const freeActionRe = /\b(je\s+dois|il\s+faut|a\s+faire|à\s+faire|objectif\s*:|pour\s+but\s+de|pour\s+objectif\s+de)\b\s*(?:d'|de\s+)?([^\n\r\.,;]+)/gi;
+  const freeActionRe = /\b(je\s+dois|il\s+faut|a\s+faire|à\s+faire|objectif\s*:|pour\s+but|pour\s+objectif)\b\s*(?:d'|de\s+)?([^\n\r\.,;]+)/gi;
   for (const m of rawText.matchAll(freeActionRe)) {
     const action = String(m[2] ?? '').trim();
     if (!action) continue;
