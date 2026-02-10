@@ -11,6 +11,7 @@ import { useNoteAssistantSuggestions } from "@/hooks/useNoteAssistantSuggestions
 import { formatTimestampForInput, parseLocalDateTimeToTimestamp } from "@/lib/datetime";
 import type { AssistantSuggestionDoc, Priority } from "@/types/firestore";
 import Modal from "../Modal";
+import BundleCustomizeModal from "./assistant/BundleCustomizeModal";
 
 type Props = {
   noteId?: string;
@@ -48,13 +49,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
   const [editError, setEditError] = useState<string | null>(null);
   const [expandedBundleSuggestionId, setExpandedBundleSuggestionId] = useState<string | null>(null);
 
-  const [customizing, setCustomizing] = useState<AssistantSuggestionDoc | null>(null);
-  const [customSelected, setCustomSelected] = useState<Record<number, boolean>>({});
-  const [customTitles, setCustomTitles] = useState<Record<number, string>>({});
-  const [customDueDates, setCustomDueDates] = useState<Record<number, string>>({});
-  const [customRemindAts, setCustomRemindAts] = useState<Record<number, string>>({});
-  const [customPriorities, setCustomPriorities] = useState<Record<number, "" | Priority>>({});
-  const [customizeError, setCustomizeError] = useState<string | null>(null);
+  const [bundleCustomizeSuggestion, setBundleCustomizeSuggestion] = useState<AssistantSuggestionDoc | null>(null);
 
   const sorted = useMemo(() => {
     const arr = (suggestions ?? []).slice();
@@ -196,132 +191,34 @@ export default function AssistantNotePanel({ noteId }: Props) {
     setEditError(null);
   };
 
-  const openCustomize = (s: AssistantSuggestionDoc) => {
-    if (s.kind !== "create_task_bundle") return;
-    setCustomizing(s);
-    setCustomizeError(null);
-
-    const payload = s.payload;
-    if (!("tasks" in payload)) return;
-    const tasks = payload.tasks.slice(0, 6);
-
-    const selected: Record<number, boolean> = {};
-    const titles: Record<number, string> = {};
-    const dueDates: Record<number, string> = {};
-    const remindAts: Record<number, string> = {};
-    const priorities: Record<number, "" | Priority> = {};
-
-    tasks.forEach((t, idx) => {
-      selected[idx] = true;
-      titles[idx] = t.title ?? "";
-      dueDates[idx] = t.dueDate ? formatTimestampForInput(t.dueDate) : "";
-      remindAts[idx] = t.remindAt ? formatTimestampForInput(t.remindAt) : "";
-      const p = t.priority;
-      priorities[idx] = p === "low" || p === "medium" || p === "high" ? p : "";
-    });
-
-    setCustomSelected(selected);
-    setCustomTitles(titles);
-    setCustomDueDates(dueDates);
-    setCustomRemindAts(remindAts);
-    setCustomPriorities(priorities);
-  };
-
-  const closeCustomize = () => {
-    setCustomizing(null);
-    setCustomizeError(null);
-  };
-
-  const selectedCount = useMemo(() => {
-    if (!customizing) return 0;
-    const payload = customizing.payload;
-    if (!("tasks" in payload)) return 0;
-    const max = Math.min(6, payload.tasks.length);
-    let c = 0;
-    for (let i = 0; i < max; i++) {
-      if (customSelected[i]) c++;
-    }
-    return c;
-  }, [customSelected, customizing]);
-
-  const handleCreateCustomized = async () => {
-    if (!customizing) return;
-    const suggestionId = customizing.id ?? customizing.dedupeKey;
+  const handleConfirmBundleCustomize = async (overrides: { selectedIndexes: number[]; tasksOverrides?: Record<number, Record<string, unknown>> }) => {
+    const suggestion = bundleCustomizeSuggestion;
+    if (!suggestion) return;
+    const suggestionId = suggestion.id ?? suggestion.dedupeKey;
     if (!suggestionId) return;
     if (busySuggestionId) return;
-
-    const payload = customizing.payload;
-    if (!("tasks" in payload)) return;
-    const max = Math.min(6, payload.tasks.length);
-
-    const selectedIndexes: number[] = [];
-    for (let i = 0; i < max; i++) {
-      if (customSelected[i]) selectedIndexes.push(i);
-    }
-    if (selectedIndexes.length === 0) {
-      setCustomizeError("Sélectionne au moins une tâche.");
-      return;
-    }
-
-    const tasksOverrides: Record<number, Record<string, unknown>> = {};
-    for (const i of selectedIndexes) {
-      const base = payload.tasks[i];
-      if (!base) {
-        setCustomizeError("Item invalide.");
-        return;
-      }
-      const nextTitle = (customTitles[i] ?? "").trim();
-      if (!nextTitle) {
-        setCustomizeError("Le titre ne peut pas être vide.");
-        return;
-      }
-
-      const row: Record<string, unknown> = {};
-      if (nextTitle !== (base.title ?? "")) row.title = nextTitle;
-
-      const dueStr = customDueDates[i] ?? "";
-      const remindStr = customRemindAts[i] ?? "";
-      const nextDue = dueStr ? parseLocalDateTimeToTimestamp(dueStr) : null;
-      const nextRemind = remindStr ? parseLocalDateTimeToTimestamp(remindStr) : null;
-
-      if ((base.dueDate?.toMillis?.() ?? null) !== (nextDue?.toMillis?.() ?? null)) {
-        row.dueDate = nextDue ? nextDue.toMillis() : null;
-      }
-      if ((base.remindAt?.toMillis?.() ?? null) !== (nextRemind?.toMillis?.() ?? null)) {
-        row.remindAt = nextRemind ? nextRemind.toMillis() : null;
-      }
-
-      const nextPriority = customPriorities[i] ?? "";
-      const basePriority = base.priority ?? null;
-      if ((basePriority ?? "") !== nextPriority) {
-        row.priority = nextPriority ? nextPriority : null;
-      }
-
-      if (Object.keys(row).length > 0) tasksOverrides[i] = row;
-    }
 
     setBusySuggestionId(suggestionId);
     setActionMessage(null);
     setActionError(null);
-    setCustomizeError(null);
 
     try {
       const fn = httpsCallable<
         { suggestionId: string; overrides: { selectedIndexes: number[]; tasksOverrides?: Record<number, Record<string, unknown>> } },
         ApplySuggestionResult
       >(fbFunctions, "assistantApplySuggestion");
-      const res = await fn({ suggestionId, overrides: { selectedIndexes, tasksOverrides } });
+      const res = await fn({ suggestionId, overrides });
       const count = Array.isArray(res.data?.createdCoreObjects) ? res.data.createdCoreObjects.length : 0;
       setActionMessage(count > 0 ? `Plan créé (${count} objet(s) créé(s)).` : "Plan créé.");
-      closeCustomize();
+      setBundleCustomizeSuggestion(null);
     } catch (e) {
       if (isCallableUnauthenticated(e)) {
         void invalidateAuthSession();
         return;
       }
-      if (e instanceof FirebaseError) setCustomizeError(`${e.code}: ${e.message}`);
-      else if (e instanceof Error) setCustomizeError(e.message);
-      else setCustomizeError("Impossible de créer le plan.");
+      if (e instanceof FirebaseError) throw new Error(`${e.code}: ${e.message}`);
+      if (e instanceof Error) throw e;
+      throw new Error("Impossible de créer le plan.");
     } finally {
       setBusySuggestionId(null);
     }
@@ -553,7 +450,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
                   {isBundle && isPro ? (
                     <button
                       type="button"
-                      onClick={() => openCustomize(s)}
+                      onClick={() => setBundleCustomizeSuggestion(s)}
                       disabled={isBusy || expired}
                       className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
                     >
@@ -657,116 +554,14 @@ export default function AssistantNotePanel({ noteId }: Props) {
         </Modal>
       )}
 
-      {customizing && (
-        <Modal title="Personnaliser le plan" onBeforeClose={() => { closeCustomize(); }}>
-          {({ close }) => {
-            const payload = customizing.payload;
-            if (!("tasks" in payload)) return null;
-            const tasks = payload.tasks.slice(0, 6);
-            const suggestionId = customizing.id ?? customizing.dedupeKey;
-            const busy = !!suggestionId && busySuggestionId === suggestionId;
-
-            return (
-              <div className="space-y-3">
-                {customizeError ? <div className="sn-alert sn-alert--error">{customizeError}</div> : null}
-
-                <div className="space-y-3">
-                  {tasks.map((t, idx) => {
-                    const checked = !!customSelected[idx];
-                    const title = customTitles[idx] ?? "";
-                    const due = customDueDates[idx] ?? "";
-                    const remind = customRemindAts[idx] ?? "";
-                    const prio = customPriorities[idx] ?? "";
-
-                    return (
-                      <div key={idx} className="border border-border rounded-md p-3 space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <label className="flex items-center gap-2 text-sm">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={(e) => setCustomSelected((prev) => ({ ...prev, [idx]: e.target.checked }))}
-                            />
-                            #{idx + 1}
-                          </label>
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-sm font-medium">Titre</label>
-                          <input
-                            type="text"
-                            value={title}
-                            onChange={(e) => setCustomTitles((prev) => ({ ...prev, [idx]: e.target.value }))}
-                            disabled={!checked}
-                            className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm disabled:opacity-50"
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                          <div className="space-y-1">
-                            <label className="text-sm font-medium">Échéance</label>
-                            <input
-                              type="datetime-local"
-                              value={due}
-                              onChange={(e) => setCustomDueDates((prev) => ({ ...prev, [idx]: e.target.value }))}
-                              disabled={!checked}
-                              className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm disabled:opacity-50"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-sm font-medium">Rappel</label>
-                            <input
-                              type="datetime-local"
-                              value={remind}
-                              onChange={(e) => setCustomRemindAts((prev) => ({ ...prev, [idx]: e.target.value }))}
-                              disabled={!checked}
-                              className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm disabled:opacity-50"
-                            />
-                          </div>
-                        </div>
-
-                        {typeof t.priority !== "undefined" ? (
-                          <div className="space-y-1">
-                            <label className="text-sm font-medium">Priorité</label>
-                            <select
-                              value={prio}
-                              onChange={(e) => setCustomPriorities((prev) => ({ ...prev, [idx]: e.target.value as "" | Priority }))}
-                              disabled={!checked}
-                              className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm disabled:opacity-50"
-                            >
-                              <option value="">Aucune</option>
-                              <option value="low">Basse</option>
-                              <option value="medium">Moyenne</option>
-                              <option value="high">Haute</option>
-                            </select>
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm text-muted-foreground">Créer {selectedCount} tâche(s)</div>
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => { closeCustomize(); close(); }} className="px-3 py-2 rounded-md border border-input text-sm">
-                      Annuler
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleCreateCustomized()}
-                      disabled={busy || selectedCount === 0}
-                      className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
-                    >
-                      {busy ? "Création…" : `Créer ${selectedCount} tâche(s)`}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          }}
-        </Modal>
-      )}
+      <BundleCustomizeModal
+        open={!!bundleCustomizeSuggestion}
+        onClose={() => setBundleCustomizeSuggestion(null)}
+        suggestion={bundleCustomizeSuggestion}
+        isPro={isPro}
+        loading={!!bundleCustomizeSuggestion && busySuggestionId === (bundleCustomizeSuggestion.id ?? bundleCustomizeSuggestion.dedupeKey)}
+        onConfirm={handleConfirmBundleCustomize}
+      />
     </div>
   );
 }
