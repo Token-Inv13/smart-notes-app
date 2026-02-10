@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useUserAssistantDecisions } from "@/hooks/useUserAssistantDecisions";
 import type { AssistantDecisionDoc } from "@/types/firestore";
 
 type Filter = "all" | "accepted" | "rejected" | "edited";
+type PeriodFilter = "7d" | "30d" | "all";
 
 function toMillisSafe(ts: unknown): number {
   const maybe = ts as { toMillis?: () => number };
@@ -41,8 +43,14 @@ function getTaskId(decision: AssistantDecisionDoc): string | null {
 }
 
 export default function AssistantHistoryPage() {
-  const { data: decisions, loading, error, refetch } = useUserAssistantDecisions({ limit: 100 });
+  const searchParams = useSearchParams();
+  const initialNoteId = searchParams.get("noteId") ?? "";
+
+  const { data: decisions, loading, error, refetch } = useUserAssistantDecisions({ limit: 500 });
   const [filter, setFilter] = useState<Filter>("all");
+  const [period, setPeriod] = useState<PeriodFilter>("30d");
+  const [noteIdFilter, setNoteIdFilter] = useState<string>(initialNoteId);
+  const [queryText, setQueryText] = useState<string>("");
 
   const sorted = useMemo(() => {
     const arr = (decisions ?? []).slice();
@@ -51,11 +59,43 @@ export default function AssistantHistoryPage() {
   }, [decisions]);
 
   const filtered = useMemo(() => {
-    if (filter === "all") return sorted;
-    if (filter === "accepted") return sorted.filter((d) => d.action === "accepted");
-    if (filter === "edited") return sorted.filter((d) => d.action === "edited_then_accepted");
-    return sorted.filter((d) => d.action === "rejected");
-  }, [sorted, filter]);
+    const cutoffMs = (() => {
+      if (period === "7d") return Date.now() - 7 * 24 * 60 * 60 * 1000;
+      if (period === "30d") return Date.now() - 30 * 24 * 60 * 60 * 1000;
+      return null;
+    })();
+
+    const q = queryText.trim().toLowerCase();
+    const noteFilter = noteIdFilter.trim();
+
+    return sorted.filter((d) => {
+      const createdMs = toMillisSafe(d.createdAt);
+      if (cutoffMs !== null && createdMs > 0 && createdMs < cutoffMs) return false;
+
+      if (filter === "accepted" && d.action !== "accepted") return false;
+      if (filter === "edited" && d.action !== "edited_then_accepted") return false;
+      if (filter === "rejected" && d.action !== "rejected") return false;
+
+      if (noteFilter) {
+        const n = parseNoteIdFromObjectId(d.objectId);
+        if (!n || n !== noteFilter) return false;
+      }
+
+      if (q) {
+        const before = d.beforePayload as any;
+        const final = d.finalPayload as any;
+        const title = String(final?.title ?? before?.title ?? "");
+        const explanation = String(final?.explanation ?? before?.explanation ?? "");
+        const excerpt = String(before?.origin?.fromText ?? final?.origin?.fromText ?? "");
+        const objectId = String(d.objectId ?? "");
+        const suggestionId = String(d.suggestionId ?? "");
+        const hay = `${title}\n${explanation}\n${excerpt}\n${objectId}\n${suggestionId}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+
+      return true;
+    });
+  }, [sorted, filter, period, noteIdFilter, queryText]);
 
   return (
     <div className="space-y-4 max-w-3xl mx-auto">
@@ -75,6 +115,51 @@ export default function AssistantHistoryPage() {
       </div>
 
       <div className="sn-card p-3 flex flex-wrap items-center gap-2">
+        <div className="flex flex-col gap-1 w-full">
+          <label className="text-xs text-muted-foreground" htmlFor="assistant-history-search">
+            Recherche
+          </label>
+          <input
+            id="assistant-history-search"
+            type="text"
+            value={queryText}
+            onChange={(e) => setQueryText(e.target.value)}
+            className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+            placeholder="Titre, extrait, explication…"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1 w-full">
+          <label className="text-xs text-muted-foreground" htmlFor="assistant-history-noteid">
+            Filtre noteId
+          </label>
+          <input
+            id="assistant-history-noteid"
+            type="text"
+            value={noteIdFilter}
+            onChange={(e) => setNoteIdFilter(e.target.value)}
+            className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+            placeholder="ex: 6pQk…"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-end gap-2 w-full">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground" htmlFor="assistant-history-period">
+              Période
+            </label>
+            <select
+              id="assistant-history-period"
+              value={period}
+              onChange={(e) => setPeriod(e.target.value as PeriodFilter)}
+              className="px-3 py-2 rounded-md border border-input text-sm"
+            >
+              <option value="7d">7 jours</option>
+              <option value="30d">30 jours</option>
+              <option value="all">Tout</option>
+            </select>
+          </div>
+
         <button
           type="button"
           onClick={() => setFilter("all")}
@@ -127,6 +212,7 @@ export default function AssistantHistoryPage() {
         >
           Rafraîchir
         </button>
+        </div>
       </div>
 
       {error && <div className="sn-alert sn-alert--error">Impossible de charger l’historique.</div>}
@@ -171,6 +257,14 @@ export default function AssistantHistoryPage() {
                       className="px-3 py-2 rounded-md border border-input text-sm hover:bg-accent"
                     >
                       Voir la note
+                    </a>
+                  ) : null}
+                  {noteId ? (
+                    <a
+                      href={`/assistant/history?noteId=${encodeURIComponent(noteId)}`}
+                      className="px-3 py-2 rounded-md border border-input text-sm hover:bg-accent"
+                    >
+                      Tout depuis cette note
                     </a>
                   ) : null}
                 </div>

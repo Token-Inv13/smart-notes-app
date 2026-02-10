@@ -146,6 +146,15 @@ export default function NoteDetailPage(props: any) {
             </div>
           </div>
 
+          <div className="flex items-center justify-end">
+            <a
+              href={`/assistant/history?noteId=${encodeURIComponent(note.id ?? "")}`}
+              className="px-3 py-2 rounded-md border border-input text-sm hover:bg-accent"
+            >
+              Voir tout ce qui a été créé depuis cette note
+            </a>
+          </div>
+
           <AssistantNotePanel noteId={note.id} />
         </>
       )}
