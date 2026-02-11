@@ -297,10 +297,11 @@ async function callOpenAIResponsesJsonSchema(params) {
     const body = {
         model: params.model,
         instructions: params.instructions,
-        input: params.inputText,
+        input: [{ role: 'user', content: params.inputText }],
         text: {
             format: {
                 type: 'json_schema',
+                name: 'assistant_ai_output_v1',
                 strict: true,
                 schema: params.schema,
             },
@@ -2946,6 +2947,17 @@ async function processAssistantAIJob(params) {
         });
     }
     catch (e) {
+        try {
+            console.error('assistant AI job failed', {
+                userId,
+                jobId: jobDoc.id,
+                message: e instanceof Error ? e.message : String(e),
+                stack: e instanceof Error ? e.stack : undefined,
+            });
+        }
+        catch (_d) {
+            // ignore
+        }
         await jobDoc.ref.update({
             status: 'error',
             lockedUntil: admin.firestore.Timestamp.fromMillis(0),
@@ -2955,7 +2967,7 @@ async function processAssistantAIJob(params) {
         try {
             await metricsRef.set(metricsIncrements({ aiAnalysesErrored: 1 }), { merge: true });
         }
-        catch (_d) {
+        catch (_e) {
             // ignore
         }
     }

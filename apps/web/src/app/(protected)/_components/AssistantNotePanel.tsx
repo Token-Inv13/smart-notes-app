@@ -59,6 +59,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
 
   const [aiJobStatus, setAIJobStatus] = useState<"queued" | "processing" | "done" | "error" | null>(null);
   const [aiJobResultId, setAIJobResultId] = useState<string | null>(null);
+  const [aiJobError, setAIJobError] = useState<string | null>(null);
   const [aiResult, setAIResult] = useState<AssistantAIResultDoc | null>(null);
   const [busyAIAnalysis, setBusyAIAnalysis] = useState(false);
 
@@ -123,13 +124,16 @@ export default function AssistantNotePanel({ noteId }: Props) {
         const data = snap.exists() ? (snap.data() as any) : null;
         const nextStatus = data ? ((data?.status as typeof aiJobStatus) ?? null) : null;
         const nextResultId = data && typeof data?.resultId === "string" ? String(data.resultId) : null;
+        const nextError = data && typeof data?.error === "string" ? String(data.error) : null;
 
         setAIJobStatus(nextStatus ?? null);
         setAIJobResultId(nextResultId);
+        setAIJobError(nextError);
       },
       () => {
         setAIJobStatus(null);
         setAIJobResultId(null);
+        setAIJobError(null);
       },
     );
 
@@ -584,7 +588,12 @@ export default function AssistantNotePanel({ noteId }: Props) {
         <div className="text-sm font-semibold">IA</div>
         {aiJobStatus === "queued" && <div className="sn-alert">Analyse IA en attente…</div>}
         {aiJobStatus === "processing" && <div className="sn-alert">Analyse IA en cours…</div>}
-        {aiJobStatus === "error" && <div className="sn-alert sn-alert--error">Analyse IA en erreur.</div>}
+        {aiJobStatus === "error" && (
+          <div className="sn-alert sn-alert--error">
+            <div>Analyse IA en erreur.</div>
+            {aiJobError ? <div className="text-xs opacity-90 break-words mt-1">{aiJobError}</div> : null}
+          </div>
+        )}
 
         {aiResult ? (
           (() => {
