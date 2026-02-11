@@ -663,10 +663,40 @@ function normalizeAssistantAIModel(rawModel: unknown): string {
   return s.slice(0, 64);
 }
 
+function resolveModelFromAvailable(availableIds: string[], candidate: string): string | null {
+  const c = candidate.trim();
+  if (!c) return null;
+  if (availableIds.includes(c)) return c;
+  const prefix = `${c}-`;
+  for (let i = availableIds.length - 1; i >= 0; i--) {
+    const id = availableIds[i];
+    if (id === c) return id;
+    if (id.startsWith(prefix)) return id;
+    if (id.startsWith(c)) return id;
+  }
+  return null;
+}
+
+function pickDefaultAvailableModel(availableIds: string[]): string {
+  for (const base of ASSISTANT_AI_MODEL_SHORTLIST) {
+    const resolved = resolveModelFromAvailable(availableIds, base);
+    if (resolved) return resolved;
+  }
+  if (availableIds.length > 0) return availableIds[0];
+  return '';
+}
+
 function selectDeterministicModel(params: { availableIds: string[]; preferredEnv: string | null; preferredRequested: string | null }): string {
   const { availableIds, preferredEnv, preferredRequested } = params;
   const req = preferredRequested ? preferredRequested.trim() : '';
   const env = preferredEnv ? preferredEnv.trim() : '';
+
+  if (!Array.isArray(availableIds) || availableIds.length === 0) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Le projet OpenAI associé à cette clé n’a accès à aucun modèle compatible. Vérifie le Project sélectionné et les permissions.',
+    );
+  }
 
   const candidates: string[] = [];
   if (req) candidates.push(req);
@@ -676,13 +706,11 @@ function selectDeterministicModel(params: { availableIds: string[]; preferredEnv
   }
 
   for (const c of candidates) {
-    if (availableIds.includes(c)) return c;
+    const resolved = resolveModelFromAvailable(availableIds, c);
+    if (resolved) return resolved;
   }
 
-  throw new functions.https.HttpsError(
-    'failed-precondition',
-    'Le projet OpenAI associé à cette clé n’a accès à aucun modèle compatible. Vérifie le Project sélectionné et les permissions.',
-  );
+  return pickDefaultAvailableModel(availableIds);
 }
 
 function isOpenAIModelAccessError(err: unknown): boolean {
@@ -3805,16 +3833,30 @@ async function processAssistantAIJob(params: {
       if (!candidatesBase.includes(m)) candidatesBase.push(m);
     }
 
-    const candidates = candidatesBase.filter((m) => availableIds.includes(m));
-    if (candidates.length === 0) {
+    if (!Array.isArray(availableIds) || availableIds.length === 0) {
       throw new functions.https.HttpsError(
         'failed-precondition',
         'Le projet OpenAI associé à cette clé n’a accès à aucun modèle compatible. Vérifie le Project sélectionné et les permissions.',
       );
     }
 
-    primaryModel = candidates[0];
-    fallbackModel = candidates.length > 1 ? candidates[1] : null;
+    const resolvedCandidates: string[] = [];
+    for (const c of candidatesBase) {
+      const resolved = resolveModelFromAvailable(availableIds, c);
+      if (resolved && !resolvedCandidates.includes(resolved)) {
+        resolvedCandidates.push(resolved);
+      }
+    }
+
+    if (resolvedCandidates.length === 0) {
+      primaryModel = pickDefaultAvailableModel(availableIds);
+      const second = availableIds.find((m) => m !== primaryModel) ?? null;
+      fallbackModel = second;
+    } else {
+      primaryModel = resolvedCandidates[0];
+      const second = resolvedCandidates.length > 1 ? resolvedCandidates[1] : availableIds.find((m) => m !== primaryModel) ?? null;
+      fallbackModel = second;
+    }
 
     const primaryResultId = resultIdForModel(primaryModel);
     const primaryResultRef = userRef.collection('assistantAIResults').doc(primaryResultId);

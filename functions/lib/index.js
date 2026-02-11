@@ -306,10 +306,41 @@ function normalizeAssistantAIModel(rawModel) {
         return '';
     return s.slice(0, 64);
 }
+function resolveModelFromAvailable(availableIds, candidate) {
+    const c = candidate.trim();
+    if (!c)
+        return null;
+    if (availableIds.includes(c))
+        return c;
+    const prefix = `${c}-`;
+    for (let i = availableIds.length - 1; i >= 0; i--) {
+        const id = availableIds[i];
+        if (id === c)
+            return id;
+        if (id.startsWith(prefix))
+            return id;
+        if (id.startsWith(c))
+            return id;
+    }
+    return null;
+}
+function pickDefaultAvailableModel(availableIds) {
+    for (const base of ASSISTANT_AI_MODEL_SHORTLIST) {
+        const resolved = resolveModelFromAvailable(availableIds, base);
+        if (resolved)
+            return resolved;
+    }
+    if (availableIds.length > 0)
+        return availableIds[0];
+    return '';
+}
 function selectDeterministicModel(params) {
     const { availableIds, preferredEnv, preferredRequested } = params;
     const req = preferredRequested ? preferredRequested.trim() : '';
     const env = preferredEnv ? preferredEnv.trim() : '';
+    if (!Array.isArray(availableIds) || availableIds.length === 0) {
+        throw new functions.https.HttpsError('failed-precondition', 'Le projet OpenAI associé à cette clé n’a accès à aucun modèle compatible. Vérifie le Project sélectionné et les permissions.');
+    }
     const candidates = [];
     if (req)
         candidates.push(req);
@@ -320,10 +351,11 @@ function selectDeterministicModel(params) {
             candidates.push(m);
     }
     for (const c of candidates) {
-        if (availableIds.includes(c))
-            return c;
+        const resolved = resolveModelFromAvailable(availableIds, c);
+        if (resolved)
+            return resolved;
     }
-    throw new functions.https.HttpsError('failed-precondition', 'Le projet OpenAI associé à cette clé n’a accès à aucun modèle compatible. Vérifie le Project sélectionné et les permissions.');
+    return pickDefaultAvailableModel(availableIds);
 }
 function isOpenAIModelAccessError(err) {
     if (err instanceof OpenAIHttpError) {
@@ -2839,7 +2871,7 @@ async function claimAssistantAIJob(params) {
     });
 }
 async function processAssistantAIJob(params) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d, _e;
     const { db, userId, jobDoc, nowDate, nowTs } = params;
     const claimed = await claimAssistantAIJob({ db, ref: jobDoc.ref, now: nowTs });
     if (!claimed)
@@ -2894,12 +2926,26 @@ async function processAssistantAIJob(params) {
             if (!candidatesBase.includes(m))
                 candidatesBase.push(m);
         }
-        const candidates = candidatesBase.filter((m) => availableIds.includes(m));
-        if (candidates.length === 0) {
+        if (!Array.isArray(availableIds) || availableIds.length === 0) {
             throw new functions.https.HttpsError('failed-precondition', 'Le projet OpenAI associé à cette clé n’a accès à aucun modèle compatible. Vérifie le Project sélectionné et les permissions.');
         }
-        primaryModel = candidates[0];
-        fallbackModel = candidates.length > 1 ? candidates[1] : null;
+        const resolvedCandidates = [];
+        for (const c of candidatesBase) {
+            const resolved = resolveModelFromAvailable(availableIds, c);
+            if (resolved && !resolvedCandidates.includes(resolved)) {
+                resolvedCandidates.push(resolved);
+            }
+        }
+        if (resolvedCandidates.length === 0) {
+            primaryModel = pickDefaultAvailableModel(availableIds);
+            const second = (_a = availableIds.find((m) => m !== primaryModel)) !== null && _a !== void 0 ? _a : null;
+            fallbackModel = second;
+        }
+        else {
+            primaryModel = resolvedCandidates[0];
+            const second = resolvedCandidates.length > 1 ? resolvedCandidates[1] : (_b = availableIds.find((m) => m !== primaryModel)) !== null && _b !== void 0 ? _b : null;
+            fallbackModel = second;
+        }
         const primaryResultId = resultIdForModel(primaryModel);
         const primaryResultRef = userRef.collection('assistantAIResults').doc(primaryResultId);
         const fallbackResultId = fallbackModel ? resultIdForModel(fallbackModel) : null;
@@ -2967,7 +3013,7 @@ async function processAssistantAIJob(params) {
             modes,
             refusal: llm.refusal,
             usage: llm.usage ? { inputTokens: llm.usage.inputTokens, outputTokens: llm.usage.outputTokens, totalTokens: llm.usage.totalTokens } : undefined,
-            output: (_a = llm.parsed) !== null && _a !== void 0 ? _a : undefined,
+            output: (_c = llm.parsed) !== null && _c !== void 0 ? _c : undefined,
             createdAt: nowServer,
             updatedAt: nowServer,
         };
@@ -2976,9 +3022,9 @@ async function processAssistantAIJob(params) {
             aiAnalysesCompleted: 1,
             aiResultsCreated: 1,
         };
-        if ((_b = llm.usage) === null || _b === void 0 ? void 0 : _b.inputTokens)
+        if ((_d = llm.usage) === null || _d === void 0 ? void 0 : _d.inputTokens)
             inc.aiTokensIn = llm.usage.inputTokens;
-        if ((_c = llm.usage) === null || _c === void 0 ? void 0 : _c.outputTokens)
+        if ((_e = llm.usage) === null || _e === void 0 ? void 0 : _e.outputTokens)
             inc.aiTokensOut = llm.usage.outputTokens;
         await metricsRef.set(metricsIncrements(inc), { merge: true });
         const suggestionsCol = userRef.collection('assistantSuggestions');
@@ -3211,14 +3257,14 @@ async function processAssistantAIJob(params) {
                 stack: e instanceof Error ? e.stack : undefined,
             });
         }
-        catch (_d) {
+        catch (_f) {
             // ignore
         }
         await jobDoc.ref.update(Object.assign(Object.assign(Object.assign(Object.assign({ status: 'error', lockedUntil: admin.firestore.Timestamp.fromMillis(0) }, (requestedModel ? { modelRequested: requestedModel } : {})), (fallbackUsed ? { modelFallbackUsed: fallbackUsed } : {})), (usedModel ? { model: usedModel } : {})), { error: e instanceof Error ? e.message : 'AI job error', updatedAt: admin.firestore.FieldValue.serverTimestamp() }));
         try {
             await metricsRef.set(metricsIncrements({ aiAnalysesErrored: 1 }), { merge: true });
         }
-        catch (_e) {
+        catch (_g) {
             // ignore
         }
     }
