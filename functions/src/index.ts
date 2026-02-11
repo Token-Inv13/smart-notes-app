@@ -673,11 +673,18 @@ function resolveModelFromAvailable(availableIds: string[], candidate: string): s
   if (!c) return null;
   if (availableIds.includes(c)) return c;
   const prefix = `${c}-`;
+  const isVariantCandidate = /-(mini|nano|preview|instruct|turbo)\b/.test(c);
+  const isVersionedOfBase = (id: string) => {
+    if (!id.startsWith(prefix)) return false;
+    const next = id.slice(prefix.length, prefix.length + 1);
+    return next >= '0' && next <= '9';
+  };
+
   for (let i = availableIds.length - 1; i >= 0; i--) {
     const id = availableIds[i];
     if (id === c) return id;
-    if (id.startsWith(prefix)) return id;
-    if (id.startsWith(c)) return id;
+    if (isVariantCandidate && id.startsWith(prefix)) return id;
+    if (!isVariantCandidate && isVersionedOfBase(id)) return id;
   }
   return null;
 }
