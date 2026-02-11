@@ -78,7 +78,15 @@ service cloud.firestore {
         allow read: if isAuthenticated() && isOwner(userId);
         allow write: if false;
       }
+      match /assistantAIJobs/{docId} {
+        allow read: if isAuthenticated() && isOwner(userId);
+        allow write: if false;
+      }
       match /assistantSuggestions/{docId} {
+        allow read: if isAuthenticated() && isOwner(userId);
+        allow write: if false;
+      }
+      match /assistantAIResults/{docId} {
         allow read: if isAuthenticated() && isOwner(userId);
         allow write: if false;
       }

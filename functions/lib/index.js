@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.assistantRequestReanalysis = exports.assistantRejectSuggestion = exports.assistantApplySuggestion = exports.assistantRunJobQueue = exports.assistantEnqueueNoteJob = exports.testSendReminderEmail = exports.cleanupOldReminders = exports.assistantPurgeExpiredSuggestions = exports.assistantExpireSuggestions = exports.checkAndSendReminders = void 0;
+exports.assistantRunAIJobQueue = exports.assistantRequestAIAnalysis = exports.assistantRequestReanalysis = exports.assistantRejectSuggestion = exports.assistantApplySuggestion = exports.assistantRunJobQueue = exports.assistantEnqueueNoteJob = exports.testSendReminderEmail = exports.cleanupOldReminders = exports.assistantPurgeExpiredSuggestions = exports.assistantExpireSuggestions = exports.checkAndSendReminders = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
@@ -8,6 +8,8 @@ const crypto_1 = require("crypto");
 admin.initializeApp();
 const ASSISTANT_REANALYSIS_FREE_DAILY_LIMIT = 10;
 const ASSISTANT_REANALYSIS_PRO_DAILY_LIMIT = 200;
+const ASSISTANT_AI_ANALYSIS_FREE_DAILY_LIMIT = 2;
+const ASSISTANT_AI_ANALYSIS_PRO_DAILY_LIMIT = 100;
 const ASSISTANT_FOLLOWUP_REJECT_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 function utcDayKey(d) {
     return d.toISOString().slice(0, 10);
@@ -23,6 +25,9 @@ function assistantMemoryLiteRef(db, userId) {
 }
 function assistantUsageRef(db, userId, dayKey) {
     return db.collection('users').doc(userId).collection('assistantUsage').doc(dayKey);
+}
+function assistantAIJobIdForNote(noteId) {
+    return `current_note_${noteId}`;
 }
 function metricsIncrements(inc) {
     const out = {
@@ -197,6 +202,165 @@ function buildBundleDedupeKey(params) {
 function buildFollowupDedupeKey(params) {
     const payloadMinimal = JSON.stringify(params.minimal);
     return sha256Hex(`task_${params.taskId}|${params.kind}|${payloadMinimal}`);
+}
+function buildContentDedupeKey(params) {
+    const payloadMinimal = JSON.stringify(params.minimal);
+    return sha256Hex(`${params.objectId}|${params.kind}|${payloadMinimal}`);
+}
+function parseIsoToTimestamp(iso) {
+    if (typeof iso !== 'string')
+        return undefined;
+    const s = iso.trim();
+    if (!s)
+        return undefined;
+    const d = new Date(s);
+    if (!Number.isFinite(d.getTime()))
+        return undefined;
+    return admin.firestore.Timestamp.fromDate(d);
+}
+function getOpenAIApiKey() {
+    const envKey = typeof process.env.OPENAI_API_KEY === 'string' ? process.env.OPENAI_API_KEY.trim() : '';
+    if (envKey)
+        return envKey;
+    throw new functions.https.HttpsError('failed-precondition', 'Missing OpenAI API key configuration.');
+}
+const ASSISTANT_AI_SCHEMA_VERSION = 1;
+const ASSISTANT_AI_OUTPUT_SCHEMA_V1 = {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+        summaryShort: { type: ['string', 'null'] },
+        summaryStructured: {
+            type: 'array',
+            items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                    title: { type: 'string' },
+                    bullets: { type: 'array', items: { type: 'string' } },
+                },
+                required: ['title', 'bullets'],
+            },
+        },
+        keyPoints: { type: 'array', items: { type: 'string' } },
+        hooks: { type: 'array', items: { type: 'string' } },
+        rewriteContent: { type: ['string', 'null'] },
+        tags: { type: 'array', items: { type: 'string' } },
+        entities: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+                people: { type: 'array', items: { type: 'string' } },
+                orgs: { type: 'array', items: { type: 'string' } },
+                places: { type: 'array', items: { type: 'string' } },
+                products: { type: 'array', items: { type: 'string' } },
+                dates: { type: 'array', items: { type: 'string' } },
+                misc: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['people', 'orgs', 'places', 'products', 'dates', 'misc'],
+        },
+        actions: {
+            type: 'array',
+            items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                    kind: { type: 'string', enum: ['create_task', 'create_reminder', 'create_task_bundle'] },
+                    title: { type: 'string' },
+                    dueDateIso: { type: ['string', 'null'] },
+                    remindAtIso: { type: ['string', 'null'] },
+                    priority: { type: ['string', 'null'], enum: ['low', 'medium', 'high', null] },
+                    tasks: {
+                        type: 'array',
+                        items: {
+                            type: 'object',
+                            additionalProperties: false,
+                            properties: {
+                                title: { type: 'string' },
+                                dueDateIso: { type: ['string', 'null'] },
+                                remindAtIso: { type: ['string', 'null'] },
+                                priority: { type: ['string', 'null'], enum: ['low', 'medium', 'high', null] },
+                            },
+                            required: ['title', 'dueDateIso', 'remindAtIso', 'priority'],
+                        },
+                    },
+                },
+                required: ['kind', 'title', 'dueDateIso', 'remindAtIso', 'priority', 'tasks'],
+            },
+        },
+    },
+    required: ['summaryShort', 'summaryStructured', 'keyPoints', 'hooks', 'rewriteContent', 'tags', 'entities', 'actions'],
+};
+async function callOpenAIResponsesJsonSchema(params) {
+    var _a, _b, _c;
+    const apiKey = getOpenAIApiKey();
+    const body = {
+        model: params.model,
+        instructions: params.instructions,
+        input: params.inputText,
+        text: {
+            format: {
+                type: 'json_schema',
+                strict: true,
+                schema: params.schema,
+            },
+        },
+        temperature: 0.2,
+        store: false,
+    };
+    const res = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+        const t = await res.text().catch(() => '');
+        throw new Error(`OpenAI error: ${res.status} ${t}`.slice(0, 800));
+    }
+    const json = (await res.json());
+    const usage = json && typeof (json === null || json === void 0 ? void 0 : json.usage) === 'object' && json.usage
+        ? {
+            inputTokens: typeof ((_a = json.usage) === null || _a === void 0 ? void 0 : _a.input_tokens) === 'number' ? Number(json.usage.input_tokens) : undefined,
+            outputTokens: typeof ((_b = json.usage) === null || _b === void 0 ? void 0 : _b.output_tokens) === 'number' ? Number(json.usage.output_tokens) : undefined,
+            totalTokens: typeof ((_c = json.usage) === null || _c === void 0 ? void 0 : _c.total_tokens) === 'number' ? Number(json.usage.total_tokens) : undefined,
+        }
+        : null;
+    let refusal = null;
+    const output = Array.isArray(json === null || json === void 0 ? void 0 : json.output) ? json.output : [];
+    for (const item of output) {
+        if (item && item.type === 'message') {
+            const content = Array.isArray(item.content) ? item.content : [];
+            for (const part of content) {
+                if (part && part.type === 'refusal' && typeof part.refusal === 'string') {
+                    refusal = part.refusal;
+                }
+            }
+        }
+    }
+    let outputText = typeof (json === null || json === void 0 ? void 0 : json.output_text) === 'string' ? String(json.output_text) : null;
+    if (!outputText) {
+        for (const item of output) {
+            if (item && item.type === 'message') {
+                const content = Array.isArray(item.content) ? item.content : [];
+                for (const part of content) {
+                    if (part && part.type === 'output_text' && typeof part.text === 'string') {
+                        outputText = String(part.text);
+                        break;
+                    }
+                }
+            }
+            if (outputText)
+                break;
+        }
+    }
+    if (!outputText) {
+        return { parsed: null, refusal, usage };
+    }
+    const parsed = JSON.parse(outputText);
+    return { parsed, refusal, usage };
 }
 function extractBundleTaskTitlesFromText(rawText) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
@@ -453,33 +617,25 @@ async function isAssistantEnabledForUser(db, userId) {
     return snap.exists && ((_a = snap.data()) === null || _a === void 0 ? void 0 : _a.enabled) === true;
 }
 function getSmtpEnv() {
-    var _a, _b, _c, _d, _e, _f;
-    const cfg = functions.config();
-    const hostCfg = (_a = cfg === null || cfg === void 0 ? void 0 : cfg.smtp) === null || _a === void 0 ? void 0 : _a.host;
-    const portCfg = (_b = cfg === null || cfg === void 0 ? void 0 : cfg.smtp) === null || _b === void 0 ? void 0 : _b.port;
-    const userCfg = (_c = cfg === null || cfg === void 0 ? void 0 : cfg.smtp) === null || _c === void 0 ? void 0 : _c.user;
-    const passCfg = (_d = cfg === null || cfg === void 0 ? void 0 : cfg.smtp) === null || _d === void 0 ? void 0 : _d.pass;
-    const fromCfg = (_e = cfg === null || cfg === void 0 ? void 0 : cfg.smtp) === null || _e === void 0 ? void 0 : _e.from;
-    const appBaseUrlCfg = (_f = cfg === null || cfg === void 0 ? void 0 : cfg.app) === null || _f === void 0 ? void 0 : _f.base_url;
     const hostEnv = process.env.SMTP_HOST;
     const portEnv = process.env.SMTP_PORT;
     const userEnv = process.env.SMTP_USER;
     const passEnv = process.env.SMTP_PASS;
     const fromEnv = process.env.SMTP_FROM;
     const appBaseUrlEnv = process.env.APP_BASE_URL;
-    const host = hostCfg !== null && hostCfg !== void 0 ? hostCfg : hostEnv;
-    const portRaw = portCfg !== null && portCfg !== void 0 ? portCfg : portEnv;
-    const user = userCfg !== null && userCfg !== void 0 ? userCfg : userEnv;
-    const pass = passCfg !== null && passCfg !== void 0 ? passCfg : passEnv;
-    const from = fromCfg !== null && fromCfg !== void 0 ? fromCfg : fromEnv;
-    const appBaseUrl = appBaseUrlCfg !== null && appBaseUrlCfg !== void 0 ? appBaseUrlCfg : appBaseUrlEnv;
+    const host = hostEnv;
+    const portRaw = portEnv;
+    const user = userEnv;
+    const pass = passEnv;
+    const from = fromEnv;
+    const appBaseUrl = appBaseUrlEnv;
     const source = {
-        host: hostCfg ? 'functions.config' : 'process.env',
-        port: portCfg ? 'functions.config' : 'process.env',
-        user: userCfg ? 'functions.config' : 'process.env',
-        pass: passCfg ? 'functions.config' : 'process.env',
-        from: fromCfg ? 'functions.config' : 'process.env',
-        appBaseUrl: appBaseUrlCfg ? 'functions.config' : 'process.env',
+        host: 'process.env',
+        port: 'process.env',
+        user: 'process.env',
+        pass: 'process.env',
+        from: 'process.env',
+        appBaseUrl: 'process.env',
     };
     if (!host || !portRaw || !user || !pass || !from || !appBaseUrl) {
         console.error('SMTP config missing', {
@@ -501,9 +657,7 @@ function getSmtpEnv() {
     return { env: { host, port, user, pass, from, appBaseUrl }, source };
 }
 function getEmailTestSecret() {
-    var _a, _b;
-    const cfg = functions.config();
-    const secret = (_b = (_a = cfg === null || cfg === void 0 ? void 0 : cfg.email_test) === null || _a === void 0 ? void 0 : _a.secret) !== null && _b !== void 0 ? _b : process.env.EMAIL_TEST_SECRET;
+    const secret = process.env.EMAIL_TEST_SECRET;
     return secret !== null && secret !== void 0 ? secret : null;
 }
 async function sendReminderEmail(params) {
@@ -1455,12 +1609,17 @@ exports.assistantApplySuggestion = functions.https.onCall(async (data, context) 
             throw new functions.https.HttpsError('invalid-argument', 'Invalid payload.title');
         }
         const kind = suggestion.kind;
-        if (kind !== 'create_task' && kind !== 'create_reminder' && kind !== 'create_task_bundle' && kind !== 'update_task_meta') {
+        const isActionKind = kind === 'create_task' || kind === 'create_reminder' || kind === 'create_task_bundle' || kind === 'update_task_meta';
+        const isContentKind = kind === 'generate_summary' || kind === 'rewrite_note' || kind === 'generate_hook' || kind === 'extract_key_points' || kind === 'tag_entities';
+        if (!isActionKind && !isContentKind) {
             throw new functions.https.HttpsError('invalid-argument', 'Unknown suggestion kind.');
         }
         const overridesRaw = overrides && typeof overrides === 'object' ? overrides : null;
         if (overrides && kind !== 'create_task_bundle') {
             if (kind === 'update_task_meta') {
+                throw new functions.https.HttpsError('invalid-argument', 'overrides not supported for this suggestion kind.');
+            }
+            if (isContentKind) {
                 throw new functions.https.HttpsError('invalid-argument', 'overrides not supported for this suggestion kind.');
             }
             const allowed = kind === 'create_task' ? new Set(['title', 'dueDate', 'priority']) : new Set(['title', 'remindAt', 'priority']);
@@ -1606,6 +1765,31 @@ exports.assistantApplySuggestion = functions.https.onCall(async (data, context) 
         })();
         const createdAt = admin.firestore.FieldValue.serverTimestamp();
         const updatedAt = admin.firestore.FieldValue.serverTimestamp();
+        if (isContentKind) {
+            decisionId = decisionRef.id;
+            const decisionDoc = {
+                suggestionId,
+                objectId: suggestion.objectId,
+                action: 'accepted',
+                createdCoreObjects: [],
+                beforePayload,
+                finalPayload: beforePayload,
+                pipelineVersion: 1,
+                createdAt,
+                updatedAt,
+            };
+            tx.create(decisionRef, decisionDoc);
+            tx.set(metricsRef, metricsIncrements({
+                suggestionsAccepted: 1,
+                decisionsCount: 1,
+                totalTimeToDecisionMs: timeToDecisionMs ? timeToDecisionMs : 0,
+            }), { merge: true });
+            tx.update(suggestionRef, {
+                status: 'accepted',
+                updatedAt,
+            });
+            return;
+        }
         if (kind === 'create_task_bundle') {
             if (!isPro) {
                 throw new functions.https.HttpsError('failed-precondition', 'Plan pro requis pour accepter un plan d’action.');
@@ -2343,5 +2527,465 @@ exports.assistantRequestReanalysis = functions.https.onCall(async (data, context
         }
     });
     return { jobId: jobRef.id };
+});
+exports.assistantRequestAIAnalysis = functions.https.onCall(async (data, context) => {
+    var _a;
+    const userId = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid;
+    if (!userId) {
+        throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+    }
+    const noteId = typeof (data === null || data === void 0 ? void 0 : data.noteId) === 'string' ? String(data.noteId) : null;
+    if (!noteId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing noteId.');
+    }
+    const modesRaw = Array.isArray(data === null || data === void 0 ? void 0 : data.modes) ? data.modes : null;
+    const allowedModes = new Set(['summary', 'actions', 'hooks', 'rewrite', 'entities']);
+    const modes = modesRaw
+        ? modesRaw
+            .filter((m) => typeof m === 'string')
+            .map((m) => String(m))
+            .filter((m) => allowedModes.has(m))
+        : ['summary', 'actions', 'hooks', 'rewrite', 'entities'];
+    const modelRaw = typeof (data === null || data === void 0 ? void 0 : data.model) === 'string' ? String(data.model) : '';
+    const model = modelRaw === 'gpt-5' || modelRaw === 'gpt-5-mini' ? modelRaw : 'gpt-5-mini';
+    const db = admin.firestore();
+    const enabled = await isAssistantEnabledForUser(db, userId);
+    if (!enabled) {
+        throw new functions.https.HttpsError('failed-precondition', 'Assistant disabled.');
+    }
+    const noteSnap = await db.collection('notes').doc(noteId).get();
+    if (!noteSnap.exists) {
+        throw new functions.https.HttpsError('not-found', 'Note not found.');
+    }
+    const note = noteSnap.data();
+    const noteUserId = typeof (note === null || note === void 0 ? void 0 : note.userId) === 'string' ? note.userId : null;
+    if (noteUserId !== userId) {
+        throw new functions.https.HttpsError('permission-denied', 'Not allowed.');
+    }
+    const title = typeof (note === null || note === void 0 ? void 0 : note.title) === 'string' ? note.title : '';
+    const content = typeof (note === null || note === void 0 ? void 0 : note.content) === 'string' ? note.content : '';
+    const normalized = normalizeAssistantText(`${title}\n${content}`);
+    const textHash = sha256Hex(normalized);
+    const nowDate = new Date();
+    const dayKey = utcDayKey(nowDate);
+    const userRef = db.collection('users').doc(userId);
+    const objectId = assistantObjectIdForNote(noteId);
+    const jobRef = userRef.collection('assistantAIJobs').doc(assistantAIJobIdForNote(noteId));
+    const schemaVersion = ASSISTANT_AI_SCHEMA_VERSION;
+    const modesSig = modes.slice().sort().join(',');
+    const resultId = sha256Hex(`${objectId}|${textHash}|${model}|schema:${schemaVersion}|modes:${modesSig}`);
+    const resultRef = userRef.collection('assistantAIResults').doc(resultId);
+    const usageRef = assistantUsageRef(db, userId, dayKey);
+    const metricsRef = assistantMetricsRef(db, userId);
+    const lockedUntilReady = admin.firestore.Timestamp.fromMillis(0);
+    const nowServer = admin.firestore.FieldValue.serverTimestamp();
+    await db.runTransaction(async (tx) => {
+        var _a, _b;
+        const [userSnap, usageSnap, jobSnap, resultSnap] = await Promise.all([
+            tx.get(userRef),
+            tx.get(usageRef),
+            tx.get(jobRef),
+            tx.get(resultRef),
+        ]);
+        if (resultSnap.exists) {
+            tx.set(jobRef, {
+                noteId,
+                objectId,
+                status: 'done',
+                model,
+                modes,
+                schemaVersion,
+                resultId,
+                pendingTextHash: null,
+                lockedUntil: lockedUntilReady,
+                updatedAt: nowServer,
+            }, { merge: true });
+            return;
+        }
+        const plan = userSnap.exists && typeof ((_a = userSnap.data()) === null || _a === void 0 ? void 0 : _a.plan) === 'string' ? String(userSnap.data().plan) : 'free';
+        const dailyLimit = plan === 'pro' ? ASSISTANT_AI_ANALYSIS_PRO_DAILY_LIMIT : ASSISTANT_AI_ANALYSIS_FREE_DAILY_LIMIT;
+        const prevCount = usageSnap.exists && typeof ((_b = usageSnap.data()) === null || _b === void 0 ? void 0 : _b.aiAnalysisCount) === 'number' ? Number(usageSnap.data().aiAnalysisCount) : 0;
+        if (prevCount >= dailyLimit) {
+            throw new functions.https.HttpsError('resource-exhausted', 'Daily AI analysis limit reached.');
+        }
+        const jobData = jobSnap.exists ? jobSnap.data() : null;
+        const st = jobData === null || jobData === void 0 ? void 0 : jobData.status;
+        const pending = typeof (jobData === null || jobData === void 0 ? void 0 : jobData.pendingTextHash) === 'string' ? jobData.pendingTextHash : null;
+        const isActive = st === 'queued' || st === 'processing';
+        if (isActive && pending === textHash && (jobData === null || jobData === void 0 ? void 0 : jobData.model) === model) {
+            return;
+        }
+        tx.set(usageRef, {
+            aiAnalysisCount: admin.firestore.FieldValue.increment(1),
+            lastUpdatedAt: nowServer,
+        }, { merge: true });
+        tx.set(metricsRef, metricsIncrements({ aiAnalysesRequested: 1 }), { merge: true });
+        const payload = {
+            noteId,
+            objectId,
+            status: 'queued',
+            attempts: 0,
+            model,
+            modes,
+            schemaVersion,
+            pendingTextHash: textHash,
+            lockedUntil: lockedUntilReady,
+            resultId: null,
+            error: null,
+            createdAt: nowServer,
+            updatedAt: nowServer,
+        };
+        if (jobSnap.exists) {
+            tx.set(jobRef, payload, { merge: true });
+        }
+        else {
+            tx.create(jobRef, payload);
+        }
+    });
+    return { jobId: jobRef.id, resultId };
+});
+const ASSISTANT_AI_JOB_LOCK_MS = 5 * 60 * 1000;
+const ASSISTANT_AI_JOB_MAX_ATTEMPTS = 3;
+async function claimAssistantAIJob(params) {
+    const { db, ref, now } = params;
+    return await db.runTransaction(async (tx) => {
+        var _a;
+        const snap = await tx.get(ref);
+        if (!snap.exists)
+            return null;
+        const data = snap.data();
+        const status = data === null || data === void 0 ? void 0 : data.status;
+        if (status !== 'queued')
+            return null;
+        const attempts = typeof (data === null || data === void 0 ? void 0 : data.attempts) === 'number' ? data.attempts : 0;
+        if (attempts >= ASSISTANT_AI_JOB_MAX_ATTEMPTS) {
+            tx.update(ref, { status: 'error', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+            return null;
+        }
+        const lockedUntil = (_a = data === null || data === void 0 ? void 0 : data.lockedUntil) !== null && _a !== void 0 ? _a : null;
+        if (lockedUntil && lockedUntil.toMillis() > now.toMillis())
+            return null;
+        const nextLocked = admin.firestore.Timestamp.fromMillis(now.toMillis() + ASSISTANT_AI_JOB_LOCK_MS);
+        tx.update(ref, {
+            status: 'processing',
+            attempts: attempts + 1,
+            lockedUntil: nextLocked,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return snap.data();
+    });
+}
+async function processAssistantAIJob(params) {
+    var _a, _b, _c;
+    const { db, userId, jobDoc, nowDate, nowTs } = params;
+    const claimed = await claimAssistantAIJob({ db, ref: jobDoc.ref, now: nowTs });
+    if (!claimed)
+        return;
+    const noteId = typeof (claimed === null || claimed === void 0 ? void 0 : claimed.noteId) === 'string' ? String(claimed.noteId) : null;
+    const objectId = typeof claimed.objectId === 'string' ? claimed.objectId : null;
+    const model = typeof claimed.model === 'string' ? claimed.model : 'gpt-5-mini';
+    const schemaVersion = typeof claimed.schemaVersion === 'number' ? Math.trunc(claimed.schemaVersion) : ASSISTANT_AI_SCHEMA_VERSION;
+    const modes = Array.isArray(claimed === null || claimed === void 0 ? void 0 : claimed.modes) ? claimed.modes.filter((m) => typeof m === 'string').map((m) => String(m)) : [];
+    if (!noteId || !objectId)
+        return;
+    const metricsRef = assistantMetricsRef(db, userId);
+    const userRef = db.collection('users').doc(userId);
+    try {
+        const noteSnap = await db.collection('notes').doc(noteId).get();
+        const note = noteSnap.exists ? noteSnap.data() : null;
+        const noteUserId = typeof (note === null || note === void 0 ? void 0 : note.userId) === 'string' ? note.userId : null;
+        if (!note || noteUserId !== userId) {
+            await jobDoc.ref.update({ status: 'error', lockedUntil: admin.firestore.Timestamp.fromMillis(0), error: 'Note not accessible', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+            return;
+        }
+        const title = typeof (note === null || note === void 0 ? void 0 : note.title) === 'string' ? note.title : '';
+        const content = typeof (note === null || note === void 0 ? void 0 : note.content) === 'string' ? note.content : '';
+        const normalized = normalizeAssistantText(`${title}\n${content}`);
+        const textHash = sha256Hex(normalized);
+        const modesSig = modes.slice().sort().join(',');
+        const resultId = sha256Hex(`${objectId}|${textHash}|${model}|schema:${schemaVersion}|modes:${modesSig}`);
+        const resultRef = userRef.collection('assistantAIResults').doc(resultId);
+        const existing = await resultRef.get();
+        if (existing.exists) {
+            await jobDoc.ref.update({ status: 'done', lockedUntil: admin.firestore.Timestamp.fromMillis(0), pendingTextHash: null, resultId, error: null, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+            return;
+        }
+        const instructions = [
+            'You are SmartNote Assistant AI.',
+            'You must return ONLY JSON that matches the provided JSON Schema.',
+            'Suggest actions and content improvements for the note, but never claim you executed anything.',
+            `Current datetime (Europe/Paris): ${nowDate.toISOString()}`,
+            'If you infer dates/times, output ISO 8601 strings with timezone offsets when possible.',
+            'Keep text concise and in French.',
+        ].join('\n');
+        const inputText = `Titre:\n${title}\n\nContenu:\n${content}`;
+        const llm = await callOpenAIResponsesJsonSchema({ model, instructions, inputText, schema: ASSISTANT_AI_OUTPUT_SCHEMA_V1 });
+        const nowServer = admin.firestore.FieldValue.serverTimestamp();
+        const resultDoc = {
+            noteId,
+            objectId,
+            textHash,
+            model,
+            schemaVersion,
+            modes,
+            refusal: llm.refusal,
+            usage: llm.usage ? { inputTokens: llm.usage.inputTokens, outputTokens: llm.usage.outputTokens, totalTokens: llm.usage.totalTokens } : undefined,
+            output: (_a = llm.parsed) !== null && _a !== void 0 ? _a : undefined,
+            createdAt: nowServer,
+            updatedAt: nowServer,
+        };
+        await resultRef.create(resultDoc);
+        const inc = {
+            aiAnalysesCompleted: 1,
+            aiResultsCreated: 1,
+        };
+        if ((_b = llm.usage) === null || _b === void 0 ? void 0 : _b.inputTokens)
+            inc.aiTokensIn = llm.usage.inputTokens;
+        if ((_c = llm.usage) === null || _c === void 0 ? void 0 : _c.outputTokens)
+            inc.aiTokensOut = llm.usage.outputTokens;
+        await metricsRef.set(metricsIncrements(inc), { merge: true });
+        const suggestionsCol = userRef.collection('assistantSuggestions');
+        const expiresAt = admin.firestore.Timestamp.fromMillis(nowDate.getTime() + 14 * 24 * 60 * 60 * 1000);
+        const outputObj = llm.parsed && typeof llm.parsed === 'object' ? llm.parsed : null;
+        const contentSuggestions = [];
+        if (outputObj) {
+            const summaryShort = typeof outputObj.summaryShort === 'string' ? String(outputObj.summaryShort) : '';
+            const summaryStructured = Array.isArray(outputObj.summaryStructured) ? outputObj.summaryStructured : null;
+            const keyPoints = Array.isArray(outputObj.keyPoints) ? outputObj.keyPoints : null;
+            const hooks = Array.isArray(outputObj.hooks) ? outputObj.hooks : null;
+            const rewriteContent = typeof outputObj.rewriteContent === 'string' ? String(outputObj.rewriteContent) : '';
+            const tags = Array.isArray(outputObj.tags) ? outputObj.tags : null;
+            const entities = outputObj.entities && typeof outputObj.entities === 'object' ? outputObj.entities : null;
+            if (summaryShort || (Array.isArray(summaryStructured) && summaryStructured.length > 0)) {
+                contentSuggestions.push({
+                    kind: 'generate_summary',
+                    title: 'Résumé',
+                    payloadExtra: { summaryShort: summaryShort || undefined, summaryStructured: summaryStructured || undefined },
+                });
+            }
+            if (Array.isArray(keyPoints) && keyPoints.length > 0) {
+                contentSuggestions.push({ kind: 'extract_key_points', title: 'Points clés', payloadExtra: { keyPoints } });
+            }
+            if (Array.isArray(hooks) && hooks.length > 0) {
+                contentSuggestions.push({ kind: 'generate_hook', title: 'Hooks', payloadExtra: { hooks } });
+            }
+            if (rewriteContent) {
+                contentSuggestions.push({ kind: 'rewrite_note', title: 'Reformulation', payloadExtra: { rewriteContent } });
+            }
+            if ((entities && typeof entities === 'object') || (Array.isArray(tags) && tags.length > 0)) {
+                contentSuggestions.push({ kind: 'tag_entities', title: 'Entités & tags', payloadExtra: { entities: entities || undefined, tags: tags || undefined } });
+            }
+        }
+        for (const cs of contentSuggestions) {
+            const dedupeKey = buildContentDedupeKey({ objectId, kind: cs.kind, minimal: { title: cs.title, v: schemaVersion, h: sha256Hex(JSON.stringify(cs.payloadExtra)) } });
+            const sugRef = suggestionsCol.doc(dedupeKey);
+            const payload = Object.assign(Object.assign({ title: cs.title }, cs.payloadExtra), { origin: { fromText: 'Analyse IA' }, confidence: 0.7, explanation: 'Suggestion générée par IA.' });
+            await db.runTransaction(async (tx) => {
+                var _a;
+                const existingSug = await tx.get(sugRef);
+                if (existingSug.exists) {
+                    const st = (_a = existingSug.data()) === null || _a === void 0 ? void 0 : _a.status;
+                    if (st === 'proposed' || st === 'accepted')
+                        return;
+                    tx.update(sugRef, {
+                        objectId,
+                        source: { type: 'note', id: noteId },
+                        kind: cs.kind,
+                        payload,
+                        status: 'proposed',
+                        pipelineVersion: 1,
+                        dedupeKey,
+                        updatedAt: nowServer,
+                        expiresAt,
+                    });
+                    return;
+                }
+                const doc = {
+                    objectId,
+                    source: { type: 'note', id: noteId },
+                    kind: cs.kind,
+                    payload,
+                    status: 'proposed',
+                    pipelineVersion: 1,
+                    dedupeKey,
+                    createdAt: nowServer,
+                    updatedAt: nowServer,
+                    expiresAt,
+                };
+                tx.create(sugRef, doc);
+            });
+        }
+        const actions = outputObj && Array.isArray(outputObj.actions) ? outputObj.actions : [];
+        for (const a of actions) {
+            const kind = typeof (a === null || a === void 0 ? void 0 : a.kind) === 'string' ? String(a.kind) : '';
+            const titleA = typeof (a === null || a === void 0 ? void 0 : a.title) === 'string' ? String(a.title).trim() : '';
+            if (!titleA)
+                continue;
+            if (kind === 'create_task_bundle') {
+                const tasksRaw = Array.isArray(a === null || a === void 0 ? void 0 : a.tasks) ? a.tasks : [];
+                const tasks = [];
+                for (const t of tasksRaw) {
+                    const tt = typeof (t === null || t === void 0 ? void 0 : t.title) === 'string' ? String(t.title).trim() : '';
+                    if (!tt)
+                        continue;
+                    const dueDate = parseIsoToTimestamp(t === null || t === void 0 ? void 0 : t.dueDateIso);
+                    const remindAt = parseIsoToTimestamp(t === null || t === void 0 ? void 0 : t.remindAtIso);
+                    const pr = (t === null || t === void 0 ? void 0 : t.priority) === 'low' || (t === null || t === void 0 ? void 0 : t.priority) === 'medium' || (t === null || t === void 0 ? void 0 : t.priority) === 'high' ? t.priority : undefined;
+                    tasks.push(Object.assign(Object.assign(Object.assign(Object.assign({ title: tt }, (dueDate ? { dueDate } : {})), (remindAt ? { remindAt } : {})), (pr ? { priority: pr } : {})), { origin: { fromText: 'Analyse IA' } }));
+                }
+                if (tasks.length === 0)
+                    continue;
+                const tasksSig = tasks
+                    .map((t) => `${normalizeAssistantText(t.title)}|${t.dueDate ? t.dueDate.toMillis() : ''}|${t.remindAt ? t.remindAt.toMillis() : ''}`)
+                    .join('||');
+                const dedupeKey = buildBundleDedupeKey({ objectId, minimal: { title: titleA, tasksSig } });
+                const sugRef = suggestionsCol.doc(dedupeKey);
+                const payload = {
+                    title: titleA,
+                    tasks,
+                    bundleMode: 'multiple_tasks',
+                    noteId,
+                    origin: { fromText: 'Analyse IA' },
+                    confidence: 0.7,
+                    explanation: 'Suggestion générée par IA.',
+                };
+                await db.runTransaction(async (tx) => {
+                    var _a;
+                    const existingSug = await tx.get(sugRef);
+                    if (existingSug.exists) {
+                        const st = (_a = existingSug.data()) === null || _a === void 0 ? void 0 : _a.status;
+                        if (st === 'proposed' || st === 'accepted')
+                            return;
+                        tx.update(sugRef, {
+                            objectId,
+                            source: { type: 'note', id: noteId },
+                            kind: 'create_task_bundle',
+                            payload,
+                            status: 'proposed',
+                            pipelineVersion: 1,
+                            dedupeKey,
+                            updatedAt: nowServer,
+                            expiresAt,
+                        });
+                        return;
+                    }
+                    const doc = {
+                        objectId,
+                        source: { type: 'note', id: noteId },
+                        kind: 'create_task_bundle',
+                        payload,
+                        status: 'proposed',
+                        pipelineVersion: 1,
+                        dedupeKey,
+                        createdAt: nowServer,
+                        updatedAt: nowServer,
+                        expiresAt,
+                    };
+                    tx.create(sugRef, doc);
+                });
+                continue;
+            }
+            if (kind === 'create_task' || kind === 'create_reminder') {
+                const dueDate = parseIsoToTimestamp(a === null || a === void 0 ? void 0 : a.dueDateIso);
+                const remindAt = parseIsoToTimestamp(a === null || a === void 0 ? void 0 : a.remindAtIso);
+                const pr = (a === null || a === void 0 ? void 0 : a.priority) === 'low' || (a === null || a === void 0 ? void 0 : a.priority) === 'medium' || (a === null || a === void 0 ? void 0 : a.priority) === 'high' ? a.priority : undefined;
+                const dedupeKey = buildSuggestionDedupeKey({
+                    objectId,
+                    kind: kind,
+                    minimal: {
+                        title: titleA,
+                        dueDateMs: dueDate ? dueDate.toMillis() : null,
+                        remindAtMs: remindAt ? remindAt.toMillis() : null,
+                    },
+                });
+                const sugRef = suggestionsCol.doc(dedupeKey);
+                const payload = Object.assign(Object.assign(Object.assign(Object.assign({ title: titleA }, (dueDate ? { dueDate } : {})), (remindAt ? { remindAt } : {})), (pr ? { priority: pr } : {})), { origin: { fromText: 'Analyse IA' }, confidence: 0.7, explanation: 'Suggestion générée par IA.' });
+                await db.runTransaction(async (tx) => {
+                    var _a;
+                    const existingSug = await tx.get(sugRef);
+                    if (existingSug.exists) {
+                        const st = (_a = existingSug.data()) === null || _a === void 0 ? void 0 : _a.status;
+                        if (st === 'proposed' || st === 'accepted')
+                            return;
+                        tx.update(sugRef, {
+                            objectId,
+                            source: { type: 'note', id: noteId },
+                            kind: kind,
+                            payload,
+                            status: 'proposed',
+                            pipelineVersion: 1,
+                            dedupeKey,
+                            updatedAt: nowServer,
+                            expiresAt,
+                        });
+                        return;
+                    }
+                    const doc = {
+                        objectId,
+                        source: { type: 'note', id: noteId },
+                        kind: kind,
+                        payload,
+                        status: 'proposed',
+                        pipelineVersion: 1,
+                        dedupeKey,
+                        createdAt: nowServer,
+                        updatedAt: nowServer,
+                        expiresAt,
+                    };
+                    tx.create(sugRef, doc);
+                });
+            }
+        }
+        await jobDoc.ref.update({
+            status: 'done',
+            lockedUntil: admin.firestore.Timestamp.fromMillis(0),
+            pendingTextHash: null,
+            resultId,
+            error: null,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+    }
+    catch (e) {
+        await jobDoc.ref.update({
+            status: 'error',
+            lockedUntil: admin.firestore.Timestamp.fromMillis(0),
+            error: e instanceof Error ? e.message : 'AI job error',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        try {
+            await metricsRef.set(metricsIncrements({ aiAnalysesErrored: 1 }), { merge: true });
+        }
+        catch (_d) {
+            // ignore
+        }
+    }
+}
+exports.assistantRunAIJobQueue = functions.pubsub
+    .schedule('every 1 minutes')
+    .onRun(async () => {
+    const db = admin.firestore();
+    const nowDate = new Date();
+    const nowTs = admin.firestore.Timestamp.fromDate(nowDate);
+    const snap = await db
+        .collectionGroup('assistantAIJobs')
+        .where('status', '==', 'queued')
+        .where('lockedUntil', '<=', nowTs)
+        .orderBy('lockedUntil', 'asc')
+        .limit(10)
+        .get();
+    if (snap.empty) {
+        return;
+    }
+    const tasks = snap.docs.map(async (jobDoc) => {
+        const userRef = jobDoc.ref.parent.parent;
+        const userId = userRef === null || userRef === void 0 ? void 0 : userRef.id;
+        if (!userId)
+            return;
+        const enabled = await isAssistantEnabledForUser(db, userId);
+        if (!enabled)
+            return;
+        await processAssistantAIJob({ db, userId, jobDoc, nowDate, nowTs });
+    });
+    await Promise.all(tasks);
 });
 //# sourceMappingURL=index.js.map

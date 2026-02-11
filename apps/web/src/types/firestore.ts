@@ -134,7 +134,16 @@ export interface TaskReminderDoc {
 
 export type AssistantSuggestionStatus = 'proposed' | 'accepted' | 'rejected' | 'expired';
 
-export type AssistantSuggestionKind = 'create_task' | 'create_reminder' | 'create_task_bundle' | 'update_task_meta';
+export type AssistantSuggestionKind =
+  | 'create_task'
+  | 'create_reminder'
+  | 'create_task_bundle'
+  | 'update_task_meta'
+  | 'generate_summary'
+  | 'rewrite_note'
+  | 'generate_hook'
+  | 'extract_key_points'
+  | 'tag_entities';
 
 export type AssistantTaskBundleMode = 'multiple_tasks';
 
@@ -176,7 +185,84 @@ export type AssistantSuggestionPayload =
       };
       confidence: number;
       explanation: string;
+    }
+  | {
+      title: string;
+      summaryShort?: string;
+      summaryStructured?: { title: string; bullets: string[] }[];
+      keyPoints?: string[];
+      hooks?: string[];
+      rewriteContent?: string;
+      entities?: {
+        people?: string[];
+        orgs?: string[];
+        places?: string[];
+        products?: string[];
+        dates?: string[];
+        misc?: string[];
+      };
+      tags?: string[];
+      origin: {
+        fromText: string;
+      };
+      confidence: number;
+      explanation: string;
     };
+
+export type AssistantAIJobStatus = 'queued' | 'processing' | 'done' | 'error';
+
+export interface AssistantAIJobDoc {
+  id?: string;
+  noteId: string;
+  objectId: string;
+  status: AssistantAIJobStatus;
+  attempts: number;
+  model: string;
+  modes?: string[];
+  schemaVersion: number;
+  pendingTextHash?: string | null;
+  lockedUntil?: Timestamp;
+  resultId?: string | null;
+  error?: string | null;
+  createdAt?: Timestamp | FieldValue;
+  updatedAt?: Timestamp | FieldValue;
+  [key: string]: unknown;
+}
+
+export interface AssistantAIResultDoc {
+  id?: string;
+  noteId: string;
+  objectId: string;
+  textHash: string;
+  model: string;
+  schemaVersion: number;
+  modes?: string[];
+  refusal?: string | null;
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+  };
+  output?: {
+    summaryShort?: string;
+    summaryStructured?: { title: string; bullets: string[] }[];
+    keyPoints?: string[];
+    hooks?: string[];
+    rewriteContent?: string;
+    entities?: {
+      people?: string[];
+      orgs?: string[];
+      places?: string[];
+      products?: string[];
+      dates?: string[];
+      misc?: string[];
+    };
+    tags?: string[];
+  };
+  createdAt?: Timestamp | FieldValue;
+  updatedAt?: Timestamp | FieldValue;
+  [key: string]: unknown;
+}
 
 export interface AssistantSuggestionDoc {
   id?: string;

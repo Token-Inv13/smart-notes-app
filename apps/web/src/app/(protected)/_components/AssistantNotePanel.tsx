@@ -3,14 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FirebaseError } from "firebase/app";
 import { httpsCallable } from "firebase/functions";
-import { doc, onSnapshot, type Timestamp } from "firebase/firestore";
+import { doc, onSnapshot, serverTimestamp, updateDoc, type Timestamp } from "firebase/firestore";
 import { db, functions as fbFunctions } from "@/lib/firebase";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import { useAssistantSettings } from "@/hooks/useAssistantSettings";
 import { useNoteAssistantSuggestions } from "@/hooks/useNoteAssistantSuggestions";
 import { useAuth } from "@/hooks/useAuth";
 import { formatTimestampForInput, parseLocalDateTimeToTimestamp } from "@/lib/datetime";
-import type { AssistantSuggestionDoc, Priority } from "@/types/firestore";
+import type { AssistantAIResultDoc, AssistantSuggestionDoc, Priority } from "@/types/firestore";
 import Modal from "../Modal";
 import BundleCustomizeModal from "./assistant/BundleCustomizeModal";
 
@@ -56,6 +56,11 @@ export default function AssistantNotePanel({ noteId }: Props) {
   };
 
   const [jobResult, setJobResult] = useState<JobResult | null>(null);
+
+  const [aiJobStatus, setAIJobStatus] = useState<"queued" | "processing" | "done" | "error" | null>(null);
+  const [aiJobResultId, setAIJobResultId] = useState<string | null>(null);
+  const [aiResult, setAIResult] = useState<AssistantAIResultDoc | null>(null);
+  const [busyAIAnalysis, setBusyAIAnalysis] = useState(false);
 
   const [editing, setEditing] = useState<AssistantSuggestionDoc | null>(null);
   const [editTitle, setEditTitle] = useState<string>("");
@@ -104,6 +109,64 @@ export default function AssistantNotePanel({ noteId }: Props) {
     };
   }, [enabled, noteId, user?.uid, refetchSuggestions]);
 
+  useEffect(() => {
+    if (!enabled) return;
+    if (!noteId) return;
+    if (!user?.uid) return;
+
+    const jobId = `current_note_${noteId}`;
+    const jobRef = doc(db, "users", user.uid, "assistantAIJobs", jobId);
+
+    const unsub = onSnapshot(
+      jobRef,
+      (snap) => {
+        const data = snap.exists() ? (snap.data() as any) : null;
+        const nextStatus = data ? ((data?.status as typeof aiJobStatus) ?? null) : null;
+        const nextResultId = data && typeof data?.resultId === "string" ? String(data.resultId) : null;
+
+        setAIJobStatus(nextStatus ?? null);
+        setAIJobResultId(nextResultId);
+      },
+      () => {
+        setAIJobStatus(null);
+        setAIJobResultId(null);
+      },
+    );
+
+    return () => {
+      unsub();
+    };
+  }, [enabled, noteId, user?.uid]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    if (!user?.uid) return;
+    if (!aiJobResultId) {
+      setAIResult(null);
+      return;
+    }
+
+    const resultRef = doc(db, "users", user.uid, "assistantAIResults", aiJobResultId);
+    const unsub = onSnapshot(
+      resultRef,
+      (snap) => {
+        const data = snap.exists() ? (snap.data() as any) : null;
+        if (!data) {
+          setAIResult(null);
+          return;
+        }
+        setAIResult({ ...(data as AssistantAIResultDoc), id: snap.id });
+      },
+      () => {
+        setAIResult(null);
+      },
+    );
+
+    return () => {
+      unsub();
+    };
+  }, [enabled, user?.uid, aiJobResultId]);
+
   const sorted = useMemo(() => {
     const arr = (suggestions ?? []).slice();
     const toMillisSafe = (ts: unknown) => {
@@ -143,6 +206,65 @@ export default function AssistantNotePanel({ noteId }: Props) {
     if (isAuthInvalidError(err)) return true;
     const code = typeof (err as { code?: unknown })?.code === "string" ? String((err as { code?: unknown }).code) : "";
     return code.includes("unauthenticated");
+  };
+
+  const handleAIAnalyze = async () => {
+    if (!noteId) return;
+    if (busyAIAnalysis) return;
+
+    setBusyAIAnalysis(true);
+    setActionMessage(null);
+    setActionError(null);
+
+    try {
+      const fn = httpsCallable<{ noteId: string }, { jobId: string; resultId?: string }>(fbFunctions, "assistantRequestAIAnalysis");
+      const res = await fn({ noteId });
+      setActionMessage(`Analyse IA demandée (job: ${res.data.jobId}).`);
+    } catch (e) {
+      if (isCallableUnauthenticated(e)) {
+        void invalidateAuthSession();
+        return;
+      }
+      if (e instanceof FirebaseError) setActionError(`${e.code}: ${e.message}`);
+      else if (e instanceof Error) setActionError(e.message);
+      else setActionError("Impossible de lancer l’analyse IA.");
+    } finally {
+      setBusyAIAnalysis(false);
+    }
+  };
+
+  const handleCopyToClipboard = async (text: string) => {
+    const t = (text ?? "").trim();
+    if (!t) return;
+    try {
+      await navigator.clipboard.writeText(t);
+      setActionMessage("Copié dans le presse-papiers.");
+    } catch {
+      setActionError("Impossible de copier.");
+    }
+  };
+
+  const handleReplaceNoteContent = async (nextContent: string) => {
+    if (!noteId) return;
+    const t = (nextContent ?? "").trim();
+    if (!t) {
+      setActionError("Contenu proposé vide.");
+      return;
+    }
+    const ok = window.confirm("Remplacer le contenu de la note par la proposition IA ?");
+    if (!ok) return;
+
+    try {
+      await updateDoc(doc(db, "notes", noteId), {
+        content: t,
+        updatedAt: serverTimestamp(),
+      });
+      setActionMessage("Contenu remplacé.");
+    } catch (e) {
+      if (e instanceof FirebaseError) setActionError(`${e.code}: ${e.message}`);
+      else if (e instanceof Error) setActionError(e.message);
+      else setActionError("Impossible de remplacer le contenu.");
+    }
   };
 
   const formatTs = (ts: Timestamp | null | undefined) => {
@@ -250,7 +372,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
   };
 
   const openEdit = (s: AssistantSuggestionDoc) => {
-    if (s.kind === "create_task_bundle") return;
+    if (s.kind !== "create_task" && s.kind !== "create_reminder") return;
     setEditing(s);
     setEditError(null);
     const payload = s.payload;
@@ -438,6 +560,14 @@ export default function AssistantNotePanel({ noteId }: Props) {
           >
             {busyReanalysis ? "Réanalyse…" : cooldownActive ? "Réanalyser (cooldown)" : "Réanalyser"}
           </button>
+          <button
+            type="button"
+            onClick={() => void handleAIAnalyze()}
+            disabled={!noteId || busyAIAnalysis}
+            className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+          >
+            {busyAIAnalysis ? "IA…" : "Analyser avec IA"}
+          </button>
           <div className="text-xs text-muted-foreground">{noteId ? `Note: ${noteId}` : ""}</div>
         </div>
       </div>
@@ -449,6 +579,113 @@ export default function AssistantNotePanel({ noteId }: Props) {
       {jobStatus === "processing" && <div className="sn-alert">Analyse en cours…</div>}
       {jobStatus === "error" && <div className="sn-alert sn-alert--error">Réanalyse en erreur.</div>}
       {doneBannerMessage && <div className="sn-alert">{doneBannerMessage}</div>}
+
+      <div className="border border-border rounded-md p-3 space-y-2">
+        <div className="text-sm font-semibold">IA</div>
+        {aiJobStatus === "queued" && <div className="sn-alert">Analyse IA en attente…</div>}
+        {aiJobStatus === "processing" && <div className="sn-alert">Analyse IA en cours…</div>}
+        {aiJobStatus === "error" && <div className="sn-alert sn-alert--error">Analyse IA en erreur.</div>}
+
+        {aiResult ? (
+          (() => {
+            const out = (aiResult as any)?.output ?? null;
+            const refusal = typeof (aiResult as any)?.refusal === "string" ? String((aiResult as any).refusal) : "";
+
+            const summaryShort = typeof out?.summaryShort === "string" ? String(out.summaryShort) : "";
+            const summaryStructured = Array.isArray(out?.summaryStructured) ? (out.summaryStructured as any[]) : [];
+            const keyPoints = Array.isArray(out?.keyPoints) ? (out.keyPoints as any[]) : [];
+            const hooks = Array.isArray(out?.hooks) ? (out.hooks as any[]) : [];
+            const tags = Array.isArray(out?.tags) ? (out.tags as any[]) : [];
+            const entities = out?.entities && typeof out.entities === "object" ? (out.entities as any) : null;
+
+            const hasAny =
+              !!summaryShort ||
+              summaryStructured.length > 0 ||
+              keyPoints.length > 0 ||
+              hooks.length > 0 ||
+              tags.length > 0 ||
+              !!entities;
+
+            return (
+              <div className="space-y-2">
+                {refusal ? <div className="sn-alert sn-alert--error">Refus IA: {refusal}</div> : null}
+                {!hasAny ? <div className="text-sm text-muted-foreground">IA n’a rien détecté.</div> : null}
+
+                {summaryShort ? <div className="text-sm">{summaryShort}</div> : null}
+
+                {summaryStructured.length > 0 ? (
+                  <div className="space-y-2">
+                    {summaryStructured.map((sec, idx) => {
+                      const title = typeof sec?.title === "string" ? sec.title : "";
+                      const bullets = Array.isArray(sec?.bullets) ? (sec.bullets as any[]) : [];
+                      if (!title && bullets.length === 0) return null;
+                      return (
+                        <div key={`ai_struct_${idx}`} className="text-sm">
+                          {title ? <div className="font-medium">{title}</div> : null}
+                          {bullets.length > 0 ? (
+                            <ul className="list-disc pl-5">
+                              {bullets.slice(0, 8).map((b, j) => (
+                                <li key={`ai_struct_${idx}_${j}`}>{typeof b === "string" ? b : ""}</li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+
+                {keyPoints.length > 0 ? (
+                  <div className="text-sm">
+                    <div className="font-medium">Points clés</div>
+                    <ul className="list-disc pl-5">
+                      {keyPoints.slice(0, 10).map((p, idx) => (
+                        <li key={`ai_kp_${idx}`}>{typeof p === "string" ? p : ""}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {hooks.length > 0 ? (
+                  <div className="text-sm">
+                    <div className="font-medium">Hooks</div>
+                    <ul className="list-disc pl-5">
+                      {hooks.slice(0, 10).map((h, idx) => (
+                        <li key={`ai_hook_${idx}`}>{typeof h === "string" ? h : ""}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {tags.length > 0 ? (
+                  <div className="text-sm">
+                    <div className="font-medium">Tags</div>
+                    <div className="text-xs text-muted-foreground break-words">{tags.filter((t) => typeof t === "string").join(", ")}</div>
+                  </div>
+                ) : null}
+
+                {entities ? (
+                  <div className="text-sm">
+                    <div className="font-medium">Entités</div>
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      {Object.entries(entities).map(([k, v]) => {
+                        if (!Array.isArray(v) || v.length === 0) return null;
+                        return (
+                          <div key={`ai_ent_${k}`}>
+                            {k}: {v.filter((x) => typeof x === "string").join(", ")}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })()
+        ) : (
+          <div className="text-sm text-muted-foreground">Lance une analyse IA pour afficher un résumé et des insights.</div>
+        )}
+      </div>
 
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={showExpired} onChange={(e) => setShowExpired(e.target.checked)} />
@@ -500,6 +737,12 @@ export default function AssistantNotePanel({ noteId }: Props) {
             const isBusy = !!suggestionId && busySuggestionId === suggestionId;
 
             const isBundle = s.kind === "create_task_bundle";
+            const isContent =
+              s.kind === "generate_summary" ||
+              s.kind === "rewrite_note" ||
+              s.kind === "generate_hook" ||
+              s.kind === "extract_key_points" ||
+              s.kind === "tag_entities";
             const payload = s.payload;
             const dueLabel = s.kind === "create_task" && "dueDate" in payload ? formatTs(payload.dueDate ?? null) : "";
             const remindLabel = s.kind === "create_reminder" && "remindAt" in payload ? formatTs(payload.remindAt ?? null) : "";
@@ -560,6 +803,135 @@ export default function AssistantNotePanel({ noteId }: Props) {
                       ) : null}
                     </div>
                   ) : null}
+
+                  {isContent && s.kind === "generate_summary" ? (
+                    (() => {
+                      const summaryShort = (payload as any)?.summaryShort;
+                      const structured = Array.isArray((payload as any)?.summaryStructured) ? ((payload as any).summaryStructured as any[]) : [];
+                      return (
+                        <div className="text-sm space-y-2">
+                          {typeof summaryShort === "string" && summaryShort.trim() ? <div>{summaryShort}</div> : null}
+                          {structured.length > 0 ? (
+                            <div className="space-y-2">
+                              {structured.slice(0, 6).map((sec, idx) => {
+                                const title = typeof sec?.title === "string" ? sec.title : "";
+                                const bullets = Array.isArray(sec?.bullets) ? (sec.bullets as any[]) : [];
+                                if (!title && bullets.length === 0) return null;
+                                return (
+                                  <div key={`sum_${suggestionId ?? "x"}_${idx}`}>
+                                    {title ? <div className="font-medium">{title}</div> : null}
+                                    {bullets.length > 0 ? (
+                                      <ul className="list-disc pl-5">
+                                        {bullets.slice(0, 8).map((b, j) => (
+                                          <li key={`sum_${suggestionId ?? "x"}_${idx}_${j}`}>{typeof b === "string" ? b : ""}</li>
+                                        ))}
+                                      </ul>
+                                    ) : null}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })()
+                  ) : null}
+
+                  {isContent && s.kind === "extract_key_points" ? (
+                    (() => {
+                      const keyPoints = Array.isArray((payload as any)?.keyPoints) ? ((payload as any).keyPoints as any[]) : [];
+                      if (keyPoints.length === 0) return null;
+                      return (
+                        <div className="text-sm">
+                          <ul className="list-disc pl-5">
+                            {keyPoints.slice(0, 10).map((p, idx) => (
+                              <li key={`kp_${suggestionId ?? "x"}_${idx}`}>{typeof p === "string" ? p : ""}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      );
+                    })()
+                  ) : null}
+
+                  {isContent && s.kind === "generate_hook" ? (
+                    (() => {
+                      const hooks = Array.isArray((payload as any)?.hooks) ? ((payload as any).hooks as any[]) : [];
+                      if (hooks.length === 0) return null;
+                      return (
+                        <div className="text-sm">
+                          <ul className="list-disc pl-5">
+                            {hooks.slice(0, 10).map((h, idx) => (
+                              <li key={`hook_${suggestionId ?? "x"}_${idx}`}>{typeof h === "string" ? h : ""}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      );
+                    })()
+                  ) : null}
+
+                  {isContent && s.kind === "tag_entities" ? (
+                    (() => {
+                      const tags = Array.isArray((payload as any)?.tags) ? ((payload as any).tags as any[]) : [];
+                      const entities = (payload as any)?.entities && typeof (payload as any).entities === "object" ? ((payload as any).entities as any) : null;
+                      const hasAny = tags.length > 0 || !!entities;
+                      if (!hasAny) return null;
+                      return (
+                        <div className="text-sm space-y-2">
+                          {tags.length > 0 ? (
+                            <div>
+                              <div className="font-medium">Tags</div>
+                              <div className="text-xs text-muted-foreground break-words">{tags.filter((t) => typeof t === "string").join(", ")}</div>
+                            </div>
+                          ) : null}
+                          {entities ? (
+                            <div>
+                              <div className="font-medium">Entités</div>
+                              <div className="text-xs text-muted-foreground space-y-1">
+                                {Object.entries(entities).map(([k, v]) => {
+                                  if (!Array.isArray(v) || v.length === 0) return null;
+                                  return (
+                                    <div key={`ent_${suggestionId ?? "x"}_${k}`}>
+                                      {k}: {v.filter((x) => typeof x === "string").join(", ")}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })()
+                  ) : null}
+
+                  {isContent && s.kind === "rewrite_note" ? (
+                    (() => {
+                      const rewriteContent = typeof (payload as any)?.rewriteContent === "string" ? String((payload as any).rewriteContent) : "";
+                      if (!rewriteContent.trim()) return null;
+                      return (
+                        <div className="space-y-2">
+                          <div className="text-xs text-muted-foreground">Proposition</div>
+                          <div className="border border-border rounded-md p-2 text-sm whitespace-pre-wrap">{rewriteContent}</div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleCopyToClipboard(rewriteContent)}
+                              className="px-3 py-2 rounded-md border border-input text-sm"
+                            >
+                              Copier
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleReplaceNoteContent(rewriteContent)}
+                              disabled={!noteId}
+                              className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+                            >
+                              Remplacer le contenu
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()
+                  ) : null}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -592,7 +964,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
                   <button
                     type="button"
                     onClick={() => openEdit(s)}
-                    disabled={isBusy || expired || isBundle}
+                    disabled={isBusy || expired || isBundle || isContent}
                     className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
                   >
                     Modifier

@@ -44,3 +44,5 @@ apps/web/public/workbox-*.js
 *.sw?
 .vercel
 .env*.local
+functions/.env
+functions/.env.*
