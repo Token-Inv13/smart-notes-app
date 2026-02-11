@@ -405,6 +405,55 @@ function validateAssistantAIOutputV1(parsed) {
         return { ok: false, error: 'actions must be array.' };
     return { ok: true };
 }
+function sanitizeAssistantAIOutputV1(raw) {
+    const out = {};
+    const toStringOrNull = (v) => {
+        if (v === null)
+            return null;
+        if (typeof v === 'string')
+            return v;
+        if (typeof v === 'number' || typeof v === 'boolean')
+            return String(v);
+        if (v && typeof v === 'object') {
+            const maybeText = v.text;
+            if (typeof maybeText === 'string')
+                return maybeText;
+        }
+        return null;
+    };
+    const toStringArray = (v) => {
+        if (!Array.isArray(v))
+            return [];
+        return v.map((x) => (typeof x === 'string' ? x : x == null ? '' : String(x))).map((s) => s.trim()).filter((s) => !!s);
+    };
+    out.summaryShort = toStringOrNull(raw === null || raw === void 0 ? void 0 : raw.summaryShort);
+    const ss = Array.isArray(raw === null || raw === void 0 ? void 0 : raw.summaryStructured) ? raw.summaryStructured : [];
+    out.summaryStructured = ss
+        .filter((it) => it && typeof it === 'object' && !Array.isArray(it))
+        .map((it) => {
+        var _a;
+        return ({
+            title: typeof it.title === 'string' ? it.title : String((_a = it.title) !== null && _a !== void 0 ? _a : '').trim() || 'Section',
+            bullets: toStringArray(it.bullets),
+        });
+    });
+    out.keyPoints = toStringArray(raw === null || raw === void 0 ? void 0 : raw.keyPoints);
+    out.hooks = toStringArray(raw === null || raw === void 0 ? void 0 : raw.hooks);
+    out.rewriteContent = toStringOrNull(raw === null || raw === void 0 ? void 0 : raw.rewriteContent);
+    out.tags = toStringArray(raw === null || raw === void 0 ? void 0 : raw.tags);
+    const e = raw === null || raw === void 0 ? void 0 : raw.entities;
+    const entities = e && typeof e === 'object' && !Array.isArray(e) ? e : {};
+    out.entities = {
+        people: toStringArray(entities.people),
+        orgs: toStringArray(entities.orgs),
+        places: toStringArray(entities.places),
+        products: toStringArray(entities.products),
+        dates: toStringArray(entities.dates),
+        misc: toStringArray(entities.misc),
+    };
+    out.actions = Array.isArray(raw === null || raw === void 0 ? void 0 : raw.actions) ? raw.actions.filter((a) => a && typeof a === 'object' && !Array.isArray(a)) : [];
+    return out;
+}
 function selectDeterministicModel(params) {
     const { availableIds, preferredEnv, preferredRequested } = params;
     const req = preferredRequested ? preferredRequested.trim() : '';
@@ -663,7 +712,8 @@ async function callOpenAIResponsesLooseJson(params) {
     if (!outputText) {
         return { parsed: null, refusal, usage };
     }
-    const parsed = JSON.parse(outputText);
+    const parsedRaw = JSON.parse(outputText);
+    const parsed = sanitizeAssistantAIOutputV1(parsedRaw);
     const v = validateAssistantAIOutputV1(parsed);
     if (!v.ok) {
         throw new Error(`AI output validation failed: ${v.error}`);

@@ -745,6 +745,53 @@ function validateAssistantAIOutputV1(parsed: any): { ok: true } | { ok: false; e
   return { ok: true };
 }
 
+function sanitizeAssistantAIOutputV1(raw: any): any {
+  const out: any = {};
+  const toStringOrNull = (v: any): string | null => {
+    if (v === null) return null;
+    if (typeof v === 'string') return v;
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+    if (v && typeof v === 'object') {
+      const maybeText = (v as any).text;
+      if (typeof maybeText === 'string') return maybeText;
+    }
+    return null;
+  };
+  const toStringArray = (v: any): string[] => {
+    if (!Array.isArray(v)) return [];
+    return v.map((x) => (typeof x === 'string' ? x : x == null ? '' : String(x))).map((s) => s.trim()).filter((s) => !!s);
+  };
+
+  out.summaryShort = toStringOrNull(raw?.summaryShort);
+
+  const ss = Array.isArray(raw?.summaryStructured) ? raw.summaryStructured : [];
+  out.summaryStructured = ss
+    .filter((it: any) => it && typeof it === 'object' && !Array.isArray(it))
+    .map((it: any) => ({
+      title: typeof it.title === 'string' ? it.title : String(it.title ?? '').trim() || 'Section',
+      bullets: toStringArray(it.bullets),
+    }));
+
+  out.keyPoints = toStringArray(raw?.keyPoints);
+  out.hooks = toStringArray(raw?.hooks);
+  out.rewriteContent = toStringOrNull(raw?.rewriteContent);
+  out.tags = toStringArray(raw?.tags);
+
+  const e = raw?.entities;
+  const entities: any = e && typeof e === 'object' && !Array.isArray(e) ? e : {};
+  out.entities = {
+    people: toStringArray(entities.people),
+    orgs: toStringArray(entities.orgs),
+    places: toStringArray(entities.places),
+    products: toStringArray(entities.products),
+    dates: toStringArray(entities.dates),
+    misc: toStringArray(entities.misc),
+  };
+
+  out.actions = Array.isArray(raw?.actions) ? raw.actions.filter((a: any) => a && typeof a === 'object' && !Array.isArray(a)) : [];
+  return out;
+}
+
 function selectDeterministicModel(params: { availableIds: string[]; preferredEnv: string | null; preferredRequested: string | null }): string {
   const { availableIds, preferredEnv, preferredRequested } = params;
   const req = preferredRequested ? preferredRequested.trim() : '';
@@ -1038,7 +1085,8 @@ async function callOpenAIResponsesLooseJson(params: {
     return { parsed: null, refusal, usage };
   }
 
-  const parsed = JSON.parse(outputText);
+  const parsedRaw = JSON.parse(outputText);
+  const parsed = sanitizeAssistantAIOutputV1(parsedRaw);
   const v = validateAssistantAIOutputV1(parsed);
   if (!v.ok) {
     throw new Error(`AI output validation failed: ${v.error}`);
