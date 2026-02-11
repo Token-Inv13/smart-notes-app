@@ -80,6 +80,9 @@ export default function AssistantNotePanel({ noteId }: Props) {
   };
 
   const handleRefresh = () => {
+    setActionMessage(null);
+    setActionError(null);
+    setEditError(null);
     refetchAssistant();
     refetchSuggestions();
   };
