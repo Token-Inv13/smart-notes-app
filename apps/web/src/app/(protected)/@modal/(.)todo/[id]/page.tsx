@@ -1,10 +1,12 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import { deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { formatTimestampForDateInput, parseLocalDateToTimestamp } from "@/lib/datetime";
 import type { TodoDoc } from "@/types/firestore";
+import DictationMicButton from "@/app/(protected)/_components/DictationMicButton";
+import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
 import Modal from "../../../Modal";
 
 function safeItemId() {
@@ -24,6 +26,14 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
   const [deleting, setDeleting] = useState(false);
 
   const [newItemText, setNewItemText] = useState("");
+
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
+  const itemInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [dictationStatus, setDictationStatus] = useState<"idle" | "listening" | "stopped" | "error">("idle");
+  const [dictationError, setDictationError] = useState<string | null>(null);
+  const [itemDictationStatus, setItemDictationStatus] = useState<"idle" | "listening" | "stopped" | "error">("idle");
+  const [itemDictationError, setItemDictationError] = useState<string | null>(null);
 
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [dueDateDraft, setDueDateDraft] = useState("");
@@ -256,24 +266,63 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
             <div className="sn-card p-4 space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <input
-                    value={todo.title}
-                    onChange={(e) => setTitleDraft(e.target.value)}
-                    onBlur={() => void commitTitle()}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        (e.currentTarget as HTMLInputElement).blur();
-                      }
-                      if (e.key === "Escape") {
-                        e.preventDefault();
-                        (e.currentTarget as HTMLInputElement).blur();
-                      }
-                    }}
-                    className="w-full bg-transparent text-sm font-semibold outline-none"
-                    aria-label="Titre de la ToDo"
-                    disabled={saving}
-                  />
+                  <div className="flex items-center gap-2">
+                    <input
+                      ref={titleInputRef}
+                      value={todo.title}
+                      onChange={(e) => setTitleDraft(e.target.value)}
+                      onBlur={() => void commitTitle()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          (e.currentTarget as HTMLInputElement).blur();
+                        }
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          (e.currentTarget as HTMLInputElement).blur();
+                        }
+                      }}
+                      className="flex-1 w-full bg-transparent text-sm font-semibold outline-none"
+                      aria-label="Titre de la ToDo"
+                      disabled={saving}
+                    />
+                    <DictationMicButton
+                      disabled={saving}
+                      onFinalText={(rawText) => {
+                        const el = titleInputRef.current;
+                        const insert = prepareDictationTextForInsertion({
+                          value: todo.title,
+                          selectionStart: el?.selectionStart ?? null,
+                          rawText,
+                        });
+                        if (!insert) return;
+                        const { nextValue, nextCursor } = insertTextAtSelection({
+                          value: todo.title,
+                          selectionStart: el?.selectionStart ?? null,
+                          selectionEnd: el?.selectionEnd ?? null,
+                          text: insert,
+                        });
+                        setTitleDraft(nextValue);
+                        window.requestAnimationFrame(() => {
+                          try {
+                            el?.focus();
+                            el?.setSelectionRange(nextCursor, nextCursor);
+                          } catch {
+                            // ignore
+                          }
+                        });
+                      }}
+                      onStatusChange={(st, err) => {
+                        setDictationStatus(st);
+                        setDictationError(err);
+                      }}
+                    />
+                  </div>
+                  {dictationStatus === "listening" ? (
+                    <div className="text-xs text-muted-foreground">Écoute…</div>
+                  ) : dictationError ? (
+                    <div className="text-xs text-destructive">{dictationError}</div>
+                  ) : null}
                   <div className="text-xs text-muted-foreground">
                     Actifs: {activeItems.length} · Terminés: {doneItems.length}
                   </div>
@@ -344,6 +393,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
               <div className="sn-card sn-card--muted p-3">
                 <div className="flex items-center gap-2">
                   <input
+                    ref={itemInputRef}
                     value={newItemText}
                     onChange={(e) => setNewItemText(e.target.value)}
                     placeholder="Ajouter un élément"
@@ -360,6 +410,37 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                     }}
                     disabled={saving}
                   />
+                  <DictationMicButton
+                    disabled={saving}
+                    onFinalText={(rawText) => {
+                      const el = itemInputRef.current;
+                      const insert = prepareDictationTextForInsertion({
+                        value: newItemText,
+                        selectionStart: el?.selectionStart ?? null,
+                        rawText,
+                      });
+                      if (!insert) return;
+                      const { nextValue, nextCursor } = insertTextAtSelection({
+                        value: newItemText,
+                        selectionStart: el?.selectionStart ?? null,
+                        selectionEnd: el?.selectionEnd ?? null,
+                        text: insert,
+                      });
+                      setNewItemText(nextValue);
+                      window.requestAnimationFrame(() => {
+                        try {
+                          el?.focus();
+                          el?.setSelectionRange(nextCursor, nextCursor);
+                        } catch {
+                          // ignore
+                        }
+                      });
+                    }}
+                    onStatusChange={(st, err) => {
+                      setItemDictationStatus(st);
+                      setItemDictationError(err);
+                    }}
+                  />
                   <button
                     type="button"
                     className="sn-text-btn"
@@ -369,6 +450,11 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                     Ajouter
                   </button>
                 </div>
+                {itemDictationStatus === "listening" ? (
+                  <div className="mt-2 text-xs text-muted-foreground">Écoute…</div>
+                ) : itemDictationError ? (
+                  <div className="mt-2 text-xs text-destructive">{itemDictationError}</div>
+                ) : null}
               </div>
 
               {activeItems.length === 0 && doneItems.length === 0 && (

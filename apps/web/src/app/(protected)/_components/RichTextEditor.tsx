@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { sanitizeNoteHtml } from "@/lib/richText";
+import DictationMicButton from "./DictationMicButton";
 
 type TextSize = "sm" | "md" | "lg";
 
@@ -12,6 +13,7 @@ type Props = {
   minHeightClassName?: string;
   disabled?: boolean;
   allowHr?: boolean;
+  enableDictation?: boolean;
 };
 
 function isBrowser() {
@@ -41,7 +43,7 @@ function wrapSelectionWithSpanStyle(root: HTMLElement, style: Record<string, str
 
   const span = document.createElement("span");
   for (const [k, v] of Object.entries(style)) {
-    (span.style as any)[k] = v;
+    span.style.setProperty(k, v);
   }
 
   if (range.collapsed) {
@@ -96,10 +98,14 @@ export default function RichTextEditor({
   minHeightClassName = "min-h-[160px]",
   disabled = false,
   allowHr = true,
+  enableDictation = false,
 }: Props) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const lastValueRef = useRef<string>("");
   const [hasFocus, setHasFocus] = useState(false);
+
+  const [dictationStatus, setDictationStatus] = useState<"idle" | "listening" | "stopped" | "error">("idle");
+  const [dictationError, setDictationError] = useState<string | null>(null);
 
   const safeValue = useMemo(() => sanitizeNoteHtml(value ?? "", { allowHr }), [allowHr, value]);
 
@@ -165,6 +171,60 @@ export default function RichTextEditor({
   const toolbarButtonClass =
     "px-2 py-1 rounded-md border border-input text-xs bg-background hover:bg-accent disabled:opacity-50";
 
+  const insertDictationText = (rawText: string) => {
+    const text = String(rawText ?? "").trim();
+    if (!text) return;
+
+    const root = editorRef.current;
+    if (!root) return;
+
+    if (!ensureSelectionInside(root)) {
+      try {
+        root.focus();
+      } catch {
+        // ignore
+      }
+    }
+
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) {
+      return;
+    }
+
+    const range = sel.getRangeAt(0);
+    if (!root.contains(range.startContainer)) {
+      return;
+    }
+
+    let prefix = "";
+    try {
+      const pre = range.cloneRange();
+      pre.selectNodeContents(root);
+      pre.setEnd(range.startContainer, range.startOffset);
+      const prevChar = pre.toString().slice(-1);
+      const needsLeadingSpace = Boolean(prevChar) && !/\s/.test(prevChar) && !/^[\s.,;:!?]/.test(text);
+      prefix = needsLeadingSpace ? " " : "";
+    } catch {
+      // ignore
+    }
+
+    const insert = `${prefix}${text}`;
+    try {
+      range.deleteContents();
+      const node = document.createTextNode(insert);
+      range.insertNode(node);
+      const next = document.createRange();
+      next.setStartAfter(node);
+      next.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(next);
+    } catch {
+      // ignore
+    }
+
+    emitChange();
+  };
+
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap">
@@ -222,7 +282,29 @@ export default function RichTextEditor({
         <button type="button" disabled={disabled || !allowHr} className={toolbarButtonClass} onClick={handleInsertHr}>
           —
         </button>
+
+        {enableDictation ? (
+          <>
+            <div className="h-6 w-px bg-border" />
+            <DictationMicButton
+              disabled={disabled}
+              onFinalText={(finalText) => insertDictationText(finalText)}
+              onStatusChange={(st, err) => {
+                setDictationStatus(st);
+                setDictationError(err);
+              }}
+            />
+          </>
+        ) : null}
       </div>
+
+      {enableDictation ? (
+        dictationStatus === "listening" ? (
+          <div className="text-xs text-muted-foreground">Écoute…</div>
+        ) : dictationError ? (
+          <div className="text-xs text-destructive">{dictationError}</div>
+        ) : null
+      ) : null}
 
       <div className="relative">
         {!hasFocus && !safeValue?.trim() && placeholder ? (

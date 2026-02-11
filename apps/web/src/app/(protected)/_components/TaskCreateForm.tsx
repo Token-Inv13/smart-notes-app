@@ -10,6 +10,8 @@ import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { parseLocalDateTimeToTimestamp, parseLocalDateToTimestamp } from "@/lib/datetime";
 import type { TaskDoc } from "@/types/firestore";
+import DictationMicButton from "./DictationMicButton";
+import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
 
 type TaskStatus = "todo" | "doing" | "done";
 
@@ -46,6 +48,10 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
   const [newPriority, setNewPriority] = useState<"" | NonNullable<TaskDoc["priority"]>>("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
+  const [dictationStatus, setDictationStatus] = useState<"idle" | "listening" | "stopped" | "error">("idle");
+  const [dictationError, setDictationError] = useState<string | null>(null);
 
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedDraftRef = useRef<string>("");
@@ -254,14 +260,54 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
           <label className="text-sm font-medium" htmlFor="task-new-title">
             Titre
           </label>
-          <input
-            id="task-new-title"
-            type="text"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-            placeholder="Ex : Payer le loyer"
-          />
+          <div className="flex items-center gap-2">
+            <input
+              id="task-new-title"
+              ref={titleInputRef}
+              type="text"
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              className="flex-1 w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+              placeholder="Ex : Payer le loyer"
+              disabled={creating}
+            />
+            <DictationMicButton
+              disabled={creating}
+              onFinalText={(rawText) => {
+                const el = titleInputRef.current;
+                const insert = prepareDictationTextForInsertion({
+                  value: newTitle,
+                  selectionStart: el?.selectionStart ?? null,
+                  rawText,
+                });
+                if (!insert) return;
+                const { nextValue, nextCursor } = insertTextAtSelection({
+                  value: newTitle,
+                  selectionStart: el?.selectionStart ?? null,
+                  selectionEnd: el?.selectionEnd ?? null,
+                  text: insert,
+                });
+                setNewTitle(nextValue);
+                window.requestAnimationFrame(() => {
+                  try {
+                    el?.focus();
+                    el?.setSelectionRange(nextCursor, nextCursor);
+                  } catch {
+                    // ignore
+                  }
+                });
+              }}
+              onStatusChange={(st, err) => {
+                setDictationStatus(st);
+                setDictationError(err);
+              }}
+            />
+          </div>
+          {dictationStatus === "listening" ? (
+            <div className="text-xs text-muted-foreground">Écoute…</div>
+          ) : dictationError ? (
+            <div className="text-xs text-destructive">{dictationError}</div>
+          ) : null}
         </div>
 
         <div className="space-y-1">

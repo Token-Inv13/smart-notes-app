@@ -13,6 +13,8 @@ import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import type { NoteAttachment, NoteDoc } from "@/types/firestore";
 import AssistantNotePanel from "@/app/(protected)/_components/AssistantNotePanel";
+import DictationMicButton from "@/app/(protected)/_components/DictationMicButton";
+import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
 import Modal from "../../../Modal";
 import ItemActionsMenu from "../../../ItemActionsMenu";
 import RichTextEditor from "../../../_components/RichTextEditor";
@@ -130,6 +132,10 @@ export default function NoteDetailModal(props: any) {
   const [busyAttachmentId, setBusyAttachmentId] = useState<string | null>(null);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
+  const [dictationStatus, setDictationStatus] = useState<"idle" | "listening" | "stopped" | "error">("idle");
+  const [dictationError, setDictationError] = useState<string | null>(null);
 
   const [, setIsDirty] = useState(false);
 
@@ -832,21 +838,66 @@ export default function NoteDetailModal(props: any) {
                         <label className="sr-only" htmlFor="note-modal-title">
                           Titre
                         </label>
-                        <input
-                          id="note-modal-title"
-                          value={editTitle}
-                          onChange={(e) => {
-                            const nextTitle = e.target.value;
-                            setEditTitle(nextTitle);
-                            const snap = JSON.stringify({
-                              title: nextTitle,
-                              content: editContent,
-                              workspaceId: editWorkspaceId,
-                            });
-                            setDirty(snap !== lastSavedSnapshotRef.current);
-                          }}
-                          className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                        />
+                        <div className="flex items-center gap-2">
+                          <input
+                            id="note-modal-title"
+                            ref={titleInputRef}
+                            value={editTitle}
+                            onChange={(e) => {
+                              const nextTitle = e.target.value;
+                              setEditTitle(nextTitle);
+                              const snap = JSON.stringify({
+                                title: nextTitle,
+                                content: editContent,
+                                workspaceId: editWorkspaceId,
+                              });
+                              setDirty(snap !== lastSavedSnapshotRef.current);
+                            }}
+                            className="flex-1 w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                          />
+                          <DictationMicButton
+                            disabled={saving}
+                            onFinalText={(rawText) => {
+                              const el = titleInputRef.current;
+                              const insert = prepareDictationTextForInsertion({
+                                value: editTitle,
+                                selectionStart: el?.selectionStart ?? null,
+                                rawText,
+                              });
+                              if (!insert) return;
+                              const { nextValue, nextCursor } = insertTextAtSelection({
+                                value: editTitle,
+                                selectionStart: el?.selectionStart ?? null,
+                                selectionEnd: el?.selectionEnd ?? null,
+                                text: insert,
+                              });
+                              setEditTitle(nextValue);
+                              const snap = JSON.stringify({
+                                title: nextValue,
+                                content: editContent,
+                                workspaceId: editWorkspaceId,
+                              });
+                              setDirty(snap !== lastSavedSnapshotRef.current);
+                              window.requestAnimationFrame(() => {
+                                try {
+                                  el?.focus();
+                                  el?.setSelectionRange(nextCursor, nextCursor);
+                                } catch {
+                                  // ignore
+                                }
+                              });
+                            }}
+                            onStatusChange={(st, err) => {
+                              setDictationStatus(st);
+                              setDictationError(err);
+                            }}
+                          />
+                        </div>
+                        {dictationStatus === "listening" ? (
+                          <div className="text-xs text-muted-foreground">Écoute…</div>
+                        ) : dictationError ? (
+                          <div className="text-xs text-destructive">{dictationError}</div>
+                        ) : null}
                       </div>
                     )}
                   </div>
@@ -957,7 +1008,9 @@ export default function NoteDetailModal(props: any) {
                           });
                           setDirty(snap !== lastSavedSnapshotRef.current);
                         }}
+                        placeholder="Écris ici…"
                         minHeightClassName="min-h-[240px]"
+                        enableDictation
                       />
                     </div>
 

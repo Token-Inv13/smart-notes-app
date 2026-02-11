@@ -11,6 +11,8 @@ import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import type { NoteDoc } from "@/types/firestore";
 import RichTextEditor from "./RichTextEditor";
 import { sanitizeNoteHtml } from "@/lib/richText";
+import DictationMicButton from "./DictationMicButton";
+import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
 
 const newNoteSchema = z.object({
   title: z.string().min(1, "Le titre est requis."),
@@ -39,6 +41,10 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
   const [noteWorkspaceId, setNoteWorkspaceId] = useState<string>(initialWorkspaceId ?? "");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
+  const [dictationStatus, setDictationStatus] = useState<"idle" | "listening" | "stopped" | "error">("idle");
+  const [dictationError, setDictationError] = useState<string | null>(null);
 
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedDraftRef = useRef<string>("");
@@ -178,13 +184,52 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
           <label className="text-sm font-medium" htmlFor="note-title">
             Titre
           </label>
-          <input
-            id="note-title"
-            value={noteTitle}
-            onChange={(e) => setNoteTitle(e.target.value)}
-            className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            placeholder="Ex: Idées pour demain"
-          />
+          <div className="flex items-center gap-2">
+            <input
+              id="note-title"
+              ref={titleInputRef}
+              value={noteTitle}
+              onChange={(e) => setNoteTitle(e.target.value)}
+              className="flex-1 w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder="Ex: Idées pour demain"
+            />
+            <DictationMicButton
+              disabled={creating}
+              onFinalText={(rawText) => {
+                const el = titleInputRef.current;
+                const insert = prepareDictationTextForInsertion({
+                  value: noteTitle,
+                  selectionStart: el?.selectionStart ?? null,
+                  rawText,
+                });
+                if (!insert) return;
+                const { nextValue, nextCursor } = insertTextAtSelection({
+                  value: noteTitle,
+                  selectionStart: el?.selectionStart ?? null,
+                  selectionEnd: el?.selectionEnd ?? null,
+                  text: insert,
+                });
+                setNoteTitle(nextValue);
+                window.requestAnimationFrame(() => {
+                  try {
+                    el?.focus();
+                    el?.setSelectionRange(nextCursor, nextCursor);
+                  } catch {
+                    // ignore
+                  }
+                });
+              }}
+              onStatusChange={(st, err) => {
+                setDictationStatus(st);
+                setDictationError(err);
+              }}
+            />
+          </div>
+          {dictationStatus === "listening" ? (
+            <div className="text-xs text-muted-foreground">Écoute…</div>
+          ) : dictationError ? (
+            <div className="text-xs text-destructive">{dictationError}</div>
+          ) : null}
         </div>
 
         <div className="space-y-1">
@@ -227,6 +272,7 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
           onChange={setNoteContent}
           placeholder="Quelques lignes pour te rappeler l’essentiel…"
           minHeightClassName="min-h-[120px]"
+          enableDictation
         />
       </div>
 

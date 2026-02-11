@@ -6,6 +6,8 @@ import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { parseLocalDateToTimestamp } from "@/lib/datetime";
 import type { TodoDoc } from "@/types/firestore";
+import DictationMicButton from "./DictationMicButton";
+import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
 
 type Props = {
   initialWorkspaceId?: string;
@@ -36,6 +38,11 @@ export default function TodoCreateForm({
 
   const inputRef = useRef<HTMLInputElement | null>(null);
   const itemInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [dictationStatus, setDictationStatus] = useState<"idle" | "listening" | "stopped" | "error">("idle");
+  const [dictationError, setDictationError] = useState<string | null>(null);
+  const [itemDictationStatus, setItemDictationStatus] = useState<"idle" | "listening" | "stopped" | "error">("idle");
+  const [itemDictationError, setItemDictationError] = useState<string | null>(null);
 
   const safeItemId = () => {
     return `it_${Math.random().toString(36).slice(2)}_${Date.now()}`;
@@ -134,37 +141,75 @@ export default function TodoCreateForm({
         <label className="text-sm font-medium" htmlFor="todo-title">
           Titre
         </label>
-        <input
-          id="todo-title"
-          ref={inputRef}
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Ex: Préparer la semaine"
-          className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-base font-medium focus:outline-none focus:ring-2 focus:ring-primary"
-          disabled={creating}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.preventDefault();
-              onCancel?.();
-            }
-            if (e.key === "Enter") {
-              e.preventDefault();
-              if (showActions) {
-                itemInputRef.current?.focus();
+        <div className="flex items-center gap-2">
+          <input
+            id="todo-title"
+            ref={inputRef}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Ex: Préparer la semaine"
+            className="flex-1 w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-base font-medium focus:outline-none focus:ring-2 focus:ring-primary"
+            disabled={creating}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                onCancel?.();
+              }
+              if (e.key === "Enter") {
+                e.preventDefault();
+                if (showActions) {
+                  itemInputRef.current?.focus();
+                  return;
+                }
+                void submit();
+              }
+            }}
+            onBlur={() => {
+              if (showActions) return;
+              if (!title.trim()) {
+                onCancel?.();
                 return;
               }
               void submit();
-            }
-          }}
-          onBlur={() => {
-            if (showActions) return;
-            if (!title.trim()) {
-              onCancel?.();
-              return;
-            }
-            void submit();
-          }}
-        />
+            }}
+          />
+          <DictationMicButton
+            disabled={creating}
+            onFinalText={(rawText) => {
+              const el = inputRef.current;
+              const insert = prepareDictationTextForInsertion({
+                value: title,
+                selectionStart: el?.selectionStart ?? null,
+                rawText,
+              });
+              if (!insert) return;
+              const { nextValue, nextCursor } = insertTextAtSelection({
+                value: title,
+                selectionStart: el?.selectionStart ?? null,
+                selectionEnd: el?.selectionEnd ?? null,
+                text: insert,
+              });
+              setTitle(nextValue);
+              window.requestAnimationFrame(() => {
+                try {
+                  el?.focus();
+                  el?.setSelectionRange(nextCursor, nextCursor);
+                } catch {
+                  // ignore
+                }
+              });
+            }}
+            onStatusChange={(st, err) => {
+              setDictationStatus(st);
+              setDictationError(err);
+            }}
+          />
+        </div>
+        {dictationStatus === "listening" ? (
+          <div className="text-xs text-muted-foreground">Écoute…</div>
+        ) : dictationError ? (
+          <div className="text-xs text-destructive">{dictationError}</div>
+        ) : null}
       </div>
 
       {showActions && (
@@ -246,6 +291,37 @@ export default function TodoCreateForm({
                   }
                 }}
               />
+              <DictationMicButton
+                disabled={creating}
+                onFinalText={(rawText) => {
+                  const el = itemInputRef.current;
+                  const insert = prepareDictationTextForInsertion({
+                    value: newItemText,
+                    selectionStart: el?.selectionStart ?? null,
+                    rawText,
+                  });
+                  if (!insert) return;
+                  const { nextValue, nextCursor } = insertTextAtSelection({
+                    value: newItemText,
+                    selectionStart: el?.selectionStart ?? null,
+                    selectionEnd: el?.selectionEnd ?? null,
+                    text: insert,
+                  });
+                  setNewItemText(nextValue);
+                  window.requestAnimationFrame(() => {
+                    try {
+                      el?.focus();
+                      el?.setSelectionRange(nextCursor, nextCursor);
+                    } catch {
+                      // ignore
+                    }
+                  });
+                }}
+                onStatusChange={(st, err) => {
+                  setItemDictationStatus(st);
+                  setItemDictationError(err);
+                }}
+              />
               <button
                 type="button"
                 onClick={addDraftItem}
@@ -255,6 +331,12 @@ export default function TodoCreateForm({
                 Ajouter
               </button>
             </div>
+
+            {itemDictationStatus === "listening" ? (
+              <div className="text-xs text-muted-foreground">Écoute…</div>
+            ) : itemDictationError ? (
+              <div className="text-xs text-destructive">{itemDictationError}</div>
+            ) : null}
 
             {itemsDraft.length > 0 && (
               <div className="space-y-2">
