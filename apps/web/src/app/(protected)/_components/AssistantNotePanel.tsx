@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FirebaseError } from "firebase/app";
 import { httpsCallable } from "firebase/functions";
-import type { Timestamp } from "firebase/firestore";
-import { functions as fbFunctions } from "@/lib/firebase";
+import { doc, onSnapshot, type Timestamp } from "firebase/firestore";
+import { db, functions as fbFunctions } from "@/lib/firebase";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import { useAssistantSettings } from "@/hooks/useAssistantSettings";
 import { useNoteAssistantSuggestions } from "@/hooks/useNoteAssistantSuggestions";
+import { useAuth } from "@/hooks/useAuth";
 import { formatTimestampForInput, parseLocalDateTimeToTimestamp } from "@/lib/datetime";
 import type { AssistantSuggestionDoc, Priority } from "@/types/firestore";
 import Modal from "../Modal";
@@ -18,6 +19,7 @@ type Props = {
 };
 
 export default function AssistantNotePanel({ noteId }: Props) {
+  const { user } = useAuth();
   const {
     data: assistantSettings,
     loading: assistantLoading,
@@ -42,6 +44,9 @@ export default function AssistantNotePanel({ noteId }: Props) {
   const [busyReanalysis, setBusyReanalysis] = useState(false);
   const [reanalyzeCooldownUntil, setReanalyzeCooldownUntil] = useState<number>(0);
 
+  const [jobStatus, setJobStatus] = useState<"queued" | "processing" | "done" | "error" | null>(null);
+  const lastJobStatusRef = useRef<typeof jobStatus>(null);
+
   const [editing, setEditing] = useState<AssistantSuggestionDoc | null>(null);
   const [editTitle, setEditTitle] = useState<string>("");
   const [editDate, setEditDate] = useState<string>("");
@@ -50,6 +55,40 @@ export default function AssistantNotePanel({ noteId }: Props) {
   const [expandedBundleSuggestionId, setExpandedBundleSuggestionId] = useState<string | null>(null);
 
   const [bundleCustomizeSuggestion, setBundleCustomizeSuggestion] = useState<AssistantSuggestionDoc | null>(null);
+
+  useEffect(() => {
+    if (!enabled) return;
+    if (!noteId) return;
+    if (!user?.uid) return;
+
+    const jobId = `current_note_${noteId}`;
+    const jobRef = doc(db, "users", user.uid, "assistantJobs", jobId);
+
+    const unsub = onSnapshot(
+      jobRef,
+      (snap) => {
+        const nextStatus = snap.exists() ? ((snap.data() as any)?.status as typeof jobStatus) : null;
+
+        setJobStatus(nextStatus ?? null);
+
+        const prev = lastJobStatusRef.current;
+        lastJobStatusRef.current = nextStatus ?? null;
+
+        if ((nextStatus === "done" || nextStatus === "error") && prev !== "done" && prev !== "error") {
+          setActionMessage(null);
+          if (nextStatus === "error") setActionError("Réanalyse en erreur.");
+          refetchSuggestions();
+        }
+      },
+      () => {
+        setJobStatus(null);
+      },
+    );
+
+    return () => {
+      unsub();
+    };
+  }, [enabled, noteId, user?.uid, refetchSuggestions]);
 
   const sorted = useMemo(() => {
     const arr = (suggestions ?? []).slice();
@@ -369,6 +408,10 @@ export default function AssistantNotePanel({ noteId }: Props) {
 
       {actionMessage && <div className="sn-alert">{actionMessage}</div>}
       {actionError && <div className="sn-alert sn-alert--error">{actionError}</div>}
+
+      {jobStatus === "queued" && <div className="sn-alert">Analyse en attente…</div>}
+      {jobStatus === "processing" && <div className="sn-alert">Analyse en cours…</div>}
+      {jobStatus === "error" && <div className="sn-alert sn-alert--error">Réanalyse en erreur.</div>}
 
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={showExpired} onChange={(e) => setShowExpired(e.target.checked)} />
