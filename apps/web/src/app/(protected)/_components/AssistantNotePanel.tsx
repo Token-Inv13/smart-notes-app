@@ -47,6 +47,16 @@ export default function AssistantNotePanel({ noteId }: Props) {
   const [jobStatus, setJobStatus] = useState<"queued" | "processing" | "done" | "error" | null>(null);
   const lastJobStatusRef = useRef<typeof jobStatus>(null);
 
+  type JobResult = {
+    candidates?: number;
+    created?: number;
+    updated?: number;
+    skippedProposed?: number;
+    skippedAccepted?: number;
+  };
+
+  const [jobResult, setJobResult] = useState<JobResult | null>(null);
+
   const [editing, setEditing] = useState<AssistantSuggestionDoc | null>(null);
   const [editTitle, setEditTitle] = useState<string>("");
   const [editDate, setEditDate] = useState<string>("");
@@ -67,9 +77,12 @@ export default function AssistantNotePanel({ noteId }: Props) {
     const unsub = onSnapshot(
       jobRef,
       (snap) => {
-        const nextStatus = snap.exists() ? ((snap.data() as any)?.status as typeof jobStatus) : null;
+        const data = snap.exists() ? (snap.data() as any) : null;
+        const nextStatus = data ? ((data?.status as typeof jobStatus) ?? null) : null;
+        const nextResult = data && typeof data?.result === "object" && data.result ? (data.result as JobResult) : null;
 
         setJobStatus(nextStatus ?? null);
+        setJobResult(nextResult);
 
         const prev = lastJobStatusRef.current;
         lastJobStatusRef.current = nextStatus ?? null;
@@ -82,6 +95,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
       },
       () => {
         setJobStatus(null);
+        setJobResult(null);
       },
     );
 
@@ -102,6 +116,28 @@ export default function AssistantNotePanel({ noteId }: Props) {
   }, [suggestions]);
 
   const showSkeleton = suggestionsLoading;
+
+  const doneBannerMessage = useMemo(() => {
+    if (jobStatus !== "done") return null;
+    if (suggestionsLoading) return null;
+    if ((sorted?.length ?? 0) > 0) return null;
+
+    const r = jobResult;
+    const candidates = typeof r?.candidates === "number" ? r.candidates : null;
+    const created = typeof r?.created === "number" ? r.created : 0;
+    const updated = typeof r?.updated === "number" ? r.updated : 0;
+    const skippedProposed = typeof r?.skippedProposed === "number" ? r.skippedProposed : 0;
+    const skippedAccepted = typeof r?.skippedAccepted === "number" ? r.skippedAccepted : 0;
+
+    if (candidates === 0) return "Aucune suggestion détectée.";
+
+    if (created + updated === 0) {
+      if (skippedAccepted > 0 || skippedProposed > 0) return "Aucune nouvelle suggestion (déjà traitée).";
+      return "Aucune nouvelle suggestion.";
+    }
+
+    return null;
+  }, [jobStatus, jobResult, sorted?.length, suggestionsLoading]);
 
   const isCallableUnauthenticated = (err: unknown) => {
     if (isAuthInvalidError(err)) return true;
@@ -412,6 +448,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
       {jobStatus === "queued" && <div className="sn-alert">Analyse en attente…</div>}
       {jobStatus === "processing" && <div className="sn-alert">Analyse en cours…</div>}
       {jobStatus === "error" && <div className="sn-alert sn-alert--error">Réanalyse en erreur.</div>}
+      {doneBannerMessage && <div className="sn-alert">{doneBannerMessage}</div>}
 
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={showExpired} onChange={(e) => setShowExpired(e.target.checked)} />
