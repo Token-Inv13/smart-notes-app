@@ -224,20 +224,114 @@ function getOpenAIApiKey() {
         return envKey;
     throw new functions.https.HttpsError('failed-precondition', 'Missing OpenAI API key configuration.');
 }
-function getAssistantAIDefaultModel() {
-    const raw = typeof process.env.ASSISTANT_AI_MODEL === 'string' ? process.env.ASSISTANT_AI_MODEL.trim() : '';
-    return raw || 'gpt-4o-mini';
+function getOpenAIProjectHeader() {
+    const raw = typeof process.env.OPENAI_PROJECT === 'string' ? process.env.OPENAI_PROJECT.trim() : '';
+    return raw ? raw : null;
+}
+function getAssistantAIPreferredModelEnv() {
+    const raw = typeof process.env.OPENAI_MODEL === 'string' ? process.env.OPENAI_MODEL.trim() : '';
+    if (raw)
+        return raw;
+    const legacy = typeof process.env.ASSISTANT_AI_MODEL === 'string' ? process.env.ASSISTANT_AI_MODEL.trim() : '';
+    return legacy ? legacy : null;
+}
+const ASSISTANT_AI_MODEL_SHORTLIST = ['gpt-4o-mini', 'gpt-4.1-mini', 'gpt-4o', 'gpt-4.1'];
+let openAIModelsCache = null;
+let openAIModelsLoggedForInstance = false;
+class OpenAIHttpError extends Error {
+    constructor(params) {
+        var _a, _b, _c, _d, _e;
+        super(params.message);
+        this.status = params.status;
+        this.code = (_a = params.code) !== null && _a !== void 0 ? _a : null;
+        this.type = (_b = params.type) !== null && _b !== void 0 ? _b : null;
+        this.param = (_c = params.param) !== null && _c !== void 0 ? _c : null;
+        this.requestId = (_d = params.requestId) !== null && _d !== void 0 ? _d : null;
+        this.projectHeader = (_e = params.projectHeader) !== null && _e !== void 0 ? _e : null;
+    }
+}
+async function listAvailableModelsCached(params) {
+    const forceRefresh = (params === null || params === void 0 ? void 0 : params.forceRefresh) === true;
+    const now = Date.now();
+    const ttlMs = 10 * 60 * 1000;
+    if (!forceRefresh && openAIModelsCache && openAIModelsCache.expiresAtMs > now && Array.isArray(openAIModelsCache.ids) && openAIModelsCache.ids.length > 0) {
+        return openAIModelsCache.ids;
+    }
+    const apiKey = getOpenAIApiKey();
+    const projectHeader = getOpenAIProjectHeader();
+    const headers = {
+        Authorization: `Bearer ${apiKey}`,
+    };
+    if (projectHeader)
+        headers['OpenAI-Project'] = projectHeader;
+    const res = await fetch('https://api.openai.com/v1/models', { method: 'GET', headers });
+    const requestId = res.headers.get('x-request-id');
+    if (!res.ok) {
+        const t = await res.text().catch(() => '');
+        console.error('openai.models_list_failed', {
+            status: res.status,
+            requestId,
+            projectHeader,
+            body: t.slice(0, 800),
+        });
+        throw new OpenAIHttpError({ status: res.status, message: `OpenAI models list failed: ${res.status} ${t}`.slice(0, 500), requestId, projectHeader });
+    }
+    const json = (await res.json());
+    const dataArr = Array.isArray(json === null || json === void 0 ? void 0 : json.data) ? json.data : [];
+    const ids = dataArr
+        .map((m) => (m && typeof m.id === 'string' ? String(m.id) : ''))
+        .filter((id) => !!id)
+        .filter((id) => id.startsWith('gpt-'))
+        .sort();
+    openAIModelsCache = { ids, fetchedAtMs: now, expiresAtMs: now + ttlMs };
+    if (!openAIModelsLoggedForInstance) {
+        openAIModelsLoggedForInstance = true;
+        const preferred = getAssistantAIPreferredModelEnv();
+        const shortlistAvailable = ASSISTANT_AI_MODEL_SHORTLIST.filter((m) => ids.includes(m));
+        const preview = ids.slice(0, 40);
+        console.log('openai.models_list_ok', {
+            count: ids.length,
+            requestId,
+            projectHeader,
+            preferred,
+            shortlistAvailable,
+            preview,
+        });
+    }
+    return ids;
 }
 function normalizeAssistantAIModel(rawModel) {
     const s = typeof rawModel === 'string' ? rawModel.trim() : '';
     if (!s)
-        return getAssistantAIDefaultModel();
+        return '';
     return s.slice(0, 64);
 }
+function selectDeterministicModel(params) {
+    const { availableIds, preferredEnv, preferredRequested } = params;
+    const req = preferredRequested ? preferredRequested.trim() : '';
+    const env = preferredEnv ? preferredEnv.trim() : '';
+    const candidates = [];
+    if (req)
+        candidates.push(req);
+    if (env && env !== req)
+        candidates.push(env);
+    for (const m of ASSISTANT_AI_MODEL_SHORTLIST) {
+        if (!candidates.includes(m))
+            candidates.push(m);
+    }
+    for (const c of candidates) {
+        if (availableIds.includes(c))
+            return c;
+    }
+    throw new functions.https.HttpsError('failed-precondition', 'Le projet OpenAI associé à cette clé n’a accès à aucun modèle compatible. Vérifie le Project sélectionné et les permissions.');
+}
 function isOpenAIModelAccessError(err) {
+    if (err instanceof OpenAIHttpError) {
+        const msg = err.message || '';
+        const code = err.code || '';
+        return err.status === 403 && (code === 'model_not_found' || msg.includes('does not have access to model') || msg.includes('model_not_found'));
+    }
     const msg = err instanceof Error ? err.message : String(err);
-    if (!msg)
-        return false;
     return msg.includes('model_not_found') || msg.includes('does not have access to model');
 }
 const ASSISTANT_AI_SCHEMA_VERSION = 1;
@@ -310,6 +404,7 @@ const ASSISTANT_AI_OUTPUT_SCHEMA_V1 = {
 async function callOpenAIResponsesJsonSchema(params) {
     var _a, _b, _c;
     const apiKey = getOpenAIApiKey();
+    const projectHeader = getOpenAIProjectHeader();
     const body = {
         model: params.model,
         instructions: params.instructions,
@@ -326,15 +421,26 @@ async function callOpenAIResponsesJsonSchema(params) {
     };
     const res = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-        },
+        headers: Object.assign({ 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, (projectHeader ? { 'OpenAI-Project': projectHeader } : {})),
         body: JSON.stringify(body),
     });
     if (!res.ok) {
-        const t = await res.text().catch(() => '');
-        throw new Error(`OpenAI error: ${res.status} ${t}`.slice(0, 800));
+        const requestId = res.headers.get('x-request-id');
+        let parsedErr = null;
+        let textBody = '';
+        try {
+            parsedErr = await res.json();
+        }
+        catch (_d) {
+            textBody = await res.text().catch(() => '');
+        }
+        const errObj = parsedErr && typeof parsedErr === 'object' ? parsedErr : null;
+        const errInner = errObj && typeof (errObj === null || errObj === void 0 ? void 0 : errObj.error) === 'object' ? errObj.error : null;
+        const message = errInner && typeof (errInner === null || errInner === void 0 ? void 0 : errInner.message) === 'string' ? String(errInner.message) : textBody || JSON.stringify(errObj || {});
+        const code = errInner && typeof (errInner === null || errInner === void 0 ? void 0 : errInner.code) === 'string' ? String(errInner.code) : null;
+        const type = errInner && typeof (errInner === null || errInner === void 0 ? void 0 : errInner.type) === 'string' ? String(errInner.type) : null;
+        const param = errInner && typeof (errInner === null || errInner === void 0 ? void 0 : errInner.param) === 'string' ? String(errInner.param) : null;
+        throw new OpenAIHttpError({ status: res.status, message: `OpenAI error: ${res.status} ${message}`.slice(0, 800), code, type, param, requestId, projectHeader });
     }
     const json = (await res.json());
     const usage = json && typeof (json === null || json === void 0 ? void 0 : json.usage) === 'object' && json.usage
@@ -2562,7 +2668,46 @@ exports.assistantRequestAIAnalysis = functions.https.onCall(async (data, context
             .map((m) => String(m))
             .filter((m) => allowedModes.has(m))
         : ['summary', 'actions', 'hooks', 'rewrite', 'entities'];
-    const model = normalizeAssistantAIModel(data === null || data === void 0 ? void 0 : data.model);
+    const requestedModel = normalizeAssistantAIModel(data === null || data === void 0 ? void 0 : data.model);
+    const preferredEnv = getAssistantAIPreferredModelEnv();
+    let model = '';
+    try {
+        const available = await listAvailableModelsCached();
+        model = selectDeterministicModel({ availableIds: available, preferredEnv, preferredRequested: requestedModel || null });
+    }
+    catch (e) {
+        const cached = openAIModelsCache && Array.isArray(openAIModelsCache.ids) ? openAIModelsCache.ids : [];
+        if (cached.length > 0) {
+            model = selectDeterministicModel({ availableIds: cached, preferredEnv, preferredRequested: requestedModel || null });
+        }
+        else {
+            try {
+                console.error('openai.model_select_failed', {
+                    requestedModel: requestedModel || null,
+                    preferredEnv,
+                    selected: null,
+                    message: e instanceof Error ? e.message : String(e),
+                });
+            }
+            catch (err) {
+                void err;
+            }
+            throw new functions.https.HttpsError('failed-precondition', 'Découverte des modèles OpenAI impossible (endpoint /v1/models). Vérifie la clé, le Project OpenAI et les permissions.');
+        }
+    }
+    try {
+        console.log('openai.model_selected', {
+            requestedModel: requestedModel || null,
+            preferredEnv,
+            selected: model,
+        });
+    }
+    catch (err) {
+        void err;
+    }
+    if (!model) {
+        throw new functions.https.HttpsError('failed-precondition', 'Impossible de sélectionner un modèle OpenAI. Vérifie OPENAI_MODEL/ASSISTANT_AI_MODEL et les permissions du Project OpenAI.');
+    }
     const db = admin.firestore();
     const enabled = await isAssistantEnabledForUser(db, userId);
     if (!enabled) {
@@ -2608,6 +2753,7 @@ exports.assistantRequestAIAnalysis = functions.https.onCall(async (data, context
                 objectId,
                 status: 'done',
                 model,
+                modelRequested: requestedModel || null,
                 modes,
                 schemaVersion,
                 resultId,
@@ -2641,6 +2787,8 @@ exports.assistantRequestAIAnalysis = functions.https.onCall(async (data, context
             status: 'queued',
             attempts: 0,
             model,
+            modelRequested: requestedModel || null,
+            modelFallbackUsed: null,
             modes,
             schemaVersion,
             pendingTextHash: textHash,
@@ -2698,14 +2846,17 @@ async function processAssistantAIJob(params) {
         return;
     const noteId = typeof (claimed === null || claimed === void 0 ? void 0 : claimed.noteId) === 'string' ? String(claimed.noteId) : null;
     const objectId = typeof claimed.objectId === 'string' ? claimed.objectId : null;
-    const defaultModel = getAssistantAIDefaultModel();
-    const model = normalizeAssistantAIModel(claimed === null || claimed === void 0 ? void 0 : claimed.model);
+    const requestedModel = normalizeAssistantAIModel(claimed === null || claimed === void 0 ? void 0 : claimed.model);
     const schemaVersion = typeof claimed.schemaVersion === 'number' ? Math.trunc(claimed.schemaVersion) : ASSISTANT_AI_SCHEMA_VERSION;
     const modes = Array.isArray(claimed === null || claimed === void 0 ? void 0 : claimed.modes) ? claimed.modes.filter((m) => typeof m === 'string').map((m) => String(m)) : [];
     if (!noteId || !objectId)
         return;
     const metricsRef = assistantMetricsRef(db, userId);
     const userRef = db.collection('users').doc(userId);
+    let primaryModel = null;
+    let fallbackModel = null;
+    let usedModel = null;
+    let fallbackUsed = null;
     try {
         const noteSnap = await db.collection('notes').doc(noteId).get();
         const note = noteSnap.exists ? noteSnap.data() : null;
@@ -2720,20 +2871,69 @@ async function processAssistantAIJob(params) {
         const textHash = sha256Hex(normalized);
         const modesSig = modes.slice().sort().join(',');
         const resultIdForModel = (m) => sha256Hex(`${objectId}|${textHash}|${m}|schema:${schemaVersion}|modes:${modesSig}`);
-        const requestedResultId = resultIdForModel(model);
-        const requestedResultRef = userRef.collection('assistantAIResults').doc(requestedResultId);
-        const fallbackResultId = model !== defaultModel ? resultIdForModel(defaultModel) : null;
+        let availableIds = [];
+        try {
+            availableIds = await listAvailableModelsCached();
+        }
+        catch (err) {
+            const cached = openAIModelsCache && Array.isArray(openAIModelsCache.ids) ? openAIModelsCache.ids : [];
+            if (cached.length > 0) {
+                availableIds = cached;
+            }
+            else {
+                throw err;
+            }
+        }
+        const preferredEnv = getAssistantAIPreferredModelEnv();
+        const candidatesBase = [];
+        if (requestedModel)
+            candidatesBase.push(requestedModel);
+        if (preferredEnv && preferredEnv !== requestedModel)
+            candidatesBase.push(preferredEnv);
+        for (const m of ASSISTANT_AI_MODEL_SHORTLIST) {
+            if (!candidatesBase.includes(m))
+                candidatesBase.push(m);
+        }
+        const candidates = candidatesBase.filter((m) => availableIds.includes(m));
+        if (candidates.length === 0) {
+            throw new functions.https.HttpsError('failed-precondition', 'Le projet OpenAI associé à cette clé n’a accès à aucun modèle compatible. Vérifie le Project sélectionné et les permissions.');
+        }
+        primaryModel = candidates[0];
+        fallbackModel = candidates.length > 1 ? candidates[1] : null;
+        const primaryResultId = resultIdForModel(primaryModel);
+        const primaryResultRef = userRef.collection('assistantAIResults').doc(primaryResultId);
+        const fallbackResultId = fallbackModel ? resultIdForModel(fallbackModel) : null;
         const fallbackResultRef = fallbackResultId ? userRef.collection('assistantAIResults').doc(fallbackResultId) : null;
-        const [existingRequested, existingFallback] = await Promise.all([
-            requestedResultRef.get(),
+        const [existingPrimary, existingFallback] = await Promise.all([
+            primaryResultRef.get(),
             fallbackResultRef ? fallbackResultRef.get() : Promise.resolve(null),
         ]);
-        if (existingRequested.exists) {
-            await jobDoc.ref.update({ status: 'done', lockedUntil: admin.firestore.Timestamp.fromMillis(0), pendingTextHash: null, resultId: requestedResultId, model, error: null, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+        if (existingPrimary.exists) {
+            await jobDoc.ref.update({
+                status: 'done',
+                lockedUntil: admin.firestore.Timestamp.fromMillis(0),
+                pendingTextHash: null,
+                resultId: primaryResultId,
+                model: primaryModel,
+                modelRequested: requestedModel || null,
+                modelFallbackUsed: null,
+                error: null,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
             return;
         }
         if (fallbackResultRef && existingFallback && existingFallback.exists) {
-            await jobDoc.ref.update({ status: 'done', lockedUntil: admin.firestore.Timestamp.fromMillis(0), pendingTextHash: null, resultId: fallbackResultId, model: defaultModel, error: null, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+            await jobDoc.ref.update({
+                status: 'done',
+                lockedUntil: admin.firestore.Timestamp.fromMillis(0),
+                pendingTextHash: null,
+                resultId: fallbackResultId,
+                model: fallbackModel,
+                modelRequested: requestedModel || null,
+                modelFallbackUsed: fallbackModel,
+                error: null,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
             return;
         }
         const instructions = [
@@ -2745,10 +2945,12 @@ async function processAssistantAIJob(params) {
             'Keep text concise and in French.',
         ].join('\n');
         const inputText = `Titre:\n${title}\n\nContenu:\n${content}`;
-        let usedModel = model;
+        usedModel = primaryModel;
+        fallbackUsed = null;
         let llm = await callOpenAIResponsesJsonSchema({ model: usedModel, instructions, inputText, schema: ASSISTANT_AI_OUTPUT_SCHEMA_V1 }).catch(async (e) => {
-            if (usedModel !== defaultModel && isOpenAIModelAccessError(e)) {
-                usedModel = defaultModel;
+            if (fallbackModel && isOpenAIModelAccessError(e)) {
+                fallbackUsed = fallbackModel;
+                usedModel = fallbackModel;
                 return await callOpenAIResponsesJsonSchema({ model: usedModel, instructions, inputText, schema: ASSISTANT_AI_OUTPUT_SCHEMA_V1 });
             }
             throw e;
@@ -2977,11 +3179,30 @@ async function processAssistantAIJob(params) {
             pendingTextHash: null,
             resultId: usedResultId,
             model: usedModel,
+            modelRequested: requestedModel || null,
+            modelFallbackUsed: fallbackUsed,
             error: null,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
     }
     catch (e) {
+        if (e instanceof OpenAIHttpError) {
+            console.error('openai.request_failed', {
+                userId,
+                jobId: jobDoc.id,
+                modelRequested: requestedModel || null,
+                modelPrimary: typeof primaryModel === 'string' ? primaryModel : null,
+                modelFallback: typeof fallbackModel === 'string' ? fallbackModel : null,
+                modelUsed: typeof usedModel === 'string' ? usedModel : null,
+                modelFallbackUsed: fallbackUsed,
+                status: e.status,
+                code: e.code,
+                type: e.type,
+                message: e.message,
+                requestId: e.requestId,
+                projectHeader: e.projectHeader,
+            });
+        }
         try {
             console.error('assistant AI job failed', {
                 userId,
@@ -2993,12 +3214,7 @@ async function processAssistantAIJob(params) {
         catch (_d) {
             // ignore
         }
-        await jobDoc.ref.update({
-            status: 'error',
-            lockedUntil: admin.firestore.Timestamp.fromMillis(0),
-            error: e instanceof Error ? e.message : 'AI job error',
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+        await jobDoc.ref.update(Object.assign(Object.assign(Object.assign(Object.assign({ status: 'error', lockedUntil: admin.firestore.Timestamp.fromMillis(0) }, (requestedModel ? { modelRequested: requestedModel } : {})), (fallbackUsed ? { modelFallbackUsed: fallbackUsed } : {})), (usedModel ? { model: usedModel } : {})), { error: e instanceof Error ? e.message : 'AI job error', updatedAt: admin.firestore.FieldValue.serverTimestamp() }));
         try {
             await metricsRef.set(metricsIncrements({ aiAnalysesErrored: 1 }), { merge: true });
         }

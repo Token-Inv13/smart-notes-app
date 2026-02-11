@@ -218,6 +218,8 @@ export interface AssistantAIJobDoc {
   status: AssistantAIJobStatus;
   attempts: number;
   model: string;
+  modelRequested?: string | null;
+  modelFallbackUsed?: string | null;
   modes?: string[];
   schemaVersion: number;
   pendingTextHash?: string | null;

@@ -60,6 +60,9 @@ export default function AssistantNotePanel({ noteId }: Props) {
   const [aiJobStatus, setAIJobStatus] = useState<"queued" | "processing" | "done" | "error" | null>(null);
   const [aiJobResultId, setAIJobResultId] = useState<string | null>(null);
   const [aiJobError, setAIJobError] = useState<string | null>(null);
+  const [aiJobModel, setAIJobModel] = useState<string | null>(null);
+  const [aiJobModelRequested, setAIJobModelRequested] = useState<string | null>(null);
+  const [aiJobModelFallbackUsed, setAIJobModelFallbackUsed] = useState<string | null>(null);
   const [aiResult, setAIResult] = useState<AssistantAIResultDoc | null>(null);
   const [busyAIAnalysis, setBusyAIAnalysis] = useState(false);
 
@@ -125,15 +128,24 @@ export default function AssistantNotePanel({ noteId }: Props) {
         const nextStatus = data ? ((data?.status as typeof aiJobStatus) ?? null) : null;
         const nextResultId = data && typeof data?.resultId === "string" ? String(data.resultId) : null;
         const nextError = data && typeof data?.error === "string" ? String(data.error) : null;
+        const nextModel = data && typeof data?.model === "string" ? String(data.model) : null;
+        const nextModelRequested = data && typeof data?.modelRequested === "string" ? String(data.modelRequested) : null;
+        const nextModelFallbackUsed = data && typeof data?.modelFallbackUsed === "string" ? String(data.modelFallbackUsed) : null;
 
         setAIJobStatus(nextStatus ?? null);
         setAIJobResultId(nextResultId);
         setAIJobError(nextError);
+        setAIJobModel(nextModel);
+        setAIJobModelRequested(nextModelRequested);
+        setAIJobModelFallbackUsed(nextModelFallbackUsed);
       },
       () => {
         setAIJobStatus(null);
         setAIJobResultId(null);
         setAIJobError(null);
+        setAIJobModel(null);
+        setAIJobModelRequested(null);
+        setAIJobModelFallbackUsed(null);
       },
     );
 
@@ -141,6 +153,14 @@ export default function AssistantNotePanel({ noteId }: Props) {
       unsub();
     };
   }, [enabled, noteId, user?.uid]);
+
+  const showAIDebug = process.env.NEXT_PUBLIC_ASSISTANT_AI_DEBUG === "1";
+
+  const aiModelAccessError = useMemo(() => {
+    const msg = (aiJobError ?? "").toLowerCase();
+    if (!msg) return false;
+    return msg.includes("model_not_found") || msg.includes("does not have access to model") || msg.includes("n’a accès à aucun modèle");
+  }, [aiJobError]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -591,7 +611,19 @@ export default function AssistantNotePanel({ noteId }: Props) {
         {aiJobStatus === "error" && (
           <div className="sn-alert sn-alert--error">
             <div>Analyse IA en erreur.</div>
+            {aiModelAccessError ? (
+              <div className="text-xs opacity-90 break-words mt-1">
+                Modèle non autorisé pour ce projet OpenAI. Vérifie le Project OpenAI associé à la clé et/ou configure un modèle autorisé.
+              </div>
+            ) : null}
             {aiJobError ? <div className="text-xs opacity-90 break-words mt-1">{aiJobError}</div> : null}
+            {showAIDebug ? (
+              <div className="text-[11px] opacity-70 break-words mt-1">
+                <div>model: {aiJobModel ?? "(inconnu)"}</div>
+                <div>modelRequested: {aiJobModelRequested ?? "(aucun)"}</div>
+                <div>modelFallbackUsed: {aiJobModelFallbackUsed ?? "(aucun)"}</div>
+              </div>
+            ) : null}
           </div>
         )}
 
