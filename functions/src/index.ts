@@ -631,10 +631,15 @@ async function listAvailableModelsCached(params?: { forceRefresh?: boolean }): P
 
   const json = (await res.json()) as any;
   const dataArr = Array.isArray(json?.data) ? (json.data as any[]) : [];
+  const isOReasoning = (id: string) => {
+    if (!id.startsWith('o')) return false;
+    const ch = id.slice(1, 2);
+    return ch >= '0' && ch <= '9';
+  };
   const ids = dataArr
     .map((m) => (m && typeof m.id === 'string' ? String(m.id) : ''))
     .filter((id) => !!id)
-    .filter((id) => id.startsWith('gpt-'))
+    .filter((id) => id.startsWith('gpt-') || isOReasoning(id) || id.startsWith('chatgpt-'))
     .sort();
 
   openAIModelsCache = { ids, fetchedAtMs: now, expiresAtMs: now + ttlMs };
@@ -642,7 +647,7 @@ async function listAvailableModelsCached(params?: { forceRefresh?: boolean }): P
   if (!openAIModelsLoggedForInstance) {
     openAIModelsLoggedForInstance = true;
     const preferred = getAssistantAIPreferredModelEnv();
-    const shortlistAvailable = ASSISTANT_AI_MODEL_SHORTLIST.filter((m) => ids.includes(m));
+    const shortlistAvailable = ASSISTANT_AI_MODEL_SHORTLIST.map((m) => resolveModelFromAvailable(ids, m)).filter((m): m is string => typeof m === 'string');
     const preview = ids.slice(0, 40);
     console.log('openai.models_list_ok', {
       count: ids.length,
@@ -678,12 +683,66 @@ function resolveModelFromAvailable(availableIds: string[], candidate: string): s
 }
 
 function pickDefaultAvailableModel(availableIds: string[]): string {
+  const structuredPreferred = availableIds.filter((m) => isStructuredOutputsCandidateModel(m));
   for (const base of ASSISTANT_AI_MODEL_SHORTLIST) {
-    const resolved = resolveModelFromAvailable(availableIds, base);
+    const resolved = resolveModelFromAvailable(structuredPreferred.length > 0 ? structuredPreferred : availableIds, base);
     if (resolved) return resolved;
   }
+  if (structuredPreferred.length > 0) return structuredPreferred[0];
   if (availableIds.length > 0) return availableIds[0];
   return '';
+}
+
+function isStructuredOutputsCandidateModel(modelId: string): boolean {
+  const m = modelId.trim();
+  if (!m) return false;
+  if (m.startsWith('gpt-3.5')) return false;
+  if (m.startsWith('gpt-4')) return true;
+  if (m.startsWith('gpt-5')) return true;
+  if (m.startsWith('o')) {
+    const ch = m.slice(1, 2);
+    return ch >= '0' && ch <= '9';
+  }
+  if (m.startsWith('chatgpt-')) return true;
+  return false;
+}
+
+function isOpenAIUnsupportedJsonSchemaError(err: unknown): boolean {
+  if (err instanceof OpenAIHttpError) {
+    const msg = (err.message || '').toLowerCase();
+    return err.status === 400 && msg.includes('text.format') && msg.includes('json_schema') && msg.includes('not supported');
+  }
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return msg.includes("text.format") && msg.includes('json_schema') && msg.includes('not supported');
+}
+
+function validateAssistantAIOutputV1(parsed: any): { ok: true } | { ok: false; error: string } {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { ok: false, error: 'Output must be an object.' };
+
+  const hasStringOrNull = (v: any) => v === null || typeof v === 'string';
+  const isStringArray = (v: any) => Array.isArray(v) && v.every((x) => typeof x === 'string');
+
+  if (!hasStringOrNull((parsed as any).summaryShort)) return { ok: false, error: 'summaryShort must be string|null.' };
+  if (!Array.isArray((parsed as any).summaryStructured)) return { ok: false, error: 'summaryStructured must be array.' };
+  for (const it of (parsed as any).summaryStructured) {
+    if (!it || typeof it !== 'object' || Array.isArray(it)) return { ok: false, error: 'summaryStructured item must be object.' };
+    if (typeof (it as any).title !== 'string') return { ok: false, error: 'summaryStructured.title must be string.' };
+    if (!isStringArray((it as any).bullets)) return { ok: false, error: 'summaryStructured.bullets must be string[].' };
+  }
+
+  if (!isStringArray((parsed as any).keyPoints)) return { ok: false, error: 'keyPoints must be string[].' };
+  if (!isStringArray((parsed as any).hooks)) return { ok: false, error: 'hooks must be string[].' };
+  if (!hasStringOrNull((parsed as any).rewriteContent)) return { ok: false, error: 'rewriteContent must be string|null.' };
+  if (!isStringArray((parsed as any).tags)) return { ok: false, error: 'tags must be string[].' };
+
+  const entities = (parsed as any).entities;
+  if (!entities || typeof entities !== 'object' || Array.isArray(entities)) return { ok: false, error: 'entities must be object.' };
+  for (const k of ['people', 'orgs', 'places', 'products', 'dates', 'misc']) {
+    if (!isStringArray((entities as any)[k])) return { ok: false, error: `entities.${k} must be string[].` };
+  }
+
+  if (!Array.isArray((parsed as any).actions)) return { ok: false, error: 'actions must be array.' };
+  return { ok: true };
 }
 
 function selectDeterministicModel(params: { availableIds: string[]; preferredEnv: string | null; preferredRequested: string | null }): string {
@@ -887,6 +946,104 @@ async function callOpenAIResponsesJsonSchema(params: {
   }
 
   const parsed = JSON.parse(outputText);
+  return { parsed, refusal, usage };
+}
+
+async function callOpenAIResponsesLooseJson(params: {
+  model: string;
+  instructions: string;
+  inputText: string;
+}): Promise<{ parsed: any; refusal: string | null; usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | null }> {
+  const apiKey = getOpenAIApiKey();
+  const projectHeader = getOpenAIProjectHeader();
+
+  const body: Record<string, any> = {
+    model: params.model,
+    instructions: [
+      params.instructions,
+      'Return ONLY valid JSON (no markdown, no extra text).',
+      'JSON must follow the assistant_ai_output_v1 structure (same keys, same types).',
+    ].join('\n'),
+    input: [{ role: 'user', content: params.inputText }],
+    store: false,
+  };
+
+  const res = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+      ...(projectHeader ? { 'OpenAI-Project': projectHeader } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const requestId = res.headers.get('x-request-id');
+    let parsedErr: any = null;
+    let textBody = '';
+    try {
+      parsedErr = await res.json();
+    } catch {
+      textBody = await res.text().catch(() => '');
+    }
+    const errObj = parsedErr && typeof parsedErr === 'object' ? parsedErr : null;
+    const errInner = errObj && typeof errObj?.error === 'object' ? errObj.error : null;
+    const message = errInner && typeof errInner?.message === 'string' ? String(errInner.message) : textBody || JSON.stringify(errObj || {});
+    const code = errInner && typeof errInner?.code === 'string' ? String(errInner.code) : null;
+    const type = errInner && typeof errInner?.type === 'string' ? String(errInner.type) : null;
+    const param = errInner && typeof errInner?.param === 'string' ? String(errInner.param) : null;
+    throw new OpenAIHttpError({ status: res.status, message: `OpenAI error: ${res.status} ${message}`.slice(0, 800), code, type, param, requestId, projectHeader });
+  }
+
+  const json = (await res.json()) as any;
+  const usage = json && typeof json?.usage === 'object' && json.usage
+    ? {
+        inputTokens: typeof json.usage?.input_tokens === 'number' ? Number(json.usage.input_tokens) : undefined,
+        outputTokens: typeof json.usage?.output_tokens === 'number' ? Number(json.usage.output_tokens) : undefined,
+        totalTokens: typeof json.usage?.total_tokens === 'number' ? Number(json.usage.total_tokens) : undefined,
+      }
+    : null;
+
+  let refusal: string | null = null;
+  const output = Array.isArray(json?.output) ? (json.output as any[]) : [];
+  for (const item of output) {
+    if (item && item.type === 'message') {
+      const content = Array.isArray(item.content) ? item.content : [];
+      for (const part of content) {
+        if (part && part.type === 'refusal' && typeof part.refusal === 'string') {
+          refusal = part.refusal;
+        }
+      }
+    }
+  }
+
+  let outputText: string | null = typeof json?.output_text === 'string' ? String(json.output_text) : null;
+  if (!outputText) {
+    for (const item of output) {
+      if (item && item.type === 'message') {
+        const content = Array.isArray(item.content) ? item.content : [];
+        for (const part of content) {
+          if (part && part.type === 'output_text' && typeof part.text === 'string') {
+            outputText = String(part.text);
+            break;
+          }
+        }
+      }
+      if (outputText) break;
+    }
+  }
+
+  if (!outputText) {
+    return { parsed: null, refusal, usage };
+  }
+
+  const parsed = JSON.parse(outputText);
+  const v = validateAssistantAIOutputV1(parsed);
+  if (!v.ok) {
+    throw new Error(`AI output validation failed: ${v.error}`);
+  }
+
   return { parsed, refusal, usage };
 }
 
@@ -3908,13 +4065,30 @@ async function processAssistantAIJob(params: {
 
     const inputText = `Titre:\n${title}\n\nContenu:\n${content}`;
 
+    const runForModel = async (model: string) => {
+      try {
+        return await callOpenAIResponsesJsonSchema({ model, instructions, inputText, schema: ASSISTANT_AI_OUTPUT_SCHEMA_V1 });
+      } catch (err) {
+        if (isOpenAIUnsupportedJsonSchemaError(err)) {
+          console.warn('openai.structured_outputs_unsupported', {
+            userId,
+            jobId: jobDoc.id,
+            model,
+            message: err instanceof Error ? err.message : String(err),
+          });
+          return await callOpenAIResponsesLooseJson({ model, instructions, inputText });
+        }
+        throw err;
+      }
+    };
+
     usedModel = primaryModel;
     fallbackUsed = null;
-    let llm = await callOpenAIResponsesJsonSchema({ model: usedModel, instructions, inputText, schema: ASSISTANT_AI_OUTPUT_SCHEMA_V1 }).catch(async (e) => {
+    let llm = await runForModel(usedModel).catch(async (e) => {
       if (fallbackModel && isOpenAIModelAccessError(e)) {
         fallbackUsed = fallbackModel;
         usedModel = fallbackModel;
-        return await callOpenAIResponsesJsonSchema({ model: usedModel, instructions, inputText, schema: ASSISTANT_AI_OUTPUT_SCHEMA_V1 });
+        return await runForModel(usedModel);
       }
       throw e;
     });
