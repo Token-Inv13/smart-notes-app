@@ -646,7 +646,6 @@ async function callOpenAIResponsesJsonSchema(params: {
         schema: params.schema,
       },
     },
-    temperature: 0.2,
     store: false,
   };
 
