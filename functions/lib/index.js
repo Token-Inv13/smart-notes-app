@@ -199,7 +199,7 @@ function buildFollowupDedupeKey(params) {
     return sha256Hex(`task_${params.taskId}|${params.kind}|${payloadMinimal}`);
 }
 function extractBundleTaskTitlesFromText(rawText) {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     const out = [];
     const add = (title, originFromText) => {
         const t = title.replace(/\s+/g, ' ').trim();
@@ -237,17 +237,58 @@ function extractBundleTaskTitlesFromText(rawText) {
             continue;
         const todoLike = /^\s*([-*•]|\d+[\.)]|\[ \]|\[x\]|\[X\]|todo\s*:)/i.test(line) ||
             /\bTODO\b/i.test(line);
-        if (!todoLike)
+        if (todoLike) {
+            const cleaned = line
+                .replace(/^\s*([-*•]|\d+[\.)]|\[ \]|\[x\]|\[X\]|todo\s*:)+\s*/i, '')
+                .trim();
+            if (!cleaned)
+                continue;
+            const normalized = cleaned.replace(/^[\-–—]+\s*/, '').trim();
+            if (!normalized)
+                continue;
+            add(normalized, lineRaw);
             continue;
-        const cleaned = line
-            .replace(/^\s*([-*•]|\d+[\.)]|\[ \]|\[x\]|\[X\]|todo\s*:)+\s*/i, '')
-            .trim();
-        if (!cleaned)
+        }
+        // Roadmap-like lines (common in notes): "Implémentation ...", "Ajout ...", etc.
+        // Keep this conservative to avoid turning metadata into tasks.
+        if (/^cr[ée]e?\s+le\b/i.test(line))
             continue;
-        const normalized = cleaned.replace(/^[\-–—]+\s*/, '').trim();
-        if (!normalized)
+        if (/^derni[eè]re\s+mise\s+[àa]\s+jour\b/i.test(line))
             continue;
-        add(normalized, lineRaw);
+        const roadmapMatch = line.match(/^\s*(impl[ée]mentation|implementation|ajout|ajouter|cr[ée]ation|cr[ée]er|cr[ée]e|corriger|correction|fix|mise\s+[àa]\s+jour|mettre\s+[àa]\s+jour|d[ée]ployer|d[ée]ploiement|refactor|refonte|optimisation)\b\s*(?::\s*)?(.*)$/i);
+        if (!roadmapMatch)
+            continue;
+        const rawPrefix = String((_j = roadmapMatch[1]) !== null && _j !== void 0 ? _j : '').toLowerCase();
+        const restRaw = String((_k = roadmapMatch[2]) !== null && _k !== void 0 ? _k : '').trim();
+        // Avoid lines that are basically just dates/metadata.
+        if (restRaw && /^(le\s+\d|\d{1,2}\/\d{1,2}\/\d{2,4})/i.test(restRaw))
+            continue;
+        const verb = (() => {
+            if (rawPrefix.startsWith('impl'))
+                return 'Implémenter';
+            if (rawPrefix.startsWith('implement'))
+                return 'Implémenter';
+            if (rawPrefix.startsWith('ajout') || rawPrefix.startsWith('ajouter'))
+                return 'Ajouter';
+            if (rawPrefix.startsWith('cr'))
+                return 'Créer';
+            if (rawPrefix.startsWith('corr'))
+                return 'Corriger';
+            if (rawPrefix.startsWith('fix'))
+                return 'Corriger';
+            if (rawPrefix.includes('mise') || rawPrefix.startsWith('mettre'))
+                return 'Mettre à jour';
+            if (rawPrefix.startsWith('d') && rawPrefix.includes('ploi'))
+                return 'Déployer';
+            if (rawPrefix.startsWith('refactor') || rawPrefix.startsWith('refonte'))
+                return 'Refactorer';
+            if (rawPrefix.startsWith('optim'))
+                return 'Optimiser';
+            return 'Faire';
+        })();
+        const rest = restRaw.replace(/^[\-–—]+\s*/, '').trim();
+        const title = rest ? `${verb} ${rest}` : verb;
+        add(title, lineRaw);
     }
     const seen = new Set();
     const deduped = [];
