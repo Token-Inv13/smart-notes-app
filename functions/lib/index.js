@@ -1102,7 +1102,7 @@ async function claimAssistantJob(params) {
     });
 }
 exports.assistantRunJobQueue = functions.pubsub
-    .schedule('every 2 minutes')
+    .schedule('every 1 minutes')
     .onRun(async (context) => {
     const db = admin.firestore();
     const nowDate = new Date();
