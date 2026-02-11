@@ -224,6 +224,22 @@ function getOpenAIApiKey() {
         return envKey;
     throw new functions.https.HttpsError('failed-precondition', 'Missing OpenAI API key configuration.');
 }
+function getAssistantAIDefaultModel() {
+    const raw = typeof process.env.ASSISTANT_AI_MODEL === 'string' ? process.env.ASSISTANT_AI_MODEL.trim() : '';
+    return raw || 'gpt-4o-mini';
+}
+function normalizeAssistantAIModel(rawModel) {
+    const s = typeof rawModel === 'string' ? rawModel.trim() : '';
+    if (!s)
+        return getAssistantAIDefaultModel();
+    return s.slice(0, 64);
+}
+function isOpenAIModelAccessError(err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg)
+        return false;
+    return msg.includes('model_not_found') || msg.includes('does not have access to model');
+}
 const ASSISTANT_AI_SCHEMA_VERSION = 1;
 const ASSISTANT_AI_OUTPUT_SCHEMA_V1 = {
     type: 'object',
@@ -2546,8 +2562,7 @@ exports.assistantRequestAIAnalysis = functions.https.onCall(async (data, context
             .map((m) => String(m))
             .filter((m) => allowedModes.has(m))
         : ['summary', 'actions', 'hooks', 'rewrite', 'entities'];
-    const modelRaw = typeof (data === null || data === void 0 ? void 0 : data.model) === 'string' ? String(data.model) : '';
-    const model = modelRaw === 'gpt-5' || modelRaw === 'gpt-5-mini' ? modelRaw : 'gpt-5-mini';
+    const model = normalizeAssistantAIModel(data === null || data === void 0 ? void 0 : data.model);
     const db = admin.firestore();
     const enabled = await isAssistantEnabledForUser(db, userId);
     if (!enabled) {
@@ -2683,7 +2698,8 @@ async function processAssistantAIJob(params) {
         return;
     const noteId = typeof (claimed === null || claimed === void 0 ? void 0 : claimed.noteId) === 'string' ? String(claimed.noteId) : null;
     const objectId = typeof claimed.objectId === 'string' ? claimed.objectId : null;
-    const model = typeof claimed.model === 'string' ? claimed.model : 'gpt-5-mini';
+    const defaultModel = getAssistantAIDefaultModel();
+    const model = normalizeAssistantAIModel(claimed === null || claimed === void 0 ? void 0 : claimed.model);
     const schemaVersion = typeof claimed.schemaVersion === 'number' ? Math.trunc(claimed.schemaVersion) : ASSISTANT_AI_SCHEMA_VERSION;
     const modes = Array.isArray(claimed === null || claimed === void 0 ? void 0 : claimed.modes) ? claimed.modes.filter((m) => typeof m === 'string').map((m) => String(m)) : [];
     if (!noteId || !objectId)
@@ -2703,11 +2719,21 @@ async function processAssistantAIJob(params) {
         const normalized = normalizeAssistantText(`${title}\n${content}`);
         const textHash = sha256Hex(normalized);
         const modesSig = modes.slice().sort().join(',');
-        const resultId = sha256Hex(`${objectId}|${textHash}|${model}|schema:${schemaVersion}|modes:${modesSig}`);
-        const resultRef = userRef.collection('assistantAIResults').doc(resultId);
-        const existing = await resultRef.get();
-        if (existing.exists) {
-            await jobDoc.ref.update({ status: 'done', lockedUntil: admin.firestore.Timestamp.fromMillis(0), pendingTextHash: null, resultId, error: null, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+        const resultIdForModel = (m) => sha256Hex(`${objectId}|${textHash}|${m}|schema:${schemaVersion}|modes:${modesSig}`);
+        const requestedResultId = resultIdForModel(model);
+        const requestedResultRef = userRef.collection('assistantAIResults').doc(requestedResultId);
+        const fallbackResultId = model !== defaultModel ? resultIdForModel(defaultModel) : null;
+        const fallbackResultRef = fallbackResultId ? userRef.collection('assistantAIResults').doc(fallbackResultId) : null;
+        const [existingRequested, existingFallback] = await Promise.all([
+            requestedResultRef.get(),
+            fallbackResultRef ? fallbackResultRef.get() : Promise.resolve(null),
+        ]);
+        if (existingRequested.exists) {
+            await jobDoc.ref.update({ status: 'done', lockedUntil: admin.firestore.Timestamp.fromMillis(0), pendingTextHash: null, resultId: requestedResultId, model, error: null, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+            return;
+        }
+        if (fallbackResultRef && existingFallback && existingFallback.exists) {
+            await jobDoc.ref.update({ status: 'done', lockedUntil: admin.firestore.Timestamp.fromMillis(0), pendingTextHash: null, resultId: fallbackResultId, model: defaultModel, error: null, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
             return;
         }
         const instructions = [
@@ -2719,13 +2745,22 @@ async function processAssistantAIJob(params) {
             'Keep text concise and in French.',
         ].join('\n');
         const inputText = `Titre:\n${title}\n\nContenu:\n${content}`;
-        const llm = await callOpenAIResponsesJsonSchema({ model, instructions, inputText, schema: ASSISTANT_AI_OUTPUT_SCHEMA_V1 });
+        let usedModel = model;
+        let llm = await callOpenAIResponsesJsonSchema({ model: usedModel, instructions, inputText, schema: ASSISTANT_AI_OUTPUT_SCHEMA_V1 }).catch(async (e) => {
+            if (usedModel !== defaultModel && isOpenAIModelAccessError(e)) {
+                usedModel = defaultModel;
+                return await callOpenAIResponsesJsonSchema({ model: usedModel, instructions, inputText, schema: ASSISTANT_AI_OUTPUT_SCHEMA_V1 });
+            }
+            throw e;
+        });
+        const usedResultId = resultIdForModel(usedModel);
+        const usedResultRef = userRef.collection('assistantAIResults').doc(usedResultId);
         const nowServer = admin.firestore.FieldValue.serverTimestamp();
         const resultDoc = {
             noteId,
             objectId,
             textHash,
-            model,
+            model: usedModel,
             schemaVersion,
             modes,
             refusal: llm.refusal,
@@ -2734,7 +2769,7 @@ async function processAssistantAIJob(params) {
             createdAt: nowServer,
             updatedAt: nowServer,
         };
-        await resultRef.create(resultDoc);
+        await usedResultRef.create(resultDoc);
         const inc = {
             aiAnalysesCompleted: 1,
             aiResultsCreated: 1,
@@ -2940,7 +2975,8 @@ async function processAssistantAIJob(params) {
             status: 'done',
             lockedUntil: admin.firestore.Timestamp.fromMillis(0),
             pendingTextHash: null,
-            resultId,
+            resultId: usedResultId,
+            model: usedModel,
             error: null,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });

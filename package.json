@@ -16,7 +16,7 @@
     "functions:serve": "pnpm --filter functions serve",
     "functions:shell": "pnpm --filter functions shell",
     "functions:logs": "pnpm --filter functions logs",
-    "functions:deploy": "pnpm --filter functions deploy",
+    "functions:deploy": "pnpm --filter functions run deploy",
     "lint": "eslint .",
     "emulators": "firebase emulators:start --import=./emulator-data --export-on-exit",
     "emulators:export": "firebase emulators:export ./emulator-data"
