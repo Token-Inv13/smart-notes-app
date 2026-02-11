@@ -13,6 +13,7 @@ import { formatTimestampForInput, parseLocalDateTimeToTimestamp } from "@/lib/da
 import type { AssistantAIResultDoc, AssistantSuggestionDoc, Priority } from "@/types/firestore";
 import Modal from "../Modal";
 import BundleCustomizeModal from "./assistant/BundleCustomizeModal";
+import VoiceRecorderButton from "./assistant/VoiceRecorderButton";
 
 type Props = {
   noteId?: string;
@@ -603,6 +604,14 @@ export default function AssistantNotePanel({ noteId }: Props) {
       {jobStatus === "processing" && <div className="sn-alert">Analyse en cours…</div>}
       {jobStatus === "error" && <div className="sn-alert sn-alert--error">Réanalyse en erreur.</div>}
       {doneBannerMessage && <div className="sn-alert">{doneBannerMessage}</div>}
+
+      <div className="border border-border rounded-md p-3 space-y-2">
+        <div className="text-sm font-semibold">Voix</div>
+        <div className="text-xs text-muted-foreground">
+          Enregistre un mémo vocal, puis transcription côté serveur.
+        </div>
+        <VoiceRecorderButton noteId={noteId} mode="append_to_note" />
+      </div>
 
       <div className="border border-border rounded-md p-3 space-y-2">
         <div className="text-sm font-semibold">IA</div>
