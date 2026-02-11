@@ -1154,6 +1154,11 @@ exports.assistantRunJobQueue = functions.pubsub
             });
             const metricsRef = assistantMetricsRef(db, userId);
             let processedTextHash = typeof (claimed === null || claimed === void 0 ? void 0 : claimed.pendingTextHash) === 'string' ? String(claimed.pendingTextHash) : null;
+            let resultCandidates = 0;
+            let resultCreated = 0;
+            let resultUpdated = 0;
+            let resultSkippedProposed = 0;
+            let resultSkippedAccepted = 0;
             if (claimed.jobType === 'analyze_intents_v1' || claimed.jobType === 'analyze_intents_v2') {
                 const objectSnap = await objectRef.get();
                 const objectData = objectSnap.exists ? objectSnap.data() : null;
@@ -1242,6 +1247,7 @@ exports.assistantRunJobQueue = functions.pubsub
                                 candidates: candidates.length,
                                 bundleMode: !!detectedBundle ? detectedBundle.bundleMode : null,
                             });
+                            resultCandidates = candidates.length;
                             for (const c of candidates) {
                                 const sugRef = suggestionsCol.doc(c.dedupeKey);
                                 await db.runTransaction(async (tx) => {
@@ -1249,8 +1255,14 @@ exports.assistantRunJobQueue = functions.pubsub
                                     const existing = await tx.get(sugRef);
                                     if (existing.exists) {
                                         const st = (_a = existing.data()) === null || _a === void 0 ? void 0 : _a.status;
-                                        if (st === 'proposed' || st === 'accepted')
+                                        if (st === 'proposed') {
+                                            resultSkippedProposed += 1;
                                             return;
+                                        }
+                                        if (st === 'accepted') {
+                                            resultSkippedAccepted += 1;
+                                            return;
+                                        }
                                         tx.update(sugRef, {
                                             objectId,
                                             source: { type: 'note', id: noteId },
@@ -1262,6 +1274,7 @@ exports.assistantRunJobQueue = functions.pubsub
                                             updatedAt: nowServer,
                                             expiresAt,
                                         });
+                                        resultUpdated += 1;
                                         tx.set(metricsRef, metricsIncrements(c.metricsInc), { merge: true });
                                         return;
                                     }
@@ -1278,6 +1291,7 @@ exports.assistantRunJobQueue = functions.pubsub
                                         expiresAt,
                                     };
                                     tx.create(sugRef, doc);
+                                    resultCreated += 1;
                                     tx.set(metricsRef, metricsIncrements(c.metricsInc), { merge: true });
                                 });
                             }
@@ -1297,6 +1311,13 @@ exports.assistantRunJobQueue = functions.pubsub
                     status: 'queued',
                     lockedUntil: admin.firestore.Timestamp.fromMillis(0),
                     pendingTextHash: pendingAfter,
+                    result: {
+                        candidates: resultCandidates,
+                        created: resultCreated,
+                        updated: resultUpdated,
+                        skippedProposed: resultSkippedProposed,
+                        skippedAccepted: resultSkippedAccepted,
+                    },
                     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 });
                 await objectRef.set({
@@ -1309,6 +1330,13 @@ exports.assistantRunJobQueue = functions.pubsub
                     status: 'done',
                     lockedUntil: admin.firestore.Timestamp.fromMillis(0),
                     pendingTextHash: null,
+                    result: {
+                        candidates: resultCandidates,
+                        created: resultCreated,
+                        updated: resultUpdated,
+                        skippedProposed: resultSkippedProposed,
+                        skippedAccepted: resultSkippedAccepted,
+                    },
                     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 });
                 await objectRef.set({

@@ -1633,6 +1633,12 @@ export const assistantRunJobQueue = functions.pubsub
         let processedTextHash: string | null =
           typeof (claimed as any)?.pendingTextHash === 'string' ? String((claimed as any).pendingTextHash) : null;
 
+        let resultCandidates = 0;
+        let resultCreated = 0;
+        let resultUpdated = 0;
+        let resultSkippedProposed = 0;
+        let resultSkippedAccepted = 0;
+
         if (claimed.jobType === 'analyze_intents_v1' || claimed.jobType === 'analyze_intents_v2') {
           const objectSnap = await objectRef.get();
           const objectData = objectSnap.exists ? (objectSnap.data() as any) : null;
@@ -1741,6 +1747,8 @@ export const assistantRunJobQueue = functions.pubsub
                   bundleMode: !!detectedBundle ? detectedBundle.bundleMode : null,
                 });
 
+                resultCandidates = candidates.length;
+
                 for (const c of candidates) {
                   const sugRef = suggestionsCol.doc(c.dedupeKey);
 
@@ -1748,7 +1756,14 @@ export const assistantRunJobQueue = functions.pubsub
                     const existing = await tx.get(sugRef);
                     if (existing.exists) {
                       const st = (existing.data() as any)?.status as AssistantSuggestionStatus | undefined;
-                      if (st === 'proposed' || st === 'accepted') return;
+                      if (st === 'proposed') {
+                        resultSkippedProposed += 1;
+                        return;
+                      }
+                      if (st === 'accepted') {
+                        resultSkippedAccepted += 1;
+                        return;
+                      }
 
                       tx.update(sugRef, {
                         objectId,
@@ -1761,6 +1776,8 @@ export const assistantRunJobQueue = functions.pubsub
                         updatedAt: nowServer,
                         expiresAt,
                       });
+
+                      resultUpdated += 1;
 
                       tx.set(metricsRef, metricsIncrements(c.metricsInc), { merge: true });
                       return;
@@ -1780,6 +1797,7 @@ export const assistantRunJobQueue = functions.pubsub
                     };
 
                     tx.create(sugRef, doc);
+                    resultCreated += 1;
                     tx.set(metricsRef, metricsIncrements(c.metricsInc), { merge: true });
                   });
                 }
@@ -1806,6 +1824,13 @@ export const assistantRunJobQueue = functions.pubsub
             status: 'queued',
             lockedUntil: admin.firestore.Timestamp.fromMillis(0),
             pendingTextHash: pendingAfter,
+            result: {
+              candidates: resultCandidates,
+              created: resultCreated,
+              updated: resultUpdated,
+              skippedProposed: resultSkippedProposed,
+              skippedAccepted: resultSkippedAccepted,
+            },
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
 
@@ -1821,6 +1846,13 @@ export const assistantRunJobQueue = functions.pubsub
             status: 'done',
             lockedUntil: admin.firestore.Timestamp.fromMillis(0),
             pendingTextHash: null,
+            result: {
+              candidates: resultCandidates,
+              created: resultCreated,
+              updated: resultUpdated,
+              skippedProposed: resultSkippedProposed,
+              skippedAccepted: resultSkippedAccepted,
+            },
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
 
