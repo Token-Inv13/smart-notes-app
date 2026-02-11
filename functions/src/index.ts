@@ -42,6 +42,41 @@ type AssistantObjectDoc = {
   updatedAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
 };
 
+type AssistantVoiceJobStatus = 'created' | 'transcribing' | 'done' | 'error';
+
+type AssistantVoiceJobMode = 'append_to_note' | 'standalone';
+
+type AssistantVoiceJobDoc = {
+  noteId?: string | null;
+  mode: AssistantVoiceJobMode;
+  status: AssistantVoiceJobStatus;
+  storagePath: string;
+  lockedUntil?: FirebaseFirestore.Timestamp;
+  fileHash?: string | null;
+  usageCountedHash?: string | null;
+  model?: string | null;
+  schemaVersion: number;
+  resultId?: string | null;
+  errorMessage?: string | null;
+  expiresAt: FirebaseFirestore.Timestamp;
+  createdAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
+  updatedAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
+};
+
+type AssistantVoiceResultDoc = {
+  jobId: string;
+  noteId?: string | null;
+  mode: AssistantVoiceJobMode;
+  storagePath: string;
+  fileHash: string;
+  model: string;
+  schemaVersion: number;
+  transcript: string;
+  expiresAt: FirebaseFirestore.Timestamp;
+  createdAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
+  updatedAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
+};
+
 type AssistantJobDoc = {
   objectId: string;
   jobType: 'analyze_intents_v1' | 'analyze_intents_v2';
@@ -242,6 +277,10 @@ const ASSISTANT_REANALYSIS_FREE_DAILY_LIMIT = 10;
 const ASSISTANT_REANALYSIS_PRO_DAILY_LIMIT = 200;
 const ASSISTANT_AI_ANALYSIS_FREE_DAILY_LIMIT = 2;
 const ASSISTANT_AI_ANALYSIS_PRO_DAILY_LIMIT = 100;
+const ASSISTANT_VOICE_TRANSCRIPT_FREE_DAILY_LIMIT = 10;
+const ASSISTANT_VOICE_TRANSCRIPT_PRO_DAILY_LIMIT = 200;
+const ASSISTANT_VOICE_MAX_BYTES = 25 * 1024 * 1024;
+const ASSISTANT_VOICE_SCHEMA_VERSION = 1;
 const ASSISTANT_FOLLOWUP_REJECT_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 
 function utcDayKey(d: Date): string {
@@ -266,6 +305,10 @@ function assistantUsageRef(db: FirebaseFirestore.Firestore, userId: string, dayK
 
 function assistantAIJobIdForNote(noteId: string) {
   return `current_note_${noteId}`;
+}
+
+function assistantVoiceJobIdForNote(noteId: string) {
+  return `current_voice_note_${noteId}`;
 }
 
 type AssistantMetricsDoc = {
@@ -337,6 +380,65 @@ function normalizeAssistantText(raw: unknown): string {
 
 function sha256Hex(input: string): string {
   return createHash('sha256').update(input).digest('hex');
+}
+
+function sha256HexBuffer(input: Buffer): string {
+  return createHash('sha256').update(input).digest('hex');
+}
+
+async function callOpenAIWhisperTranscription(params: {
+  buffer: Buffer;
+  filename: string;
+  contentType: string;
+  language?: string | null;
+}): Promise<{ text: string }> {
+  const apiKey = getOpenAIApiKey();
+  const projectHeader = getOpenAIProjectHeader();
+
+  const form = new FormData();
+  const blob = new Blob([params.buffer], { type: params.contentType });
+  form.append('file', blob, params.filename);
+  form.append('model', 'whisper-1');
+  if (params.language) form.append('language', params.language);
+
+  const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      ...(projectHeader ? { 'OpenAI-Project': projectHeader } : {}),
+    },
+    body: form as any,
+  });
+
+  if (!res.ok) {
+    const requestId = res.headers.get('x-request-id');
+    let parsedErr: any = null;
+    let textBody = '';
+    try {
+      parsedErr = await res.json();
+    } catch {
+      textBody = await res.text().catch(() => '');
+    }
+    const errObj = parsedErr && typeof parsedErr === 'object' ? parsedErr : null;
+    const errInner = errObj && typeof errObj?.error === 'object' ? errObj.error : null;
+    const message = errInner && typeof errInner?.message === 'string' ? String(errInner.message) : textBody || JSON.stringify(errObj || {});
+    const code = errInner && typeof errInner?.code === 'string' ? String(errInner.code) : null;
+    const type = errInner && typeof errInner?.type === 'string' ? String(errInner.type) : null;
+    const param = errInner && typeof errInner?.param === 'string' ? String(errInner.param) : null;
+    throw new OpenAIHttpError({
+      status: res.status,
+      message: `OpenAI error: ${res.status} ${message}`.slice(0, 800),
+      code,
+      type,
+      param,
+      requestId,
+      projectHeader,
+    });
+  }
+
+  const json = (await res.json()) as any;
+  const text = typeof json?.text === 'string' ? String(json.text) : '';
+  return { text };
 }
 
 function clampFromText(raw: string, maxLen: number): string {
@@ -3976,6 +4078,379 @@ export const assistantRequestAIAnalysis = functions.https.onCall(async (data, co
 
   return { jobId: jobRef.id, resultId };
 });
+
+export const assistantCreateVoiceJob = functions.https.onCall(async (data, context) => {
+  const userId = context.auth?.uid;
+  if (!userId) {
+    throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+  }
+
+  const noteId = typeof (data as any)?.noteId === 'string' ? String((data as any).noteId) : null;
+  const modeRaw = typeof (data as any)?.mode === 'string' ? String((data as any).mode) : null;
+  const mode: AssistantVoiceJobMode = modeRaw === 'append_to_note' || modeRaw === 'standalone' ? (modeRaw as AssistantVoiceJobMode) : noteId ? 'append_to_note' : 'standalone';
+
+  const db = admin.firestore();
+  const enabled = await isAssistantEnabledForUser(db, userId);
+  if (!enabled) {
+    throw new functions.https.HttpsError('failed-precondition', 'Assistant disabled.');
+  }
+
+  if (noteId) {
+    const noteSnap = await db.collection('notes').doc(noteId).get();
+    if (!noteSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Note not found.');
+    }
+    const note = noteSnap.data() as any;
+    const noteUserId = typeof note?.userId === 'string' ? note.userId : null;
+    if (noteUserId !== userId) {
+      throw new functions.https.HttpsError('permission-denied', 'Not allowed.');
+    }
+  }
+
+  const userRef = db.collection('users').doc(userId);
+  const jobsCol = userRef.collection('assistantVoiceJobs');
+  const jobRef = noteId ? jobsCol.doc(assistantVoiceJobIdForNote(noteId)) : jobsCol.doc();
+
+  const jobId = jobRef.id;
+  const storagePath = `users/${userId}/voice/${jobId}.webm`;
+  const nowServer = admin.firestore.FieldValue.serverTimestamp();
+  const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const lockedUntilReady = admin.firestore.Timestamp.fromMillis(0);
+
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(jobRef);
+    if (snap.exists) {
+      const existing = snap.data() as any;
+      const status = existing?.status as AssistantVoiceJobStatus | undefined;
+      const lockedUntil = (existing?.lockedUntil as FirebaseFirestore.Timestamp | undefined) ?? null;
+      if (status === 'transcribing' && lockedUntil && lockedUntil.toMillis() > Date.now()) {
+        // Don't reset an active transcription.
+        tx.set(jobRef, { updatedAt: nowServer }, { merge: true });
+        return;
+      }
+
+      tx.set(
+        jobRef,
+        {
+          noteId: noteId ? noteId : null,
+          mode,
+          status: 'created',
+          storagePath,
+          lockedUntil: lockedUntilReady,
+          fileHash: null,
+          usageCountedHash: null,
+          model: null,
+          schemaVersion: ASSISTANT_VOICE_SCHEMA_VERSION,
+          resultId: null,
+          errorMessage: null,
+          expiresAt,
+          updatedAt: nowServer,
+        },
+        { merge: true },
+      );
+      return;
+    }
+    const payload: AssistantVoiceJobDoc = {
+      noteId: noteId ? noteId : null,
+      mode,
+      status: 'created',
+      storagePath,
+      lockedUntil: lockedUntilReady,
+      fileHash: null,
+      usageCountedHash: null,
+      model: null,
+      schemaVersion: ASSISTANT_VOICE_SCHEMA_VERSION,
+      resultId: null,
+      errorMessage: null,
+      expiresAt,
+      createdAt: nowServer,
+      updatedAt: nowServer,
+    };
+    tx.create(jobRef, payload);
+  });
+
+  return { jobId, storagePath };
+});
+
+export const assistantRequestVoiceTranscription = functions
+  .runWith({ timeoutSeconds: 540, memory: '1GB' })
+  .https.onCall(async (data, context) => {
+    const userId = context.auth?.uid;
+    if (!userId) {
+      throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+    }
+
+    const jobId = typeof (data as any)?.jobId === 'string' ? String((data as any).jobId) : null;
+    if (!jobId) {
+      throw new functions.https.HttpsError('invalid-argument', 'Missing jobId.');
+    }
+
+    const db = admin.firestore();
+    const enabled = await isAssistantEnabledForUser(db, userId);
+    if (!enabled) {
+      throw new functions.https.HttpsError('failed-precondition', 'Assistant disabled.');
+    }
+
+    const userRef = db.collection('users').doc(userId);
+    const jobRef = userRef.collection('assistantVoiceJobs').doc(jobId);
+
+    const jobSnap = await jobRef.get();
+    if (!jobSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Voice job not found.');
+    }
+
+    const jobData = jobSnap.data() as AssistantVoiceJobDoc;
+    const storagePath = typeof (jobData as any)?.storagePath === 'string' ? String((jobData as any).storagePath) : '';
+    if (!storagePath) {
+      throw new functions.https.HttpsError('failed-precondition', 'Missing storagePath.');
+    }
+
+    const bucket = admin.storage().bucket();
+    const file = bucket.file(storagePath);
+
+    let meta: any;
+    try {
+      const arr = await file.getMetadata();
+      meta = Array.isArray(arr) ? arr[0] : null;
+    } catch (e) {
+      throw new functions.https.HttpsError('failed-precondition', 'Audio file missing.');
+    }
+
+    const size = typeof meta?.size === 'string' ? Number(meta.size) : typeof meta?.size === 'number' ? Number(meta.size) : null;
+    if (!size || !Number.isFinite(size) || size <= 0) {
+      throw new functions.https.HttpsError('failed-precondition', 'Audio file invalid.');
+    }
+    if (size > ASSISTANT_VOICE_MAX_BYTES) {
+      throw new functions.https.HttpsError('invalid-argument', 'Audio file too large.');
+    }
+
+    const contentType = typeof meta?.contentType === 'string' ? String(meta.contentType) : 'audio/webm';
+
+    const dl = await file.download();
+    const buffer = Array.isArray(dl) ? (dl[0] as Buffer) : (dl as any as Buffer);
+    const fileHash = sha256HexBuffer(buffer);
+
+    const model = 'whisper-1';
+    const schemaVersion = ASSISTANT_VOICE_SCHEMA_VERSION;
+    const resultId = sha256Hex(`${jobId}|${fileHash}|${model}|schema:${schemaVersion}`);
+    const resultRef = userRef.collection('assistantVoiceResults').doc(resultId);
+
+    const nowDate = new Date();
+    const dayKey = utcDayKey(nowDate);
+    const usageRef = assistantUsageRef(db, userId, dayKey);
+
+    const nowTs = admin.firestore.Timestamp.fromDate(nowDate);
+    const lockMs = 6 * 60 * 1000;
+    const lockedUntilNext = admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + lockMs);
+    const lockedUntilReady = admin.firestore.Timestamp.fromMillis(0);
+    const nowServer = admin.firestore.FieldValue.serverTimestamp();
+    const expiresAt = admin.firestore.Timestamp.fromMillis(nowDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    let shouldTranscribe = true;
+
+    await db.runTransaction(async (tx) => {
+      const [userSnap, usageSnap, freshJobSnap, existingResultSnap] = await Promise.all([
+        tx.get(userRef),
+        tx.get(usageRef),
+        tx.get(jobRef),
+        tx.get(resultRef),
+      ]);
+
+      if (existingResultSnap.exists) {
+        tx.set(
+          jobRef,
+          {
+            status: 'done',
+            lockedUntil: lockedUntilReady,
+            fileHash,
+            model,
+            schemaVersion,
+            resultId,
+            errorMessage: null,
+            updatedAt: nowServer,
+          },
+          { merge: true },
+        );
+        shouldTranscribe = false;
+        return;
+      }
+
+      const job = freshJobSnap.exists ? (freshJobSnap.data() as any) : null;
+      const st = job?.status as AssistantVoiceJobStatus | undefined;
+      const lockedUntil = (job?.lockedUntil as FirebaseFirestore.Timestamp | undefined) ?? null;
+      if ((st === 'transcribing') && lockedUntil && lockedUntil.toMillis() > nowTs.toMillis()) {
+        throw new functions.https.HttpsError('failed-precondition', 'Transcription already in progress.');
+      }
+
+      const plan = userSnap.exists && typeof (userSnap.data() as any)?.plan === 'string' ? String((userSnap.data() as any).plan) : 'free';
+      const dailyLimit = plan === 'pro' ? ASSISTANT_VOICE_TRANSCRIPT_PRO_DAILY_LIMIT : ASSISTANT_VOICE_TRANSCRIPT_FREE_DAILY_LIMIT;
+      const prevCount = usageSnap.exists && typeof (usageSnap.data() as any)?.aiTranscriptionsCount === 'number' ? Number((usageSnap.data() as any).aiTranscriptionsCount) : 0;
+
+      const countedHash = typeof job?.usageCountedHash === 'string' ? String(job.usageCountedHash) : null;
+      const needCount = countedHash !== fileHash;
+      if (needCount && prevCount >= dailyLimit) {
+        throw new functions.https.HttpsError('resource-exhausted', 'Daily transcription limit reached.');
+      }
+
+      if (needCount) {
+        tx.set(
+          usageRef,
+          {
+            aiTranscriptionsCount: admin.firestore.FieldValue.increment(1),
+            lastUpdatedAt: nowServer,
+          },
+          { merge: true },
+        );
+      }
+
+      tx.set(
+        jobRef,
+        {
+          status: 'transcribing',
+          lockedUntil: lockedUntilNext,
+          fileHash,
+          usageCountedHash: fileHash,
+          model,
+          schemaVersion,
+          errorMessage: null,
+          updatedAt: nowServer,
+          expiresAt,
+        },
+        { merge: true },
+      );
+    });
+
+    if (!shouldTranscribe) {
+      return { jobId, resultId };
+    }
+
+    try {
+      console.log('assistant.voice.transcription_start', { userId, jobId, storagePath, bytes: size, contentType });
+    } catch {
+      // ignore
+    }
+
+    try {
+      const whisper = await callOpenAIWhisperTranscription({
+        buffer,
+        filename: `${jobId}.webm`,
+        contentType,
+        language: null,
+      });
+
+      const transcript = clampFromText(whisper.text ?? '', 20_000);
+
+      const resultDoc: AssistantVoiceResultDoc = {
+        jobId,
+        noteId: (jobData as any)?.noteId ?? null,
+        mode: (jobData as any)?.mode === 'append_to_note' ? 'append_to_note' : 'standalone',
+        storagePath,
+        fileHash,
+        model,
+        schemaVersion,
+        transcript,
+        expiresAt,
+        createdAt: nowServer,
+        updatedAt: nowServer,
+      };
+
+      try {
+        await resultRef.create(resultDoc);
+      } catch {
+        // already exists
+      }
+
+      await jobRef.set(
+        {
+          status: 'done',
+          lockedUntil: lockedUntilReady,
+          resultId,
+          errorMessage: null,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+
+      try {
+        console.log('assistant.voice.transcription_done', { userId, jobId, resultId, chars: transcript.length });
+      } catch {
+        // ignore
+      }
+
+      return { jobId, resultId };
+    } catch (e) {
+      try {
+        console.error('assistant.voice.transcription_failed', {
+          userId,
+          jobId,
+          message: e instanceof Error ? e.message : String(e),
+          stack: e instanceof Error ? e.stack : undefined,
+        });
+      } catch {
+        // ignore
+      }
+
+      await jobRef.set(
+        {
+          status: 'error',
+          lockedUntil: lockedUntilReady,
+          errorMessage: e instanceof Error ? e.message : 'Voice transcription error',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+
+      throw new functions.https.HttpsError('internal', e instanceof Error ? e.message : 'Voice transcription error');
+    }
+  });
+
+export const assistantPurgeExpiredVoiceData = functions.pubsub
+  .schedule('every monday 03:00')
+  .onRun(async () => {
+    const db = admin.firestore();
+    const bucket = admin.storage().bucket();
+    const nowTs = admin.firestore.Timestamp.now();
+
+    const purgeColGroup = async (collectionId: 'assistantVoiceJobs' | 'assistantVoiceResults') => {
+      const snap = await db
+        .collectionGroup(collectionId)
+        .where('expiresAt', '<=', nowTs)
+        .orderBy('expiresAt', 'asc')
+        .limit(50)
+        .get();
+
+      if (snap.empty) return 0;
+
+      const tasks = snap.docs.map(async (docSnap) => {
+        const data = docSnap.data() as any;
+        const storagePath = typeof data?.storagePath === 'string' ? String(data.storagePath) : '';
+        if (storagePath) {
+          try {
+            await bucket.file(storagePath).delete({ ignoreNotFound: true } as any);
+          } catch {
+            // ignore
+          }
+        }
+        try {
+          await docSnap.ref.delete();
+        } catch {
+          // ignore
+        }
+      });
+
+      await Promise.all(tasks);
+      return snap.size;
+    };
+
+    const purgedJobs = await purgeColGroup('assistantVoiceJobs');
+    const purgedResults = await purgeColGroup('assistantVoiceResults');
+
+    try {
+      console.log('assistant.voice.purge', { purgedJobs, purgedResults });
+    } catch {
+      // ignore
+    }
+  });
 
 const ASSISTANT_AI_JOB_LOCK_MS = 5 * 60 * 1000;
 const ASSISTANT_AI_JOB_MAX_ATTEMPTS = 3;

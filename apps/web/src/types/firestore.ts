@@ -211,6 +211,10 @@ export type AssistantSuggestionPayload =
 
 export type AssistantAIJobStatus = 'queued' | 'processing' | 'done' | 'error';
 
+export type AssistantVoiceJobStatus = 'created' | 'transcribing' | 'done' | 'error';
+
+export type AssistantVoiceJobMode = 'append_to_note' | 'standalone';
+
 export interface AssistantAIJobDoc {
   id?: string;
   noteId: string;
@@ -261,6 +265,41 @@ export interface AssistantAIResultDoc {
     };
     tags?: string[];
   };
+  createdAt?: Timestamp | FieldValue;
+  updatedAt?: Timestamp | FieldValue;
+  [key: string]: unknown;
+}
+
+export interface AssistantVoiceJobDoc {
+  id?: string;
+  noteId?: string | null;
+  mode: AssistantVoiceJobMode;
+  status: AssistantVoiceJobStatus;
+  storagePath: string;
+  lockedUntil?: Timestamp;
+  fileHash?: string | null;
+  usageCountedHash?: string | null;
+  model?: string | null;
+  schemaVersion: number;
+  resultId?: string | null;
+  errorMessage?: string | null;
+  expiresAt: Timestamp;
+  createdAt?: Timestamp | FieldValue;
+  updatedAt?: Timestamp | FieldValue;
+  [key: string]: unknown;
+}
+
+export interface AssistantVoiceResultDoc {
+  id?: string;
+  jobId: string;
+  noteId?: string | null;
+  mode: AssistantVoiceJobMode;
+  storagePath: string;
+  fileHash: string;
+  model: string;
+  schemaVersion: number;
+  transcript: string;
+  expiresAt: Timestamp;
   createdAt?: Timestamp | FieldValue;
   updatedAt?: Timestamp | FieldValue;
   [key: string]: unknown;

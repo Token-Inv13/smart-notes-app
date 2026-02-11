@@ -90,6 +90,14 @@ service cloud.firestore {
         allow read: if isAuthenticated() && isOwner(userId);
         allow write: if false;
       }
+      match /assistantVoiceJobs/{docId} {
+        allow read: if isAuthenticated() && isOwner(userId);
+        allow write: if false;
+      }
+      match /assistantVoiceResults/{docId} {
+        allow read: if isAuthenticated() && isOwner(userId);
+        allow write: if false;
+      }
       match /assistantDecisions/{docId} {
         allow read: if isAuthenticated() && isOwner(userId);
         allow write: if false;

@@ -35,8 +35,28 @@ service firebase.storage {
         (isProUser(userId) && path.matches('.*\\.(mp4|mov)$'));
     }
 
+    function isAllowedVoiceMime() {
+      return request.resource.contentType == 'audio/webm' ||
+        request.resource.contentType == 'audio/webm;codecs=opus' ||
+        request.resource.contentType == 'audio/ogg' ||
+        request.resource.contentType == 'audio/ogg;codecs=opus' ||
+        request.resource.contentType == 'application/octet-stream';
+    }
+
+    function isAllowedVoiceSize() {
+      return request.resource.size < 25 * 1024 * 1024;
+    }
+
+    function isAllowedVoiceExtension(path) {
+      return path.matches('.*\\.(webm)$');
+    }
+
     function isNotesAttachmentPath(path) {
       return path.matches('notes/.*');
+    }
+
+    function isVoicePath(path) {
+      return path.matches('voice/.*');
     }
     
     // User files
@@ -44,7 +64,16 @@ service firebase.storage {
       allow read: if isAuthenticated() && isOwner(userId);
       // Do not allow this generic rule to grant access to note attachments.
       // Attachments are enforced by the dedicated /users/{userId}/notes/... rule below.
-      allow write: if isAuthenticated() && isOwner(userId) && !isNotesAttachmentPath(allPaths);
+      allow write: if isAuthenticated() && isOwner(userId) && !isNotesAttachmentPath(allPaths) && !isVoicePath(allPaths);
+    }
+
+    // Voice recordings (assistant)
+    match /users/{userId}/voice/{allFiles=**} {
+      allow read: if isAuthenticated() && isOwner(userId);
+      allow write: if isAuthenticated() && isOwner(userId) && (
+        request.resource == null ||
+        (isAllowedVoiceSize() && (isAllowedVoiceMime() || isAllowedVoiceExtension(allFiles)))
+      );
     }
     
     // Note attachments
