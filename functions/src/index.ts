@@ -611,19 +611,36 @@ async function listAvailableModelsCached(params?: { forceRefresh?: boolean }): P
   const apiKey = getOpenAIApiKey();
   const projectHeader = getOpenAIProjectHeader();
 
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${apiKey}`,
+  const fetchWith = async (useProject: boolean) => {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${apiKey}`,
+    };
+    if (useProject && projectHeader) headers['OpenAI-Project'] = projectHeader;
+    const res = await fetch('https://api.openai.com/v1/models', { method: 'GET', headers });
+    return res;
   };
-  if (projectHeader) headers['OpenAI-Project'] = projectHeader;
 
-  const res = await fetch('https://api.openai.com/v1/models', { method: 'GET', headers });
-  const requestId = res.headers.get('x-request-id');
+  let res = await fetchWith(true);
+  let requestId = res.headers.get('x-request-id');
+  if (!res.ok && projectHeader) {
+    const t = await res.text().catch(() => '');
+    console.error('openai.models_list_failed', {
+      status: res.status,
+      requestId,
+      projectHeader,
+      attempt: 'with_project',
+      body: t.slice(0, 800),
+    });
+    res = await fetchWith(false);
+    requestId = res.headers.get('x-request-id');
+  }
   if (!res.ok) {
     const t = await res.text().catch(() => '');
     console.error('openai.models_list_failed', {
       status: res.status,
       requestId,
       projectHeader,
+      attempt: projectHeader ? 'without_project' : 'no_project',
       body: t.slice(0, 800),
     });
     throw new OpenAIHttpError({ status: res.status, message: `OpenAI models list failed: ${res.status} ${t}`.slice(0, 500), requestId, projectHeader });
@@ -3788,20 +3805,36 @@ export const assistantRequestAIAnalysis = functions.https.onCall(async (data, co
     if (cached.length > 0) {
       model = selectDeterministicModel({ availableIds: cached, preferredEnv, preferredRequested: requestedModel || null });
     } else {
+      model = requestedModel || preferredEnv || '';
       try {
         console.error('openai.model_select_failed', {
           requestedModel: requestedModel || null,
           preferredEnv,
-          selected: null,
+          selected: model || null,
           message: e instanceof Error ? e.message : String(e),
         });
       } catch (err) {
         void err;
       }
-      throw new functions.https.HttpsError(
-        'failed-precondition',
-        'Découverte des modèles OpenAI impossible (endpoint /v1/models). Vérifie la clé, le Project OpenAI et les permissions.',
-      );
+      if (!model) {
+        model = ASSISTANT_AI_MODEL_SHORTLIST[0] ?? '';
+        if (!model) {
+          throw new functions.https.HttpsError(
+            'failed-precondition',
+            'Découverte des modèles OpenAI impossible (endpoint /v1/models). Configure OPENAI_MODEL/ASSISTANT_AI_MODEL ou vérifie la clé et le Project OpenAI.',
+          );
+        }
+        try {
+          console.warn('openai.model_select_no_discovery', {
+            requestedModel: requestedModel || null,
+            preferredEnv,
+            selected: model,
+            note: 'Proceeding with deterministic shortlist fallback because /v1/models is unavailable and no model was configured.',
+          });
+        } catch {
+          // ignore
+        }
+      }
     }
   }
 
@@ -4033,7 +4066,7 @@ async function processAssistantAIJob(params: {
       if (cached.length > 0) {
         availableIds = cached;
       } else {
-        throw err;
+        availableIds = [];
       }
     }
 
@@ -4046,28 +4079,53 @@ async function processAssistantAIJob(params: {
     }
 
     if (!Array.isArray(availableIds) || availableIds.length === 0) {
-      throw new functions.https.HttpsError(
-        'failed-precondition',
-        'Le projet OpenAI associé à cette clé n’a accès à aucun modèle compatible. Vérifie le Project sélectionné et les permissions.',
-      );
-    }
-
-    const resolvedCandidates: string[] = [];
-    for (const c of candidatesBase) {
-      const resolved = resolveModelFromAvailable(availableIds, c);
-      if (resolved && !resolvedCandidates.includes(resolved)) {
-        resolvedCandidates.push(resolved);
+      const direct = requestedModel || preferredEnv || '';
+      if (!direct) {
+        primaryModel = ASSISTANT_AI_MODEL_SHORTLIST[0] ?? '';
+        fallbackModel = ASSISTANT_AI_MODEL_SHORTLIST.length > 1 ? ASSISTANT_AI_MODEL_SHORTLIST[1] : null;
+        if (!primaryModel) {
+          throw new functions.https.HttpsError(
+            'failed-precondition',
+            'Découverte des modèles OpenAI impossible (endpoint /v1/models). Configure OPENAI_MODEL/ASSISTANT_AI_MODEL ou vérifie la clé et le Project OpenAI.',
+          );
+        }
+        try {
+          console.warn('openai.model_select_no_discovery', {
+            userId,
+            jobId: jobDoc.id,
+            requestedModel: requestedModel || null,
+            preferredEnv,
+            selected: primaryModel,
+            fallback: fallbackModel,
+            note: 'Proceeding with deterministic shortlist fallback because /v1/models is unavailable and no model was configured.',
+          });
+        } catch {
+          // ignore
+        }
+      } else {
+        primaryModel = direct;
+        fallbackModel = null;
       }
     }
 
-    if (resolvedCandidates.length === 0) {
-      primaryModel = pickDefaultAvailableModel(availableIds);
-      const second = availableIds.find((m) => m !== primaryModel) ?? null;
-      fallbackModel = second;
-    } else {
-      primaryModel = resolvedCandidates[0];
-      const second = resolvedCandidates.length > 1 ? resolvedCandidates[1] : availableIds.find((m) => m !== primaryModel) ?? null;
-      fallbackModel = second;
+    if (!primaryModel) {
+      const resolvedCandidates: string[] = [];
+      for (const c of candidatesBase) {
+        const resolved = resolveModelFromAvailable(availableIds, c);
+        if (resolved && !resolvedCandidates.includes(resolved)) {
+          resolvedCandidates.push(resolved);
+        }
+      }
+
+      if (resolvedCandidates.length === 0) {
+        primaryModel = pickDefaultAvailableModel(availableIds);
+        const second = availableIds.find((m) => m !== primaryModel) ?? null;
+        fallbackModel = second;
+      } else {
+        primaryModel = resolvedCandidates[0];
+        const second = resolvedCandidates.length > 1 ? resolvedCandidates[1] : availableIds.find((m) => m !== primaryModel) ?? null;
+        fallbackModel = second;
+      }
     }
 
     const primaryResultId = resultIdForModel(primaryModel);
