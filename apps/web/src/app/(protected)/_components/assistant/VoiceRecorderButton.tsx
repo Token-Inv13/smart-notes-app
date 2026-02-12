@@ -13,6 +13,9 @@ import type { AssistantVoiceJobDoc, AssistantVoiceResultDoc, NoteDoc } from "@/t
 type Props = {
   noteId?: string;
   mode?: "append_to_note" | "standalone";
+  onTranscript?: (transcript: string) => void;
+  showInternalActions?: boolean;
+  showTranscript?: boolean;
 };
 
 type UiStatus = "idle" | "recording" | "uploading" | "transcribing" | "done" | "error";
@@ -52,7 +55,13 @@ function pickMimeType() {
   return candidates.find(can) ?? "";
 }
 
-export default function VoiceRecorderButton({ noteId, mode }: Props) {
+export default function VoiceRecorderButton({
+  noteId,
+  mode,
+  onTranscript,
+  showInternalActions = true,
+  showTranscript = true,
+}: Props) {
   const { user } = useAuth();
 
   const effectiveMode: "append_to_note" | "standalone" =
@@ -213,6 +222,11 @@ export default function VoiceRecorderButton({ noteId, mode }: Props) {
 
     setError(null);
     setTranscript("");
+    try {
+      onTranscript?.("");
+    } catch {
+      // ignore
+    }
     setResultId(null);
 
     try {
@@ -356,6 +370,11 @@ export default function VoiceRecorderButton({ noteId, mode }: Props) {
         const t = typeof (data as any)?.transcript === "string" ? String((data as any).transcript) : "";
         if (t) {
           setTranscript(t);
+          try {
+            onTranscript?.(t);
+          } catch {
+            // ignore
+          }
           setStatus("done");
         }
       },
@@ -365,7 +384,7 @@ export default function VoiceRecorderButton({ noteId, mode }: Props) {
     );
 
     return () => unsub();
-  }, [resultId, user?.uid]);
+  }, [resultId, user?.uid, onTranscript]);
 
   useEffect(() => {
     return () => {
@@ -404,7 +423,7 @@ export default function VoiceRecorderButton({ noteId, mode }: Props) {
           {buttonLabel}
         </button>
 
-        {status === "done" && transcript.trim() ? (
+        {showInternalActions && status === "done" && transcript.trim() ? (
           <button
             type="button"
             className="px-3 py-2 rounded-md border border-input text-sm"
@@ -414,7 +433,7 @@ export default function VoiceRecorderButton({ noteId, mode }: Props) {
           </button>
         ) : null}
 
-        {status === "done" && transcript.trim() ? (
+        {showInternalActions && status === "done" && transcript.trim() ? (
           <button
             type="button"
             className="px-3 py-2 rounded-md border border-input text-sm"
@@ -424,7 +443,7 @@ export default function VoiceRecorderButton({ noteId, mode }: Props) {
           </button>
         ) : null}
 
-        {status === "done" && transcript.trim() && noteId ? (
+        {showInternalActions && status === "done" && transcript.trim() && noteId ? (
           <button
             type="button"
             className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm"
@@ -443,7 +462,7 @@ export default function VoiceRecorderButton({ noteId, mode }: Props) {
 
       {error ? <div className="text-xs text-destructive">{error}</div> : null}
 
-      {transcript.trim() ? (
+      {showTranscript && transcript.trim() ? (
         <div className="rounded-md border border-border bg-card p-3">
           <div className="text-sm whitespace-pre-wrap">{transcript}</div>
         </div>
