@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Sparkles } from "lucide-react";
 import { FirebaseError } from "firebase/app";
 import { httpsCallable } from "firebase/functions";
-import { doc, onSnapshot, serverTimestamp, updateDoc, type Timestamp } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, serverTimestamp, updateDoc, type Timestamp } from "firebase/firestore";
 import { db, functions as fbFunctions } from "@/lib/firebase";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import { useAssistantSettings } from "@/hooks/useAssistantSettings";
@@ -18,6 +19,132 @@ import VoiceRecorderButton from "./assistant/VoiceRecorderButton";
 type Props = {
   noteId?: string;
 };
+
+type SectionId = "capture" | "analyze" | "transform";
+
+function AssistantActionButton({
+  label,
+  onClick,
+  disabled,
+  variant,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  variant?: "primary" | "secondary";
+}) {
+  const base = "px-3 py-2 rounded-md text-sm font-medium disabled:opacity-50";
+  const styles =
+    variant === "primary"
+      ? "bg-primary text-primary-foreground"
+      : "border border-input hover:bg-accent";
+
+  return (
+    <button
+      type="button"
+      className={["w-full md:w-auto", base, styles].filter(Boolean).join(" ")}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      {label}
+    </button>
+  );
+}
+
+function AssistantSection({
+  id,
+  title,
+  icon,
+  mobileCollapsible,
+  open,
+  setOpen,
+  children,
+}: {
+  id: SectionId;
+  title: string;
+  icon?: ReactNode;
+  mobileCollapsible: boolean;
+  open: boolean;
+  setOpen: (id: SectionId, next: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="border border-border rounded-lg bg-card shadow-sm">
+      <button
+        type="button"
+        className="w-full px-4 py-3 flex items-center justify-between gap-3"
+        onClick={() => {
+          if (!mobileCollapsible) return;
+          setOpen(id, !open);
+        }}
+      >
+        <div className="flex items-center gap-2">
+          {icon}
+          <div className="text-sm font-semibold">{title}</div>
+        </div>
+        {mobileCollapsible ? (
+          <div className="text-xs text-muted-foreground">{open ? "Réduire" : "Voir"}</div>
+        ) : null}
+      </button>
+      {open ? <div className="px-4 pb-4 space-y-3">{children}</div> : null}
+    </section>
+  );
+}
+
+function AssistantSkeletonCard() {
+  return (
+    <div className="border border-border rounded-md p-3 bg-background/40">
+      <div className="sn-skeleton-line w-1/3" />
+      <div className="mt-2 sn-skeleton-line w-5/6" />
+      <div className="mt-2 sn-skeleton-line w-2/3" />
+    </div>
+  );
+}
+
+function AssistantResultCard({
+  title,
+  text,
+  primaryLabel,
+  onPrimary,
+  secondaryLabel,
+  onSecondary,
+  onReject,
+}: {
+  title: string;
+  text: string;
+  primaryLabel: string;
+  onPrimary: () => void;
+  secondaryLabel: string;
+  onSecondary: () => void;
+  onReject: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="border border-border rounded-lg bg-card shadow-sm p-4 space-y-3 sn-animate-in">
+      <div className="flex items-start justify-between gap-3">
+        <div className="text-sm font-semibold">{title}</div>
+        <button type="button" className="sn-text-btn" onClick={onReject}>
+          Refuser
+        </button>
+      </div>
+
+      <div className={"text-sm whitespace-pre-wrap break-words " + (expanded ? "" : "line-clamp-6")}>
+        {text}
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <button type="button" className="sn-text-btn" onClick={() => setExpanded((v) => !v)}>
+          {expanded ? "Voir moins" : "Voir plus"}
+        </button>
+        <div className="flex flex-col md:flex-row md:items-center gap-2 w-full md:w-auto">
+          <AssistantActionButton label={primaryLabel} onClick={onPrimary} variant="primary" />
+          <AssistantActionButton label={secondaryLabel} onClick={onSecondary} variant="secondary" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function AssistantNotePanel({ noteId }: Props) {
   const { user } = useAuth();
@@ -66,6 +193,22 @@ export default function AssistantNotePanel({ noteId }: Props) {
   const [aiJobModelFallbackUsed, setAIJobModelFallbackUsed] = useState<string | null>(null);
   const [aiResult, setAIResult] = useState<AssistantAIResultDoc | null>(null);
   const [busyAIAnalysis, setBusyAIAnalysis] = useState(false);
+
+  const [isMobile, setIsMobile] = useState(false);
+  const [sectionOpen, setSectionOpen] = useState<Record<SectionId, boolean>>({
+    capture: true,
+    analyze: true,
+    transform: true,
+  });
+
+  const [dismissedResultKeys, setDismissedResultKeys] = useState<Record<string, boolean>>({});
+
+  const [textModal, setTextModal] = useState<{
+    title: string;
+    text: string;
+    allowReplaceNote?: boolean;
+  } | null>(null);
+  const [textModalDraft, setTextModalDraft] = useState<string>("");
 
   const [editing, setEditing] = useState<AssistantSuggestionDoc | null>(null);
   const [editTitle, setEditTitle] = useState<string>("");
@@ -168,6 +311,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
     if (!user?.uid) return;
     if (!aiJobResultId) {
       setAIResult(null);
+      setDismissedResultKeys({});
       return;
     }
 
@@ -233,7 +377,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
     return code.includes("unauthenticated");
   };
 
-  const handleAIAnalyze = async () => {
+  const handleAIAnalyzeWithModes = async (modes: string[] | null) => {
     if (!noteId) return;
     if (busyAIAnalysis) return;
 
@@ -242,8 +386,14 @@ export default function AssistantNotePanel({ noteId }: Props) {
     setActionError(null);
 
     try {
-      const fn = httpsCallable<{ noteId: string }, { jobId: string; resultId?: string }>(fbFunctions, "assistantRequestAIAnalysis");
-      const res = await fn({ noteId });
+      const fn = httpsCallable<{ noteId: string; modes?: string[] }, { jobId: string; resultId?: string }>(
+        fbFunctions,
+        "assistantRequestAIAnalysis",
+      );
+      const payload: { noteId: string; modes?: string[] } = { noteId };
+      if (Array.isArray(modes) && modes.length > 0) payload.modes = modes;
+      const res = await fn(payload);
+      setDismissedResultKeys({});
       setActionMessage(`Analyse IA demandée (job: ${res.data.jobId}).`);
     } catch (e) {
       if (isCallableUnauthenticated(e)) {
@@ -266,6 +416,41 @@ export default function AssistantNotePanel({ noteId }: Props) {
       setActionMessage("Copié dans le presse-papiers.");
     } catch {
       setActionError("Impossible de copier.");
+    }
+  };
+
+  const escapeHtml = (text: string) => {
+    return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  };
+
+  const plainTextToNoteHtml = (text: string) => {
+    const safe = escapeHtml(text);
+    const withBreaks = safe.replace(/\r\n|\n|\r/g, "<br />");
+    return `<div>${withBreaks}</div>`;
+  };
+
+  const handleInsertIntoNote = async (text: string) => {
+    if (!noteId) return;
+    const t = (text ?? "").trim();
+    if (!t) return;
+
+    try {
+      const ref = doc(db, "notes", noteId);
+      const snap = await getDoc(ref);
+      const existing = snap.exists() ? (snap.data() as any) : null;
+      const current = typeof existing?.content === "string" ? String(existing.content) : "";
+      const next = (current ? `${current}\n` : "") + plainTextToNoteHtml(t);
+      await updateDoc(ref, { content: next, updatedAt: serverTimestamp() });
+      setActionMessage("Texte inséré dans la note.");
+    } catch (e) {
+      if (e instanceof FirebaseError) setActionError(`${e.code}: ${e.message}`);
+      else if (e instanceof Error) setActionError(e.message);
+      else setActionError("Insertion impossible.");
     }
   };
 
@@ -307,6 +492,40 @@ export default function AssistantNotePanel({ noteId }: Props) {
     setEditError(null);
     refetchAssistant();
     refetchSuggestions();
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 767px)");
+    const apply = () => setIsMobile(mq.matches);
+    apply();
+    try {
+      mq.addEventListener("change", apply);
+      return () => mq.removeEventListener("change", apply);
+    } catch {
+      mq.addListener(apply);
+      return () => mq.removeListener(apply);
+    }
+  }, []);
+
+  useEffect(() => {
+    setSectionOpen((prev) => {
+      const next: Record<SectionId, boolean> = { ...prev };
+      if (isMobile) {
+        next.capture = true;
+        next.analyze = prev.analyze ?? false;
+        next.transform = prev.transform ?? false;
+      } else {
+        next.capture = true;
+        next.analyze = true;
+        next.transform = true;
+      }
+      return next;
+    });
+  }, [isMobile]);
+
+  const setOpen = (id: SectionId, next: boolean) => {
+    setSectionOpen((prev) => ({ ...prev, [id]: next }));
   };
 
   const cooldownActive = Date.now() < reanalyzeCooldownUntil;
@@ -565,117 +784,109 @@ export default function AssistantNotePanel({ noteId }: Props) {
     );
   }
 
-  return (
-    <div className="sn-card p-4 space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-sm font-semibold">Assistant</div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleRefresh}
-            className="px-3 py-2 rounded-md border border-input text-sm hover:bg-accent"
-          >
-            Rafraîchir
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleReanalyze()}
-            disabled={!noteId || busyReanalysis || cooldownActive}
-            className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-          >
-            {busyReanalysis ? "Réanalyse…" : cooldownActive ? "Réanalyser (cooldown)" : "Réanalyser"}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleAIAnalyze()}
-            disabled={!noteId || busyAIAnalysis}
-            className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-          >
-            {busyAIAnalysis ? "IA…" : "Analyser avec IA"}
-          </button>
-          <div className="text-xs text-muted-foreground">{noteId ? `Note: ${noteId}` : ""}</div>
+  const suggestionGroups = useMemo(() => {
+    const arr = sorted ?? [];
+    const tasks = arr.filter((s) => s.kind === "create_task" || s.kind === "create_reminder" || s.kind === "update_task_meta");
+    const bundles = arr.filter((s) => s.kind === "create_task_bundle");
+    const content = arr.filter(
+      (s) =>
+        s.kind === "generate_summary" ||
+        s.kind === "extract_key_points" ||
+        s.kind === "generate_hook" ||
+        s.kind === "tag_entities" ||
+        s.kind === "rewrite_note",
+    );
+    return { tasks, bundles, content };
+  }, [sorted]);
+
+  const renderSuggestionCard = (s: AssistantSuggestionDoc) => {
+    const suggestionId = s.id ?? s.dedupeKey;
+    const isBusy = !!suggestionId && busySuggestionId === suggestionId;
+
+    const isBundle = s.kind === "create_task_bundle";
+    const isContent =
+      s.kind === "generate_summary" ||
+      s.kind === "rewrite_note" ||
+      s.kind === "generate_hook" ||
+      s.kind === "extract_key_points" ||
+      s.kind === "tag_entities";
+    const payload = s.payload;
+    const dueLabel = s.kind === "create_task" && "dueDate" in payload ? formatTs(payload.dueDate ?? null) : "";
+    const remindLabel = s.kind === "create_reminder" && "remindAt" in payload ? formatTs(payload.remindAt ?? null) : "";
+    const expired = s.status === "expired";
+
+    const bundleTasks = isBundle && "tasks" in payload ? payload.tasks : [];
+    const isBundleExpanded = expandedBundleSuggestionId === (suggestionId ?? null);
+
+    const handleAcceptClick = () => {
+      if (isBundle && !isPro) {
+        window.location.href = "/upgrade";
+        return;
+      }
+      void handleAccept(s);
+    };
+
+    const handleToggleBundle = () => {
+      if (!suggestionId) return;
+      setExpandedBundleSuggestionId((prev) => (prev === suggestionId ? null : suggestionId));
+    };
+
+    return (
+      <div key={suggestionId ?? s.dedupeKey} className="border border-border rounded-lg bg-card shadow-sm p-4 space-y-3 sn-animate-in">
+        <div className="space-y-1">
+          <div className="text-sm font-semibold">
+            {s.payload?.title}
+            {expired ? <span className="ml-2 text-xs text-muted-foreground">(expirée)</span> : null}
+          </div>
+          <div className="text-xs text-muted-foreground line-clamp-6">{s.payload?.explanation}</div>
+          {s.payload?.origin?.fromText ? (
+            <div className="text-xs text-muted-foreground line-clamp-3">Extrait: “{s.payload.origin.fromText}”</div>
+          ) : null}
+          {!isBundle && dueLabel ? <div className="text-xs text-muted-foreground">Échéance: {dueLabel}</div> : null}
+          {!isBundle && remindLabel ? <div className="text-xs text-muted-foreground">Rappel: {remindLabel}</div> : null}
         </div>
-      </div>
 
-      {actionMessage && <div className="sn-alert">{actionMessage}</div>}
-      {actionError && <div className="sn-alert sn-alert--error">{actionError}</div>}
-
-      {jobStatus === "queued" && <div className="sn-alert">Analyse en attente…</div>}
-      {jobStatus === "processing" && <div className="sn-alert">Analyse en cours…</div>}
-      {jobStatus === "error" && <div className="sn-alert sn-alert--error">Réanalyse en erreur.</div>}
-      {doneBannerMessage && <div className="sn-alert">{doneBannerMessage}</div>}
-
-      <div className="border border-border rounded-md p-3 space-y-2">
-        <div className="text-sm font-semibold">Voix</div>
-        <div className="text-xs text-muted-foreground">
-          Enregistre un mémo vocal, puis transcription côté serveur.
-        </div>
-        <VoiceRecorderButton noteId={noteId} mode="append_to_note" />
-      </div>
-
-      <div className="border border-border rounded-md p-3 space-y-2">
-        <div className="text-sm font-semibold">IA</div>
-        {aiJobStatus === "queued" && <div className="sn-alert">Analyse IA en attente…</div>}
-        {aiJobStatus === "processing" && <div className="sn-alert">Analyse IA en cours…</div>}
-        {aiJobStatus === "error" && (
-          <div className="sn-alert sn-alert--error">
-            <div>Analyse IA en erreur.</div>
-            {aiModelAccessError ? (
-              <div className="text-xs opacity-90 break-words mt-1">
-                Modèle non autorisé pour ce projet OpenAI. Vérifie le Project OpenAI associé à la clé et/ou configure un modèle autorisé.
-              </div>
-            ) : null}
-            {aiJobError ? <div className="text-xs opacity-90 break-words mt-1">{aiJobError}</div> : null}
-            {showAIDebug ? (
-              <div className="text-[11px] opacity-70 break-words mt-1">
-                <div>model: {aiJobModel ?? "(inconnu)"}</div>
-                <div>modelRequested: {aiJobModelRequested ?? "(aucun)"}</div>
-                <div>modelFallbackUsed: {aiJobModelFallbackUsed ?? "(aucun)"}</div>
+        {isBundle ? (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs text-muted-foreground">{bundleTasks.length} tâche(s)</div>
+              <button type="button" onClick={handleToggleBundle} className="px-2 py-1 rounded-md border border-input text-xs">
+                {isBundleExpanded ? "Réduire" : "Voir"}
+              </button>
+            </div>
+            {isBundleExpanded ? (
+              <div className="text-sm">
+                <ol className="list-decimal pl-5 space-y-1">
+                  {bundleTasks.slice(0, 6).map((t, idx) => (
+                    <li key={`${suggestionId ?? "bundle"}_${idx}`}>{typeof t?.title === "string" ? t.title : ""}</li>
+                  ))}
+                </ol>
+                {!isPro ? <div className="mt-2 text-xs text-muted-foreground">Disponible avec le plan Pro.</div> : null}
               </div>
             ) : null}
           </div>
-        )}
+        ) : null}
 
-        {aiResult ? (
+        {isContent && s.kind === "generate_summary" ? (
           (() => {
-            const out = (aiResult as any)?.output ?? null;
-            const refusal = typeof (aiResult as any)?.refusal === "string" ? String((aiResult as any).refusal) : "";
-
-            const summaryShort = typeof out?.summaryShort === "string" ? String(out.summaryShort) : "";
-            const summaryStructured = Array.isArray(out?.summaryStructured) ? (out.summaryStructured as any[]) : [];
-            const keyPoints = Array.isArray(out?.keyPoints) ? (out.keyPoints as any[]) : [];
-            const hooks = Array.isArray(out?.hooks) ? (out.hooks as any[]) : [];
-            const tags = Array.isArray(out?.tags) ? (out.tags as any[]) : [];
-            const entities = out?.entities && typeof out.entities === "object" ? (out.entities as any) : null;
-
-            const hasAny =
-              !!summaryShort ||
-              summaryStructured.length > 0 ||
-              keyPoints.length > 0 ||
-              hooks.length > 0 ||
-              tags.length > 0 ||
-              !!entities;
-
+            const summaryShort = (payload as any)?.summaryShort;
+            const structured = Array.isArray((payload as any)?.summaryStructured) ? ((payload as any).summaryStructured as any[]) : [];
             return (
-              <div className="space-y-2">
-                {refusal ? <div className="sn-alert sn-alert--error">Refus IA: {refusal}</div> : null}
-                {!hasAny ? <div className="text-sm text-muted-foreground">IA n’a rien détecté.</div> : null}
-
-                {summaryShort ? <div className="text-sm">{summaryShort}</div> : null}
-
-                {summaryStructured.length > 0 ? (
+              <div className="text-sm space-y-2">
+                {typeof summaryShort === "string" && summaryShort.trim() ? <div className="line-clamp-6">{summaryShort}</div> : null}
+                {structured.length > 0 ? (
                   <div className="space-y-2">
-                    {summaryStructured.map((sec, idx) => {
+                    {structured.slice(0, 3).map((sec, idx) => {
                       const title = typeof sec?.title === "string" ? sec.title : "";
                       const bullets = Array.isArray(sec?.bullets) ? (sec.bullets as any[]) : [];
                       if (!title && bullets.length === 0) return null;
                       return (
-                        <div key={`ai_struct_${idx}`} className="text-sm">
+                        <div key={`sum_${suggestionId ?? "x"}_${idx}`}>
                           {title ? <div className="font-medium">{title}</div> : null}
                           {bullets.length > 0 ? (
                             <ul className="list-disc pl-5">
-                              {bullets.slice(0, 8).map((b, j) => (
-                                <li key={`ai_struct_${idx}_${j}`}>{typeof b === "string" ? b : ""}</li>
+                              {bullets.slice(0, 4).map((b, j) => (
+                                <li key={`sum_${suggestionId ?? "x"}_${idx}_${j}`}>{typeof b === "string" ? b : ""}</li>
                               ))}
                             </ul>
                           ) : null}
@@ -684,44 +895,67 @@ export default function AssistantNotePanel({ noteId }: Props) {
                     })}
                   </div>
                 ) : null}
+              </div>
+            );
+          })()
+        ) : null}
 
-                {keyPoints.length > 0 ? (
-                  <div className="text-sm">
-                    <div className="font-medium">Points clés</div>
-                    <ul className="list-disc pl-5">
-                      {keyPoints.slice(0, 10).map((p, idx) => (
-                        <li key={`ai_kp_${idx}`}>{typeof p === "string" ? p : ""}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
+        {isContent && s.kind === "extract_key_points" ? (
+          (() => {
+            const keyPoints = Array.isArray((payload as any)?.keyPoints) ? ((payload as any).keyPoints as any[]) : [];
+            if (keyPoints.length === 0) return null;
+            return (
+              <div className="text-sm">
+                <ul className="list-disc pl-5">
+                  {keyPoints.slice(0, 8).map((p, idx) => (
+                    <li key={`kp_${suggestionId ?? "x"}_${idx}`}>{typeof p === "string" ? p : ""}</li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()
+        ) : null}
 
-                {hooks.length > 0 ? (
-                  <div className="text-sm">
-                    <div className="font-medium">Hooks</div>
-                    <ul className="list-disc pl-5">
-                      {hooks.slice(0, 10).map((h, idx) => (
-                        <li key={`ai_hook_${idx}`}>{typeof h === "string" ? h : ""}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
+        {isContent && s.kind === "generate_hook" ? (
+          (() => {
+            const hooks = Array.isArray((payload as any)?.hooks) ? ((payload as any).hooks as any[]) : [];
+            if (hooks.length === 0) return null;
+            return (
+              <div className="text-sm">
+                <ul className="list-disc pl-5">
+                  {hooks.slice(0, 8).map((h, idx) => (
+                    <li key={`hook_${suggestionId ?? "x"}_${idx}`}>{typeof h === "string" ? h : ""}</li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()
+        ) : null}
 
+        {isContent && s.kind === "tag_entities" ? (
+          (() => {
+            const tags = Array.isArray((payload as any)?.tags) ? ((payload as any).tags as any[]) : [];
+            const entities = (payload as any)?.entities && typeof (payload as any).entities === "object" ? ((payload as any).entities as any) : null;
+            const hasAny = tags.length > 0 || !!entities;
+            if (!hasAny) return null;
+            return (
+              <div className="text-sm space-y-2">
                 {tags.length > 0 ? (
-                  <div className="text-sm">
+                  <div>
                     <div className="font-medium">Tags</div>
-                    <div className="text-xs text-muted-foreground break-words">{tags.filter((t) => typeof t === "string").join(", ")}</div>
+                    <div className="text-xs text-muted-foreground break-words line-clamp-3">
+                      {tags.filter((t) => typeof t === "string").join(", ")}
+                    </div>
                   </div>
                 ) : null}
-
                 {entities ? (
-                  <div className="text-sm">
+                  <div>
                     <div className="font-medium">Entités</div>
                     <div className="text-xs text-muted-foreground space-y-1">
                       {Object.entries(entities).map(([k, v]) => {
                         if (!Array.isArray(v) || v.length === 0) return null;
                         return (
-                          <div key={`ai_ent_${k}`}>
+                          <div key={`ent_${suggestionId ?? "x"}_${k}`}>
                             {k}: {v.filter((x) => typeof x === "string").join(", ")}
                           </div>
                         );
@@ -732,299 +966,411 @@ export default function AssistantNotePanel({ noteId }: Props) {
               </div>
             );
           })()
-        ) : (
-          <div className="text-sm text-muted-foreground">Lance une analyse IA pour afficher un résumé et des insights.</div>
-        )}
-      </div>
+        ) : null}
 
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={showExpired} onChange={(e) => setShowExpired(e.target.checked)} />
-        Afficher expirées
-      </label>
-
-      {suggestionsError && (
-        (() => {
-          const suggestionsErrorLabel = (() => {
-            if (suggestionsError instanceof FirebaseError) return `${suggestionsError.code}: ${suggestionsError.message}`;
-            if (suggestionsError instanceof Error) return suggestionsError.message;
-            return "";
-          })();
-
-          return (
-        <div className="space-y-2">
-          <div className="sn-alert sn-alert--error">
-            Erreur lors du chargement des suggestions.
-            {suggestionsErrorLabel ? <div className="mt-1 text-xs opacity-80">{suggestionsErrorLabel}</div> : null}
-          </div>
-          <button
-            type="button"
-            onClick={handleRefresh}
-            className="px-3 py-2 rounded-md border border-input text-sm"
-          >
-            Rafraîchir
-          </button>
-        </div>
-          );
-        })()
-      )}
-
-      {showSkeleton && (
-        <div className="sn-skeleton-card space-y-2">
-          <div className="sn-skeleton-line w-2/3" />
-          <div className="sn-skeleton-line w-1/2" />
-          <div className="sn-skeleton-line w-5/6" />
-        </div>
-      )}
-
-      {!showSkeleton && !suggestionsError && sorted.length === 0 && (
-        <div className="text-sm text-muted-foreground">Aucune suggestion pour cette note.</div>
-      )}
-
-      {!showSkeleton && !suggestionsError && sorted.length > 0 && (
-        <div className="space-y-3">
-          {sorted.map((s) => {
-            const suggestionId = s.id ?? s.dedupeKey;
-            const isBusy = !!suggestionId && busySuggestionId === suggestionId;
-
-            const isBundle = s.kind === "create_task_bundle";
-            const isContent =
-              s.kind === "generate_summary" ||
-              s.kind === "rewrite_note" ||
-              s.kind === "generate_hook" ||
-              s.kind === "extract_key_points" ||
-              s.kind === "tag_entities";
-            const payload = s.payload;
-            const dueLabel = s.kind === "create_task" && "dueDate" in payload ? formatTs(payload.dueDate ?? null) : "";
-            const remindLabel = s.kind === "create_reminder" && "remindAt" in payload ? formatTs(payload.remindAt ?? null) : "";
-            const expired = s.status === "expired";
-
-            const bundleTasks = isBundle && "tasks" in payload ? payload.tasks : [];
-            const isBundleExpanded = expandedBundleSuggestionId === (suggestionId ?? null);
-
-            const handleAcceptClick = () => {
-              if (isBundle && !isPro) {
-                window.location.href = "/upgrade";
-                return;
-              }
-              void handleAccept(s);
-            };
-
-            const handleToggleBundle = () => {
-              if (!suggestionId) return;
-              setExpandedBundleSuggestionId((prev) => (prev === suggestionId ? null : suggestionId));
-            };
-
+        {isContent && s.kind === "rewrite_note" ? (
+          (() => {
+            const rewriteContent = typeof (payload as any)?.rewriteContent === "string" ? String((payload as any).rewriteContent) : "";
+            if (!rewriteContent.trim()) return null;
             return (
-              <div key={suggestionId ?? s.dedupeKey} className="border border-border rounded-md p-3 space-y-2">
-                <div className="space-y-1">
-                  <div className="text-sm font-semibold">
-                    {s.payload?.title}
-                    {expired ? <span className="ml-2 text-xs text-muted-foreground">(expirée)</span> : null}
-                  </div>
-                  <div className="text-xs text-muted-foreground">{s.payload?.explanation}</div>
-                  {s.payload?.origin?.fromText ? (
-                    <div className="text-xs text-muted-foreground">Extrait: “{s.payload.origin.fromText}”</div>
-                  ) : null}
-                  {!isBundle && dueLabel ? <div className="text-xs text-muted-foreground">Échéance: {dueLabel}</div> : null}
-                  {!isBundle && remindLabel ? <div className="text-xs text-muted-foreground">Rappel: {remindLabel}</div> : null}
-                  {isBundle ? (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-xs text-muted-foreground">{bundleTasks.length} tâche(s)</div>
-                        <button
-                          type="button"
-                          onClick={handleToggleBundle}
-                          className="px-2 py-1 rounded-md border border-input text-xs"
-                        >
-                          {isBundleExpanded ? "Réduire" : "Voir"}
-                        </button>
-                      </div>
-                      {isBundleExpanded ? (
-                        <div className="text-sm">
-                          <ol className="list-decimal pl-5 space-y-1">
-                            {bundleTasks.slice(0, 6).map((t, idx) => (
-                              <li key={`${suggestionId ?? "bundle"}_${idx}`}>{typeof t?.title === "string" ? t.title : ""}</li>
-                            ))}
-                          </ol>
-                          {!isPro ? (
-                            <div className="mt-2 text-xs text-muted-foreground">Disponible avec le plan Pro.</div>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-
-                  {isContent && s.kind === "generate_summary" ? (
-                    (() => {
-                      const summaryShort = (payload as any)?.summaryShort;
-                      const structured = Array.isArray((payload as any)?.summaryStructured) ? ((payload as any).summaryStructured as any[]) : [];
-                      return (
-                        <div className="text-sm space-y-2">
-                          {typeof summaryShort === "string" && summaryShort.trim() ? <div>{summaryShort}</div> : null}
-                          {structured.length > 0 ? (
-                            <div className="space-y-2">
-                              {structured.slice(0, 6).map((sec, idx) => {
-                                const title = typeof sec?.title === "string" ? sec.title : "";
-                                const bullets = Array.isArray(sec?.bullets) ? (sec.bullets as any[]) : [];
-                                if (!title && bullets.length === 0) return null;
-                                return (
-                                  <div key={`sum_${suggestionId ?? "x"}_${idx}`}>
-                                    {title ? <div className="font-medium">{title}</div> : null}
-                                    {bullets.length > 0 ? (
-                                      <ul className="list-disc pl-5">
-                                        {bullets.slice(0, 8).map((b, j) => (
-                                          <li key={`sum_${suggestionId ?? "x"}_${idx}_${j}`}>{typeof b === "string" ? b : ""}</li>
-                                        ))}
-                                      </ul>
-                                    ) : null}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })()
-                  ) : null}
-
-                  {isContent && s.kind === "extract_key_points" ? (
-                    (() => {
-                      const keyPoints = Array.isArray((payload as any)?.keyPoints) ? ((payload as any).keyPoints as any[]) : [];
-                      if (keyPoints.length === 0) return null;
-                      return (
-                        <div className="text-sm">
-                          <ul className="list-disc pl-5">
-                            {keyPoints.slice(0, 10).map((p, idx) => (
-                              <li key={`kp_${suggestionId ?? "x"}_${idx}`}>{typeof p === "string" ? p : ""}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      );
-                    })()
-                  ) : null}
-
-                  {isContent && s.kind === "generate_hook" ? (
-                    (() => {
-                      const hooks = Array.isArray((payload as any)?.hooks) ? ((payload as any).hooks as any[]) : [];
-                      if (hooks.length === 0) return null;
-                      return (
-                        <div className="text-sm">
-                          <ul className="list-disc pl-5">
-                            {hooks.slice(0, 10).map((h, idx) => (
-                              <li key={`hook_${suggestionId ?? "x"}_${idx}`}>{typeof h === "string" ? h : ""}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      );
-                    })()
-                  ) : null}
-
-                  {isContent && s.kind === "tag_entities" ? (
-                    (() => {
-                      const tags = Array.isArray((payload as any)?.tags) ? ((payload as any).tags as any[]) : [];
-                      const entities = (payload as any)?.entities && typeof (payload as any).entities === "object" ? ((payload as any).entities as any) : null;
-                      const hasAny = tags.length > 0 || !!entities;
-                      if (!hasAny) return null;
-                      return (
-                        <div className="text-sm space-y-2">
-                          {tags.length > 0 ? (
-                            <div>
-                              <div className="font-medium">Tags</div>
-                              <div className="text-xs text-muted-foreground break-words">{tags.filter((t) => typeof t === "string").join(", ")}</div>
-                            </div>
-                          ) : null}
-                          {entities ? (
-                            <div>
-                              <div className="font-medium">Entités</div>
-                              <div className="text-xs text-muted-foreground space-y-1">
-                                {Object.entries(entities).map(([k, v]) => {
-                                  if (!Array.isArray(v) || v.length === 0) return null;
-                                  return (
-                                    <div key={`ent_${suggestionId ?? "x"}_${k}`}>
-                                      {k}: {v.filter((x) => typeof x === "string").join(", ")}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })()
-                  ) : null}
-
-                  {isContent && s.kind === "rewrite_note" ? (
-                    (() => {
-                      const rewriteContent = typeof (payload as any)?.rewriteContent === "string" ? String((payload as any).rewriteContent) : "";
-                      if (!rewriteContent.trim()) return null;
-                      return (
-                        <div className="space-y-2">
-                          <div className="text-xs text-muted-foreground">Proposition</div>
-                          <div className="border border-border rounded-md p-2 text-sm whitespace-pre-wrap">{rewriteContent}</div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => void handleCopyToClipboard(rewriteContent)}
-                              className="px-3 py-2 rounded-md border border-input text-sm"
-                            >
-                              Copier
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleReplaceNoteContent(rewriteContent)}
-                              disabled={!noteId}
-                              className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-                            >
-                              Remplacer le contenu
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })()
-                  ) : null}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleAcceptClick}
-                    disabled={isBusy || expired}
-                    className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
-                  >
-                    {isBusy ? "Traitement…" : isBundle ? (isPro ? "Accepter le plan" : "Débloquer avec Pro") : "Accepter"}
-                  </button>
-                  {isBundle && isPro ? (
-                    <button
-                      type="button"
-                      onClick={() => setBundleCustomizeSuggestion(s)}
-                      disabled={isBusy || expired}
-                      className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-                    >
-                      Personnaliser
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => void handleReject(s)}
-                    disabled={isBusy || expired}
-                    className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-                  >
-                    Refuser
+              <div className="space-y-2">
+                <div className="text-xs text-muted-foreground">Proposition</div>
+                <div className="border border-border rounded-md p-2 text-sm whitespace-pre-wrap line-clamp-6">{rewriteContent}</div>
+                <div className="flex flex-col md:flex-row md:items-center gap-2">
+                  <button type="button" onClick={() => void handleCopyToClipboard(rewriteContent)} className="px-3 py-2 rounded-md border border-input text-sm">
+                    Copier
                   </button>
                   <button
                     type="button"
-                    onClick={() => openEdit(s)}
-                    disabled={isBusy || expired || isBundle || isContent}
+                    onClick={() => void handleReplaceNoteContent(rewriteContent)}
+                    disabled={!noteId}
                     className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
                   >
-                    Modifier
+                    Remplacer le contenu
                   </button>
                 </div>
               </div>
             );
-          })}
+          })()
+        ) : null}
+
+        <div className="flex flex-col md:flex-row md:items-center gap-2">
+          <button
+            type="button"
+            onClick={handleAcceptClick}
+            disabled={isBusy || expired}
+            className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+          >
+            {isBusy ? "Traitement…" : isBundle ? (isPro ? "Accepter le plan" : "Débloquer avec Pro") : "Accepter"}
+          </button>
+          {isBundle && isPro ? (
+            <button
+              type="button"
+              onClick={() => setBundleCustomizeSuggestion(s)}
+              disabled={isBusy || expired}
+              className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+            >
+              Personnaliser
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => void handleReject(s)}
+            disabled={isBusy || expired}
+            className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+          >
+            Refuser
+          </button>
+          <button
+            type="button"
+            onClick={() => openEdit(s)}
+            disabled={isBusy || expired || isBundle || isContent}
+            className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+          >
+            Modifier
+          </button>
         </div>
-      )}
+      </div>
+    );
+  };
+
+  const aiCards = useMemo(() => {
+    if (!aiResult) return [] as Array<{ key: string; title: string; text: string; allowReplaceNote?: boolean }>;
+    const out = (aiResult as any)?.output ?? null;
+    const refusal = typeof (aiResult as any)?.refusal === "string" ? String((aiResult as any).refusal) : "";
+    if (refusal) {
+      return [{ key: `refusal_${aiResult.id ?? "x"}`, title: "Refus", text: refusal }];
+    }
+
+    const summaryShort = typeof out?.summaryShort === "string" ? String(out.summaryShort) : "";
+    const summaryStructured = Array.isArray(out?.summaryStructured) ? (out.summaryStructured as any[]) : [];
+    const keyPoints = Array.isArray(out?.keyPoints) ? (out.keyPoints as any[]) : [];
+    const hooks = Array.isArray(out?.hooks) ? (out.hooks as any[]) : [];
+    const tags = Array.isArray(out?.tags) ? (out.tags as any[]) : [];
+    const entities = out?.entities && typeof out.entities === "object" ? (out.entities as any) : null;
+    const rewriteContent = typeof out?.rewriteContent === "string" ? String(out.rewriteContent) : "";
+
+    const cards: Array<{ key: string; title: string; text: string; allowReplaceNote?: boolean }> = [];
+
+    if (summaryShort.trim()) {
+      cards.push({ key: `summary_${aiResult.id ?? "x"}`, title: "Résumé", text: summaryShort });
+    }
+
+    if (summaryStructured.length > 0) {
+      const lines: string[] = [];
+      for (const sec of summaryStructured) {
+        const title = typeof sec?.title === "string" ? sec.title : "";
+        const bullets = Array.isArray(sec?.bullets) ? (sec.bullets as any[]) : [];
+        if (title) lines.push(title);
+        for (const b of bullets) {
+          if (typeof b === "string" && b.trim()) lines.push(`- ${b}`);
+        }
+        if ((title || bullets.length > 0) && lines.length > 0) lines.push("");
+      }
+      const txt = lines.join("\n").trim();
+      if (txt) cards.push({ key: `plan_${aiResult.id ?? "x"}`, title: "Plan d’action", text: txt });
+    }
+
+    if (keyPoints.length > 0) {
+      const txt = keyPoints.filter((x) => typeof x === "string").slice(0, 50).map((x) => `- ${x}`).join("\n");
+      if (txt.trim()) cards.push({ key: `keypoints_${aiResult.id ?? "x"}`, title: "Points clés", text: txt });
+    }
+
+    if (hooks.length > 0) {
+      const txt = hooks.filter((x) => typeof x === "string").slice(0, 50).map((x) => `- ${x}`).join("\n");
+      if (txt.trim()) cards.push({ key: `hooks_${aiResult.id ?? "x"}`, title: "Hooks", text: txt });
+    }
+
+    if (tags.length > 0 || entities) {
+      const lines: string[] = [];
+      if (tags.length > 0) {
+        lines.push(`Tags: ${tags.filter((t) => typeof t === "string").join(", ")}`);
+      }
+      if (entities) {
+        for (const [k, v] of Object.entries(entities)) {
+          if (!Array.isArray(v) || v.length === 0) continue;
+          const joined = (v as any[]).filter((x) => typeof x === "string").join(", ");
+          if (joined) lines.push(`${k}: ${joined}`);
+        }
+      }
+      const txt = lines.join("\n").trim();
+      if (txt) cards.push({ key: `struct_${aiResult.id ?? "x"}`, title: "Structuration", text: txt });
+    }
+
+    if (rewriteContent.trim()) {
+      cards.push({
+        key: `rewrite_${aiResult.id ?? "x"}`,
+        title: "Optimisation du texte",
+        text: rewriteContent,
+        allowReplaceNote: true,
+      });
+    }
+
+    return cards;
+  }, [aiResult]);
+
+  return (
+    <div className="sn-card p-4 space-y-5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-sm font-semibold">Assistant</div>
+        <button type="button" onClick={handleRefresh} className="px-3 py-2 rounded-md border border-input text-sm hover:bg-accent">
+          Rafraîchir
+        </button>
+      </div>
+
+      {actionMessage && <div className="sn-alert">{actionMessage}</div>}
+      {actionError && <div className="sn-alert sn-alert--error">{actionError}</div>}
+
+      <div className="space-y-5">
+        <AssistantSection
+          id="capture"
+          title="Capture"
+          mobileCollapsible={isMobile}
+          open={sectionOpen.capture}
+          setOpen={setOpen}
+        >
+          <div className="space-y-3">
+            <div>
+              <VoiceRecorderButton noteId={noteId} mode="append_to_note" />
+            </div>
+            <div className="flex flex-col md:flex-row md:items-center gap-2">
+              <AssistantActionButton
+                label={busyAIAnalysis ? "Améliorer…" : "Améliorer le texte"}
+                onClick={() => void handleAIAnalyzeWithModes(["rewrite"]) }
+                disabled={!noteId || busyAIAnalysis}
+                variant="secondary"
+              />
+            </div>
+          </div>
+        </AssistantSection>
+
+        <AssistantSection
+          id="analyze"
+          title="Analyser"
+          icon={<Sparkles size={16} className="opacity-70" />}
+          mobileCollapsible={isMobile}
+          open={sectionOpen.analyze}
+          setOpen={setOpen}
+        >
+          <div className="flex flex-col md:flex-row md:items-center gap-2">
+            <AssistantActionButton
+              label={busyAIAnalysis ? "Résumé…" : "Résumer"}
+              onClick={() => void handleAIAnalyzeWithModes(["summary"]) }
+              disabled={!noteId || busyAIAnalysis}
+              variant="secondary"
+            />
+            <AssistantActionButton
+              label={busyAIAnalysis ? "Extraction…" : "Extraire tâches"}
+              onClick={() => void handleAIAnalyzeWithModes(["actions"]) }
+              disabled={!noteId || busyAIAnalysis}
+              variant="secondary"
+            />
+            <AssistantActionButton
+              label={busyAIAnalysis ? "Structuration…" : "Structurer"}
+              onClick={() => void handleAIAnalyzeWithModes(["entities"]) }
+              disabled={!noteId || busyAIAnalysis}
+              variant="secondary"
+            />
+          </div>
+
+          {aiJobStatus === "queued" || aiJobStatus === "processing" ? (
+            <div className="space-y-2">
+              <AssistantSkeletonCard />
+              <AssistantSkeletonCard />
+            </div>
+          ) : null}
+
+          {aiJobStatus === "error" ? (
+            <div className="sn-alert sn-alert--error">
+              <div>Analyse IA en erreur.</div>
+              {aiModelAccessError ? (
+                <div className="text-xs opacity-90 break-words mt-1">
+                  Modèle non autorisé pour ce projet OpenAI.
+                </div>
+              ) : null}
+              {aiJobError ? <div className="text-xs opacity-90 break-words mt-1">{aiJobError}</div> : null}
+              {showAIDebug ? (
+                <div className="text-[11px] opacity-70 break-words mt-1">
+                  <div>model: {aiJobModel ?? "(inconnu)"}</div>
+                  <div>modelRequested: {aiJobModelRequested ?? "(aucun)"}</div>
+                  <div>modelFallbackUsed: {aiJobModelFallbackUsed ?? "(aucun)"}</div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {aiCards.length > 0 ? (
+            <div className="space-y-3">
+              {aiCards
+                .filter((c) => !dismissedResultKeys[c.key])
+                .map((c) => (
+                  <AssistantResultCard
+                    key={c.key}
+                    title={c.title}
+                    text={c.text}
+                    primaryLabel={"Insérer"}
+                    onPrimary={() => {
+                      if (c.allowReplaceNote) {
+                        void handleReplaceNoteContent(c.text);
+                        return;
+                      }
+                      void handleInsertIntoNote(c.text);
+                    }}
+                    secondaryLabel="Modifier"
+                    onSecondary={() => {
+                      setTextModal({ title: c.title, text: c.text, allowReplaceNote: c.allowReplaceNote });
+                      setTextModalDraft(c.text);
+                    }}
+                    onReject={() => setDismissedResultKeys((prev) => ({ ...prev, [c.key]: true }))}
+                  />
+                ))}
+            </div>
+          ) : aiJobStatus !== "queued" && aiJobStatus !== "processing" ? (
+            <div className="text-sm text-muted-foreground">Aucun résultat pour le moment.</div>
+          ) : null}
+        </AssistantSection>
+
+        <AssistantSection
+          id="transform"
+          title="Transformer"
+          mobileCollapsible={isMobile}
+          open={sectionOpen.transform}
+          setOpen={setOpen}
+        >
+          <div className="flex flex-col md:flex-row md:items-center gap-2">
+            <AssistantActionButton
+              label={busyReanalysis ? "Création…" : cooldownActive ? "Créer tâches (cooldown)" : "Créer tâches"}
+              onClick={() => void handleReanalyze()}
+              disabled={!noteId || busyReanalysis || cooldownActive}
+              variant="primary"
+            />
+            <AssistantActionButton
+              label="Créer todo"
+              onClick={() => {
+                window.location.href = "/todo/new";
+              }}
+              disabled={false}
+              variant="secondary"
+            />
+            <AssistantActionButton
+              label={busyAIAnalysis ? "Optimiser…" : "Optimiser texte"}
+              onClick={() => void handleAIAnalyzeWithModes(["rewrite"]) }
+              disabled={!noteId || busyAIAnalysis}
+              variant="secondary"
+            />
+          </div>
+
+          {jobStatus === "queued" || jobStatus === "processing" ? (
+            <div className="space-y-2">
+              <AssistantSkeletonCard />
+            </div>
+          ) : null}
+          {jobStatus === "error" ? <div className="sn-alert sn-alert--error">Réanalyse en erreur.</div> : null}
+          {doneBannerMessage && <div className="sn-alert">{doneBannerMessage}</div>}
+
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={showExpired} onChange={(e) => setShowExpired(e.target.checked)} />
+            Afficher expirées
+          </label>
+
+          {suggestionsError && (
+            (() => {
+              const suggestionsErrorLabel = (() => {
+                if (suggestionsError instanceof FirebaseError) return `${suggestionsError.code}: ${suggestionsError.message}`;
+                if (suggestionsError instanceof Error) return suggestionsError.message;
+                return "";
+              })();
+
+              return (
+                <div className="space-y-2">
+                  <div className="sn-alert sn-alert--error">
+                    Erreur lors du chargement des suggestions.
+                    {suggestionsErrorLabel ? <div className="mt-1 text-xs opacity-80">{suggestionsErrorLabel}</div> : null}
+                  </div>
+                  <button type="button" onClick={handleRefresh} className="px-3 py-2 rounded-md border border-input text-sm">
+                    Rafraîchir
+                  </button>
+                </div>
+              );
+            })()
+          )}
+
+          {showSkeleton ? (
+            <div className="space-y-2">
+              <AssistantSkeletonCard />
+              <AssistantSkeletonCard />
+            </div>
+          ) : null}
+
+          {!showSkeleton && !suggestionsError && suggestionGroups.tasks.length === 0 && suggestionGroups.bundles.length === 0 && suggestionGroups.content.length === 0 ? (
+            <div className="text-sm text-muted-foreground">Aucune suggestion.</div>
+          ) : null}
+
+          {!showSkeleton && !suggestionsError && (suggestionGroups.tasks.length > 0 || suggestionGroups.bundles.length > 0 || suggestionGroups.content.length > 0) ? (
+            <div className="space-y-3">
+              {suggestionGroups.bundles.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="text-sm font-semibold">Plans / bundles</div>
+                  <div className="space-y-3">{suggestionGroups.bundles.map(renderSuggestionCard)}</div>
+                </div>
+              ) : null}
+
+              {suggestionGroups.tasks.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="text-sm font-semibold">Tâches</div>
+                  <div className="space-y-3">{suggestionGroups.tasks.map(renderSuggestionCard)}</div>
+                </div>
+              ) : null}
+
+              {suggestionGroups.content.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="text-sm font-semibold">Contenu</div>
+                  <div className="space-y-3">{suggestionGroups.content.map(renderSuggestionCard)}</div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </AssistantSection>
+      </div>
+
+      {textModal ? (
+        <Modal title={textModal.title} onBeforeClose={() => setTextModal(null)}>
+          <div className="space-y-3">
+            <label htmlFor="assistant-text-modal" className="sr-only">
+              Texte
+            </label>
+            <textarea
+              id="assistant-text-modal"
+              aria-label="Texte"
+              value={textModalDraft}
+              onChange={(e) => setTextModalDraft(e.target.value)}
+              className="w-full min-h-[180px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+            />
+            <div className="flex flex-col md:flex-row md:items-center justify-end gap-2">
+              <button type="button" onClick={() => setTextModal(null)} className="px-3 py-2 rounded-md border border-input text-sm">
+                Fermer
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleCopyToClipboard(textModalDraft)}
+                className="px-3 py-2 rounded-md border border-input text-sm"
+              >
+                Copier
+              </button>
+              {textModal.allowReplaceNote ? (
+                <button
+                  type="button"
+                  onClick={() => void handleReplaceNoteContent(textModalDraft)}
+                  disabled={!noteId}
+                  className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+                >
+                  Remplacer la note
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </Modal>
+      ) : null}
 
       {editing && (
         <Modal title="Modifier la suggestion" onBeforeClose={() => { closeEdit(); }}>
