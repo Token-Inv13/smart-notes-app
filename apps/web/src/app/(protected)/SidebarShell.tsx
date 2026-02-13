@@ -9,17 +9,89 @@ import CreateButton from "./_components/CreateButton";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useAuth } from "@/hooks/useAuth";
 import { invalidateAuthSession } from "@/lib/authInvalidation";
+import { useAssistantSettings } from "@/hooks/useAssistantSettings";
+import { useUserAssistantSuggestions } from "@/hooks/useUserAssistantSuggestions";
 import type { WorkspaceDoc } from "@/types/firestore";
 
 const STORAGE_KEY = "sidebarCollapsed";
+const ASSISTANT_NOTIF_STORAGE_KEY = "assistantProactiveNotifications";
+function isActionableKind(kind: string): kind is "create_task" | "create_reminder" | "create_task_bundle" {
+  return kind === "create_task" || kind === "create_reminder" || kind === "create_task_bundle";
+}
+
+type ProactiveSuggestionBanner = {
+  suggestionId: string;
+  title: string;
+  explanation: string;
+};
+
+function localDayKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function toMinutes(hhmm: string, fallback: number): number {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
+  if (!m) return fallback;
+  const h = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(mm)) return fallback;
+  if (h < 0 || h > 23 || mm < 0 || mm > 59) return fallback;
+  return h * 60 + mm;
+}
+
+function isWithinQuietHours(now: Date, startRaw?: string, endRaw?: string): boolean {
+  const start = toMinutes(typeof startRaw === "string" ? startRaw : "22:00", 22 * 60);
+  const end = toMinutes(typeof endRaw === "string" ? endRaw : "08:00", 8 * 60);
+  const current = now.getHours() * 60 + now.getMinutes();
+  if (start === end) return false;
+  if (start < end) {
+    return current >= start && current < end;
+  }
+  return current >= start || current < end;
+}
+
+function reserveDailyNotificationBudget(suggestionId: string, maxPerDay: number): boolean {
+  const today = localDayKey(new Date());
+  try {
+    const raw = window.localStorage.getItem(ASSISTANT_NOTIF_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as { dayKey?: unknown; shownIds?: unknown; count?: unknown }) : null;
+
+    const dayKey = parsed && typeof parsed.dayKey === "string" ? parsed.dayKey : today;
+    const shownIds = parsed && Array.isArray(parsed.shownIds) ? parsed.shownIds.filter((v): v is string => typeof v === "string") : [];
+    const countRaw = parsed && typeof parsed.count === "number" && Number.isFinite(parsed.count) ? parsed.count : shownIds.length;
+
+    const resetForToday = dayKey !== today;
+    const baseIds = resetForToday ? [] : shownIds;
+    const baseCount = resetForToday ? 0 : Math.max(0, Math.trunc(countRaw));
+
+    if (baseIds.includes(suggestionId)) return false;
+    if (baseCount >= maxPerDay) return false;
+
+    const next = {
+      dayKey: today,
+      shownIds: [...baseIds, suggestionId],
+      count: baseCount + 1,
+    };
+    window.localStorage.setItem(ASSISTANT_NOTIF_STORAGE_KEY, JSON.stringify(next));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export default function SidebarShell({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const workspaceId = searchParams.get("workspaceId");
   const { user, loading: authLoading } = useAuth();
+  const { data: assistantSettings } = useAssistantSettings();
+  const { data: assistantSuggestions } = useUserAssistantSuggestions({ limit: 20 });
   const [authInvalidating, setAuthInvalidating] = useState(false);
   const { data: workspaces, loading: workspacesLoading, error: workspacesError } = useUserWorkspaces();
+  const [proactiveBanner, setProactiveBanner] = useState<ProactiveSuggestionBanner | null>(null);
 
   useEffect(() => {
     if (authLoading) return;
@@ -121,6 +193,71 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   const closeMobile = () => setMobileOpen(false);
 
   const sidebarWidthClass = collapsed ? "w-16" : "w-64";
+
+  const topActionableSuggestion = useMemo(() => {
+    const arr = (assistantSuggestions ?? [])
+      .filter((s) => s.status === "proposed" && isActionableKind(s.kind))
+      .slice();
+    arr.sort((a, b) => {
+      const ra = typeof a.rankScore === "number" && Number.isFinite(a.rankScore) ? a.rankScore : Number.NEGATIVE_INFINITY;
+      const rb = typeof b.rankScore === "number" && Number.isFinite(b.rankScore) ? b.rankScore : Number.NEGATIVE_INFINITY;
+      if (rb !== ra) return rb - ra;
+      const ta = typeof (a.updatedAt as { toMillis?: unknown })?.toMillis === "function" ? (a.updatedAt as { toMillis: () => number }).toMillis() : 0;
+      const tb = typeof (b.updatedAt as { toMillis?: unknown })?.toMillis === "function" ? (b.updatedAt as { toMillis: () => number }).toMillis() : 0;
+      return tb - ta;
+    });
+    return arr[0] ?? null;
+  }, [assistantSuggestions]);
+
+  useEffect(() => {
+    if (assistantSettings?.enabled !== true) {
+      setProactiveBanner(null);
+      return;
+    }
+    if (assistantSettings?.proactivityMode !== "proactive") {
+      setProactiveBanner(null);
+      return;
+    }
+
+    const now = new Date();
+    const quietStart = typeof assistantSettings?.quietHours?.start === "string" ? assistantSettings.quietHours.start : "22:00";
+    const quietEnd = typeof assistantSettings?.quietHours?.end === "string" ? assistantSettings.quietHours.end : "08:00";
+    if (isWithinQuietHours(now, quietStart, quietEnd)) {
+      setProactiveBanner(null);
+      return;
+    }
+
+    const candidate = topActionableSuggestion;
+    if (!candidate) {
+      setProactiveBanner(null);
+      return;
+    }
+
+    const suggestionId = candidate.id ?? candidate.dedupeKey;
+    if (!suggestionId) {
+      setProactiveBanner(null);
+      return;
+    }
+
+    const maxRaw = assistantSettings?.notificationBudget?.maxPerDay;
+    const maxPerDay = typeof maxRaw === "number" && Number.isFinite(maxRaw) ? Math.max(0, Math.trunc(maxRaw)) : 3;
+    if (maxPerDay <= 0) {
+      setProactiveBanner(null);
+      return;
+    }
+
+    if (!reserveDailyNotificationBudget(suggestionId, maxPerDay)) {
+      setProactiveBanner(null);
+      return;
+    }
+
+    const payload = candidate.payload && typeof candidate.payload === "object" ? (candidate.payload as { title?: unknown; explanation?: unknown }) : null;
+    setProactiveBanner({
+      suggestionId,
+      title: typeof payload?.title === "string" ? payload.title : "Suggestion",
+      explanation: typeof payload?.explanation === "string" ? payload.explanation : "Tu as une nouvelle action prioritaire.",
+    });
+  }, [assistantSettings, topActionableSuggestion]);
 
   if (authLoading || authInvalidating || !user) {
     return (
@@ -242,6 +379,29 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
 
         <main className="flex-1 p-4 min-w-0">
           <PwaInstallCta />
+          {proactiveBanner ? (
+            <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-xs font-medium text-primary">Assistant proactif</div>
+                  <div className="text-sm font-semibold truncate">{proactiveBanner.title}</div>
+                  <div className="text-xs text-muted-foreground line-clamp-2">{proactiveBanner.explanation}</div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <a href="/assistant/briefing" className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-xs font-medium">
+                    Traiter
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setProactiveBanner(null)}
+                    className="px-3 py-2 rounded-md border border-input text-xs"
+                  >
+                    Masquer
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
           {currentWorkspaceName && (
             <div className="mb-4 text-sm text-muted-foreground truncate">📁 {currentWorkspaceName}</div>
           )}
