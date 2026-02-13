@@ -4818,7 +4818,6 @@ function parseAssistantVoiceIntent(transcript: string, now: Date): AssistantVoic
   const raw = transcript.trim();
   const lower = raw.toLowerCase();
   const cleaned = stripVoiceCommandPrefix(raw);
-  const hasExplicitHour = /\b([01]?\d|2[0-3])(?:[:h]([0-5]\d)?)\b/.test(lower);
 
   const meetingLike =
     lower.includes('réunion') ||
@@ -4830,14 +4829,15 @@ function parseAssistantVoiceIntent(transcript: string, now: Date): AssistantVoic
     lower.includes('calendrier');
 
   if (meetingLike) {
-    const missingFields: AssistantVoiceMissingField[] = hasExplicitHour ? [] : ['time'];
+    const inferred = inferReminderTime(raw, now);
+    const missingFields = inferred.missingFields;
     return {
       kind: 'schedule_meeting',
       title: cleaned || 'Nouvelle réunion',
       confidence: 0.74,
       requiresConfirmation: true,
-      requiresConfirmationReason: 'La planification calendrier externe nécessite une confirmation.',
-      remindAt: null,
+      requiresConfirmationReason: 'Confirme pour créer la réunion.',
+      remindAt: inferred.remindAt,
       missingFields,
       clarificationQuestion: missingFields.length > 0 ? 'À quelle heure veux-tu planifier la réunion ?' : undefined,
     };
@@ -4918,6 +4918,8 @@ export const assistantExecuteIntent = functions.https.onCall(async (data, contex
     createdCoreObjects: [] as Array<{ type: 'task' | 'taskReminder' | 'calendarEvent'; id: string }>,
     message: needsClarification
       ? (parsed.clarificationQuestion ?? 'Il me manque une information.')
+      : !execute && parsed.kind === 'schedule_meeting'
+        ? (parsed.requiresConfirmationReason ?? 'Confirme pour créer la réunion.')
       : execute
         ? 'Action non exécutée.'
         : 'Intention analysée. Prête à exécuter.',
@@ -4932,16 +4934,6 @@ export const assistantExecuteIntent = functions.https.onCall(async (data, contex
       ...responseBase,
       executed: false,
       message: parsed.clarificationQuestion ?? 'Il me manque une information pour exécuter cette action.',
-    };
-  }
-
-  if (parsed.requiresConfirmation || parsed.kind === 'schedule_meeting') {
-    return {
-      ...responseBase,
-      executed: false,
-      message:
-        parsed.requiresConfirmationReason ??
-        'Cette action nécessite confirmation manuelle.',
     };
   }
 
@@ -5036,6 +5028,34 @@ export const assistantExecuteIntent = functions.https.onCall(async (data, contex
         { type: 'taskReminder' as const, id: reminderRef.id },
       ],
       message: 'Rappel créé.',
+    };
+  }
+
+  if (parsed.kind === 'schedule_meeting') {
+    const taskRef = db.collection('tasks').doc();
+    await taskRef.create({
+      userId,
+      title: `Réunion: ${parsed.title}`,
+      status: 'todo',
+      workspaceId: null,
+      startDate: parsed.remindAt ?? null,
+      dueDate: parsed.remindAt ?? null,
+      priority: null,
+      favorite: false,
+      archived: false,
+      source: {
+        assistant: true,
+        channel: 'voice_intent',
+      },
+      createdAt,
+      updatedAt,
+    });
+
+    return {
+      ...responseBase,
+      executed: true,
+      createdCoreObjects: [{ type: 'task' as const, id: taskRef.id }],
+      message: 'Réunion préparée. Tu peux la retrouver dans tes tâches.',
     };
   }
 

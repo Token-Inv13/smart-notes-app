@@ -3716,7 +3716,6 @@ function parseAssistantVoiceIntent(transcript, now) {
     const raw = transcript.trim();
     const lower = raw.toLowerCase();
     const cleaned = stripVoiceCommandPrefix(raw);
-    const hasExplicitHour = /\b([01]?\d|2[0-3])(?:[:h]([0-5]\d)?)\b/.test(lower);
     const meetingLike = lower.includes('réunion') ||
         lower.includes('reunion') ||
         lower.includes('meeting') ||
@@ -3725,14 +3724,15 @@ function parseAssistantVoiceIntent(transcript, now) {
         lower.includes('agenda') ||
         lower.includes('calendrier');
     if (meetingLike) {
-        const missingFields = hasExplicitHour ? [] : ['time'];
+        const inferred = inferReminderTime(raw, now);
+        const missingFields = inferred.missingFields;
         return {
             kind: 'schedule_meeting',
             title: cleaned || 'Nouvelle réunion',
             confidence: 0.74,
             requiresConfirmation: true,
-            requiresConfirmationReason: 'La planification calendrier externe nécessite une confirmation.',
-            remindAt: null,
+            requiresConfirmationReason: 'Confirme pour créer la réunion.',
+            remindAt: inferred.remindAt,
             missingFields,
             clarificationQuestion: missingFields.length > 0 ? 'À quelle heure veux-tu planifier la réunion ?' : undefined,
         };
@@ -3764,7 +3764,7 @@ function parseAssistantVoiceIntent(transcript, now) {
     };
 }
 exports.assistantExecuteIntent = functions.https.onCall(async (data, context) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     const userId = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid;
     if (!userId) {
         throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
@@ -3804,18 +3804,17 @@ exports.assistantExecuteIntent = functions.https.onCall(async (data, context) =>
         createdCoreObjects: [],
         message: needsClarification
             ? ((_d = parsed.clarificationQuestion) !== null && _d !== void 0 ? _d : 'Il me manque une information.')
-            : execute
-                ? 'Action non exécutée.'
-                : 'Intention analysée. Prête à exécuter.',
+            : !execute && parsed.kind === 'schedule_meeting'
+                ? ((_e = parsed.requiresConfirmationReason) !== null && _e !== void 0 ? _e : 'Confirme pour créer la réunion.')
+                : execute
+                    ? 'Action non exécutée.'
+                    : 'Intention analysée. Prête à exécuter.',
     };
     if (!execute) {
         return responseBase;
     }
     if (needsClarification) {
-        return Object.assign(Object.assign({}, responseBase), { executed: false, message: (_e = parsed.clarificationQuestion) !== null && _e !== void 0 ? _e : 'Il me manque une information pour exécuter cette action.' });
-    }
-    if (parsed.requiresConfirmation || parsed.kind === 'schedule_meeting') {
-        return Object.assign(Object.assign({}, responseBase), { executed: false, message: (_f = parsed.requiresConfirmationReason) !== null && _f !== void 0 ? _f : 'Cette action nécessite confirmation manuelle.' });
+        return Object.assign(Object.assign({}, responseBase), { executed: false, message: (_f = parsed.clarificationQuestion) !== null && _f !== void 0 ? _f : 'Il me manque une information pour exécuter cette action.' });
     }
     const userRef = db.collection('users').doc(userId);
     const userSnap = await userRef.get();
@@ -3888,6 +3887,27 @@ exports.assistantExecuteIntent = functions.https.onCall(async (data, context) =>
                 { type: 'task', id: taskRef.id },
                 { type: 'taskReminder', id: reminderRef.id },
             ], message: 'Rappel créé.' });
+    }
+    if (parsed.kind === 'schedule_meeting') {
+        const taskRef = db.collection('tasks').doc();
+        await taskRef.create({
+            userId,
+            title: `Réunion: ${parsed.title}`,
+            status: 'todo',
+            workspaceId: null,
+            startDate: (_j = parsed.remindAt) !== null && _j !== void 0 ? _j : null,
+            dueDate: (_k = parsed.remindAt) !== null && _k !== void 0 ? _k : null,
+            priority: null,
+            favorite: false,
+            archived: false,
+            source: {
+                assistant: true,
+                channel: 'voice_intent',
+            },
+            createdAt,
+            updatedAt,
+        });
+        return Object.assign(Object.assign({}, responseBase), { executed: true, createdCoreObjects: [{ type: 'task', id: taskRef.id }], message: 'Réunion préparée. Tu peux la retrouver dans tes tâches.' });
     }
     return responseBase;
 });

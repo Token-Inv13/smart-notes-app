@@ -449,6 +449,10 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
   const displayedHint = parsedHint ?? localPreviewHint;
   const clarificationPending = flowStep === "clarify" || result?.needsClarification === true;
   const isBusyStep = flowStep === "listening" || flowStep === "uploading" || flowStep === "transcribing" || flowStep === "executing";
+  const confirmationHint =
+    flowStep === "review" && result?.intent?.requiresConfirmation
+      ? "Dernière étape: appuie sur Oui pour confirmer la création."
+      : null;
 
   const stepHint = useMemo(() => {
     if (flowStep === "listening") return "Je t’écoute… parle naturellement.";
@@ -659,9 +663,7 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
 
             {displayedHint ? <div className="text-sm">{displayedHint}</div> : null}
             {result?.message ? <div className="text-xs text-muted-foreground">{result.message}</div> : null}
-            {result?.intent?.requiresConfirmation ? (
-              <div className="text-xs text-amber-600">Action sensible: confirmation manuelle requise.</div>
-            ) : null}
+            {confirmationHint ? <div className="text-xs text-amber-600">{confirmationHint}</div> : null}
             {error ? <div className="text-xs text-destructive">{error}</div> : null}
           </div>
         </div>
