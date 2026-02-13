@@ -42,6 +42,17 @@ type AssistantObjectDoc = {
   updatedAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
 };
 
+type AssistantSuggestionFeedbackDoc = {
+  suggestionId: string;
+  objectId: string;
+  kind: AssistantSuggestionKind;
+  useful: boolean;
+  sourceType: 'note' | 'todo' | 'task';
+  rankScore?: number;
+  createdAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
+  updatedAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
+};
+
 type AssistantVoiceJobStatus = 'created' | 'transcribing' | 'done' | 'error';
 
 type AssistantVoiceJobMode = 'append_to_note' | 'standalone';
@@ -3980,6 +3991,56 @@ export const assistantRejectSuggestion = functions.https.onCall(async (data, con
   });
 
   return { decisionId };
+});
+
+export const assistantRateSuggestionFeedback = functions.https.onCall(async (data, context) => {
+  const userId = context.auth?.uid;
+  if (!userId) {
+    throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+  }
+
+  const suggestionId = typeof (data as any)?.suggestionId === 'string' ? String((data as any).suggestionId) : null;
+  if (!suggestionId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Missing suggestionId.');
+  }
+
+  const usefulRaw = (data as any)?.useful;
+  if (typeof usefulRaw !== 'boolean') {
+    throw new functions.https.HttpsError('invalid-argument', 'Missing useful boolean.');
+  }
+
+  const db = admin.firestore();
+  const userRef = db.collection('users').doc(userId);
+  const suggestionRef = userRef.collection('assistantSuggestions').doc(suggestionId);
+  const feedbackRef = userRef.collection('assistantFeedback').doc(suggestionId);
+
+  await db.runTransaction(async (tx) => {
+    const suggestionSnap = await tx.get(suggestionRef);
+    if (!suggestionSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Suggestion not found.');
+    }
+
+    const suggestion = suggestionSnap.data() as AssistantSuggestionDoc;
+    const sourceTypeRaw = suggestion?.source?.type;
+    const sourceType: 'note' | 'todo' | 'task' =
+      sourceTypeRaw === 'todo' || sourceTypeRaw === 'task' || sourceTypeRaw === 'note' ? sourceTypeRaw : 'note';
+
+    const nowServer = admin.firestore.FieldValue.serverTimestamp();
+    const doc: AssistantSuggestionFeedbackDoc = {
+      suggestionId,
+      objectId: suggestion.objectId,
+      kind: suggestion.kind,
+      useful: usefulRaw,
+      sourceType,
+      ...(typeof suggestion.rankScore === 'number' && Number.isFinite(suggestion.rankScore) ? { rankScore: suggestion.rankScore } : {}),
+      createdAt: nowServer,
+      updatedAt: nowServer,
+    };
+
+    tx.set(feedbackRef, doc, { merge: true });
+  });
+
+  return { suggestionId, useful: usefulRaw };
 });
 
 export const assistantRequestReanalysis = functions.https.onCall(async (data, context) => {

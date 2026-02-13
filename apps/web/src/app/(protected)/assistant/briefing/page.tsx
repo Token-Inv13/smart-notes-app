@@ -96,6 +96,8 @@ export default function AssistantBriefingPage() {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busySuggestionId, setBusySuggestionId] = useState<string | null>(null);
+  const [feedbackBusySuggestionId, setFeedbackBusySuggestionId] = useState<string | null>(null);
+  const [feedbackBySuggestionId, setFeedbackBySuggestionId] = useState<Record<string, "useful" | "not_useful">>({});
   const [expandedBundleId, setExpandedBundleId] = useState<string | null>(null);
 
   const enabled = assistantSettings?.enabled === true;
@@ -166,6 +168,42 @@ export default function AssistantBriefingPage() {
       setMessage("Impossible d’activer l’assistant.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleFeedback = async (s: AssistantSuggestionDoc, useful: boolean) => {
+    const suggestionId = s.id ?? s.dedupeKey;
+    if (!suggestionId) return;
+    if (feedbackBusySuggestionId) return;
+
+    setFeedbackBusySuggestionId(suggestionId);
+    setActionError(null);
+
+    try {
+      const fn = httpsCallable<{ suggestionId: string; useful: boolean }, { suggestionId: string; useful: boolean }>(
+        fbFunctions,
+        "assistantRateSuggestionFeedback",
+      );
+      await fn({ suggestionId, useful });
+      setFeedbackBySuggestionId((prev) => ({
+        ...prev,
+        [suggestionId]: useful ? "useful" : "not_useful",
+      }));
+      setActionMessage(useful ? "Merci, noté comme utile." : "Merci, noté comme peu utile.");
+    } catch (e) {
+      if (isCallableUnauthenticated(e)) {
+        void invalidateAuthSession();
+        return;
+      }
+      if (e instanceof FirebaseError) {
+        setActionError(`${e.code}: ${e.message}`);
+      } else if (e instanceof Error) {
+        setActionError(e.message);
+      } else {
+        setActionError("Impossible d’enregistrer le feedback.");
+      }
+    } finally {
+      setFeedbackBusySuggestionId(null);
     }
   };
 
@@ -326,6 +364,8 @@ export default function AssistantBriefingPage() {
           {top3.map((s) => {
             const suggestionId = s.id ?? s.dedupeKey;
             const isBusy = !!suggestionId && busySuggestionId === suggestionId;
+            const isFeedbackBusy = !!suggestionId && feedbackBusySuggestionId === suggestionId;
+            const feedbackValue = suggestionId ? feedbackBySuggestionId[suggestionId] : undefined;
 
             const payload = s.payload && typeof s.payload === "object" ? (s.payload as SuggestionPayload) : null;
             const title = typeof payload?.title === "string" ? String(payload.title) : "Suggestion";
@@ -391,6 +431,26 @@ export default function AssistantBriefingPage() {
                     className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
                   >
                     Refuser
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleFeedback(s, true)}
+                    disabled={isFeedbackBusy}
+                    className={`px-3 py-2 rounded-md border text-sm disabled:opacity-50 ${
+                      feedbackValue === "useful" ? "border-primary text-primary" : "border-input"
+                    }`}
+                  >
+                    {isFeedbackBusy ? "..." : "Utile"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleFeedback(s, false)}
+                    disabled={isFeedbackBusy}
+                    className={`px-3 py-2 rounded-md border text-sm disabled:opacity-50 ${
+                      feedbackValue === "not_useful" ? "border-primary text-primary" : "border-input"
+                    }`}
+                  >
+                    {isFeedbackBusy ? "..." : "Pas utile"}
                   </button>
                 </div>
               </div>

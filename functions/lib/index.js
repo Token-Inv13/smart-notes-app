@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.assistantRunAIJobQueue = exports.assistantPurgeExpiredVoiceData = exports.assistantRequestVoiceTranscription = exports.assistantCreateVoiceJob = exports.assistantRequestAIAnalysis = exports.assistantRequestReanalysis = exports.assistantRejectSuggestion = exports.assistantApplySuggestion = exports.assistantRunJobQueue = exports.assistantEnqueueTodoJob = exports.assistantEnqueueNoteJob = exports.testSendReminderEmail = exports.cleanupOldReminders = exports.assistantPurgeExpiredSuggestions = exports.assistantExpireSuggestions = exports.checkAndSendReminders = void 0;
+exports.assistantRunAIJobQueue = exports.assistantPurgeExpiredVoiceData = exports.assistantRequestVoiceTranscription = exports.assistantCreateVoiceJob = exports.assistantRequestAIAnalysis = exports.assistantRequestReanalysis = exports.assistantRateSuggestionFeedback = exports.assistantRejectSuggestion = exports.assistantApplySuggestion = exports.assistantRunJobQueue = exports.assistantEnqueueTodoJob = exports.assistantEnqueueNoteJob = exports.testSendReminderEmail = exports.cleanupOldReminders = exports.assistantPurgeExpiredSuggestions = exports.assistantExpireSuggestions = exports.checkAndSendReminders = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
@@ -3047,6 +3047,39 @@ exports.assistantRejectSuggestion = functions.https.onCall(async (data, context)
         });
     });
     return { decisionId };
+});
+exports.assistantRateSuggestionFeedback = functions.https.onCall(async (data, context) => {
+    var _a;
+    const userId = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid;
+    if (!userId) {
+        throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+    }
+    const suggestionId = typeof (data === null || data === void 0 ? void 0 : data.suggestionId) === 'string' ? String(data.suggestionId) : null;
+    if (!suggestionId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing suggestionId.');
+    }
+    const usefulRaw = data === null || data === void 0 ? void 0 : data.useful;
+    if (typeof usefulRaw !== 'boolean') {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing useful boolean.');
+    }
+    const db = admin.firestore();
+    const userRef = db.collection('users').doc(userId);
+    const suggestionRef = userRef.collection('assistantSuggestions').doc(suggestionId);
+    const feedbackRef = userRef.collection('assistantFeedback').doc(suggestionId);
+    await db.runTransaction(async (tx) => {
+        var _a;
+        const suggestionSnap = await tx.get(suggestionRef);
+        if (!suggestionSnap.exists) {
+            throw new functions.https.HttpsError('not-found', 'Suggestion not found.');
+        }
+        const suggestion = suggestionSnap.data();
+        const sourceTypeRaw = (_a = suggestion === null || suggestion === void 0 ? void 0 : suggestion.source) === null || _a === void 0 ? void 0 : _a.type;
+        const sourceType = sourceTypeRaw === 'todo' || sourceTypeRaw === 'task' || sourceTypeRaw === 'note' ? sourceTypeRaw : 'note';
+        const nowServer = admin.firestore.FieldValue.serverTimestamp();
+        const doc = Object.assign(Object.assign({ suggestionId, objectId: suggestion.objectId, kind: suggestion.kind, useful: usefulRaw, sourceType }, (typeof suggestion.rankScore === 'number' && Number.isFinite(suggestion.rankScore) ? { rankScore: suggestion.rankScore } : {})), { createdAt: nowServer, updatedAt: nowServer });
+        tx.set(feedbackRef, doc, { merge: true });
+    });
+    return { suggestionId, useful: usefulRaw };
 });
 exports.assistantRequestReanalysis = functions.https.onCall(async (data, context) => {
     var _a;
