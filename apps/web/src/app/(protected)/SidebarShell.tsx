@@ -6,6 +6,7 @@ import { PanelLeft, Menu, X } from "lucide-react";
 import SidebarWorkspaces from "./SidebarWorkspaces";
 import PwaInstallCta from "./_components/PwaInstallCta";
 import CreateButton from "./_components/CreateButton";
+import VoiceAgentButton from "./_components/assistant/VoiceAgentButton";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useAuth } from "@/hooks/useAuth";
 import { invalidateAuthSession } from "@/lib/authInvalidation";
@@ -406,6 +407,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
             <div className="mb-4 text-sm text-muted-foreground truncate">📁 {currentWorkspaceName}</div>
           )}
           {children}
+          <VoiceAgentButton mobileHidden={mobileOpen} />
           <CreateButton mobileHidden={mobileOpen} />
         </main>
       </div>

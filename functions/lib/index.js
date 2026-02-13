@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.assistantRunAIJobQueue = exports.assistantPurgeExpiredVoiceData = exports.assistantRequestVoiceTranscription = exports.assistantCreateVoiceJob = exports.assistantRequestAIAnalysis = exports.assistantRequestReanalysis = exports.assistantRateSuggestionFeedback = exports.assistantRejectSuggestion = exports.assistantApplySuggestion = exports.assistantRunJobQueue = exports.assistantEnqueueTodoJob = exports.assistantEnqueueNoteJob = exports.testSendReminderEmail = exports.cleanupOldReminders = exports.assistantPurgeExpiredSuggestions = exports.assistantExpireSuggestions = exports.checkAndSendReminders = void 0;
+exports.assistantRunAIJobQueue = exports.assistantPurgeExpiredVoiceData = exports.assistantExecuteIntent = exports.assistantRequestVoiceTranscription = exports.assistantCreateVoiceJob = exports.assistantRequestAIAnalysis = exports.assistantRequestReanalysis = exports.assistantRateSuggestionFeedback = exports.assistantRejectSuggestion = exports.assistantApplySuggestion = exports.assistantRunJobQueue = exports.assistantEnqueueTodoJob = exports.assistantEnqueueNoteJob = exports.testSendReminderEmail = exports.cleanupOldReminders = exports.assistantPurgeExpiredSuggestions = exports.assistantExpireSuggestions = exports.checkAndSendReminders = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
@@ -3641,6 +3641,204 @@ exports.assistantRequestVoiceTranscription = functions
         }, { merge: true });
         throw new functions.https.HttpsError('internal', e instanceof Error ? e.message : 'Voice transcription error');
     }
+});
+function stripVoiceCommandPrefix(input) {
+    return input
+        .trim()
+        .replace(/^(stp\s+|s'il te plait\s+|please\s+)/i, '')
+        .replace(/^(ajoute|ajouter|crée|créer|cree|creer|planifie|program(me|mer)|rappelle\s*-?\s*moi\s+de|pense\s+à|note)\s+/i, '')
+        .trim();
+}
+function inferReminderTime(text, now) {
+    const lower = text.toLowerCase();
+    const hhmm = /\b([01]?\d|2[0-3])[:h]([0-5]\d)\b/.exec(lower);
+    if (hhmm) {
+        const h = Number(hhmm[1]);
+        const m = Number(hhmm[2]);
+        const d = new Date(now);
+        d.setSeconds(0, 0);
+        d.setHours(h, m, 0, 0);
+        if (d.getTime() <= now.getTime()) {
+            d.setDate(d.getDate() + 1);
+        }
+        return admin.firestore.Timestamp.fromDate(d);
+    }
+    if (lower.includes('demain')) {
+        const d = new Date(now);
+        d.setDate(d.getDate() + 1);
+        d.setHours(9, 0, 0, 0);
+        return admin.firestore.Timestamp.fromDate(d);
+    }
+    if (lower.includes('ce soir')) {
+        const d = new Date(now);
+        d.setHours(18, 0, 0, 0);
+        if (d.getTime() <= now.getTime()) {
+            d.setDate(d.getDate() + 1);
+        }
+        return admin.firestore.Timestamp.fromDate(d);
+    }
+    const fallback = new Date(now);
+    fallback.setMinutes(fallback.getMinutes() + 60, 0, 0);
+    return admin.firestore.Timestamp.fromDate(fallback);
+}
+function parseAssistantVoiceIntent(transcript, now) {
+    const raw = transcript.trim();
+    const lower = raw.toLowerCase();
+    const cleaned = stripVoiceCommandPrefix(raw);
+    const meetingLike = lower.includes('réunion') ||
+        lower.includes('reunion') ||
+        lower.includes('meeting') ||
+        lower.includes('rendez-vous') ||
+        lower.includes('rdv') ||
+        lower.includes('agenda') ||
+        lower.includes('calendrier');
+    if (meetingLike) {
+        return {
+            kind: 'schedule_meeting',
+            title: cleaned || 'Nouvelle réunion',
+            confidence: 0.74,
+            requiresConfirmation: true,
+            requiresConfirmationReason: 'La planification calendrier externe nécessite une confirmation.',
+            remindAt: null,
+        };
+    }
+    const reminderLike = lower.includes('rappel') ||
+        lower.includes('rappelle') ||
+        lower.includes('souviens') ||
+        lower.includes("n'oublie") ||
+        lower.includes('n oublie');
+    if (reminderLike) {
+        return {
+            kind: 'create_reminder',
+            title: cleaned || 'Rappel',
+            confidence: 0.81,
+            requiresConfirmation: false,
+            remindAt: inferReminderTime(raw, now),
+        };
+    }
+    return {
+        kind: 'create_task',
+        title: cleaned || raw || 'Nouvelle tâche',
+        confidence: 0.86,
+        requiresConfirmation: false,
+        remindAt: null,
+    };
+}
+exports.assistantExecuteIntent = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e;
+    const userId = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid;
+    if (!userId) {
+        throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+    }
+    const transcriptRaw = typeof (data === null || data === void 0 ? void 0 : data.transcript) === 'string' ? String(data.transcript) : '';
+    const transcript = transcriptRaw.trim();
+    if (!transcript) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing transcript.');
+    }
+    if (transcript.length > 4000) {
+        throw new functions.https.HttpsError('invalid-argument', 'Transcript too long.');
+    }
+    const execute = (data === null || data === void 0 ? void 0 : data.execute) === true;
+    const db = admin.firestore();
+    const enabled = await isAssistantEnabledForUser(db, userId);
+    if (!enabled) {
+        throw new functions.https.HttpsError('failed-precondition', 'Assistant disabled.');
+    }
+    const now = new Date();
+    const parsed = parseAssistantVoiceIntent(transcript, now);
+    const remindAtIso = parsed.remindAt ? parsed.remindAt.toDate().toISOString() : null;
+    const responseBase = {
+        intent: {
+            kind: parsed.kind,
+            title: parsed.title,
+            confidence: parsed.confidence,
+            requiresConfirmation: parsed.requiresConfirmation,
+            requiresConfirmationReason: (_b = parsed.requiresConfirmationReason) !== null && _b !== void 0 ? _b : null,
+            remindAtIso,
+        },
+        executed: false,
+        createdCoreObjects: [],
+        message: execute ? 'Action non exécutée.' : 'Intention analysée. Prête à exécuter.',
+    };
+    if (!execute) {
+        return responseBase;
+    }
+    if (parsed.requiresConfirmation || parsed.kind === 'schedule_meeting') {
+        return Object.assign(Object.assign({}, responseBase), { executed: false, message: (_c = parsed.requiresConfirmationReason) !== null && _c !== void 0 ? _c : 'Cette action nécessite confirmation manuelle.' });
+    }
+    const userRef = db.collection('users').doc(userId);
+    const userSnap = await userRef.get();
+    const userPlan = userSnap.exists && typeof ((_d = userSnap.data()) === null || _d === void 0 ? void 0 : _d.plan) === 'string' ? String(userSnap.data().plan) : 'free';
+    const isPro = userPlan === 'pro';
+    const createdAt = admin.firestore.FieldValue.serverTimestamp();
+    const updatedAt = admin.firestore.FieldValue.serverTimestamp();
+    if (parsed.kind === 'create_task') {
+        const taskRef = db.collection('tasks').doc();
+        await taskRef.create({
+            userId,
+            title: parsed.title,
+            status: 'todo',
+            workspaceId: null,
+            startDate: null,
+            dueDate: null,
+            priority: null,
+            favorite: false,
+            archived: false,
+            source: {
+                assistant: true,
+                channel: 'voice_intent',
+            },
+            createdAt,
+            updatedAt,
+        });
+        return Object.assign(Object.assign({}, responseBase), { executed: true, createdCoreObjects: [{ type: 'task', id: taskRef.id }], message: 'Tâche créée.' });
+    }
+    if (parsed.kind === 'create_reminder') {
+        if (!isPro) {
+            return Object.assign(Object.assign({}, responseBase), { executed: false, message: 'Le rappel automatique nécessite le plan Pro.' });
+        }
+        const remindAt = (_e = parsed.remindAt) !== null && _e !== void 0 ? _e : admin.firestore.Timestamp.fromDate(new Date(Date.now() + 60 * 60 * 1000));
+        const remindAtIsoEffective = remindAt.toDate().toISOString();
+        const taskRef = db.collection('tasks').doc();
+        const reminderRef = db.collection('taskReminders').doc();
+        const batch = db.batch();
+        batch.create(taskRef, {
+            userId,
+            title: parsed.title,
+            status: 'todo',
+            workspaceId: null,
+            startDate: null,
+            dueDate: remindAt,
+            priority: null,
+            favorite: false,
+            archived: false,
+            source: {
+                assistant: true,
+                channel: 'voice_intent',
+            },
+            createdAt,
+            updatedAt,
+        });
+        batch.create(reminderRef, {
+            userId,
+            taskId: taskRef.id,
+            dueDate: remindAtIsoEffective,
+            reminderTime: remindAtIsoEffective,
+            sent: false,
+            createdAt,
+            updatedAt,
+            source: {
+                assistant: true,
+                channel: 'voice_intent',
+            },
+        });
+        await batch.commit();
+        return Object.assign(Object.assign({}, responseBase), { executed: true, createdCoreObjects: [
+                { type: 'task', id: taskRef.id },
+                { type: 'taskReminder', id: reminderRef.id },
+            ], message: 'Rappel créé.' });
+    }
+    return responseBase;
 });
 exports.assistantPurgeExpiredVoiceData = functions.pubsub
     .schedule('every monday 03:00')
