@@ -239,6 +239,10 @@ export default function AssistantBriefingPage() {
   const ordered = useMemo(() => {
     const arr = (suggestions ?? []).slice();
     arr.sort((a, b) => {
+      const ra = typeof a.rankScore === "number" && Number.isFinite(a.rankScore) ? a.rankScore : Number.NEGATIVE_INFINITY;
+      const rb = typeof b.rankScore === "number" && Number.isFinite(b.rankScore) ? b.rankScore : Number.NEGATIVE_INFINITY;
+      if (rb !== ra) return rb - ra;
+
       const wa = kindWeight(a.kind, preset);
       const wb = kindWeight(b.kind, preset);
       if (wa !== wb) return wa - wb;

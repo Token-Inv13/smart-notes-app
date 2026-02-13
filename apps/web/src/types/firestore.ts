@@ -326,12 +326,14 @@ export interface AssistantSuggestionDoc {
   id?: string;
   objectId: string;
   source: {
-    type: 'note' | 'task';
+    type: 'note' | 'todo' | 'task';
     id: string;
     fromSuggestionId?: string;
   };
   kind: AssistantSuggestionKind;
   payload: AssistantSuggestionPayload;
+  rankScore?: number;
+  rankPreset?: 'daily_planning' | 'dont_forget' | 'meetings' | 'projects';
   status: AssistantSuggestionStatus;
   pipelineVersion: 1;
   dedupeKey: string;

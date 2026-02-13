@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.assistantRunAIJobQueue = exports.assistantPurgeExpiredVoiceData = exports.assistantRequestVoiceTranscription = exports.assistantCreateVoiceJob = exports.assistantRequestAIAnalysis = exports.assistantRequestReanalysis = exports.assistantRejectSuggestion = exports.assistantApplySuggestion = exports.assistantRunJobQueue = exports.assistantEnqueueNoteJob = exports.testSendReminderEmail = exports.cleanupOldReminders = exports.assistantPurgeExpiredSuggestions = exports.assistantExpireSuggestions = exports.checkAndSendReminders = void 0;
+exports.assistantRunAIJobQueue = exports.assistantPurgeExpiredVoiceData = exports.assistantRequestVoiceTranscription = exports.assistantCreateVoiceJob = exports.assistantRequestAIAnalysis = exports.assistantRequestReanalysis = exports.assistantRejectSuggestion = exports.assistantApplySuggestion = exports.assistantRunJobQueue = exports.assistantEnqueueTodoJob = exports.assistantEnqueueNoteJob = exports.testSendReminderEmail = exports.cleanupOldReminders = exports.assistantPurgeExpiredSuggestions = exports.assistantExpireSuggestions = exports.checkAndSendReminders = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
@@ -1042,15 +1042,92 @@ function detectIntentsV1(params) {
 function assistantObjectIdForNote(noteId) {
     return `note_${noteId}`;
 }
-async function isAssistantEnabledForUser(db, userId) {
-    var _a;
+function assistantObjectIdForTodo(todoId) {
+    return `todo_${todoId}`;
+}
+async function getAssistantSettingsForUser(db, userId) {
     const snap = await db
         .collection('users')
         .doc(userId)
         .collection('assistantSettings')
         .doc('main')
         .get();
-    return snap.exists && ((_a = snap.data()) === null || _a === void 0 ? void 0 : _a.enabled) === true;
+    if (!snap.exists) {
+        return { enabled: false, jtbdPreset: 'daily_planning' };
+    }
+    const data = snap.data();
+    const rawPreset = data === null || data === void 0 ? void 0 : data.jtbdPreset;
+    const jtbdPreset = rawPreset === 'dont_forget' || rawPreset === 'meetings' || rawPreset === 'projects' || rawPreset === 'daily_planning'
+        ? rawPreset
+        : 'daily_planning';
+    return {
+        enabled: (data === null || data === void 0 ? void 0 : data.enabled) === true,
+        jtbdPreset,
+    };
+}
+async function isAssistantEnabledForUser(db, userId) {
+    const settings = await getAssistantSettingsForUser(db, userId);
+    return settings.enabled;
+}
+function buildTodoAssistantText(todo) {
+    const title = typeof todo.title === 'string' ? todo.title : '';
+    const itemsRaw = Array.isArray(todo.items) ? todo.items : [];
+    const lines = itemsRaw
+        .map((it) => {
+        const row = it && typeof it === 'object' ? it : null;
+        const text = typeof (row === null || row === void 0 ? void 0 : row.text) === 'string' ? row.text.trim() : '';
+        const done = (row === null || row === void 0 ? void 0 : row.done) === true;
+        if (!text || done)
+            return null;
+        return `- ${text}`;
+    })
+        .filter((v) => !!v);
+    return `${title}\n${lines.join('\n')}`;
+}
+function computeAssistantSuggestionRankScore(params) {
+    const { jtbdPreset, kind, sourceType, payload } = params;
+    const byPreset = (() => {
+        if (jtbdPreset === 'dont_forget') {
+            if (kind === 'create_reminder')
+                return 95;
+            if (kind === 'create_task')
+                return 88;
+            if (kind === 'create_task_bundle')
+                return 78;
+            return 60;
+        }
+        if (jtbdPreset === 'meetings') {
+            if (kind === 'create_task')
+                return 92;
+            if (kind === 'create_task_bundle')
+                return 84;
+            if (kind === 'create_reminder')
+                return 74;
+            return 60;
+        }
+        if (jtbdPreset === 'projects') {
+            if (kind === 'create_task_bundle')
+                return 96;
+            if (kind === 'create_task')
+                return 89;
+            if (kind === 'create_reminder')
+                return 71;
+            return 60;
+        }
+        if (kind === 'create_task_bundle')
+            return 93;
+        if (kind === 'create_task')
+            return 87;
+        if (kind === 'create_reminder')
+            return 80;
+        return 60;
+    })();
+    const confidenceRaw = payload === null || payload === void 0 ? void 0 : payload.confidence;
+    const confidence = typeof confidenceRaw === 'number' && Number.isFinite(confidenceRaw) ? confidenceRaw : 0;
+    const dueDateBonus = (payload === null || payload === void 0 ? void 0 : payload.dueDate) ? 2 : 0;
+    const remindAtBonus = (payload === null || payload === void 0 ? void 0 : payload.remindAt) ? 3 : 0;
+    const sourceBonus = sourceType === 'todo' ? 1 : 0;
+    return byPreset + Math.round(confidence * 10) + dueDateBonus + remindAtBonus + sourceBonus;
 }
 function getSmtpEnv() {
     const hostEnv = process.env.SMTP_HOST;
@@ -1657,6 +1734,98 @@ exports.assistantEnqueueNoteJob = functions.firestore
         }
     });
 });
+exports.assistantEnqueueTodoJob = functions.firestore
+    .document('todos/{todoId}')
+    .onWrite(async (change, context) => {
+    const after = change.after.exists ? change.after.data() : null;
+    if (!after)
+        return;
+    const todoId = typeof context.params.todoId === 'string' ? context.params.todoId : null;
+    if (!todoId)
+        return;
+    const userId = typeof after.userId === 'string' ? after.userId : null;
+    if (!userId)
+        return;
+    const db = admin.firestore();
+    const enabled = await isAssistantEnabledForUser(db, userId);
+    if (!enabled)
+        return;
+    const rawText = buildTodoAssistantText(after);
+    const normalized = normalizeAssistantText(rawText);
+    const textHash = sha256Hex(normalized);
+    const objectId = assistantObjectIdForTodo(todoId);
+    const userRef = db.collection('users').doc(userId);
+    const objectRef = userRef.collection('assistantObjects').doc(objectId);
+    const jobsCol = userRef.collection('assistantJobs');
+    const lockedUntilReady = admin.firestore.Timestamp.fromMillis(0);
+    await db.runTransaction(async (tx) => {
+        const objectSnap = await tx.get(objectRef);
+        const objectData = objectSnap.exists ? objectSnap.data() : null;
+        const prevHash = objectData && typeof (objectData === null || objectData === void 0 ? void 0 : objectData.pendingTextHash) === 'string'
+            ? objectData.pendingTextHash
+            : objectData && typeof (objectData === null || objectData === void 0 ? void 0 : objectData.textHash) === 'string'
+                ? objectData.textHash
+                : null;
+        if (typeof prevHash === 'string' && prevHash === textHash) {
+            return;
+        }
+        const jobRef = jobsCol.doc(assistantCurrentJobIdForObject(objectId));
+        const jobSnap = await tx.get(jobRef);
+        if (jobSnap.exists) {
+            const data = jobSnap.data();
+            const st = data === null || data === void 0 ? void 0 : data.status;
+            const pending = typeof (data === null || data === void 0 ? void 0 : data.pendingTextHash) === 'string' ? data.pendingTextHash : null;
+            if ((st === 'queued' || st === 'processing') && pending === textHash) {
+                return;
+            }
+            if (st === 'queued' || st === 'processing') {
+                tx.set(objectRef, {
+                    pendingTextHash: textHash,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                }, { merge: true });
+                tx.set(jobRef, {
+                    pendingTextHash: textHash,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                }, { merge: true });
+                return;
+            }
+        }
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        const existingTextHash = objectData && typeof (objectData === null || objectData === void 0 ? void 0 : objectData.textHash) === 'string' ? objectData.textHash : null;
+        const objectPayload = {
+            objectId,
+            type: 'todo',
+            coreRef: { collection: 'todos', id: todoId },
+            textHash: existingTextHash !== null && existingTextHash !== void 0 ? existingTextHash : textHash,
+            pendingTextHash: textHash,
+            pipelineVersion: 1,
+            status: 'queued',
+            updatedAt: now,
+        };
+        if (!objectSnap.exists) {
+            objectPayload.createdAt = now;
+            objectPayload.lastAnalyzedAt = null;
+        }
+        tx.set(objectRef, objectPayload, { merge: true });
+        const jobPayload = {
+            objectId,
+            jobType: 'analyze_intents_v2',
+            pipelineVersion: 1,
+            status: 'queued',
+            attempts: 0,
+            pendingTextHash: textHash,
+            lockedUntil: lockedUntilReady,
+            createdAt: now,
+            updatedAt: now,
+        };
+        if (jobSnap.exists) {
+            tx.set(jobRef, jobPayload, { merge: true });
+        }
+        else {
+            tx.create(jobRef, jobPayload);
+        }
+    });
+});
 const ASSISTANT_JOB_LOCK_MS = 2 * 60 * 1000;
 const ASSISTANT_JOB_MAX_ATTEMPTS = 3;
 async function claimAssistantJob(params) {
@@ -1715,9 +1884,10 @@ exports.assistantRunJobQueue = functions.pubsub
         const userId = userRef === null || userRef === void 0 ? void 0 : userRef.id;
         if (!userId)
             return;
-        const enabled = await isAssistantEnabledForUser(db, userId);
-        if (!enabled)
+        const assistantSettings = await getAssistantSettingsForUser(db, userId);
+        if (!assistantSettings.enabled)
             return;
+        const jtbdPreset = assistantSettings.jtbdPreset;
         const claimed = await claimAssistantJob({ db, ref: jobDoc.ref, now: nowTs });
         if (!claimed)
             return;
@@ -1753,15 +1923,33 @@ exports.assistantRunJobQueue = functions.pubsub
                 const objectSnap = await objectRef.get();
                 const objectData = objectSnap.exists ? objectSnap.data() : null;
                 const coreRef = objectData === null || objectData === void 0 ? void 0 : objectData.coreRef;
-                const noteId = (coreRef === null || coreRef === void 0 ? void 0 : coreRef.collection) === 'notes' && typeof (coreRef === null || coreRef === void 0 ? void 0 : coreRef.id) === 'string' ? coreRef.id : null;
-                if (noteId) {
-                    const noteSnap = await db.collection('notes').doc(noteId).get();
-                    const note = noteSnap.exists ? noteSnap.data() : null;
-                    const noteUserId = typeof (note === null || note === void 0 ? void 0 : note.userId) === 'string' ? note.userId : null;
-                    if (note && noteUserId === userId) {
-                        const noteTitle = typeof (note === null || note === void 0 ? void 0 : note.title) === 'string' ? note.title : '';
-                        const noteContent = typeof (note === null || note === void 0 ? void 0 : note.content) === 'string' ? note.content : '';
-                        const normalized = normalizeAssistantText(`${noteTitle}\n${noteContent}`);
+                const sourceCollection = coreRef === null || coreRef === void 0 ? void 0 : coreRef.collection;
+                const sourceId = typeof (coreRef === null || coreRef === void 0 ? void 0 : coreRef.id) === 'string' ? coreRef.id : null;
+                if ((sourceCollection === 'notes' || sourceCollection === 'todos') && sourceId) {
+                    const sourceType = sourceCollection === 'todos' ? 'todo' : 'note';
+                    let sourceText = '';
+                    if (sourceType === 'note') {
+                        const noteSnap = await db.collection('notes').doc(sourceId).get();
+                        const note = noteSnap.exists ? noteSnap.data() : null;
+                        const noteUserId = typeof (note === null || note === void 0 ? void 0 : note.userId) === 'string' ? note.userId : null;
+                        if (note && noteUserId === userId) {
+                            const noteTitle = typeof (note === null || note === void 0 ? void 0 : note.title) === 'string' ? note.title : '';
+                            const noteContent = typeof (note === null || note === void 0 ? void 0 : note.content) === 'string' ? note.content : '';
+                            sourceText = `${noteTitle}\n${noteContent}`;
+                        }
+                    }
+                    else {
+                        const todoSnap = await db.collection('todos').doc(sourceId).get();
+                        const todo = todoSnap.exists ? todoSnap.data() : null;
+                        const todoUserId = typeof (todo === null || todo === void 0 ? void 0 : todo.userId) === 'string' ? todo.userId : null;
+                        if (todo && todoUserId === userId) {
+                            sourceText = buildTodoAssistantText(todo);
+                        }
+                    }
+                    if (sourceText) {
+                        const [sourceTitle, ...restLines] = sourceText.split('\n');
+                        const sourceContent = restLines.join('\n');
+                        const normalized = normalizeAssistantText(sourceText);
                         processedTextHash = sha256Hex(normalized);
                         let memoryDefaults = undefined;
                         try {
@@ -1776,12 +1964,13 @@ exports.assistantRunJobQueue = functions.pubsub
                         catch (_c) {
                             // ignore
                         }
-                        const v2 = detectIntentsV2({ title: noteTitle, content: noteContent, now: nowDate, memory: memoryDefaults });
+                        const v2 = detectIntentsV2({ title: sourceTitle !== null && sourceTitle !== void 0 ? sourceTitle : '', content: sourceContent, now: nowDate, memory: memoryDefaults });
                         const detectedSingle = v2.single ? [v2.single] : [];
                         const detectedBundle = v2.bundle;
                         console.log('assistant intents detected', {
                             userId,
-                            noteId,
+                            sourceType,
+                            sourceId,
                             objectId,
                             hasSingle: detectedSingle.length > 0,
                             hasBundle: !!detectedBundle,
@@ -1793,19 +1982,18 @@ exports.assistantRunJobQueue = functions.pubsub
                             const candidates = [];
                             if (detectedBundle) {
                                 const dedupeKey = buildBundleDedupeKey({ objectId, minimal: detectedBundle.dedupeMinimal });
-                                const payload = {
-                                    title: detectedBundle.title,
-                                    tasks: detectedBundle.tasks,
-                                    bundleMode: detectedBundle.bundleMode,
-                                    noteId,
-                                    origin: { fromText: detectedBundle.originFromText },
-                                    confidence: detectedBundle.confidence,
-                                    explanation: detectedBundle.explanation,
-                                };
+                                const payload = Object.assign(Object.assign({ title: detectedBundle.title, tasks: detectedBundle.tasks, bundleMode: detectedBundle.bundleMode }, (sourceType === 'note' ? { noteId: sourceId } : {})), { origin: { fromText: detectedBundle.originFromText }, confidence: detectedBundle.confidence, explanation: detectedBundle.explanation });
+                                const rankScore = computeAssistantSuggestionRankScore({
+                                    jtbdPreset,
+                                    kind: 'create_task_bundle',
+                                    sourceType,
+                                    payload,
+                                });
                                 candidates.push({
                                     kind: 'create_task_bundle',
                                     payload,
                                     dedupeKey,
+                                    rankScore,
                                     metricsInc: {
                                         bundlesCreated: 1,
                                         defaultPriorityAppliedCount: detectedBundle.appliedDefaultPriority ? 1 : 0,
@@ -1818,10 +2006,17 @@ exports.assistantRunJobQueue = functions.pubsub
                                     const payload = Object.assign(Object.assign(Object.assign(Object.assign({ title: d.title }, (d.dueDate ? { dueDate: d.dueDate } : {})), (d.remindAt ? { remindAt: d.remindAt } : {})), (d.priority ? { priority: d.priority } : {})), { origin: {
                                             fromText: d.originFromText,
                                         }, confidence: d.confidence, explanation: d.explanation });
+                                    const rankScore = computeAssistantSuggestionRankScore({
+                                        jtbdPreset,
+                                        kind: d.kind,
+                                        sourceType,
+                                        payload,
+                                    });
                                     candidates.push({
                                         kind: d.kind,
                                         payload,
                                         dedupeKey,
+                                        rankScore,
                                         metricsInc: {
                                             suggestionsCreated: 1,
                                             defaultPriorityAppliedCount: d.appliedDefaultPriority ? 1 : 0,
@@ -1832,7 +2027,8 @@ exports.assistantRunJobQueue = functions.pubsub
                             }
                             console.log('assistant suggestions candidates', {
                                 userId,
-                                noteId,
+                                sourceType,
+                                sourceId,
                                 objectId,
                                 candidates: candidates.length,
                                 bundleMode: !!detectedBundle ? detectedBundle.bundleMode : null,
@@ -1855,9 +2051,11 @@ exports.assistantRunJobQueue = functions.pubsub
                                         }
                                         tx.update(sugRef, {
                                             objectId,
-                                            source: { type: 'note', id: noteId },
+                                            source: { type: sourceType, id: sourceId },
                                             kind: c.kind,
                                             payload: c.payload,
+                                            rankScore: c.rankScore,
+                                            rankPreset: jtbdPreset,
                                             status: 'proposed',
                                             pipelineVersion: 1,
                                             dedupeKey: c.dedupeKey,
@@ -1870,9 +2068,11 @@ exports.assistantRunJobQueue = functions.pubsub
                                     }
                                     const doc = {
                                         objectId,
-                                        source: { type: 'note', id: noteId },
+                                        source: { type: sourceType, id: sourceId },
                                         kind: c.kind,
                                         payload: c.payload,
+                                        rankScore: c.rankScore,
+                                        rankPreset: jtbdPreset,
                                         status: 'proposed',
                                         pipelineVersion: 1,
                                         dedupeKey: c.dedupeKey,
@@ -2026,7 +2226,7 @@ exports.assistantApplySuggestion = functions.https.onCall(async (data, context) 
         const userPlan = userSnap.exists && typeof ((_a = userSnap.data()) === null || _a === void 0 ? void 0 : _a.plan) === 'string' ? String(userSnap.data().plan) : null;
         const isPro = userPlan === 'pro';
         followupIsPro = isPro;
-        followupEnabled = suggestion.source.type === 'note';
+        followupEnabled = suggestion.source.type === 'note' || suggestion.source.type === 'todo';
         const existingMemory = memorySnap.exists ? memorySnap.data() : {};
         const existingMemoryHourRaw = existingMemory === null || existingMemory === void 0 ? void 0 : existingMemory.defaultReminderHour;
         const existingMemoryHour = typeof existingMemoryHourRaw === 'number' && Number.isFinite(existingMemoryHourRaw) ? Math.trunc(existingMemoryHourRaw) : null;
