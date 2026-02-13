@@ -232,9 +232,10 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
   };
 
   const stopListening = () => {
-    if (flowStep !== "listening") return;
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state === "inactive") return;
     try {
-      recorderRef.current?.stop();
+      recorder.stop();
     } catch {
       // ignore
     }
