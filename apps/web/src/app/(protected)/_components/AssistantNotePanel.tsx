@@ -786,7 +786,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
     );
   }
 
-  const suggestionGroups = useMemo(() => {
+  const suggestionGroups = (() => {
     const arr = sorted ?? [];
     const tasks = arr.filter((s) => s.kind === "create_task" || s.kind === "create_reminder" || s.kind === "update_task_meta");
     const bundles = arr.filter((s) => s.kind === "create_task_bundle");
@@ -799,7 +799,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
         s.kind === "rewrite_note",
     );
     return { tasks, bundles, content };
-  }, [sorted]);
+  })();
 
   const renderSuggestionCard = (s: AssistantSuggestionDoc) => {
     const suggestionId = s.id ?? s.dedupeKey;
@@ -1038,7 +1038,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
     );
   };
 
-  const aiCards = useMemo(() => {
+  const aiCards = (() => {
     if (!aiResult) return [] as Array<{ key: string; title: string; text: string; allowReplaceNote?: boolean }>;
     const out = (aiResult as any)?.output ?? null;
     const refusal = typeof (aiResult as any)?.refusal === "string" ? String((aiResult as any).refusal) : "";
@@ -1111,7 +1111,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
     }
 
     return cards;
-  }, [aiResult]);
+  })();
 
   return (
     <div className="sn-card p-4 space-y-5">
