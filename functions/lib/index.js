@@ -3215,6 +3215,8 @@ exports.assistantRequestAIAnalysis = functions.https.onCall(async (data, context
             .map((m) => String(m))
             .filter((m) => allowedModes.has(m))
         : ['summary', 'actions', 'hooks', 'rewrite', 'entities'];
+    const rewriteInstructionRaw = typeof (data === null || data === void 0 ? void 0 : data.rewriteInstruction) === 'string' ? String(data.rewriteInstruction) : '';
+    const rewriteInstruction = rewriteInstructionRaw.trim().slice(0, 280);
     const requestedModel = normalizeAssistantAIModel(data === null || data === void 0 ? void 0 : data.model);
     const preferredEnv = getAssistantAIPreferredModelEnv();
     let model = '';
@@ -3297,7 +3299,8 @@ exports.assistantRequestAIAnalysis = functions.https.onCall(async (data, context
     const jobRef = userRef.collection('assistantAIJobs').doc(assistantAIJobIdForNote(noteId));
     const schemaVersion = ASSISTANT_AI_SCHEMA_VERSION;
     const modesSig = modes.slice().sort().join(',');
-    const resultId = sha256Hex(`${objectId}|${textHash}|${model}|schema:${schemaVersion}|modes:${modesSig}`);
+    const rewriteInstructionSig = rewriteInstruction ? sha256Hex(rewriteInstruction) : 'none';
+    const resultId = sha256Hex(`${objectId}|${textHash}|${model}|schema:${schemaVersion}|modes:${modesSig}|rewrite:${rewriteInstructionSig}`);
     const resultRef = userRef.collection('assistantAIResults').doc(resultId);
     const usageRef = assistantUsageRef(db, userId, dayKey);
     const metricsRef = assistantMetricsRef(db, userId);
@@ -3319,6 +3322,7 @@ exports.assistantRequestAIAnalysis = functions.https.onCall(async (data, context
                 model,
                 modelRequested: requestedModel || null,
                 modes,
+                rewriteInstruction: rewriteInstruction || null,
                 schemaVersion,
                 resultId,
                 pendingTextHash: null,
@@ -3336,8 +3340,9 @@ exports.assistantRequestAIAnalysis = functions.https.onCall(async (data, context
         const jobData = jobSnap.exists ? jobSnap.data() : null;
         const st = jobData === null || jobData === void 0 ? void 0 : jobData.status;
         const pending = typeof (jobData === null || jobData === void 0 ? void 0 : jobData.pendingTextHash) === 'string' ? jobData.pendingTextHash : null;
+        const pendingRewriteInstruction = typeof (jobData === null || jobData === void 0 ? void 0 : jobData.rewriteInstruction) === 'string' ? String(jobData.rewriteInstruction) : null;
         const isActive = st === 'queued' || st === 'processing';
-        if (isActive && pending === textHash && (jobData === null || jobData === void 0 ? void 0 : jobData.model) === model) {
+        if (isActive && pending === textHash && (jobData === null || jobData === void 0 ? void 0 : jobData.model) === model && pendingRewriteInstruction === (rewriteInstruction || null)) {
             return;
         }
         tx.set(usageRef, {
@@ -3354,6 +3359,7 @@ exports.assistantRequestAIAnalysis = functions.https.onCall(async (data, context
             modelRequested: requestedModel || null,
             modelFallbackUsed: null,
             modes,
+            rewriteInstruction: rewriteInstruction || null,
             schemaVersion,
             pendingTextHash: textHash,
             lockedUntil: lockedUntilReady,
@@ -3998,6 +4004,7 @@ async function processAssistantAIJob(params) {
     const requestedModel = normalizeAssistantAIModel(claimed === null || claimed === void 0 ? void 0 : claimed.model);
     const schemaVersion = typeof claimed.schemaVersion === 'number' ? Math.trunc(claimed.schemaVersion) : ASSISTANT_AI_SCHEMA_VERSION;
     const modes = Array.isArray(claimed === null || claimed === void 0 ? void 0 : claimed.modes) ? claimed.modes.filter((m) => typeof m === 'string').map((m) => String(m)) : [];
+    const rewriteInstruction = typeof (claimed === null || claimed === void 0 ? void 0 : claimed.rewriteInstruction) === 'string' ? String(claimed.rewriteInstruction).trim().slice(0, 280) : '';
     if (!noteId || !objectId)
         return;
     const metricsRef = assistantMetricsRef(db, userId);
@@ -4019,7 +4026,8 @@ async function processAssistantAIJob(params) {
         const normalized = normalizeAssistantText(`${title}\n${content}`);
         const textHash = sha256Hex(normalized);
         const modesSig = modes.slice().sort().join(',');
-        const resultIdForModel = (m) => sha256Hex(`${objectId}|${textHash}|${m}|schema:${schemaVersion}|modes:${modesSig}`);
+        const rewriteInstructionSig = rewriteInstruction ? sha256Hex(rewriteInstruction) : 'none';
+        const resultIdForModel = (m) => sha256Hex(`${objectId}|${textHash}|${m}|schema:${schemaVersion}|modes:${modesSig}|rewrite:${rewriteInstructionSig}`);
         let availableIds = [];
         try {
             availableIds = await listAvailableModelsCached();
@@ -4126,6 +4134,7 @@ async function processAssistantAIJob(params) {
             });
             return;
         }
+        const requestedModes = new Set(modes.length > 0 ? modes : ['summary', 'actions', 'hooks', 'rewrite', 'entities']);
         const instructions = [
             'You are SmartNote Assistant AI.',
             'You must return ONLY JSON that matches the provided JSON Schema.',
@@ -4133,6 +4142,24 @@ async function processAssistantAIJob(params) {
             `Current datetime (Europe/Paris): ${nowDate.toISOString()}`,
             'If you infer dates/times, output ISO 8601 strings with timezone offsets when possible.',
             'Keep text concise and in French.',
+            requestedModes.has('summary')
+                ? 'summaryShort and summaryStructured should contain a concise useful summary.'
+                : 'summaryShort must be null and summaryStructured must be an empty array.',
+            requestedModes.has('actions')
+                ? 'actions should contain actionable tasks/reminders when relevant.'
+                : 'actions must be an empty array.',
+            requestedModes.has('hooks')
+                ? 'hooks may contain short engaging hook suggestions when relevant.'
+                : 'hooks must be an empty array.',
+            requestedModes.has('entities')
+                ? 'entities and tags should be filled when useful.'
+                : 'entities fields must be empty arrays and tags must be an empty array.',
+            requestedModes.has('rewrite')
+                ? 'rewriteContent should contain a polished rewritten version of the text.'
+                : 'rewriteContent must be null.',
+            rewriteInstruction
+                ? `For rewriteContent, apply this extra instruction strictly: ${rewriteInstruction.replace(/\s+/g, ' ')}`
+                : '',
         ].join('\n');
         const inputText = `Titre:\n${title}\n\nContenu:\n${content}`;
         const runForModel = async (model) => {

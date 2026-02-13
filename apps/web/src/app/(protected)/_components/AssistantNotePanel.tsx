@@ -201,7 +201,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
 
   const [detailsOpen, setDetailsOpen] = useState(false);
 
-  const [quickAction, setQuickAction] = useState<"summary" | "reanalyze" | null>(null);
+  const [quickAction, setQuickAction] = useState<"analyze" | "reanalyze" | null>(null);
   const prevAIJobStatusForAutoCloseRef = useRef<typeof aiJobStatus>(null);
   const prevJobStatusForAutoCloseRef = useRef<typeof jobStatus>(null);
 
@@ -241,7 +241,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
     if (!quickAction) return;
     if (actionError) return;
 
-    if (quickAction === "summary") {
+    if (quickAction === "analyze") {
       if (aiJobStatus === "done" && prevAI !== "done" && jobStatus !== "queued" && jobStatus !== "processing") {
         setDetailsOpen(false);
         setQuickAction(null);
@@ -407,7 +407,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
     return code.includes("unauthenticated");
   };
 
-  const handleAIAnalyzeWithModes = async (modes: string[] | null) => {
+  const handleAIAnalyzeWithModes = async (modes: string[] | null, rewriteInstruction?: string | null) => {
     if (!noteId) return;
     if (busyAIAnalysis) return;
 
@@ -416,12 +416,14 @@ export default function AssistantNotePanel({ noteId }: Props) {
     setActionError(null);
 
     try {
-      const fn = httpsCallable<{ noteId: string; modes?: string[] }, { jobId: string; resultId?: string }>(
+      const fn = httpsCallable<{ noteId: string; modes?: string[]; rewriteInstruction?: string }, { jobId: string; resultId?: string }>(
         fbFunctions,
         "assistantRequestAIAnalysis",
       );
-      const payload: { noteId: string; modes?: string[] } = { noteId };
+      const payload: { noteId: string; modes?: string[]; rewriteInstruction?: string } = { noteId };
       if (Array.isArray(modes) && modes.length > 0) payload.modes = modes;
+      const instruction = typeof rewriteInstruction === "string" ? rewriteInstruction.trim() : "";
+      if (instruction) payload.rewriteInstruction = instruction;
       const res = await fn(payload);
       setDismissedResultKeys({});
       setActionMessage(`Analyse IA demandée (job: ${res.data.jobId}).`);
@@ -1389,24 +1391,12 @@ export default function AssistantNotePanel({ noteId }: Props) {
                 {detailsOpen ? "Masquer" : "Détails"}
               </button>
             </div>
-            <div className="flex flex-col md:flex-row md:items-center gap-2">
+            <div className="flex flex-wrap md:items-center gap-2">
               <button
                 type="button"
                 onClick={() => {
                   setDetailsOpen(true);
-                  setQuickAction(null);
-                  setOpen("capture", true);
-                }}
-                disabled={!noteId}
-                className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-              >
-                Enregistrer
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setDetailsOpen(true);
-                  setQuickAction("summary");
+                  setQuickAction("analyze");
                   setOpen("analyze", true);
                   void handleAIAnalyzeWithModes(["summary"]);
                 }}
@@ -1414,6 +1404,87 @@ export default function AssistantNotePanel({ noteId }: Props) {
                 className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
               >
                 {busyAIAnalysis ? "Résumé…" : "Résumer"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDetailsOpen(true);
+                  setQuickAction("analyze");
+                  setOpen("transform", true);
+                  void handleAIAnalyzeWithModes(["rewrite"], "Traduis le texte en anglais de façon naturelle, fidèle au sens, sans ajouter d'informations.");
+                }}
+                disabled={!noteId || busyAIAnalysis}
+                className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+              >
+                {busyAIAnalysis ? "Traduction…" : "Traduction"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDetailsOpen(true);
+                  setQuickAction("analyze");
+                  setOpen("transform", true);
+                  void handleAIAnalyzeWithModes(["rewrite"], "Corrige l'orthographe, la grammaire et la ponctuation en français. Conserve le fond et le ton.");
+                }}
+                disabled={!noteId || busyAIAnalysis}
+                className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+              >
+                {busyAIAnalysis ? "Correction…" : "Correction"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDetailsOpen(true);
+                  setQuickAction("analyze");
+                  setOpen("transform", true);
+                  void handleAIAnalyzeWithModes(
+                    ["summary", "entities", "rewrite"],
+                    "Réécris le texte en le structurant avec des sections claires, des transitions nettes et une meilleure lisibilité.",
+                  );
+                }}
+                disabled={!noteId || busyAIAnalysis}
+                className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+              >
+                {busyAIAnalysis ? "Structuration…" : "Structurer / améliorer"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDetailsOpen(true);
+                  setQuickAction("analyze");
+                  setOpen("transform", true);
+                  void handleAIAnalyzeWithModes(["rewrite"], "Reformule en style professionnel, clair, factuel et orienté action.");
+                }}
+                disabled={!noteId || busyAIAnalysis}
+                className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+              >
+                {busyAIAnalysis ? "Reformulation…" : "Reformuler (pro)"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDetailsOpen(true);
+                  setQuickAction("analyze");
+                  setOpen("transform", true);
+                  void handleAIAnalyzeWithModes(["rewrite"], "Reformule avec une touche d'humour légère, positive et élégante, sans sarcasme blessant.");
+                }}
+                disabled={!noteId || busyAIAnalysis}
+                className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+              >
+                {busyAIAnalysis ? "Reformulation…" : "Reformuler (humour)"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDetailsOpen(true);
+                  setQuickAction("analyze");
+                  setOpen("transform", true);
+                  void handleAIAnalyzeWithModes(["rewrite"], "Reformule de manière succincte, en allant droit au but, avec des phrases courtes.");
+                }}
+                disabled={!noteId || busyAIAnalysis}
+                className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+              >
+                {busyAIAnalysis ? "Reformulation…" : "Reformuler (succinct)"}
               </button>
               <button
                 type="button"
