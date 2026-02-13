@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.assistantRunAIJobQueue = exports.assistantPurgeExpiredVoiceData = exports.assistantExecuteIntent = exports.assistantRequestVoiceTranscription = exports.assistantCreateVoiceJob = exports.assistantRequestAIAnalysis = exports.assistantRequestReanalysis = exports.assistantRateSuggestionFeedback = exports.assistantRejectSuggestion = exports.assistantApplySuggestion = exports.assistantRunJobQueue = exports.assistantEnqueueTodoJob = exports.assistantEnqueueNoteJob = exports.testSendReminderEmail = exports.cleanupOldReminders = exports.assistantPurgeExpiredSuggestions = exports.assistantExpireSuggestions = exports.checkAndSendReminders = void 0;
+exports.assistantRunAIJobQueue = exports.assistantPurgeExpiredVoiceData = exports.assistantExecuteIntent = exports.assistantRequestVoiceTranscription = exports.assistantCreateVoiceJob = exports.assistantRewriteText = exports.assistantRequestAIAnalysis = exports.assistantRequestReanalysis = exports.assistantRateSuggestionFeedback = exports.assistantRejectSuggestion = exports.assistantApplySuggestion = exports.assistantRunJobQueue = exports.assistantEnqueueTodoJob = exports.assistantEnqueueNoteJob = exports.testSendReminderEmail = exports.cleanupOldReminders = exports.assistantPurgeExpiredSuggestions = exports.assistantExpireSuggestions = exports.checkAndSendReminders = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
@@ -713,6 +713,77 @@ async function callOpenAIResponsesJsonSchema(params) {
     }
     const parsed = JSON.parse(outputText);
     return { parsed, refusal, usage };
+}
+async function callOpenAIResponsesPlainText(params) {
+    var _a, _b, _c;
+    const apiKey = getOpenAIApiKey();
+    const projectHeader = getOpenAIProjectHeader();
+    const body = {
+        model: params.model,
+        instructions: params.instructions,
+        input: [{ role: 'user', content: params.inputText }],
+        store: false,
+    };
+    const res = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, (projectHeader ? { 'OpenAI-Project': projectHeader } : {})),
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+        const requestId = res.headers.get('x-request-id');
+        let parsedErr = null;
+        let textBody = '';
+        try {
+            parsedErr = await res.json();
+        }
+        catch (_d) {
+            textBody = await res.text().catch(() => '');
+        }
+        const errObj = parsedErr && typeof parsedErr === 'object' ? parsedErr : null;
+        const errInner = errObj && typeof (errObj === null || errObj === void 0 ? void 0 : errObj.error) === 'object' ? errObj.error : null;
+        const message = errInner && typeof (errInner === null || errInner === void 0 ? void 0 : errInner.message) === 'string' ? String(errInner.message) : textBody || JSON.stringify(errObj || {});
+        const code = errInner && typeof (errInner === null || errInner === void 0 ? void 0 : errInner.code) === 'string' ? String(errInner.code) : null;
+        const type = errInner && typeof (errInner === null || errInner === void 0 ? void 0 : errInner.type) === 'string' ? String(errInner.type) : null;
+        const param = errInner && typeof (errInner === null || errInner === void 0 ? void 0 : errInner.param) === 'string' ? String(errInner.param) : null;
+        throw new OpenAIHttpError({ status: res.status, message: `OpenAI error: ${res.status} ${message}`.slice(0, 800), code, type, param, requestId, projectHeader });
+    }
+    const json = (await res.json());
+    const usage = json && typeof (json === null || json === void 0 ? void 0 : json.usage) === 'object' && json.usage
+        ? {
+            inputTokens: typeof ((_a = json.usage) === null || _a === void 0 ? void 0 : _a.input_tokens) === 'number' ? Number(json.usage.input_tokens) : undefined,
+            outputTokens: typeof ((_b = json.usage) === null || _b === void 0 ? void 0 : _b.output_tokens) === 'number' ? Number(json.usage.output_tokens) : undefined,
+            totalTokens: typeof ((_c = json.usage) === null || _c === void 0 ? void 0 : _c.total_tokens) === 'number' ? Number(json.usage.total_tokens) : undefined,
+        }
+        : null;
+    let refusal = null;
+    const output = Array.isArray(json === null || json === void 0 ? void 0 : json.output) ? json.output : [];
+    for (const item of output) {
+        if (item && item.type === 'message') {
+            const content = Array.isArray(item.content) ? item.content : [];
+            for (const part of content) {
+                if (part && part.type === 'refusal' && typeof part.refusal === 'string') {
+                    refusal = part.refusal;
+                }
+            }
+        }
+    }
+    let outputText = typeof (json === null || json === void 0 ? void 0 : json.output_text) === 'string' ? String(json.output_text) : null;
+    if (!outputText) {
+        for (const item of output) {
+            if (item && item.type === 'message') {
+                const content = Array.isArray(item.content) ? item.content : [];
+                for (const part of content) {
+                    if (part && part.type === 'output_text' && typeof part.text === 'string') {
+                        outputText = String(part.text);
+                        break;
+                    }
+                }
+            }
+            if (outputText)
+                break;
+        }
+    }
+    return { text: outputText, refusal, usage };
 }
 async function callOpenAIResponsesLooseJson(params) {
     var _a, _b, _c;
@@ -3376,6 +3447,66 @@ exports.assistantRequestAIAnalysis = functions.https.onCall(async (data, context
         }
     });
     return { jobId: jobRef.id, resultId };
+});
+exports.assistantRewriteText = functions.https.onCall(async (data, context) => {
+    var _a;
+    const userId = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid;
+    if (!userId) {
+        throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+    }
+    const textRaw = typeof (data === null || data === void 0 ? void 0 : data.text) === 'string' ? String(data.text) : '';
+    const instructionRaw = typeof (data === null || data === void 0 ? void 0 : data.instruction) === 'string' ? String(data.instruction) : '';
+    const text = textRaw.trim();
+    const instruction = instructionRaw.trim();
+    if (!text) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing text.');
+    }
+    if (!instruction) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing instruction.');
+    }
+    if (text.length > 20000) {
+        throw new functions.https.HttpsError('invalid-argument', 'Text too long.');
+    }
+    const db = admin.firestore();
+    const enabled = await isAssistantEnabledForUser(db, userId);
+    if (!enabled) {
+        throw new functions.https.HttpsError('failed-precondition', 'Assistant disabled.');
+    }
+    const requestedModel = normalizeAssistantAIModel(data === null || data === void 0 ? void 0 : data.model);
+    const preferredEnv = getAssistantAIPreferredModelEnv();
+    let model = '';
+    try {
+        const available = await listAvailableModelsCached();
+        model = selectDeterministicModel({ availableIds: available, preferredEnv, preferredRequested: requestedModel || null });
+    }
+    catch (_b) {
+        const cached = openAIModelsCache && Array.isArray(openAIModelsCache.ids) ? openAIModelsCache.ids : [];
+        if (cached.length > 0) {
+            model = selectDeterministicModel({ availableIds: cached, preferredEnv, preferredRequested: requestedModel || null });
+        }
+        else {
+            model = requestedModel || preferredEnv || ASSISTANT_AI_MODEL_SHORTLIST[0] || '';
+        }
+    }
+    if (!model) {
+        throw new functions.https.HttpsError('failed-precondition', 'Impossible de sélectionner un modèle OpenAI. Vérifie OPENAI_MODEL/ASSISTANT_AI_MODEL et les permissions du Project OpenAI.');
+    }
+    const instructions = [
+        'You are SmartNote Assistant.',
+        'Apply the transformation request exactly and return only the transformed text.',
+        'Keep output concise and useful for productivity.',
+        'Do not add explanations, comments, markdown fences, or metadata.',
+        `Transformation request: ${instruction}`,
+    ].join('\n');
+    const llm = await callOpenAIResponsesPlainText({ model, instructions, inputText: text });
+    if (llm.refusal) {
+        throw new functions.https.HttpsError('failed-precondition', 'Assistant refused this transformation request.');
+    }
+    const transformed = typeof llm.text === 'string' ? llm.text.trim() : '';
+    if (!transformed) {
+        throw new functions.https.HttpsError('internal', 'Empty transformation result.');
+    }
+    return { text: transformed, model };
 });
 exports.assistantCreateVoiceJob = functions.https.onCall(async (data, context) => {
     var _a;

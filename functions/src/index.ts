@@ -1140,6 +1140,90 @@ async function callOpenAIResponsesJsonSchema(params: {
   return { parsed, refusal, usage };
 }
 
+async function callOpenAIResponsesPlainText(params: {
+  model: string;
+  instructions: string;
+  inputText: string;
+}): Promise<{ text: string | null; refusal: string | null; usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | null }> {
+  const apiKey = getOpenAIApiKey();
+  const projectHeader = getOpenAIProjectHeader();
+
+  const body: Record<string, any> = {
+    model: params.model,
+    instructions: params.instructions,
+    input: [{ role: 'user', content: params.inputText }],
+    store: false,
+  };
+
+  const res = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+      ...(projectHeader ? { 'OpenAI-Project': projectHeader } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const requestId = res.headers.get('x-request-id');
+    let parsedErr: any = null;
+    let textBody = '';
+    try {
+      parsedErr = await res.json();
+    } catch {
+      textBody = await res.text().catch(() => '');
+    }
+    const errObj = parsedErr && typeof parsedErr === 'object' ? parsedErr : null;
+    const errInner = errObj && typeof errObj?.error === 'object' ? errObj.error : null;
+    const message = errInner && typeof errInner?.message === 'string' ? String(errInner.message) : textBody || JSON.stringify(errObj || {});
+    const code = errInner && typeof errInner?.code === 'string' ? String(errInner.code) : null;
+    const type = errInner && typeof errInner?.type === 'string' ? String(errInner.type) : null;
+    const param = errInner && typeof errInner?.param === 'string' ? String(errInner.param) : null;
+    throw new OpenAIHttpError({ status: res.status, message: `OpenAI error: ${res.status} ${message}`.slice(0, 800), code, type, param, requestId, projectHeader });
+  }
+
+  const json = (await res.json()) as any;
+  const usage = json && typeof json?.usage === 'object' && json.usage
+    ? {
+        inputTokens: typeof json.usage?.input_tokens === 'number' ? Number(json.usage.input_tokens) : undefined,
+        outputTokens: typeof json.usage?.output_tokens === 'number' ? Number(json.usage.output_tokens) : undefined,
+        totalTokens: typeof json.usage?.total_tokens === 'number' ? Number(json.usage.total_tokens) : undefined,
+      }
+    : null;
+
+  let refusal: string | null = null;
+  const output = Array.isArray(json?.output) ? (json.output as any[]) : [];
+  for (const item of output) {
+    if (item && item.type === 'message') {
+      const content = Array.isArray(item.content) ? item.content : [];
+      for (const part of content) {
+        if (part && part.type === 'refusal' && typeof part.refusal === 'string') {
+          refusal = part.refusal;
+        }
+      }
+    }
+  }
+
+  let outputText: string | null = typeof json?.output_text === 'string' ? String(json.output_text) : null;
+  if (!outputText) {
+    for (const item of output) {
+      if (item && item.type === 'message') {
+        const content = Array.isArray(item.content) ? item.content : [];
+        for (const part of content) {
+          if (part && part.type === 'output_text' && typeof part.text === 'string') {
+            outputText = String(part.text);
+            break;
+          }
+        }
+      }
+      if (outputText) break;
+    }
+  }
+
+  return { text: outputText, refusal, usage };
+}
+
 async function callOpenAIResponsesLooseJson(params: {
   model: string;
   instructions: string;
@@ -4398,6 +4482,76 @@ export const assistantRequestAIAnalysis = functions.https.onCall(async (data, co
   });
 
   return { jobId: jobRef.id, resultId };
+});
+
+export const assistantRewriteText = functions.https.onCall(async (data, context) => {
+  const userId = context.auth?.uid;
+  if (!userId) {
+    throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+  }
+
+  const textRaw = typeof (data as any)?.text === 'string' ? String((data as any).text) : '';
+  const instructionRaw = typeof (data as any)?.instruction === 'string' ? String((data as any).instruction) : '';
+  const text = textRaw.trim();
+  const instruction = instructionRaw.trim();
+
+  if (!text) {
+    throw new functions.https.HttpsError('invalid-argument', 'Missing text.');
+  }
+  if (!instruction) {
+    throw new functions.https.HttpsError('invalid-argument', 'Missing instruction.');
+  }
+  if (text.length > 20000) {
+    throw new functions.https.HttpsError('invalid-argument', 'Text too long.');
+  }
+
+  const db = admin.firestore();
+  const enabled = await isAssistantEnabledForUser(db, userId);
+  if (!enabled) {
+    throw new functions.https.HttpsError('failed-precondition', 'Assistant disabled.');
+  }
+
+  const requestedModel = normalizeAssistantAIModel((data as any)?.model);
+  const preferredEnv = getAssistantAIPreferredModelEnv();
+  let model = '';
+  try {
+    const available = await listAvailableModelsCached();
+    model = selectDeterministicModel({ availableIds: available, preferredEnv, preferredRequested: requestedModel || null });
+  } catch {
+    const cached = openAIModelsCache && Array.isArray(openAIModelsCache.ids) ? openAIModelsCache.ids : [];
+    if (cached.length > 0) {
+      model = selectDeterministicModel({ availableIds: cached, preferredEnv, preferredRequested: requestedModel || null });
+    } else {
+      model = requestedModel || preferredEnv || ASSISTANT_AI_MODEL_SHORTLIST[0] || '';
+    }
+  }
+
+  if (!model) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Impossible de sélectionner un modèle OpenAI. Vérifie OPENAI_MODEL/ASSISTANT_AI_MODEL et les permissions du Project OpenAI.',
+    );
+  }
+
+  const instructions = [
+    'You are SmartNote Assistant.',
+    'Apply the transformation request exactly and return only the transformed text.',
+    'Keep output concise and useful for productivity.',
+    'Do not add explanations, comments, markdown fences, or metadata.',
+    `Transformation request: ${instruction}`,
+  ].join('\n');
+
+  const llm = await callOpenAIResponsesPlainText({ model, instructions, inputText: text });
+  if (llm.refusal) {
+    throw new functions.https.HttpsError('failed-precondition', 'Assistant refused this transformation request.');
+  }
+
+  const transformed = typeof llm.text === 'string' ? llm.text.trim() : '';
+  if (!transformed) {
+    throw new functions.https.HttpsError('internal', 'Empty transformation result.');
+  }
+
+  return { text: transformed, model };
 });
 
 export const assistantCreateVoiceJob = functions.https.onCall(async (data, context) => {

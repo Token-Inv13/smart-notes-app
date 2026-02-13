@@ -1,8 +1,10 @@
 "use client";
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
+import { FirebaseError } from "firebase/app";
 import { deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+import { httpsCallable } from "firebase/functions";
+import { auth, db, functions as fbFunctions } from "@/lib/firebase";
 import { formatTimestampForDateInput, parseLocalDateToTimestamp } from "@/lib/datetime";
 import type { TodoDoc } from "@/types/firestore";
 import DictationMicButton from "@/app/(protected)/_components/DictationMicButton";
@@ -11,6 +13,89 @@ import Modal from "../../../Modal";
 
 function safeItemId() {
   return `it_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+}
+
+type AssistantActionId =
+  | "summary"
+  | "correction"
+  | "structure"
+  | "translation"
+  | "rewrite_pro"
+  | "rewrite_humor"
+  | "rewrite_short";
+
+const ASSISTANT_ACTIONS: Record<AssistantActionId, { label: string; instruction: string }> = {
+  summary: {
+    label: "Résumer",
+    instruction:
+      "Résume ce todo en conservant uniquement l'essentiel. Réponds avec un titre court puis une liste à puces d'actions claires.",
+  },
+  correction: {
+    label: "Correction",
+    instruction:
+      "Corrige l'orthographe, la grammaire et la ponctuation en français, sans modifier le sens des éléments.",
+  },
+  structure: {
+    label: "Structurer",
+    instruction:
+      "Réorganise ce todo pour le rendre plus lisible: un titre explicite et une liste d'items ordonnés et actionnables.",
+  },
+  translation: {
+    label: "Traduction",
+    instruction:
+      "Traduis le todo en anglais naturel, en gardant exactement le même sens et la même structure (titre + liste).",
+  },
+  rewrite_pro: {
+    label: "Reformuler (pro)",
+    instruction: "Reformule le todo dans un style professionnel, clair et orienté action.",
+  },
+  rewrite_humor: {
+    label: "Reformuler (humour)",
+    instruction: "Reformule le todo avec une touche d'humour légère et positive, tout en restant utile.",
+  },
+  rewrite_short: {
+    label: "Reformuler (succinct)",
+    instruction: "Reformule le todo de façon très concise avec des phrases courtes.",
+  },
+};
+
+function todoToAssistantText(todo: TodoDoc): string {
+  const title = typeof todo.title === "string" && todo.title.trim() ? todo.title.trim() : "ToDo";
+  const active = Array.isArray(todo.items) ? todo.items.filter((it) => it?.done !== true) : [];
+  const done = Array.isArray(todo.items) ? todo.items.filter((it) => it?.done === true) : [];
+  const lines = [title, "", "Éléments actifs:"];
+  if (active.length === 0) lines.push("- Aucun");
+  for (const item of active) {
+    const text = typeof item?.text === "string" ? item.text.trim() : "";
+    if (text) lines.push(`- ${text}`);
+  }
+  if (done.length > 0) {
+    lines.push("", "Terminés:");
+    for (const item of done) {
+      const text = typeof item?.text === "string" ? item.text.trim() : "";
+      if (text) lines.push(`- ${text}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function parseAssistantTodoText(raw: string, fallbackTitle: string): { title: string; items: NonNullable<TodoDoc["items"]> } {
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const first = lines[0] ?? "";
+  const cleanedTitle = first.replace(/^[-*•#\d.\s)]+/, "").trim();
+  const title = cleanedTitle || fallbackTitle || "ToDo";
+
+  const bulletItems = lines
+    .slice(1)
+    .map((line) => line.replace(/^[-*•\d.\s)]+/, "").trim())
+    .filter((line) => line.length > 0 && !/^éléments actifs:?$/i.test(line) && !/^terminés:?$/i.test(line) && !/^aucun$/i.test(line));
+
+  const uniq = Array.from(new Set(bulletItems)).slice(0, 60);
+  const items = uniq.map((text) => ({ id: safeItemId(), text, done: false, createdAt: Date.now() }));
+  return { title, items };
 }
 
 export default function TodoDetailModal(props: { params: Promise<{ id: string }> }) {
@@ -38,6 +123,10 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [dueDateDraft, setDueDateDraft] = useState("");
   const [priorityDraft, setPriorityDraft] = useState<"" | NonNullable<TodoDoc["priority"]>>("");
+  const [assistantMenuOpen, setAssistantMenuOpen] = useState(false);
+  const [assistantBusyAction, setAssistantBusyAction] = useState<AssistantActionId | null>(null);
+  const [assistantInfo, setAssistantInfo] = useState<string | null>(null);
+  const [assistantError, setAssistantError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -173,6 +262,45 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
     if (!todo) return;
     const ts = dueDateDraft ? parseLocalDateToTimestamp(dueDateDraft) : null;
     await persistTodo({ dueDate: ts });
+  };
+
+  const runAssistantAction = async (actionId: AssistantActionId) => {
+    if (!todo) return;
+    if (assistantBusyAction) return;
+
+    const action = ASSISTANT_ACTIONS[actionId];
+    setAssistantBusyAction(actionId);
+    setAssistantInfo(null);
+    setAssistantError(null);
+    setAssistantMenuOpen(false);
+
+    try {
+      const fn = httpsCallable<
+        { text: string; instruction: string },
+        { text: string; model?: string | null }
+      >(fbFunctions, "assistantRewriteText");
+
+      const source = todoToAssistantText(todo);
+      const response = await fn({ text: source, instruction: action.instruction });
+      const transformed = typeof response.data?.text === "string" ? response.data.text.trim() : "";
+      if (!transformed) {
+        throw new Error("Réponse IA vide.");
+      }
+
+      const parsed = parseAssistantTodoText(transformed, todo.title);
+      if (parsed.items.length === 0) {
+        throw new Error("Aucun élément exploitable détecté.");
+      }
+
+      await persistTodo({ title: parsed.title, items: parsed.items, completed: false });
+      setAssistantInfo(`${action.label} appliqué.`);
+    } catch (e) {
+      if (e instanceof FirebaseError) setAssistantError(`${e.code}: ${e.message}`);
+      else if (e instanceof Error) setAssistantError(e.message);
+      else setAssistantError("Impossible d’appliquer l’action assistant.");
+    } finally {
+      setAssistantBusyAction(null);
+    }
   };
 
   const addItem = async () => {
@@ -333,6 +461,57 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                     ×
                   </button>
                 </div>
+              </div>
+
+              <div className="rounded-md border border-border/70 bg-background/40 px-2 py-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] text-muted-foreground mr-1">Assistant</span>
+                  <button
+                    type="button"
+                    className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+                    disabled={saving || !!assistantBusyAction}
+                    onClick={() => void runAssistantAction("summary")}
+                  >
+                    {assistantBusyAction === "summary" ? "Résumé…" : "Résumer"}
+                  </button>
+                  <button
+                    type="button"
+                    className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+                    disabled={saving || !!assistantBusyAction}
+                    onClick={() => void runAssistantAction("correction")}
+                  >
+                    {assistantBusyAction === "correction" ? "Correction…" : "Correction"}
+                  </button>
+                  <button
+                    type="button"
+                    className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+                    disabled={saving || !!assistantBusyAction}
+                    onClick={() => void runAssistantAction("structure")}
+                  >
+                    {assistantBusyAction === "structure" ? "Structure…" : "Structurer"}
+                  </button>
+
+                  <div className="relative">
+                    <button
+                      type="button"
+                      className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+                      disabled={saving || !!assistantBusyAction}
+                      onClick={() => setAssistantMenuOpen((v) => !v)}
+                    >
+                      Plus
+                    </button>
+                    {assistantMenuOpen ? (
+                      <div className="absolute right-0 mt-1 z-20 min-w-[210px] rounded-md border border-border bg-card shadow-lg p-1">
+                        <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("translation")}>Traduction</button>
+                        <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("rewrite_pro")}>Reformuler (pro)</button>
+                        <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("rewrite_humor")}>Reformuler (humour)</button>
+                        <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("rewrite_short")}>Reformuler (succinct)</button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+                {assistantInfo ? <div className="mt-1 text-[11px] text-muted-foreground">{assistantInfo}</div> : null}
+                {assistantError ? <div className="mt-1 text-[11px] text-destructive">{assistantError}</div> : null}
               </div>
 
               <details
