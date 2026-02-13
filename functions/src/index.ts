@@ -4719,6 +4719,7 @@ export const assistantRequestVoiceTranscription = functions
   });
 
 type AssistantVoiceIntentKind = 'create_task' | 'create_reminder' | 'schedule_meeting';
+type AssistantVoiceMissingField = 'time';
 
 type AssistantVoiceIntent = {
   kind: AssistantVoiceIntentKind;
@@ -4727,6 +4728,8 @@ type AssistantVoiceIntent = {
   requiresConfirmation: boolean;
   requiresConfirmationReason?: string;
   remindAt?: admin.firestore.Timestamp | null;
+  missingFields?: AssistantVoiceMissingField[];
+  clarificationQuestion?: string;
 };
 
 function stripVoiceCommandPrefix(input: string): string {
@@ -4737,8 +4740,15 @@ function stripVoiceCommandPrefix(input: string): string {
     .trim();
 }
 
-function inferReminderTime(text: string, now: Date): admin.firestore.Timestamp | null {
+function inferReminderTime(text: string, now: Date): {
+  remindAt: admin.firestore.Timestamp | null;
+  missingFields: AssistantVoiceMissingField[];
+} {
   const lower = text.toLowerCase();
+  const hasTomorrow = lower.includes('demain');
+  const hasEvening = lower.includes('ce soir') || lower.includes('soir');
+  const hasMorning = lower.includes('matin');
+  const hasAfternoon = lower.includes('après-midi') || lower.includes('apres-midi');
 
   const hhmm = /\b([01]?\d|2[0-3])[:h]([0-5]\d)\b/.exec(lower);
   if (hhmm) {
@@ -4746,38 +4756,69 @@ function inferReminderTime(text: string, now: Date): admin.firestore.Timestamp |
     const m = Number(hhmm[2]);
     const d = new Date(now);
     d.setSeconds(0, 0);
+    if (hasTomorrow) {
+      d.setDate(d.getDate() + 1);
+    }
     d.setHours(h, m, 0, 0);
     if (d.getTime() <= now.getTime()) {
       d.setDate(d.getDate() + 1);
     }
-    return admin.firestore.Timestamp.fromDate(d);
+    return { remindAt: admin.firestore.Timestamp.fromDate(d), missingFields: [] };
   }
 
-  if (lower.includes('demain')) {
+  if (hasTomorrow && hasMorning) {
     const d = new Date(now);
     d.setDate(d.getDate() + 1);
     d.setHours(9, 0, 0, 0);
-    return admin.firestore.Timestamp.fromDate(d);
+    return { remindAt: admin.firestore.Timestamp.fromDate(d), missingFields: [] };
   }
 
-  if (lower.includes('ce soir')) {
+  if (hasTomorrow && hasAfternoon) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + 1);
+    d.setHours(14, 0, 0, 0);
+    return { remindAt: admin.firestore.Timestamp.fromDate(d), missingFields: [] };
+  }
+
+  if (hasEvening) {
     const d = new Date(now);
     d.setHours(18, 0, 0, 0);
     if (d.getTime() <= now.getTime()) {
       d.setDate(d.getDate() + 1);
     }
-    return admin.firestore.Timestamp.fromDate(d);
+    return { remindAt: admin.firestore.Timestamp.fromDate(d), missingFields: [] };
   }
 
-  const fallback = new Date(now);
-  fallback.setMinutes(fallback.getMinutes() + 60, 0, 0);
-  return admin.firestore.Timestamp.fromDate(fallback);
+  if (hasTomorrow) {
+    return { remindAt: null, missingFields: ['time'] };
+  }
+
+  if (hasMorning) {
+    const d = new Date(now);
+    d.setHours(9, 0, 0, 0);
+    if (d.getTime() <= now.getTime()) {
+      d.setDate(d.getDate() + 1);
+    }
+    return { remindAt: admin.firestore.Timestamp.fromDate(d), missingFields: [] };
+  }
+
+  if (hasAfternoon) {
+    const d = new Date(now);
+    d.setHours(14, 0, 0, 0);
+    if (d.getTime() <= now.getTime()) {
+      d.setDate(d.getDate() + 1);
+    }
+    return { remindAt: admin.firestore.Timestamp.fromDate(d), missingFields: [] };
+  }
+
+  return { remindAt: null, missingFields: ['time'] };
 }
 
 function parseAssistantVoiceIntent(transcript: string, now: Date): AssistantVoiceIntent {
   const raw = transcript.trim();
   const lower = raw.toLowerCase();
   const cleaned = stripVoiceCommandPrefix(raw);
+  const hasExplicitHour = /\b([01]?\d|2[0-3])[:h]([0-5]\d)\b/.test(lower);
 
   const meetingLike =
     lower.includes('réunion') ||
@@ -4789,6 +4830,7 @@ function parseAssistantVoiceIntent(transcript: string, now: Date): AssistantVoic
     lower.includes('calendrier');
 
   if (meetingLike) {
+    const missingFields: AssistantVoiceMissingField[] = hasExplicitHour ? [] : ['time'];
     return {
       kind: 'schedule_meeting',
       title: cleaned || 'Nouvelle réunion',
@@ -4796,6 +4838,8 @@ function parseAssistantVoiceIntent(transcript: string, now: Date): AssistantVoic
       requiresConfirmation: true,
       requiresConfirmationReason: 'La planification calendrier externe nécessite une confirmation.',
       remindAt: null,
+      missingFields,
+      clarificationQuestion: missingFields.length > 0 ? 'À quelle heure veux-tu planifier la réunion ?' : undefined,
     };
   }
 
@@ -4807,12 +4851,16 @@ function parseAssistantVoiceIntent(transcript: string, now: Date): AssistantVoic
     lower.includes('n oublie');
 
   if (reminderLike) {
+    const inferred = inferReminderTime(raw, now);
+    const missingFields = inferred.missingFields;
     return {
       kind: 'create_reminder',
       title: cleaned || 'Rappel',
       confidence: 0.81,
       requiresConfirmation: false,
-      remindAt: inferReminderTime(raw, now),
+      remindAt: inferred.remindAt,
+      missingFields,
+      clarificationQuestion: missingFields.length > 0 ? 'Je peux le faire. À quelle heure veux-tu ce rappel ?' : undefined,
     };
   }
 
@@ -4851,6 +4899,8 @@ export const assistantExecuteIntent = functions.https.onCall(async (data, contex
   const now = new Date();
   const parsed = parseAssistantVoiceIntent(transcript, now);
   const remindAtIso = parsed.remindAt ? parsed.remindAt.toDate().toISOString() : null;
+  const missingFields = Array.isArray(parsed.missingFields) ? parsed.missingFields : [];
+  const needsClarification = missingFields.length > 0;
 
   const responseBase = {
     intent: {
@@ -4861,13 +4911,28 @@ export const assistantExecuteIntent = functions.https.onCall(async (data, contex
       requiresConfirmationReason: parsed.requiresConfirmationReason ?? null,
       remindAtIso,
     },
+    needsClarification,
+    missingFields,
+    clarificationQuestion: parsed.clarificationQuestion ?? null,
     executed: false,
     createdCoreObjects: [] as Array<{ type: 'task' | 'taskReminder' | 'calendarEvent'; id: string }>,
-    message: execute ? 'Action non exécutée.' : 'Intention analysée. Prête à exécuter.',
+    message: needsClarification
+      ? (parsed.clarificationQuestion ?? 'Il me manque une information.')
+      : execute
+        ? 'Action non exécutée.'
+        : 'Intention analysée. Prête à exécuter.',
   };
 
   if (!execute) {
     return responseBase;
+  }
+
+  if (needsClarification) {
+    return {
+      ...responseBase,
+      executed: false,
+      message: parsed.clarificationQuestion ?? 'Il me manque une information pour exécuter cette action.',
+    };
   }
 
   if (parsed.requiresConfirmation || parsed.kind === 'schedule_meeting') {

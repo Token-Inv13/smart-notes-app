@@ -3651,40 +3651,71 @@ function stripVoiceCommandPrefix(input) {
 }
 function inferReminderTime(text, now) {
     const lower = text.toLowerCase();
+    const hasTomorrow = lower.includes('demain');
+    const hasEvening = lower.includes('ce soir') || lower.includes('soir');
+    const hasMorning = lower.includes('matin');
+    const hasAfternoon = lower.includes('après-midi') || lower.includes('apres-midi');
     const hhmm = /\b([01]?\d|2[0-3])[:h]([0-5]\d)\b/.exec(lower);
     if (hhmm) {
         const h = Number(hhmm[1]);
         const m = Number(hhmm[2]);
         const d = new Date(now);
         d.setSeconds(0, 0);
+        if (hasTomorrow) {
+            d.setDate(d.getDate() + 1);
+        }
         d.setHours(h, m, 0, 0);
         if (d.getTime() <= now.getTime()) {
             d.setDate(d.getDate() + 1);
         }
-        return admin.firestore.Timestamp.fromDate(d);
+        return { remindAt: admin.firestore.Timestamp.fromDate(d), missingFields: [] };
     }
-    if (lower.includes('demain')) {
+    if (hasTomorrow && hasMorning) {
         const d = new Date(now);
         d.setDate(d.getDate() + 1);
         d.setHours(9, 0, 0, 0);
-        return admin.firestore.Timestamp.fromDate(d);
+        return { remindAt: admin.firestore.Timestamp.fromDate(d), missingFields: [] };
     }
-    if (lower.includes('ce soir')) {
+    if (hasTomorrow && hasAfternoon) {
+        const d = new Date(now);
+        d.setDate(d.getDate() + 1);
+        d.setHours(14, 0, 0, 0);
+        return { remindAt: admin.firestore.Timestamp.fromDate(d), missingFields: [] };
+    }
+    if (hasEvening) {
         const d = new Date(now);
         d.setHours(18, 0, 0, 0);
         if (d.getTime() <= now.getTime()) {
             d.setDate(d.getDate() + 1);
         }
-        return admin.firestore.Timestamp.fromDate(d);
+        return { remindAt: admin.firestore.Timestamp.fromDate(d), missingFields: [] };
     }
-    const fallback = new Date(now);
-    fallback.setMinutes(fallback.getMinutes() + 60, 0, 0);
-    return admin.firestore.Timestamp.fromDate(fallback);
+    if (hasTomorrow) {
+        return { remindAt: null, missingFields: ['time'] };
+    }
+    if (hasMorning) {
+        const d = new Date(now);
+        d.setHours(9, 0, 0, 0);
+        if (d.getTime() <= now.getTime()) {
+            d.setDate(d.getDate() + 1);
+        }
+        return { remindAt: admin.firestore.Timestamp.fromDate(d), missingFields: [] };
+    }
+    if (hasAfternoon) {
+        const d = new Date(now);
+        d.setHours(14, 0, 0, 0);
+        if (d.getTime() <= now.getTime()) {
+            d.setDate(d.getDate() + 1);
+        }
+        return { remindAt: admin.firestore.Timestamp.fromDate(d), missingFields: [] };
+    }
+    return { remindAt: null, missingFields: ['time'] };
 }
 function parseAssistantVoiceIntent(transcript, now) {
     const raw = transcript.trim();
     const lower = raw.toLowerCase();
     const cleaned = stripVoiceCommandPrefix(raw);
+    const hasExplicitHour = /\b([01]?\d|2[0-3])[:h]([0-5]\d)\b/.test(lower);
     const meetingLike = lower.includes('réunion') ||
         lower.includes('reunion') ||
         lower.includes('meeting') ||
@@ -3693,6 +3724,7 @@ function parseAssistantVoiceIntent(transcript, now) {
         lower.includes('agenda') ||
         lower.includes('calendrier');
     if (meetingLike) {
+        const missingFields = hasExplicitHour ? [] : ['time'];
         return {
             kind: 'schedule_meeting',
             title: cleaned || 'Nouvelle réunion',
@@ -3700,6 +3732,8 @@ function parseAssistantVoiceIntent(transcript, now) {
             requiresConfirmation: true,
             requiresConfirmationReason: 'La planification calendrier externe nécessite une confirmation.',
             remindAt: null,
+            missingFields,
+            clarificationQuestion: missingFields.length > 0 ? 'À quelle heure veux-tu planifier la réunion ?' : undefined,
         };
     }
     const reminderLike = lower.includes('rappel') ||
@@ -3708,12 +3742,16 @@ function parseAssistantVoiceIntent(transcript, now) {
         lower.includes("n'oublie") ||
         lower.includes('n oublie');
     if (reminderLike) {
+        const inferred = inferReminderTime(raw, now);
+        const missingFields = inferred.missingFields;
         return {
             kind: 'create_reminder',
             title: cleaned || 'Rappel',
             confidence: 0.81,
             requiresConfirmation: false,
-            remindAt: inferReminderTime(raw, now),
+            remindAt: inferred.remindAt,
+            missingFields,
+            clarificationQuestion: missingFields.length > 0 ? 'Je peux le faire. À quelle heure veux-tu ce rappel ?' : undefined,
         };
     }
     return {
@@ -3725,7 +3763,7 @@ function parseAssistantVoiceIntent(transcript, now) {
     };
 }
 exports.assistantExecuteIntent = functions.https.onCall(async (data, context) => {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     const userId = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid;
     if (!userId) {
         throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
@@ -3747,6 +3785,8 @@ exports.assistantExecuteIntent = functions.https.onCall(async (data, context) =>
     const now = new Date();
     const parsed = parseAssistantVoiceIntent(transcript, now);
     const remindAtIso = parsed.remindAt ? parsed.remindAt.toDate().toISOString() : null;
+    const missingFields = Array.isArray(parsed.missingFields) ? parsed.missingFields : [];
+    const needsClarification = missingFields.length > 0;
     const responseBase = {
         intent: {
             kind: parsed.kind,
@@ -3756,19 +3796,29 @@ exports.assistantExecuteIntent = functions.https.onCall(async (data, context) =>
             requiresConfirmationReason: (_b = parsed.requiresConfirmationReason) !== null && _b !== void 0 ? _b : null,
             remindAtIso,
         },
+        needsClarification,
+        missingFields,
+        clarificationQuestion: (_c = parsed.clarificationQuestion) !== null && _c !== void 0 ? _c : null,
         executed: false,
         createdCoreObjects: [],
-        message: execute ? 'Action non exécutée.' : 'Intention analysée. Prête à exécuter.',
+        message: needsClarification
+            ? ((_d = parsed.clarificationQuestion) !== null && _d !== void 0 ? _d : 'Il me manque une information.')
+            : execute
+                ? 'Action non exécutée.'
+                : 'Intention analysée. Prête à exécuter.',
     };
     if (!execute) {
         return responseBase;
     }
+    if (needsClarification) {
+        return Object.assign(Object.assign({}, responseBase), { executed: false, message: (_e = parsed.clarificationQuestion) !== null && _e !== void 0 ? _e : 'Il me manque une information pour exécuter cette action.' });
+    }
     if (parsed.requiresConfirmation || parsed.kind === 'schedule_meeting') {
-        return Object.assign(Object.assign({}, responseBase), { executed: false, message: (_c = parsed.requiresConfirmationReason) !== null && _c !== void 0 ? _c : 'Cette action nécessite confirmation manuelle.' });
+        return Object.assign(Object.assign({}, responseBase), { executed: false, message: (_f = parsed.requiresConfirmationReason) !== null && _f !== void 0 ? _f : 'Cette action nécessite confirmation manuelle.' });
     }
     const userRef = db.collection('users').doc(userId);
     const userSnap = await userRef.get();
-    const userPlan = userSnap.exists && typeof ((_d = userSnap.data()) === null || _d === void 0 ? void 0 : _d.plan) === 'string' ? String(userSnap.data().plan) : 'free';
+    const userPlan = userSnap.exists && typeof ((_g = userSnap.data()) === null || _g === void 0 ? void 0 : _g.plan) === 'string' ? String(userSnap.data().plan) : 'free';
     const isPro = userPlan === 'pro';
     const createdAt = admin.firestore.FieldValue.serverTimestamp();
     const updatedAt = admin.firestore.FieldValue.serverTimestamp();
@@ -3797,7 +3847,7 @@ exports.assistantExecuteIntent = functions.https.onCall(async (data, context) =>
         if (!isPro) {
             return Object.assign(Object.assign({}, responseBase), { executed: false, message: 'Le rappel automatique nécessite le plan Pro.' });
         }
-        const remindAt = (_e = parsed.remindAt) !== null && _e !== void 0 ? _e : admin.firestore.Timestamp.fromDate(new Date(Date.now() + 60 * 60 * 1000));
+        const remindAt = (_h = parsed.remindAt) !== null && _h !== void 0 ? _h : admin.firestore.Timestamp.fromDate(new Date(Date.now() + 60 * 60 * 1000));
         const remindAtIsoEffective = remindAt.toDate().toISOString();
         const taskRef = db.collection('tasks').doc();
         const reminderRef = db.collection('taskReminders').doc();

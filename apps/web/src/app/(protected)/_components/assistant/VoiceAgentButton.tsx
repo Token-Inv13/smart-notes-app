@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FirebaseError } from "firebase/app";
 import { httpsCallable } from "firebase/functions";
-import { functions as fbFunctions } from "@/lib/firebase";
+import { doc, onSnapshot } from "firebase/firestore";
+import { ref as storageRef, uploadBytes } from "firebase/storage";
+import { db, functions as fbFunctions, storage } from "@/lib/firebase";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
-import VoiceRecorderButton from "./VoiceRecorderButton";
+import { useAuth } from "@/hooks/useAuth";
 
 type Props = {
   mobileHidden?: boolean;
@@ -21,18 +23,43 @@ type ExecuteIntentResponse = {
     remindAtIso?: string | null;
   };
   executed: boolean;
+  needsClarification?: boolean;
+  missingFields?: string[];
+  clarificationQuestion?: string | null;
   createdCoreObjects: Array<{ type: "task" | "taskReminder" | "calendarEvent"; id: string }>;
   message: string;
 };
 
+type VoiceFlowStep = "idle" | "listening" | "uploading" | "transcribing" | "review" | "clarify" | "executing" | "done" | "error";
+
 export default function VoiceAgentButton({ mobileHidden }: Props) {
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  const [inputText, setInputText] = useState("");
-  const [busy, setBusy] = useState<"analyze" | "execute" | null>(null);
+  const [flowStep, setFlowStep] = useState<VoiceFlowStep>("idle");
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [transcript, setTranscript] = useState("");
+  const [clarificationInput, setClarificationInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ExecuteIntentResponse | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [resultId, setResultId] = useState<string | null>(null);
 
-  const hasText = inputText.trim().length > 0;
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<BlobPart[]>([]);
+  const timerRef = useRef<number | null>(null);
+  const startedAtRef = useRef<number>(0);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const silenceIntervalRef = useRef<number | null>(null);
+  const startedAutomaticallyRef = useRef(false);
+  const lastVoiceMsRef = useRef<number>(0);
+  const heardVoiceRef = useRef(false);
+  const analyzedResultIdRef = useRef<string | null>(null);
+
+  const maxDurationMs = 2 * 60 * 1000;
+  const maxBytes = 25 * 1024 * 1024;
 
   const isCallableUnauthenticated = (err: unknown) => {
     if (isAuthInvalidError(err)) return true;
@@ -40,16 +67,81 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
     return code.includes("unauthenticated");
   };
 
-  const run = async (execute: boolean) => {
-    const transcript = inputText.trim();
-    if (!transcript) return;
-    setBusy(execute ? "execute" : "analyze");
+  const clearTimer = () => {
+    if (timerRef.current) window.clearInterval(timerRef.current);
+    timerRef.current = null;
+  };
+
+  const clearSilenceWatcher = () => {
+    if (silenceIntervalRef.current) window.clearInterval(silenceIntervalRef.current);
+    silenceIntervalRef.current = null;
+  };
+
+  const cleanupAudioGraph = () => {
+    try {
+      sourceRef.current?.disconnect();
+    } catch {
+      // ignore
+    }
+    sourceRef.current = null;
+    analyserRef.current = null;
+    try {
+      void audioContextRef.current?.close();
+    } catch {
+      // ignore
+    }
+    audioContextRef.current = null;
+  };
+
+  const cleanupStream = () => {
+    try {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    } catch {
+      // ignore
+    }
+    streamRef.current = null;
+  };
+
+  const hardStopRecordingResources = () => {
+    clearTimer();
+    clearSilenceWatcher();
+    cleanupAudioGraph();
+    cleanupStream();
+  };
+
+  const createVoiceJob = async () => {
+    const fn = httpsCallable<{ mode?: string }, { jobId: string; storagePath: string }>(fbFunctions, "assistantCreateVoiceJob");
+    const res = await fn({ mode: "standalone" });
+    return res.data;
+  };
+
+  const requestTranscription = async (id: string) => {
+    const fn = httpsCallable<{ jobId: string }, { jobId: string; resultId: string }>(fbFunctions, "assistantRequestVoiceTranscription");
+    const res = await fn({ jobId: id });
+    return res.data;
+  };
+
+  const runIntent = async (execute: boolean, transcriptInput?: string) => {
+    const effectiveTranscript = (transcriptInput ?? transcript).trim();
+    if (!effectiveTranscript) return;
+
+    setFlowStep(execute ? "executing" : "transcribing");
     setError(null);
 
     try {
       const fn = httpsCallable<{ transcript: string; execute: boolean }, ExecuteIntentResponse>(fbFunctions, "assistantExecuteIntent");
-      const res = await fn({ transcript, execute });
+      const res = await fn({ transcript: effectiveTranscript, execute });
       setResult(res.data);
+
+      if (execute && res.data.executed) {
+        setFlowStep("done");
+        return;
+      }
+      if (res.data.needsClarification) {
+        setFlowStep("clarify");
+        return;
+      }
+      setFlowStep("review");
     } catch (e) {
       if (isCallableUnauthenticated(e)) {
         void invalidateAuthSession();
@@ -58,10 +150,236 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
       if (e instanceof FirebaseError) setError(`${e.code}: ${e.message}`);
       else if (e instanceof Error) setError(e.message);
       else setError("Impossible d’exécuter la commande vocale.");
-    } finally {
-      setBusy(null);
+      setFlowStep("error");
     }
   };
+
+  const processBlob = async (blob: Blob) => {
+    if (!user?.uid) {
+      setError("Tu dois être connecté.");
+      setFlowStep("error");
+      return;
+    }
+    if (blob.size <= 0) {
+      setError("Audio vide.");
+      setFlowStep("error");
+      return;
+    }
+    if (blob.size > maxBytes) {
+      setError("Audio trop volumineux (max 25MB).");
+      setFlowStep("error");
+      return;
+    }
+
+    setFlowStep("uploading");
+
+    try {
+      const created = await createVoiceJob();
+      setJobId(created.jobId);
+      const fileRef = storageRef(storage, created.storagePath);
+      await uploadBytes(fileRef, blob, { contentType: blob.type || "audio/webm" });
+      setFlowStep("transcribing");
+      const tr = await requestTranscription(created.jobId);
+      setResultId(tr.resultId);
+    } catch (e) {
+      if (isCallableUnauthenticated(e)) {
+        void invalidateAuthSession();
+        return;
+      }
+      if (e instanceof FirebaseError) setError(`${e.code}: ${e.message}`);
+      else if (e instanceof Error) setError(e.message);
+      else setError("Impossible de traiter l’audio.");
+      setFlowStep("error");
+    }
+  };
+
+  const stopListening = () => {
+    if (flowStep !== "listening") return;
+    try {
+      recorderRef.current?.stop();
+    } catch {
+      // ignore
+    }
+  };
+
+  const startListening = async () => {
+    if (flowStep === "listening" || flowStep === "uploading" || flowStep === "transcribing" || flowStep === "executing") return;
+    if (typeof window === "undefined" || typeof window.MediaRecorder === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setError("Enregistrement non supporté sur cet appareil.");
+      setFlowStep("error");
+      return;
+    }
+
+    setError(null);
+    setResult(null);
+    setClarificationInput("");
+    setTranscript("");
+    setElapsedMs(0);
+    setJobId(null);
+    setResultId(null);
+    analyzedResultIdRef.current = null;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      chunksRef.current = [];
+      heardVoiceRef.current = false;
+      lastVoiceMsRef.current = Date.now();
+
+      const recorder = (() => {
+        try {
+          return new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
+        } catch {
+          return new MediaRecorder(stream);
+        }
+      })();
+      recorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          chunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        clearTimer();
+        clearSilenceWatcher();
+        cleanupAudioGraph();
+        cleanupStream();
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        chunksRef.current = [];
+        recorderRef.current = null;
+        void processBlob(blob);
+      };
+
+      recorder.start(350);
+      setFlowStep("listening");
+      startedAtRef.current = Date.now();
+
+      timerRef.current = window.setInterval(() => {
+        const elapsed = Date.now() - startedAtRef.current;
+        setElapsedMs(elapsed);
+        if (elapsed >= maxDurationMs) {
+          stopListening();
+        }
+      }, 200);
+
+      const audioCtx = new AudioContext();
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      const source = audioCtx.createMediaStreamSource(stream);
+      source.connect(analyser);
+
+      audioContextRef.current = audioCtx;
+      analyserRef.current = analyser;
+      sourceRef.current = source;
+
+      silenceIntervalRef.current = window.setInterval(() => {
+        const an = analyserRef.current;
+        if (!an) return;
+        const arr = new Uint8Array(an.fftSize);
+        an.getByteTimeDomainData(arr);
+        let sum = 0;
+        for (let i = 0; i < arr.length; i += 1) {
+          const sample = arr[i] ?? 128;
+          const v = (sample - 128) / 128;
+          sum += v * v;
+        }
+        const rms = Math.sqrt(sum / arr.length);
+        const now = Date.now();
+        const speaking = rms > 0.03;
+        if (speaking) {
+          heardVoiceRef.current = true;
+          lastVoiceMsRef.current = now;
+        }
+
+        if (heardVoiceRef.current && now - lastVoiceMsRef.current > 1400) {
+          stopListening();
+        }
+      }, 180);
+    } catch (e) {
+      if (e instanceof Error) setError(e.message);
+      else setError("Impossible d’accéder au micro.");
+      setFlowStep("error");
+      hardStopRecordingResources();
+    }
+  };
+
+  const closeModal = () => {
+    setOpen(false);
+    startedAutomaticallyRef.current = false;
+    hardStopRecordingResources();
+    try {
+      recorderRef.current?.stop();
+    } catch {
+      // ignore
+    }
+    recorderRef.current = null;
+  };
+
+  const retryVoice = () => {
+    setResult(null);
+    setError(null);
+    setTranscript("");
+    setClarificationInput("");
+    setFlowStep("idle");
+    void startListening();
+  };
+
+  const applyClarification = async () => {
+    const extra = clarificationInput.trim();
+    if (!extra) return;
+    const merged = `${transcript.trim()} ${extra}`.trim();
+    setTranscript(merged);
+    setClarificationInput("");
+    await runIntent(false, merged);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    if (startedAutomaticallyRef.current) return;
+    startedAutomaticallyRef.current = true;
+    void startListening();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    return () => {
+      hardStopRecordingResources();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!user?.uid || !jobId) return;
+    const jobRef = doc(db, "users", user.uid, "assistantVoiceJobs", jobId);
+    const unsub = onSnapshot(jobRef, (snap) => {
+      const d = snap.exists() ? (snap.data() as { status?: unknown; errorMessage?: unknown }) : null;
+      if (d?.status === "error" && typeof d.errorMessage === "string") {
+        setError(d.errorMessage);
+        setFlowStep("error");
+      }
+    });
+    return () => unsub();
+  }, [jobId, user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid || !resultId) return;
+    const resultRef = doc(db, "users", user.uid, "assistantVoiceResults", resultId);
+    const unsub = onSnapshot(resultRef, (snap) => {
+      if (analyzedResultIdRef.current === resultId) return;
+      const d = snap.exists() ? (snap.data() as { transcript?: unknown }) : null;
+      if (typeof d?.transcript !== "string" || !d.transcript.trim()) return;
+      const nextTranscript = d.transcript.trim();
+      analyzedResultIdRef.current = resultId;
+      setTranscript(nextTranscript);
+      setFlowStep("transcribing");
+      void runIntent(false, nextTranscript);
+    });
+    return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resultId, user?.uid]);
 
   const parsedHint = useMemo(() => {
     if (!result) return null;
@@ -73,6 +391,17 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
     }
     return `Compris: planifier une réunion — “${intent.title}” (${conf}).`;
   }, [result]);
+
+  const stepHint = useMemo(() => {
+    if (flowStep === "listening") return "Je t’écoute… parle naturellement.";
+    if (flowStep === "uploading") return "Envoi de l’audio…";
+    if (flowStep === "transcribing") return "Transcription et analyse en cours…";
+    if (flowStep === "executing") return "Exécution de l’action…";
+    if (flowStep === "done") return "Action terminée ✅";
+    if (flowStep === "clarify") return result?.clarificationQuestion ?? "Il me manque une précision.";
+    if (flowStep === "review") return "Voici mon interprétation. Je lance l’action ?";
+    return "Appuie sur le micro pour commencer.";
+  }, [flowStep, result?.clarificationQuestion]);
 
   return (
     <>
@@ -105,58 +434,159 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
           aria-modal="true"
           aria-label="Assistant vocal"
           onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setOpen(false);
+            if (e.target === e.currentTarget) closeModal();
           }}
         >
           <div className="w-full md:max-w-lg rounded-xl border border-border bg-card p-4 space-y-3" onMouseDown={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3">
               <div className="text-sm font-semibold">Assistant vocal</div>
-              <button type="button" className="text-sm text-muted-foreground" onClick={() => setOpen(false)}>
+              <button type="button" className="text-sm text-muted-foreground" onClick={closeModal}>
                 Fermer
               </button>
             </div>
 
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">Appuie puis parle. Tu peux aussi écrire.</div>
-              <VoiceRecorderButton
-                mode="standalone"
-                onTranscript={(t) => {
-                  const next = t.trim();
-                  if (!next) return;
-                  setInputText(next);
+            <div className="flex flex-col items-center justify-center gap-2 py-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (flowStep === "listening") {
+                    stopListening();
+                  } else {
+                    void startListening();
+                  }
                 }}
-                showInternalActions={false}
-                showTranscript={false}
-              />
+                className={
+                  "relative h-24 w-24 rounded-full border border-primary/40 text-3xl flex items-center justify-center " +
+                  (flowStep === "listening" ? "bg-primary/20 animate-pulse" : "bg-primary/10")
+                }
+                aria-label={flowStep === "listening" ? "Stopper l’écoute" : "Démarrer l’écoute"}
+                title={flowStep === "listening" ? "Stop" : "Parler"}
+              >
+                🎤
+              </button>
+              {flowStep === "listening" ? <div className="text-xs text-muted-foreground">{Math.max(0, Math.floor(elapsedMs / 1000))}s</div> : null}
+              <div className="text-xs text-muted-foreground text-center">{stepHint}</div>
             </div>
 
-            <textarea
-              className="w-full min-h-[96px] rounded-md border border-input bg-background p-3 text-sm"
-              placeholder="Ex: Rappelle-moi d'envoyer le devis demain à 9h"
-              value={inputText}
-              onChange={(e) => {
-                setInputText(e.target.value);
-                setResult(null);
-                setError(null);
-              }}
-            />
+            {transcript ? (
+              <div className="rounded-md border border-border bg-background p-3 text-sm whitespace-pre-wrap">{transcript}</div>
+            ) : null}
 
-            <div className="flex flex-wrap items-center gap-2">
+            {flowStep === "clarify" ? (
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  placeholder="Ex: à 9h"
+                  value={clarificationInput}
+                  onChange={(e) => setClarificationInput(e.target.value)}
+                />
+              </div>
+            ) : null}
+
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {flowStep === "listening" ? (
+                <button
+                  type="button"
+                  className="px-3 py-2 rounded-md border border-input text-sm"
+                  onClick={stopListening}
+                >
+                  STOP
+                </button>
+              ) : null}
+
+              {flowStep === "review" ? (
+                <>
+                  <button
+                    type="button"
+                    className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm"
+                    onClick={() => void runIntent(true)}
+                  >
+                    Oui
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3 py-2 rounded-md border border-input text-sm"
+                    onClick={retryVoice}
+                  >
+                    Non
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3 py-2 rounded-md border border-input text-sm"
+                    onClick={closeModal}
+                  >
+                    Annuler
+                  </button>
+                </>
+              ) : null}
+
+              {flowStep === "clarify" ? (
+                <>
+                  <button
+                    type="button"
+                    className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
+                    disabled={!clarificationInput.trim()}
+                    onClick={() => void applyClarification()}
+                  >
+                    OK
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3 py-2 rounded-md border border-input text-sm"
+                    onClick={closeModal}
+                  >
+                    Annuler
+                  </button>
+                </>
+              ) : null}
+
+              {flowStep === "done" ? (
+                <button
+                  type="button"
+                  className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm"
+                  onClick={closeModal}
+                >
+                  OK
+                </button>
+              ) : null}
+
+              {flowStep === "error" ? (
+                <>
+                  <button
+                    type="button"
+                    className="px-3 py-2 rounded-md border border-input text-sm"
+                    onClick={retryVoice}
+                  >
+                    Réessayer
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3 py-2 rounded-md border border-input text-sm"
+                    onClick={closeModal}
+                  >
+                    Annuler
+                  </button>
+                </>
+              ) : null}
+
+              {flowStep === "idle" ? (
+                <button
+                  type="button"
+                  className="px-3 py-2 rounded-md border border-input text-sm"
+                  onClick={() => void startListening()}
+                >
+                  Parler
+                </button>
+              ) : null}
+
               <button
                 type="button"
                 className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-                disabled={!hasText || !!busy}
-                onClick={() => void run(false)}
+                disabled={flowStep === "listening" || flowStep === "uploading" || flowStep === "transcribing" || flowStep === "executing"}
+                onClick={retryVoice}
               >
-                {busy === "analyze" ? "Compréhension…" : "Comprendre"}
-              </button>
-              <button
-                type="button"
-                className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
-                disabled={!hasText || !!busy}
-                onClick={() => void run(true)}
-              >
-                {busy === "execute" ? "Exécution…" : "Exécuter"}
+                Nouvelle commande
               </button>
             </div>
 
