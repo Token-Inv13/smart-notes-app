@@ -41,6 +41,7 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
   const [clarificationInput, setClarificationInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ExecuteIntentResponse | null>(null);
+  const [localPreviewHint, setLocalPreviewHint] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [resultId, setResultId] = useState<string | null>(null);
 
@@ -58,8 +59,38 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
   const heardVoiceRef = useRef(false);
   const analyzedResultIdRef = useRef<string | null>(null);
 
-  const maxDurationMs = 2 * 60 * 1000;
+  const maxDurationMs = 60 * 1000;
+  const silenceAutoStopMs = 1000;
   const maxBytes = 25 * 1024 * 1024;
+
+  const buildLocalIntentPreview = (text: string): string | null => {
+    const raw = text.trim();
+    if (!raw) return null;
+    const lower = raw.toLowerCase();
+    const hasMeeting =
+      lower.includes("réunion") ||
+      lower.includes("reunion") ||
+      lower.includes("meeting") ||
+      lower.includes("rdv") ||
+      lower.includes("rendez-vous") ||
+      lower.includes("agenda") ||
+      lower.includes("calendrier");
+    if (hasMeeting) {
+      return "Pré-analyse rapide: demande de réunion détectée.";
+    }
+
+    const hasReminder =
+      lower.includes("rappel") ||
+      lower.includes("rappelle") ||
+      lower.includes("souviens") ||
+      lower.includes("n'oublie") ||
+      lower.includes("n oublie");
+    if (hasReminder) {
+      return "Pré-analyse rapide: rappel détecté.";
+    }
+
+    return "Pré-analyse rapide: tâche détectée.";
+  };
 
   const isCallableUnauthenticated = (err: unknown) => {
     if (isAuthInvalidError(err)) return true;
@@ -127,11 +158,15 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
 
     setFlowStep(execute ? "executing" : "transcribing");
     setError(null);
+    if (!execute) {
+      setLocalPreviewHint(buildLocalIntentPreview(effectiveTranscript));
+    }
 
     try {
       const fn = httpsCallable<{ transcript: string; execute: boolean }, ExecuteIntentResponse>(fbFunctions, "assistantExecuteIntent");
       const res = await fn({ transcript: effectiveTranscript, execute });
       setResult(res.data);
+      setLocalPreviewHint(null);
 
       if (execute && res.data.executed) {
         setFlowStep("done");
@@ -214,6 +249,7 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
     setResult(null);
     setClarificationInput("");
     setTranscript("");
+    setLocalPreviewHint(null);
     setElapsedMs(0);
     setJobId(null);
     setResultId(null);
@@ -293,7 +329,7 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
           lastVoiceMsRef.current = now;
         }
 
-        if (heardVoiceRef.current && now - lastVoiceMsRef.current > 1400) {
+        if (heardVoiceRef.current && now - lastVoiceMsRef.current > silenceAutoStopMs) {
           stopListening();
         }
       }, 180);
@@ -391,6 +427,8 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
     }
     return `Compris: planifier une réunion — “${intent.title}” (${conf}).`;
   }, [result]);
+
+  const displayedHint = parsedHint ?? localPreviewHint;
 
   const stepHint = useMemo(() => {
     if (flowStep === "listening") return "Je t’écoute… parle naturellement.";
@@ -590,7 +628,7 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
               </button>
             </div>
 
-            {parsedHint ? <div className="text-sm">{parsedHint}</div> : null}
+            {displayedHint ? <div className="text-sm">{displayedHint}</div> : null}
             {result?.message ? <div className="text-xs text-muted-foreground">{result.message}</div> : null}
             {result?.intent?.requiresConfirmation ? (
               <div className="text-xs text-amber-600">Action sensible: confirmation manuelle requise.</div>
