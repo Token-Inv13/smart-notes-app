@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Sparkles } from "lucide-react";
 import { FirebaseError } from "firebase/app";
 import { httpsCallable } from "firebase/functions";
 import { doc, getDoc, onSnapshot, serverTimestamp, updateDoc, type Timestamp } from "firebase/firestore";
@@ -188,9 +187,6 @@ export default function AssistantNotePanel({ noteId }: Props) {
   const [aiJobStatus, setAIJobStatus] = useState<"queued" | "processing" | "done" | "error" | null>(null);
   const [aiJobResultId, setAIJobResultId] = useState<string | null>(null);
   const [aiJobError, setAIJobError] = useState<string | null>(null);
-  const [aiJobModel, setAIJobModel] = useState<string | null>(null);
-  const [aiJobModelRequested, setAIJobModelRequested] = useState<string | null>(null);
-  const [aiJobModelFallbackUsed, setAIJobModelFallbackUsed] = useState<string | null>(null);
   const [aiResult, setAIResult] = useState<AssistantAIResultDoc | null>(null);
   const [busyAIAnalysis, setBusyAIAnalysis] = useState(false);
 
@@ -202,6 +198,8 @@ export default function AssistantNotePanel({ noteId }: Props) {
   });
 
   const [dismissedResultKeys, setDismissedResultKeys] = useState<Record<string, boolean>>({});
+
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const [textModal, setTextModal] = useState<{
     title: string;
@@ -218,6 +216,16 @@ export default function AssistantNotePanel({ noteId }: Props) {
   const [expandedBundleSuggestionId, setExpandedBundleSuggestionId] = useState<string | null>(null);
 
   const [bundleCustomizeSuggestion, setBundleCustomizeSuggestion] = useState<AssistantSuggestionDoc | null>(null);
+
+  useEffect(() => {
+    const busy =
+      jobStatus === "queued" ||
+      jobStatus === "processing" ||
+      aiJobStatus === "queued" ||
+      aiJobStatus === "processing" ||
+      !!actionError;
+    if (busy) setDetailsOpen(true);
+  }, [aiJobStatus, jobStatus, actionError]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -272,24 +280,15 @@ export default function AssistantNotePanel({ noteId }: Props) {
         const nextStatus = data ? ((data?.status as typeof aiJobStatus) ?? null) : null;
         const nextResultId = data && typeof data?.resultId === "string" ? String(data.resultId) : null;
         const nextError = data && typeof data?.error === "string" ? String(data.error) : null;
-        const nextModel = data && typeof data?.model === "string" ? String(data.model) : null;
-        const nextModelRequested = data && typeof data?.modelRequested === "string" ? String(data.modelRequested) : null;
-        const nextModelFallbackUsed = data && typeof data?.modelFallbackUsed === "string" ? String(data.modelFallbackUsed) : null;
 
         setAIJobStatus(nextStatus ?? null);
         setAIJobResultId(nextResultId);
         setAIJobError(nextError);
-        setAIJobModel(nextModel);
-        setAIJobModelRequested(nextModelRequested);
-        setAIJobModelFallbackUsed(nextModelFallbackUsed);
       },
       () => {
         setAIJobStatus(null);
         setAIJobResultId(null);
         setAIJobError(null);
-        setAIJobModel(null);
-        setAIJobModelRequested(null);
-        setAIJobModelFallbackUsed(null);
       },
     );
 
@@ -297,14 +296,6 @@ export default function AssistantNotePanel({ noteId }: Props) {
       unsub();
     };
   }, [enabled, noteId, user?.uid]);
-
-  const showAIDebug = process.env.NEXT_PUBLIC_ASSISTANT_AI_DEBUG === "1";
-
-  const aiModelAccessError = useMemo(() => {
-    const msg = (aiJobError ?? "").toLowerCase();
-    if (!msg) return false;
-    return msg.includes("model_not_found") || msg.includes("does not have access to model") || msg.includes("n’a accès à aucun modèle");
-  }, [aiJobError]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -1114,227 +1105,276 @@ export default function AssistantNotePanel({ noteId }: Props) {
   })();
 
   return (
-    <div className="sn-card p-4 space-y-5">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-sm font-semibold">Assistant</div>
-        <button type="button" onClick={handleRefresh} className="px-3 py-2 rounded-md border border-input text-sm hover:bg-accent">
-          Rafraîchir
-        </button>
-      </div>
+    <>
+      {detailsOpen ? (
+        <div className="sn-card p-4 space-y-5 pb-20">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-semibold">Assistant</div>
+            <button type="button" onClick={handleRefresh} className="px-3 py-2 rounded-md border border-input text-sm hover:bg-accent">
+              Rafraîchir
+            </button>
+          </div>
 
-      {actionMessage && <div className="sn-alert">{actionMessage}</div>}
-      {actionError && <div className="sn-alert sn-alert--error">{actionError}</div>}
+          {actionMessage && <div className="sn-alert">{actionMessage}</div>}
+          {actionError && <div className="sn-alert sn-alert--error">{actionError}</div>}
 
-      <div className="space-y-5">
-        <AssistantSection
-          id="capture"
-          title="Capture"
-          mobileCollapsible={isMobile}
-          open={sectionOpen.capture}
-          setOpen={setOpen}
-        >
-          <div className="space-y-3">
-            <div>
-              <VoiceRecorderButton noteId={noteId} mode="append_to_note" />
+          <div className="space-y-5">
+            <AssistantSection
+              id="capture"
+              title="Capture"
+              mobileCollapsible={isMobile}
+              open={sectionOpen.capture}
+              setOpen={setOpen}
+            >
+              <div className="space-y-3">
+                <div>
+                  <VoiceRecorderButton noteId={noteId} mode="append_to_note" />
+                </div>
+                <div className="flex flex-col md:flex-row md:items-center gap-2">
+                  <AssistantActionButton
+                    label={busyAIAnalysis ? "Améliorer…" : "Améliorer le texte"}
+                    onClick={() => void handleAIAnalyzeWithModes(["rewrite"])}
+                    disabled={!noteId || busyAIAnalysis}
+                    variant="secondary"
+                  />
+                </div>
+              </div>
+            </AssistantSection>
+
+            <AssistantSection
+              id="analyze"
+              title="Analyser"
+              mobileCollapsible={isMobile}
+              open={sectionOpen.analyze}
+              setOpen={setOpen}
+            >
+              <div className="space-y-3">
+                <div className="flex flex-col md:flex-row md:items-center gap-2">
+                  <AssistantActionButton
+                    label={busyAIAnalysis ? "Résumé…" : "Résumer"}
+                    onClick={() => void handleAIAnalyzeWithModes(["summary"])}
+                    disabled={!noteId || busyAIAnalysis}
+                    variant="primary"
+                  />
+                  <AssistantActionButton
+                    label={busyAIAnalysis ? "Extraction…" : "Extraire tâches"}
+                    onClick={() => void handleAIAnalyzeWithModes(["actions"])}
+                    disabled={!noteId || busyAIAnalysis}
+                    variant="secondary"
+                  />
+                  <AssistantActionButton
+                    label={busyAIAnalysis ? "Structuration…" : "Structurer"}
+                    onClick={() => void handleAIAnalyzeWithModes(["entities"])}
+                    disabled={!noteId || busyAIAnalysis}
+                    variant="secondary"
+                  />
+                </div>
+
+                {aiJobStatus === "queued" || aiJobStatus === "processing" ? (
+                  <div className="space-y-2">
+                    <AssistantSkeletonCard />
+                  </div>
+                ) : null}
+
+                {aiJobStatus === "error" ? (
+                  <div className="sn-alert sn-alert--error">
+                    Analyse IA en erreur.
+                    {aiJobError ? <div className="mt-1 text-xs opacity-80">{aiJobError}</div> : null}
+                  </div>
+                ) : null}
+
+                {aiCards.length > 0 ? (
+                  <div className="space-y-3">
+                    {aiCards
+                      .filter((c) => !dismissedResultKeys[c.key])
+                      .map((c) => (
+                        <AssistantResultCard
+                          key={c.key}
+                          title={c.title}
+                          text={c.text}
+                          primaryLabel={"Insérer"}
+                          onPrimary={() => {
+                            if (c.allowReplaceNote) {
+                              void handleReplaceNoteContent(c.text);
+                              return;
+                            }
+                            void handleInsertIntoNote(c.text);
+                          }}
+                          secondaryLabel="Modifier"
+                          onSecondary={() => {
+                            setTextModal({ title: c.title, text: c.text, allowReplaceNote: c.allowReplaceNote });
+                            setTextModalDraft(c.text);
+                          }}
+                          onReject={() => setDismissedResultKeys((prev) => ({ ...prev, [c.key]: true }))}
+                        />
+                      ))}
+                  </div>
+                ) : aiJobStatus !== "queued" && aiJobStatus !== "processing" ? (
+                  <div className="text-sm text-muted-foreground">Aucun résultat pour le moment.</div>
+                ) : null}
+              </div>
+            </AssistantSection>
+
+            <AssistantSection
+              id="transform"
+              title="Transformer"
+              mobileCollapsible={isMobile}
+              open={sectionOpen.transform}
+              setOpen={setOpen}
+            >
+              <div className="flex flex-col md:flex-row md:items-center gap-2">
+                <AssistantActionButton
+                  label={busyReanalysis ? "Création…" : cooldownActive ? "Créer tâches (cooldown)" : "Créer tâches"}
+                  onClick={() => void handleReanalyze()}
+                  disabled={!noteId || busyReanalysis || cooldownActive}
+                  variant="primary"
+                />
+                <AssistantActionButton
+                  label="Créer todo"
+                  onClick={() => {
+                    window.location.href = "/todo/new";
+                  }}
+                  disabled={false}
+                  variant="secondary"
+                />
+                <AssistantActionButton
+                  label={busyAIAnalysis ? "Optimiser…" : "Optimiser texte"}
+                  onClick={() => void handleAIAnalyzeWithModes(["rewrite"])}
+                  disabled={!noteId || busyAIAnalysis}
+                  variant="secondary"
+                />
+              </div>
+
+              {jobStatus === "queued" || jobStatus === "processing" ? (
+                <div className="space-y-2">
+                  <AssistantSkeletonCard />
+                </div>
+              ) : null}
+              {jobStatus === "error" ? <div className="sn-alert sn-alert--error">Réanalyse en erreur.</div> : null}
+              {doneBannerMessage && <div className="sn-alert">{doneBannerMessage}</div>}
+
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={showExpired} onChange={(e) => setShowExpired(e.target.checked)} />
+                Afficher expirées
+              </label>
+
+              {suggestionsError && (
+                (() => {
+                  const suggestionsErrorLabel = (() => {
+                    if (suggestionsError instanceof FirebaseError) return `${suggestionsError.code}: ${suggestionsError.message}`;
+                    if (suggestionsError instanceof Error) return suggestionsError.message;
+                    return "";
+                  })();
+
+                  return (
+                    <div className="space-y-2">
+                      <div className="sn-alert sn-alert--error">
+                        Erreur lors du chargement des suggestions.
+                        {suggestionsErrorLabel ? <div className="mt-1 text-xs opacity-80">{suggestionsErrorLabel}</div> : null}
+                      </div>
+                      <button type="button" onClick={handleRefresh} className="px-3 py-2 rounded-md border border-input text-sm">
+                        Rafraîchir
+                      </button>
+                    </div>
+                  );
+                })()
+              )}
+
+              {showSkeleton ? (
+                <div className="space-y-2">
+                  <AssistantSkeletonCard />
+                  <AssistantSkeletonCard />
+                </div>
+              ) : null}
+
+              {!showSkeleton && !suggestionsError && suggestionGroups.tasks.length === 0 && suggestionGroups.bundles.length === 0 && suggestionGroups.content.length === 0 ? (
+                <div className="text-sm text-muted-foreground">Aucune suggestion.</div>
+              ) : null}
+
+              {!showSkeleton && !suggestionsError && (suggestionGroups.tasks.length > 0 || suggestionGroups.bundles.length > 0 || suggestionGroups.content.length > 0) ? (
+                <div className="space-y-3">
+                  {suggestionGroups.bundles.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="text-sm font-semibold">Plans / bundles</div>
+                      <div className="space-y-3">{suggestionGroups.bundles.map(renderSuggestionCard)}</div>
+                    </div>
+                  ) : null}
+
+                  {suggestionGroups.tasks.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="text-sm font-semibold">Tâches</div>
+                      <div className="space-y-3">{suggestionGroups.tasks.map(renderSuggestionCard)}</div>
+                    </div>
+                  ) : null}
+
+                  {suggestionGroups.content.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="text-sm font-semibold">Contenu</div>
+                      <div className="space-y-3">{suggestionGroups.content.map(renderSuggestionCard)}</div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </AssistantSection>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="sticky bottom-0 z-30">
+        <div className="border border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/70 shadow-sm rounded-lg px-3 py-2">
+          <div className="flex flex-col md:flex-row md:items-center gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm font-semibold">Assistant</div>
+              <button
+                type="button"
+                onClick={() => setDetailsOpen((v) => !v)}
+                className="px-2 py-1 rounded-md border border-input text-xs"
+              >
+                {detailsOpen ? "Fermer" : "Ouvrir"}
+              </button>
             </div>
             <div className="flex flex-col md:flex-row md:items-center gap-2">
-              <AssistantActionButton
-                label={busyAIAnalysis ? "Améliorer…" : "Améliorer le texte"}
-                onClick={() => void handleAIAnalyzeWithModes(["rewrite"]) }
+              <button
+                type="button"
+                onClick={() => {
+                  setDetailsOpen(true);
+                  setOpen("capture", true);
+                }}
+                disabled={!noteId}
+                className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+              >
+                Enregistrer
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDetailsOpen(true);
+                  setOpen("analyze", true);
+                  void handleAIAnalyzeWithModes(["summary"]);
+                }}
                 disabled={!noteId || busyAIAnalysis}
-                variant="secondary"
-              />
+                className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+              >
+                {busyAIAnalysis ? "Résumé…" : "Résumer"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDetailsOpen(true);
+                  setOpen("transform", true);
+                  void handleReanalyze();
+                }}
+                disabled={!noteId || busyReanalysis || cooldownActive}
+                className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+              >
+                {busyReanalysis ? "Création…" : "Créer tâches"}
+              </button>
             </div>
+            {aiJobStatus === "queued" || aiJobStatus === "processing" || jobStatus === "queued" || jobStatus === "processing" ? (
+              <div className="text-xs text-muted-foreground md:ml-auto">En cours…</div>
+            ) : null}
           </div>
-        </AssistantSection>
-
-        <AssistantSection
-          id="analyze"
-          title="Analyser"
-          icon={<Sparkles size={16} className="opacity-70" />}
-          mobileCollapsible={isMobile}
-          open={sectionOpen.analyze}
-          setOpen={setOpen}
-        >
-          <div className="flex flex-col md:flex-row md:items-center gap-2">
-            <AssistantActionButton
-              label={busyAIAnalysis ? "Résumé…" : "Résumer"}
-              onClick={() => void handleAIAnalyzeWithModes(["summary"]) }
-              disabled={!noteId || busyAIAnalysis}
-              variant="secondary"
-            />
-            <AssistantActionButton
-              label={busyAIAnalysis ? "Extraction…" : "Extraire tâches"}
-              onClick={() => void handleAIAnalyzeWithModes(["actions"]) }
-              disabled={!noteId || busyAIAnalysis}
-              variant="secondary"
-            />
-            <AssistantActionButton
-              label={busyAIAnalysis ? "Structuration…" : "Structurer"}
-              onClick={() => void handleAIAnalyzeWithModes(["entities"]) }
-              disabled={!noteId || busyAIAnalysis}
-              variant="secondary"
-            />
-          </div>
-
-          {aiJobStatus === "queued" || aiJobStatus === "processing" ? (
-            <div className="space-y-2">
-              <AssistantSkeletonCard />
-              <AssistantSkeletonCard />
-            </div>
-          ) : null}
-
-          {aiJobStatus === "error" ? (
-            <div className="sn-alert sn-alert--error">
-              <div>Analyse IA en erreur.</div>
-              {aiModelAccessError ? (
-                <div className="text-xs opacity-90 break-words mt-1">
-                  Modèle non autorisé pour ce projet OpenAI.
-                </div>
-              ) : null}
-              {aiJobError ? <div className="text-xs opacity-90 break-words mt-1">{aiJobError}</div> : null}
-              {showAIDebug ? (
-                <div className="text-[11px] opacity-70 break-words mt-1">
-                  <div>model: {aiJobModel ?? "(inconnu)"}</div>
-                  <div>modelRequested: {aiJobModelRequested ?? "(aucun)"}</div>
-                  <div>modelFallbackUsed: {aiJobModelFallbackUsed ?? "(aucun)"}</div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {aiCards.length > 0 ? (
-            <div className="space-y-3">
-              {aiCards
-                .filter((c) => !dismissedResultKeys[c.key])
-                .map((c) => (
-                  <AssistantResultCard
-                    key={c.key}
-                    title={c.title}
-                    text={c.text}
-                    primaryLabel={"Insérer"}
-                    onPrimary={() => {
-                      if (c.allowReplaceNote) {
-                        void handleReplaceNoteContent(c.text);
-                        return;
-                      }
-                      void handleInsertIntoNote(c.text);
-                    }}
-                    secondaryLabel="Modifier"
-                    onSecondary={() => {
-                      setTextModal({ title: c.title, text: c.text, allowReplaceNote: c.allowReplaceNote });
-                      setTextModalDraft(c.text);
-                    }}
-                    onReject={() => setDismissedResultKeys((prev) => ({ ...prev, [c.key]: true }))}
-                  />
-                ))}
-            </div>
-          ) : aiJobStatus !== "queued" && aiJobStatus !== "processing" ? (
-            <div className="text-sm text-muted-foreground">Aucun résultat pour le moment.</div>
-          ) : null}
-        </AssistantSection>
-
-        <AssistantSection
-          id="transform"
-          title="Transformer"
-          mobileCollapsible={isMobile}
-          open={sectionOpen.transform}
-          setOpen={setOpen}
-        >
-          <div className="flex flex-col md:flex-row md:items-center gap-2">
-            <AssistantActionButton
-              label={busyReanalysis ? "Création…" : cooldownActive ? "Créer tâches (cooldown)" : "Créer tâches"}
-              onClick={() => void handleReanalyze()}
-              disabled={!noteId || busyReanalysis || cooldownActive}
-              variant="primary"
-            />
-            <AssistantActionButton
-              label="Créer todo"
-              onClick={() => {
-                window.location.href = "/todo/new";
-              }}
-              disabled={false}
-              variant="secondary"
-            />
-            <AssistantActionButton
-              label={busyAIAnalysis ? "Optimiser…" : "Optimiser texte"}
-              onClick={() => void handleAIAnalyzeWithModes(["rewrite"]) }
-              disabled={!noteId || busyAIAnalysis}
-              variant="secondary"
-            />
-          </div>
-
-          {jobStatus === "queued" || jobStatus === "processing" ? (
-            <div className="space-y-2">
-              <AssistantSkeletonCard />
-            </div>
-          ) : null}
-          {jobStatus === "error" ? <div className="sn-alert sn-alert--error">Réanalyse en erreur.</div> : null}
-          {doneBannerMessage && <div className="sn-alert">{doneBannerMessage}</div>}
-
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={showExpired} onChange={(e) => setShowExpired(e.target.checked)} />
-            Afficher expirées
-          </label>
-
-          {suggestionsError && (
-            (() => {
-              const suggestionsErrorLabel = (() => {
-                if (suggestionsError instanceof FirebaseError) return `${suggestionsError.code}: ${suggestionsError.message}`;
-                if (suggestionsError instanceof Error) return suggestionsError.message;
-                return "";
-              })();
-
-              return (
-                <div className="space-y-2">
-                  <div className="sn-alert sn-alert--error">
-                    Erreur lors du chargement des suggestions.
-                    {suggestionsErrorLabel ? <div className="mt-1 text-xs opacity-80">{suggestionsErrorLabel}</div> : null}
-                  </div>
-                  <button type="button" onClick={handleRefresh} className="px-3 py-2 rounded-md border border-input text-sm">
-                    Rafraîchir
-                  </button>
-                </div>
-              );
-            })()
-          )}
-
-          {showSkeleton ? (
-            <div className="space-y-2">
-              <AssistantSkeletonCard />
-              <AssistantSkeletonCard />
-            </div>
-          ) : null}
-
-          {!showSkeleton && !suggestionsError && suggestionGroups.tasks.length === 0 && suggestionGroups.bundles.length === 0 && suggestionGroups.content.length === 0 ? (
-            <div className="text-sm text-muted-foreground">Aucune suggestion.</div>
-          ) : null}
-
-          {!showSkeleton && !suggestionsError && (suggestionGroups.tasks.length > 0 || suggestionGroups.bundles.length > 0 || suggestionGroups.content.length > 0) ? (
-            <div className="space-y-3">
-              {suggestionGroups.bundles.length > 0 ? (
-                <div className="space-y-2">
-                  <div className="text-sm font-semibold">Plans / bundles</div>
-                  <div className="space-y-3">{suggestionGroups.bundles.map(renderSuggestionCard)}</div>
-                </div>
-              ) : null}
-
-              {suggestionGroups.tasks.length > 0 ? (
-                <div className="space-y-2">
-                  <div className="text-sm font-semibold">Tâches</div>
-                  <div className="space-y-3">{suggestionGroups.tasks.map(renderSuggestionCard)}</div>
-                </div>
-              ) : null}
-
-              {suggestionGroups.content.length > 0 ? (
-                <div className="space-y-2">
-                  <div className="text-sm font-semibold">Contenu</div>
-                  <div className="space-y-3">{suggestionGroups.content.map(renderSuggestionCard)}</div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </AssistantSection>
+        </div>
       </div>
 
       {textModal ? (
@@ -1458,6 +1498,6 @@ export default function AssistantNotePanel({ noteId }: Props) {
         loading={!!bundleCustomizeSuggestion && busySuggestionId === (bundleCustomizeSuggestion.id ?? bundleCustomizeSuggestion.dedupeKey)}
         onConfirm={handleConfirmBundleCustomize}
       />
-    </div>
+    </>
   );
 }
