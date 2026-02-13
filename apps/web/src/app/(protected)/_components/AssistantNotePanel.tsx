@@ -201,6 +201,10 @@ export default function AssistantNotePanel({ noteId }: Props) {
 
   const [detailsOpen, setDetailsOpen] = useState(false);
 
+  const [quickAction, setQuickAction] = useState<"summary" | "reanalyze" | null>(null);
+  const prevAIJobStatusForAutoCloseRef = useRef<typeof aiJobStatus>(null);
+  const prevJobStatusForAutoCloseRef = useRef<typeof jobStatus>(null);
+
   const [textModal, setTextModal] = useState<{
     title: string;
     text: string;
@@ -226,6 +230,41 @@ export default function AssistantNotePanel({ noteId }: Props) {
       !!actionError;
     if (busy) setDetailsOpen(true);
   }, [aiJobStatus, jobStatus, actionError]);
+
+  useEffect(() => {
+    const prevAI = prevAIJobStatusForAutoCloseRef.current;
+    prevAIJobStatusForAutoCloseRef.current = aiJobStatus;
+
+    const prevJob = prevJobStatusForAutoCloseRef.current;
+    prevJobStatusForAutoCloseRef.current = jobStatus;
+
+    if (!quickAction) return;
+    if (actionError) return;
+
+    if (quickAction === "summary") {
+      if (aiJobStatus === "done" && prevAI !== "done" && jobStatus !== "queued" && jobStatus !== "processing") {
+        setDetailsOpen(false);
+        setQuickAction(null);
+        return;
+      }
+      if (aiJobStatus === "error") {
+        setQuickAction(null);
+        return;
+      }
+    }
+
+    if (quickAction === "reanalyze") {
+      if (jobStatus === "done" && prevJob !== "done" && aiJobStatus !== "queued" && aiJobStatus !== "processing") {
+        setDetailsOpen(false);
+        setQuickAction(null);
+        return;
+      }
+      if (jobStatus === "error") {
+        setQuickAction(null);
+        return;
+      }
+    }
+  }, [actionError, aiJobStatus, jobStatus, quickAction]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -1104,6 +1143,11 @@ export default function AssistantNotePanel({ noteId }: Props) {
     return cards;
   })();
 
+  const visibleAICardsCount = aiCards.filter((c) => !dismissedResultKeys[c.key]).length;
+  const visibleSuggestionsCount = suggestionsLoading || suggestionsError
+    ? 0
+    : suggestionGroups.tasks.length + suggestionGroups.bundles.length + suggestionGroups.content.length;
+
   return (
     <>
       {detailsOpen ? (
@@ -1324,13 +1368,25 @@ export default function AssistantNotePanel({ noteId }: Props) {
         <div className="border border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/70 shadow-sm rounded-lg px-3 py-2">
           <div className="flex flex-col md:flex-row md:items-center gap-2">
             <div className="flex items-center justify-between gap-2">
-              <div className="text-sm font-semibold">Assistant</div>
+              <div className="flex items-center gap-2">
+                <div className="text-sm font-semibold">Assistant</div>
+                {visibleAICardsCount > 0 ? (
+                  <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-[11px]">
+                    IA: {visibleAICardsCount}
+                  </span>
+                ) : null}
+                {visibleSuggestionsCount > 0 ? (
+                  <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-[11px]">
+                    Sug: {visibleSuggestionsCount}
+                  </span>
+                ) : null}
+              </div>
               <button
                 type="button"
                 onClick={() => setDetailsOpen((v) => !v)}
                 className="px-2 py-1 rounded-md border border-input text-xs"
               >
-                {detailsOpen ? "Fermer" : "Ouvrir"}
+                {detailsOpen ? "Masquer" : "Détails"}
               </button>
             </div>
             <div className="flex flex-col md:flex-row md:items-center gap-2">
@@ -1338,6 +1394,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
                 type="button"
                 onClick={() => {
                   setDetailsOpen(true);
+                  setQuickAction(null);
                   setOpen("capture", true);
                 }}
                 disabled={!noteId}
@@ -1349,6 +1406,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
                 type="button"
                 onClick={() => {
                   setDetailsOpen(true);
+                  setQuickAction("summary");
                   setOpen("analyze", true);
                   void handleAIAnalyzeWithModes(["summary"]);
                 }}
@@ -1361,6 +1419,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
                 type="button"
                 onClick={() => {
                   setDetailsOpen(true);
+                  setQuickAction("reanalyze");
                   setOpen("transform", true);
                   void handleReanalyze();
                 }}
