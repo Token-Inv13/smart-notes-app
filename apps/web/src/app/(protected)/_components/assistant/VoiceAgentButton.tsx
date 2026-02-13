@@ -42,6 +42,7 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ExecuteIntentResponse | null>(null);
   const [localPreviewHint, setLocalPreviewHint] = useState<string | null>(null);
+  const [clarificationSubmitting, setClarificationSubmitting] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [resultId, setResultId] = useState<string | null>(null);
 
@@ -376,17 +377,25 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
     setError(null);
     setTranscript("");
     setClarificationInput("");
+    setClarificationSubmitting(false);
     setFlowStep("idle");
     void startListening();
   };
 
   const applyClarification = async () => {
+    if (clarificationSubmitting) return;
     const extra = clarificationInput.trim();
     if (!extra) return;
     const merged = `${transcript.trim()} ${extra}`.trim();
     setTranscript(merged);
     setClarificationInput("");
-    await runIntent(false, merged);
+    setError(null);
+    setClarificationSubmitting(true);
+    try {
+      await runIntent(true, merged);
+    } finally {
+      setClarificationSubmitting(false);
+    }
   };
 
   useEffect(() => {
@@ -449,6 +458,7 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
   const displayedHint = parsedHint ?? localPreviewHint;
   const clarificationPending = flowStep === "clarify" || result?.needsClarification === true;
   const isBusyStep = flowStep === "listening" || flowStep === "uploading" || flowStep === "transcribing" || flowStep === "executing";
+  const clarificationButtonDisabled = !clarificationInput.trim() || clarificationSubmitting;
   const confirmationHint =
     flowStep === "review" && result?.intent?.requiresConfirmation
       ? "Dernière étape: appuie sur Oui pour confirmer la création."
@@ -460,7 +470,7 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
     if (flowStep === "transcribing") return "Transcription et analyse en cours…";
     if (flowStep === "executing") return "Exécution de l’action…";
     if (flowStep === "done") return "Action terminée ✅";
-    if (flowStep === "clarify") return result?.clarificationQuestion ?? "Il me manque une précision.";
+    if (flowStep === "clarify") return result?.clarificationQuestion ?? "Ajoute l'heure puis appuie sur OK pour créer.";
     if (flowStep === "review") return "Voici mon interprétation. Je lance l’action ?";
     return "Appuie sur le micro pour commencer.";
   }, [flowStep, result?.clarificationQuestion]);
@@ -597,10 +607,10 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
                   <button
                     type="button"
                     className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
-                    disabled={!clarificationInput.trim() || isBusyStep}
+                    disabled={clarificationButtonDisabled}
                     onClick={() => void applyClarification()}
                   >
-                    OK
+                    {clarificationSubmitting ? "Traitement..." : "OK"}
                   </button>
                   <button
                     type="button"
