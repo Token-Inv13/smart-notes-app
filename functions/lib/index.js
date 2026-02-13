@@ -3650,15 +3650,16 @@ function stripVoiceCommandPrefix(input) {
         .trim();
 }
 function inferReminderTime(text, now) {
+    var _a;
     const lower = text.toLowerCase();
     const hasTomorrow = lower.includes('demain');
     const hasEvening = lower.includes('ce soir') || lower.includes('soir');
     const hasMorning = lower.includes('matin');
     const hasAfternoon = lower.includes('après-midi') || lower.includes('apres-midi');
-    const hhmm = /\b([01]?\d|2[0-3])[:h]([0-5]\d)\b/.exec(lower);
-    if (hhmm) {
-        const h = Number(hhmm[1]);
-        const m = Number(hhmm[2]);
+    const timeMatch = /\b([01]?\d|2[0-3])(?:[:h]([0-5]\d)?)\b/.exec(lower);
+    if (timeMatch) {
+        const h = Number(timeMatch[1]);
+        const m = Number((_a = timeMatch[2]) !== null && _a !== void 0 ? _a : 0);
         const d = new Date(now);
         d.setSeconds(0, 0);
         if (hasTomorrow) {
@@ -3715,7 +3716,7 @@ function parseAssistantVoiceIntent(transcript, now) {
     const raw = transcript.trim();
     const lower = raw.toLowerCase();
     const cleaned = stripVoiceCommandPrefix(raw);
-    const hasExplicitHour = /\b([01]?\d|2[0-3])[:h]([0-5]\d)\b/.test(lower);
+    const hasExplicitHour = /\b([01]?\d|2[0-3])(?:[:h]([0-5]\d)?)\b/.test(lower);
     const meetingLike = lower.includes('réunion') ||
         lower.includes('reunion') ||
         lower.includes('meeting') ||

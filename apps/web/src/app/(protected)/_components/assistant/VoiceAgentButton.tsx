@@ -447,6 +447,8 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
   }, [result]);
 
   const displayedHint = parsedHint ?? localPreviewHint;
+  const clarificationPending = flowStep === "clarify" || result?.needsClarification === true;
+  const isBusyStep = flowStep === "listening" || flowStep === "uploading" || flowStep === "transcribing" || flowStep === "executing";
 
   const stepHint = useMemo(() => {
     if (flowStep === "listening") return "Je t’écoute… parle naturellement.";
@@ -485,7 +487,7 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
 
       {open ? (
         <div
-          className="fixed inset-0 z-[70] bg-black/40 p-4 flex items-end md:items-center md:justify-center"
+          className="fixed inset-0 z-[70] bg-black/45 p-0 md:p-4 flex items-end md:items-center md:justify-center"
           role="dialog"
           aria-modal="true"
           aria-label="Assistant vocal"
@@ -493,7 +495,10 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
             if (e.target === e.currentTarget) closeModal();
           }}
         >
-          <div className="w-full md:max-w-lg rounded-xl border border-border bg-card p-4 space-y-3" onMouseDown={(e) => e.stopPropagation()}>
+          <div
+            className="w-full md:max-w-[440px] rounded-t-2xl md:rounded-xl border border-border bg-card p-3 md:p-4 space-y-2 md:space-y-3 shadow-2xl max-h-[82vh] overflow-y-auto"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between gap-3">
               <div className="text-sm font-semibold">Assistant vocal</div>
               <button type="button" className="text-sm text-muted-foreground" onClick={closeModal}>
@@ -501,7 +506,7 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
               </button>
             </div>
 
-            <div className="flex flex-col items-center justify-center gap-2 py-2">
+            <div className="flex flex-col items-center justify-center gap-2 py-1 md:py-2">
               <button
                 type="button"
                 onClick={() => {
@@ -512,7 +517,7 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
                   }
                 }}
                 className={
-                  "relative h-24 w-24 rounded-full border border-primary/40 text-3xl flex items-center justify-center " +
+                  "relative h-20 w-20 md:h-24 md:w-24 rounded-full border border-primary/40 text-2xl md:text-3xl flex items-center justify-center transition-all " +
                   (flowStep === "listening" ? "bg-primary/20 animate-pulse" : "bg-primary/10")
                 }
                 aria-label={flowStep === "listening" ? "Stopper l’écoute" : "Démarrer l’écoute"}
@@ -525,11 +530,17 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
             </div>
 
             {transcript ? (
-              <div className="rounded-md border border-border bg-background p-3 text-sm whitespace-pre-wrap">{transcript}</div>
+              <div className="rounded-md border border-border bg-background p-2.5 md:p-3 text-sm whitespace-pre-wrap max-h-24 overflow-y-auto">{transcript}</div>
             ) : null}
 
-            {flowStep === "clarify" ? (
-              <div className="space-y-2">
+            {clarificationPending ? (
+              <form
+                className="space-y-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void applyClarification();
+                }}
+              >
                 <input
                   type="text"
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -537,7 +548,7 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
                   value={clarificationInput}
                   onChange={(e) => setClarificationInput(e.target.value)}
                 />
-              </div>
+              </form>
             ) : null}
 
             <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -551,7 +562,7 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
                 </button>
               ) : null}
 
-              {flowStep === "review" ? (
+              {flowStep === "review" && !clarificationPending ? (
                 <>
                   <button
                     type="button"
@@ -577,12 +588,12 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
                 </>
               ) : null}
 
-              {flowStep === "clarify" ? (
+              {clarificationPending ? (
                 <>
                   <button
                     type="button"
                     className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
-                    disabled={!clarificationInput.trim()}
+                    disabled={!clarificationInput.trim() || isBusyStep}
                     onClick={() => void applyClarification()}
                   >
                     OK
@@ -639,7 +650,7 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
               <button
                 type="button"
                 className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-                disabled={flowStep === "listening" || flowStep === "uploading" || flowStep === "transcribing" || flowStep === "executing"}
+                disabled={isBusyStep}
                 onClick={retryVoice}
               >
                 Nouvelle commande
