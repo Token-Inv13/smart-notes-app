@@ -391,7 +391,7 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
       return `${Number(hourOnly[1])}h`;
     }
 
-    const hourMinute = /^([01]?\d|2[0-3])(?::|h)?([0-5]\d)$/.exec(compact);
+    const hourMinute = /^([01]?\d|2[0-3])(?::|h|\.)([0-5]\d)$/.exec(compact);
     if (hourMinute) {
       return `${Number(hourMinute[1])}h${hourMinute[2]}`;
     }
