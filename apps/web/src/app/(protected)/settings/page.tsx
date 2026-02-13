@@ -1,17 +1,19 @@
 "use client";
 
 import { useUserSettings } from "@/hooks/useUserSettings";
+import { useAssistantSettings } from "@/hooks/useAssistantSettings";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { auth, db } from "@/lib/firebase";
 import { isAndroidNative } from "@/lib/runtimePlatform";
-import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { doc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { registerFcmToken } from "@/lib/fcm";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import LogoutButton from "../LogoutButton";
 
 export default function SettingsPage() {
   const { data: user, loading, error } = useUserSettings();
+  const { data: assistantSettings } = useAssistantSettings();
   const [toggling, setToggling] = useState(false);
   const [toggleMessage, setToggleMessage] = useState<string | null>(null);
   const [fcmStatus, setFcmStatus] = useState<string | null>(null);
@@ -27,9 +29,55 @@ export default function SettingsPage() {
   const [savingAppearance, setSavingAppearance] = useState(false);
   const [appearanceMessage, setAppearanceMessage] = useState<string | null>(null);
 
+  const [savingAssistant, setSavingAssistant] = useState(false);
+  const [assistantMessage, setAssistantMessage] = useState<string | null>(null);
+  const [assistantEnabledDraft, setAssistantEnabledDraft] = useState(false);
+  const [assistantJtbdDraft, setAssistantJtbdDraft] = useState<"daily_planning" | "dont_forget" | "meetings" | "projects">("daily_planning");
+  const [assistantProactivityDraft, setAssistantProactivityDraft] = useState<"off" | "suggestions" | "proactive">("suggestions");
+  const [assistantQuietStartDraft, setAssistantQuietStartDraft] = useState<string>("22:00");
+  const [assistantQuietEndDraft, setAssistantQuietEndDraft] = useState<string>("08:00");
+  const [assistantMaxPerDayDraft, setAssistantMaxPerDayDraft] = useState<number>(3);
+  const [assistantAIEnabledDraft, setAssistantAIEnabledDraft] = useState(true);
+  const [assistantAIMinimizeDraft, setAssistantAIMinimizeDraft] = useState(true);
+  const [assistantAIAllowFullDraft, setAssistantAIAllowFullDraft] = useState(false);
+
   useEffect(() => {
     setDisplayNameDraft(user?.displayName ?? "");
   }, [user?.displayName]);
+
+  useEffect(() => {
+    const enabled = assistantSettings?.enabled === true;
+    setAssistantEnabledDraft(enabled);
+
+    const jtbd = assistantSettings?.jtbdPreset;
+    if (jtbd === "daily_planning" || jtbd === "dont_forget" || jtbd === "meetings" || jtbd === "projects") {
+      setAssistantJtbdDraft(jtbd);
+    } else {
+      setAssistantJtbdDraft("daily_planning");
+    }
+
+    const proactivity = assistantSettings?.proactivityMode;
+    if (proactivity === "off" || proactivity === "suggestions" || proactivity === "proactive") {
+      setAssistantProactivityDraft(proactivity);
+    } else {
+      setAssistantProactivityDraft("suggestions");
+    }
+
+    const quietStart = typeof assistantSettings?.quietHours?.start === "string" ? assistantSettings.quietHours.start : "22:00";
+    const quietEnd = typeof assistantSettings?.quietHours?.end === "string" ? assistantSettings.quietHours.end : "08:00";
+    setAssistantQuietStartDraft(quietStart);
+    setAssistantQuietEndDraft(quietEnd);
+
+    const maxPerDay = assistantSettings?.notificationBudget?.maxPerDay;
+    setAssistantMaxPerDayDraft(typeof maxPerDay === "number" && Number.isFinite(maxPerDay) ? maxPerDay : 3);
+
+    const aiEnabled = assistantSettings?.aiPolicy?.enabled;
+    const aiMinimize = assistantSettings?.aiPolicy?.minimizeData;
+    const aiAllowFull = assistantSettings?.aiPolicy?.allowFullContent;
+    setAssistantAIEnabledDraft(aiEnabled !== false);
+    setAssistantAIMinimizeDraft(aiMinimize !== false);
+    setAssistantAIAllowFullDraft(aiAllowFull === true);
+  }, [assistantSettings]);
 
   useEffect(() => {
     try {
@@ -53,6 +101,72 @@ export default function SettingsPage() {
       window.localStorage.setItem("notesViewMode", next);
     } catch {
       // ignore
+    }
+  };
+
+  const handleSaveAssistantSettings = async () => {
+    const currentUser = ensureCanEdit();
+    if (!currentUser) {
+      setAssistantMessage("Impossible de modifier l’assistant pour ce compte.");
+      return;
+    }
+
+    setSavingAssistant(true);
+    setAssistantMessage(null);
+
+    const plan = (user?.plan ?? "free") === "pro" ? "pro" : "free";
+    const ref = doc(db, "users", currentUser.uid, "assistantSettings", "main");
+
+    const maxPerDay = Number.isFinite(assistantMaxPerDayDraft) ? Math.max(0, Math.min(50, assistantMaxPerDayDraft)) : 3;
+
+    try {
+      if (!assistantSettings) {
+        await setDoc(
+          ref,
+          {
+            enabled: assistantEnabledDraft,
+            plan,
+            autoAnalyze: false,
+            consentVersion: 1,
+            jtbdPreset: assistantJtbdDraft,
+            proactivityMode: assistantProactivityDraft,
+            quietHours: { start: assistantQuietStartDraft, end: assistantQuietEndDraft },
+            notificationBudget: { maxPerDay },
+            aiPolicy: {
+              enabled: assistantAIEnabledDraft,
+              minimizeData: assistantAIMinimizeDraft,
+              allowFullContent: assistantAIAllowFullDraft,
+            },
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+      } else {
+        await updateDoc(ref, {
+          enabled: assistantEnabledDraft,
+          plan,
+          jtbdPreset: assistantJtbdDraft,
+          proactivityMode: assistantProactivityDraft,
+          "quietHours.start": assistantQuietStartDraft,
+          "quietHours.end": assistantQuietEndDraft,
+          "notificationBudget.maxPerDay": maxPerDay,
+          "aiPolicy.enabled": assistantAIEnabledDraft,
+          "aiPolicy.minimizeData": assistantAIMinimizeDraft,
+          "aiPolicy.allowFullContent": assistantAIAllowFullDraft,
+          updatedAt: serverTimestamp(),
+        });
+      }
+      setAssistantMessage("Assistant mis à jour.");
+    } catch (e) {
+      console.error("Error updating assistant settings", e);
+      if (isAuthInvalidError(e)) {
+        void invalidateAuthSession();
+        return;
+      }
+      setAssistantMessage("Erreur lors de la mise à jour de l’assistant.");
+    } finally {
+      setSavingAssistant(false);
     }
   };
 
@@ -427,6 +541,161 @@ export default function SettingsPage() {
             {user.settings?.notifications?.taskReminders && notificationPermission === "granted" && fcmStatus && (
               <p className="text-sm">{fcmStatus}</p>
             )}
+          </section>
+
+          <section className="border border-border/70 rounded-xl p-5 bg-card shadow-sm space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">Assistant</h2>
+              <div className="text-xs text-muted-foreground">JTBD</div>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Configure l’assistant personnel: objectif principal, proactivité et politique IA.
+            </p>
+
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="text-sm font-medium">Assistant activé</div>
+                <div className="text-sm text-muted-foreground">
+                  {assistantEnabledDraft ? "Activé" : "Désactivé"}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setAssistantEnabledDraft((v) => !v)}
+                disabled={savingAssistant}
+                aria-label="Assistant activé"
+                title="Assistant activé"
+                className={`relative inline-flex h-9 w-14 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background disabled:opacity-50 ${
+                  assistantEnabledDraft ? "bg-primary/30 border-primary/30" : "bg-muted border-border"
+                }`}
+              >
+                <span
+                  className={`inline-block h-7 w-7 rounded-full bg-background shadow-sm transition-transform ${
+                    assistantEnabledDraft ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-sm font-medium">JTBD principal</div>
+              <select
+                value={assistantJtbdDraft}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "daily_planning" || v === "dont_forget" || v === "meetings" || v === "projects") {
+                    setAssistantJtbdDraft(v);
+                  }
+                }}
+                className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
+                aria-label="JTBD principal"
+              >
+                <option value="daily_planning">Planifier ma journée</option>
+                <option value="dont_forget">Ne rien oublier / suivi</option>
+                <option value="meetings">Réunions & décisions</option>
+                <option value="projects">Projets (pilotage)</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-sm font-medium">Proactivité</div>
+              <select
+                value={assistantProactivityDraft}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "off" || v === "suggestions" || v === "proactive") {
+                    setAssistantProactivityDraft(v);
+                  }
+                }}
+                className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
+                aria-label="Proactivité"
+              >
+                <option value="off">Off</option>
+                <option value="suggestions">Suggestions (B)</option>
+                <option value="proactive">Proactif (C)</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <div className="text-sm font-medium">Silence — début</div>
+                <input
+                  type="time"
+                  value={assistantQuietStartDraft}
+                  onChange={(e) => setAssistantQuietStartDraft(e.target.value)}
+                  className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
+                  aria-label="Silence début"
+                />
+              </div>
+              <div className="space-y-1">
+                <div className="text-sm font-medium">Silence — fin</div>
+                <input
+                  type="time"
+                  value={assistantQuietEndDraft}
+                  onChange={(e) => setAssistantQuietEndDraft(e.target.value)}
+                  className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
+                  aria-label="Silence fin"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-sm font-medium">Budget notifications (max / jour)</div>
+              <input
+                type="number"
+                min={0}
+                max={50}
+                value={assistantMaxPerDayDraft}
+                onChange={(e) => setAssistantMaxPerDayDraft(Number(e.target.value))}
+                className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
+                aria-label="Budget notifications"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-sm font-medium">IA</div>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={assistantAIEnabledDraft} onChange={(e) => setAssistantAIEnabledDraft(e.target.checked)} />
+                Activer l’IA
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={assistantAIMinimizeDraft}
+                  onChange={(e) => setAssistantAIMinimizeDraft(e.target.checked)}
+                  disabled={!assistantAIEnabledDraft}
+                />
+                Minimiser les données envoyées
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={assistantAIAllowFullDraft}
+                  onChange={(e) => setAssistantAIAllowFullDraft(e.target.checked)}
+                  disabled={!assistantAIEnabledDraft}
+                />
+                Autoriser le contenu complet
+              </label>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSaveAssistantSettings}
+                disabled={savingAssistant}
+                className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 disabled:opacity-50"
+              >
+                {savingAssistant ? "Enregistrement…" : "Enregistrer"}
+              </button>
+              <Link
+                href="/assistant"
+                className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-border bg-background text-sm font-medium hover:bg-accent/60"
+              >
+                Ouvrir l’assistant
+              </Link>
+            </div>
+            {assistantMessage && <p className="text-sm">{assistantMessage}</p>}
           </section>
 
           <section className="border border-border/70 rounded-xl p-5 bg-card shadow-sm space-y-4">

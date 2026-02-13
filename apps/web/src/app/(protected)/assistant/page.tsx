@@ -14,6 +14,19 @@ import BundleCustomizeModal from "../_components/assistant/BundleCustomizeModal"
 
 const CONSENT_VERSION = 1;
 
+type SuggestionPayload = {
+  title?: unknown;
+  explanation?: unknown;
+  origin?: {
+    fromText?: unknown;
+    [key: string]: unknown;
+  };
+  tasks?: Array<{ title?: unknown; [key: string]: unknown }>;
+  dueDate?: unknown;
+  remindAt?: unknown;
+  [key: string]: unknown;
+};
+
 export default function AssistantPage() {
   const { data: assistantSettings, loading: assistantLoading, error: assistantError } = useAssistantSettings();
   const {
@@ -59,6 +72,11 @@ export default function AssistantPage() {
             plan,
             autoAnalyze: false,
             consentVersion: CONSENT_VERSION,
+            jtbdPreset: "daily_planning",
+            proactivityMode: "suggestions",
+            quietHours: { start: "22:00", end: "08:00" },
+            notificationBudget: { maxPerDay: 3 },
+            aiPolicy: { enabled: true, minimizeData: true, allowFullContent: false },
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           },
@@ -235,6 +253,12 @@ export default function AssistantPage() {
         </div>
         <div className="flex items-center gap-2">
           <a
+            href="/assistant/briefing"
+            className="px-3 py-2 rounded-md border border-input text-sm hover:bg-accent"
+          >
+            Briefing
+          </a>
+          <a
             href="/assistant/history"
             className="px-3 py-2 rounded-md border border-input text-sm hover:bg-accent"
           >
@@ -294,22 +318,24 @@ export default function AssistantPage() {
             const proposed = s.status === "proposed";
 
             const isBundle = s.kind === "create_task_bundle";
-            const payload = s.payload;
-            const bundleTasks = isBundle && "tasks" in payload ? payload.tasks : [];
+            const payload = s.payload && typeof s.payload === "object" ? (s.payload as SuggestionPayload) : null;
+            const bundleTasks = isBundle && Array.isArray(payload?.tasks) ? payload.tasks : [];
             const isExpanded = !!suggestionId && expandedBundleId === suggestionId;
 
-            const dueLabel = s.kind === "create_task" && "dueDate" in payload && payload.dueDate ? formatTs(payload.dueDate) : "";
-            const remindLabel = s.kind === "create_reminder" && "remindAt" in payload && payload.remindAt ? formatTs(payload.remindAt) : "";
+            const dueLabel = s.kind === "create_task" && payload?.dueDate ? formatTs(payload.dueDate) : "";
+            const remindLabel = s.kind === "create_reminder" && payload?.remindAt ? formatTs(payload.remindAt) : "";
+
+            const title = typeof payload?.title === "string" ? String(payload.title) : "Suggestion";
+            const explanation = typeof payload?.explanation === "string" ? String(payload.explanation) : "";
+            const excerpt = typeof payload?.origin?.fromText === "string" ? String(payload.origin.fromText) : "";
 
             return (
               <div key={suggestionId ?? s.dedupeKey} className="border border-border rounded-md p-3 space-y-2">
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1">
-                    <div className="text-sm font-semibold">{s.payload?.title}</div>
-                    <div className="text-xs text-muted-foreground">{s.payload?.explanation}</div>
-                    {s.payload?.origin?.fromText ? (
-                      <div className="text-xs text-muted-foreground">Extrait: “{s.payload.origin.fromText}”</div>
-                    ) : null}
+                    <div className="text-sm font-semibold">{title}</div>
+                    {explanation ? <div className="text-xs text-muted-foreground">{explanation}</div> : null}
+                    {excerpt ? <div className="text-xs text-muted-foreground">Extrait: “{excerpt}”</div> : null}
                     {!isBundle && dueLabel ? <div className="text-xs text-muted-foreground">Échéance: {dueLabel}</div> : null}
                     {!isBundle && remindLabel ? <div className="text-xs text-muted-foreground">Rappel: {remindLabel}</div> : null}
                     {isBundle ? (
@@ -330,8 +356,10 @@ export default function AssistantPage() {
                         {isExpanded ? (
                           <div className="text-sm">
                             <ol className="list-decimal pl-5 space-y-1">
-                              {bundleTasks.slice(0, 6).map((t, idx) => (
-                                <li key={`${suggestionId ?? "bundle"}_${idx}`}>{t.title}</li>
+                              {bundleTasks.slice(0, 6).map((t: { title?: unknown }, idx: number) => (
+                                <li key={`${suggestionId ?? "bundle"}_${idx}`}>
+                                  {typeof t?.title === "string" ? t.title : "Tâche"}
+                                </li>
                               ))}
                             </ol>
                             {!isPro ? (

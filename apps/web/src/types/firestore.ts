@@ -36,6 +36,23 @@ export interface AssistantSettingsDoc {
   plan?: string;
   autoAnalyze?: boolean;
   consentVersion?: number;
+  jtbdPreset?: 'daily_planning' | 'dont_forget' | 'meetings' | 'projects';
+  proactivityMode?: 'off' | 'suggestions' | 'proactive';
+  quietHours?: {
+    start?: string;
+    end?: string;
+    [key: string]: unknown;
+  };
+  notificationBudget?: {
+    maxPerDay?: number;
+    [key: string]: unknown;
+  };
+  aiPolicy?: {
+    enabled?: boolean;
+    minimizeData?: boolean;
+    allowFullContent?: boolean;
+    [key: string]: unknown;
+  };
   createdAt?: Timestamp | FieldValue;
   updatedAt?: Timestamp | FieldValue;
   [key: string]: unknown;
