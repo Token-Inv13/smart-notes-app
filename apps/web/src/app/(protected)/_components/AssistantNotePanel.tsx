@@ -620,13 +620,14 @@ export default function AssistantNotePanel({ noteId }: Props) {
     setEditing(s);
     setEditError(null);
     const payload = s.payload;
-    setEditTitle(payload?.title ?? "");
+    const payloadObj = payload && typeof payload === "object" ? (payload as any) : null;
+    setEditTitle(typeof payloadObj?.title === "string" ? String(payloadObj.title) : "");
     if (s.kind === "create_task") {
-      setEditDate("dueDate" in payload ? formatTimestampForInput(payload.dueDate ?? null) : "");
+      setEditDate(payloadObj && "dueDate" in payloadObj ? formatTimestampForInput(payloadObj.dueDate ?? null) : "");
     } else {
-      setEditDate("remindAt" in payload ? formatTimestampForInput(payload.remindAt ?? null) : "");
+      setEditDate(payloadObj && "remindAt" in payloadObj ? formatTimestampForInput(payloadObj.remindAt ?? null) : "");
     }
-    const p = "priority" in payload ? payload.priority : undefined;
+    const p = payloadObj && "priority" in payloadObj ? payloadObj.priority : undefined;
     setEditPriority(p === "low" || p === "medium" || p === "high" ? p : "");
   };
 
@@ -696,7 +697,8 @@ export default function AssistantNotePanel({ noteId }: Props) {
       overrides.remindAt = dt ? dt.toMillis() : null;
     }
 
-    if ("priority" in editing.payload) {
+    const editingPayloadObj = editing.payload && typeof editing.payload === "object" ? (editing.payload as any) : null;
+    if (editingPayloadObj && "priority" in editingPayloadObj) {
       overrides.priority = editPriority ? editPriority : null;
     }
 
@@ -811,11 +813,13 @@ export default function AssistantNotePanel({ noteId }: Props) {
       s.kind === "extract_key_points" ||
       s.kind === "tag_entities";
     const payload = s.payload;
-    const dueLabel = s.kind === "create_task" && "dueDate" in payload ? formatTs(payload.dueDate ?? null) : "";
-    const remindLabel = s.kind === "create_reminder" && "remindAt" in payload ? formatTs(payload.remindAt ?? null) : "";
+    const payloadObj = payload && typeof payload === "object" ? (payload as any) : null;
+    const dueLabel = s.kind === "create_task" && payloadObj && "dueDate" in payloadObj ? formatTs(payloadObj.dueDate ?? null) : "";
+    const remindLabel = s.kind === "create_reminder" && payloadObj && "remindAt" in payloadObj ? formatTs(payloadObj.remindAt ?? null) : "";
     const expired = s.status === "expired";
 
-    const bundleTasks = isBundle && "tasks" in payload ? payload.tasks : [];
+    const bundleTasks =
+      isBundle && payloadObj && "tasks" in payloadObj && Array.isArray(payloadObj.tasks) ? (payloadObj.tasks as any[]) : [];
     const isBundleExpanded = expandedBundleSuggestionId === (suggestionId ?? null);
 
     const handleAcceptClick = () => {
@@ -1406,7 +1410,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
               </div>
             </div>
 
-            {"priority" in editing.payload && (
+            {editing.payload && typeof editing.payload === "object" && "priority" in (editing.payload as any) && (
               <div className="space-y-1">
                 <label className="text-sm font-medium" htmlFor="assistant-edit-priority">
                   Priorité
