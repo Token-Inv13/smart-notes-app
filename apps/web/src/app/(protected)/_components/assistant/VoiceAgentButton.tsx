@@ -382,9 +382,26 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
     void startListening();
   };
 
+  const normalizeClarificationTimeInput = (input: string) => {
+    const compact = input.trim().replace(/\s+/g, "");
+    if (!compact) return "";
+
+    const hourOnly = /^([01]?\d|2[0-3])$/.exec(compact);
+    if (hourOnly) {
+      return `${Number(hourOnly[1])}h`;
+    }
+
+    const hourMinute = /^([01]?\d|2[0-3])(?::|h)?([0-5]\d)$/.exec(compact);
+    if (hourMinute) {
+      return `${Number(hourMinute[1])}h${hourMinute[2]}`;
+    }
+
+    return input.trim();
+  };
+
   const applyClarification = async () => {
     if (clarificationSubmitting) return;
-    const extra = clarificationInput.trim();
+    const extra = normalizeClarificationTimeInput(clarificationInput);
     if (!extra) return;
     const merged = `${transcript.trim()} ${extra}`.trim();
     setTranscript(merged);
@@ -558,7 +575,7 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
                 <input
                   type="text"
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  placeholder="Ex: à 9h"
+                  placeholder="Ex: 9, 9h, 9h30"
                   value={clarificationInput}
                   onChange={(e) => setClarificationInput(e.target.value)}
                 />
