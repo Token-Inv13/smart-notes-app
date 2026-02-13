@@ -139,6 +139,7 @@ export default function AssistantBriefingPage() {
             plan,
             autoAnalyze: false,
             consentVersion: CONSENT_VERSION,
+            simpleMode: "balanced",
             jtbdPreset: "daily_planning",
             proactivityMode: "suggestions",
             quietHours: { start: "22:00", end: "08:00" },

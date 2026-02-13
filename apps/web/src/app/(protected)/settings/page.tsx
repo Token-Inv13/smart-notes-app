@@ -11,6 +11,52 @@ import { registerFcmToken } from "@/lib/fcm";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import LogoutButton from "../LogoutButton";
 
+type AssistantSimpleMode = "calm" | "balanced" | "auto";
+
+function assistantSimpleModeDefaults(mode: AssistantSimpleMode): {
+  proactivity: "off" | "suggestions" | "proactive";
+  maxPerDay: number;
+  quietStart: string;
+  quietEnd: string;
+  aiEnabled: boolean;
+  aiMinimize: boolean;
+  aiAllowFull: boolean;
+} {
+  if (mode === "calm") {
+    return {
+      proactivity: "suggestions",
+      maxPerDay: 1,
+      quietStart: "22:00",
+      quietEnd: "08:00",
+      aiEnabled: true,
+      aiMinimize: true,
+      aiAllowFull: false,
+    };
+  }
+
+  if (mode === "auto") {
+    return {
+      proactivity: "proactive",
+      maxPerDay: 6,
+      quietStart: "22:00",
+      quietEnd: "08:00",
+      aiEnabled: true,
+      aiMinimize: true,
+      aiAllowFull: false,
+    };
+  }
+
+  return {
+    proactivity: "suggestions",
+    maxPerDay: 3,
+    quietStart: "22:00",
+    quietEnd: "08:00",
+    aiEnabled: true,
+    aiMinimize: true,
+    aiAllowFull: false,
+  };
+}
+
 export default function SettingsPage() {
   const { data: user, loading, error } = useUserSettings();
   const { data: assistantSettings } = useAssistantSettings();
@@ -32,6 +78,7 @@ export default function SettingsPage() {
   const [savingAssistant, setSavingAssistant] = useState(false);
   const [assistantMessage, setAssistantMessage] = useState<string | null>(null);
   const [assistantEnabledDraft, setAssistantEnabledDraft] = useState(false);
+  const [assistantSimpleModeDraft, setAssistantSimpleModeDraft] = useState<AssistantSimpleMode>("balanced");
   const [assistantJtbdDraft, setAssistantJtbdDraft] = useState<"daily_planning" | "dont_forget" | "meetings" | "projects">("daily_planning");
   const [assistantProactivityDraft, setAssistantProactivityDraft] = useState<"off" | "suggestions" | "proactive">("suggestions");
   const [assistantQuietStartDraft, setAssistantQuietStartDraft] = useState<string>("22:00");
@@ -48,6 +95,13 @@ export default function SettingsPage() {
   useEffect(() => {
     const enabled = assistantSettings?.enabled === true;
     setAssistantEnabledDraft(enabled);
+
+    const simpleModeRaw = assistantSettings?.simpleMode;
+    if (simpleModeRaw === "calm" || simpleModeRaw === "balanced" || simpleModeRaw === "auto") {
+      setAssistantSimpleModeDraft(simpleModeRaw);
+    } else {
+      setAssistantSimpleModeDraft("balanced");
+    }
 
     const jtbd = assistantSettings?.jtbdPreset;
     if (jtbd === "daily_planning" || jtbd === "dont_forget" || jtbd === "meetings" || jtbd === "projects") {
@@ -78,6 +132,18 @@ export default function SettingsPage() {
     setAssistantAIMinimizeDraft(aiMinimize !== false);
     setAssistantAIAllowFullDraft(aiAllowFull === true);
   }, [assistantSettings]);
+
+  const applyAssistantSimpleMode = (mode: AssistantSimpleMode) => {
+    const defaults = assistantSimpleModeDefaults(mode);
+    setAssistantSimpleModeDraft(mode);
+    setAssistantProactivityDraft(defaults.proactivity);
+    setAssistantMaxPerDayDraft(defaults.maxPerDay);
+    setAssistantQuietStartDraft(defaults.quietStart);
+    setAssistantQuietEndDraft(defaults.quietEnd);
+    setAssistantAIEnabledDraft(defaults.aiEnabled);
+    setAssistantAIMinimizeDraft(defaults.aiMinimize);
+    setAssistantAIAllowFullDraft(defaults.aiAllowFull);
+  };
 
   useEffect(() => {
     try {
@@ -128,6 +194,7 @@ export default function SettingsPage() {
             plan,
             autoAnalyze: false,
             consentVersion: 1,
+            simpleMode: assistantSimpleModeDraft,
             jtbdPreset: assistantJtbdDraft,
             proactivityMode: assistantProactivityDraft,
             quietHours: { start: assistantQuietStartDraft, end: assistantQuietEndDraft },
@@ -146,6 +213,7 @@ export default function SettingsPage() {
         await updateDoc(ref, {
           enabled: assistantEnabledDraft,
           plan,
+          simpleMode: assistantSimpleModeDraft,
           jtbdPreset: assistantJtbdDraft,
           proactivityMode: assistantProactivityDraft,
           "quietHours.start": assistantQuietStartDraft,
@@ -576,6 +644,26 @@ export default function SettingsPage() {
                   }`}
                 />
               </button>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-sm font-medium">Mode assistant (simple)</div>
+              <select
+                value={assistantSimpleModeDraft}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "calm" || v === "balanced" || v === "auto") {
+                    applyAssistantSimpleMode(v);
+                  }
+                }}
+                className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
+                aria-label="Mode assistant simple"
+              >
+                <option value="calm">Calme (minimal, non intrusif)</option>
+                <option value="balanced">Équilibré (recommandé)</option>
+                <option value="auto">Auto (proactif, plus d’automatisation)</option>
+              </select>
+              <p className="text-xs text-muted-foreground">Ce mode applique automatiquement les réglages recommandés.</p>
             </div>
 
             <div className="space-y-1">

@@ -36,6 +36,7 @@ export interface AssistantSettingsDoc {
   plan?: string;
   autoAnalyze?: boolean;
   consentVersion?: number;
+  simpleMode?: 'calm' | 'balanced' | 'auto';
   jtbdPreset?: 'daily_planning' | 'dont_forget' | 'meetings' | 'projects';
   proactivityMode?: 'off' | 'suggestions' | 'proactive';
   quietHours?: {
