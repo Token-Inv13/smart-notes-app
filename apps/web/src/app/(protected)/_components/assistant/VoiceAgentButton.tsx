@@ -58,9 +58,12 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
   const lastVoiceMsRef = useRef<number>(0);
   const heardVoiceRef = useRef(false);
   const analyzedResultIdRef = useRef<string | null>(null);
+  const noiseFloorRef = useRef(0.01);
+  const calibrationUntilRef = useRef(0);
 
   const maxDurationMs = 60 * 1000;
   const silenceAutoStopMs = 1000;
+  const noVoiceAutoStopMs = 7000;
   const maxBytes = 25 * 1024 * 1024;
 
   const buildLocalIntentPreview = (text: string): string | null => {
@@ -254,6 +257,8 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
     setJobId(null);
     setResultId(null);
     analyzedResultIdRef.current = null;
+    noiseFloorRef.current = 0.01;
+    calibrationUntilRef.current = Date.now() + 1200;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -323,10 +328,22 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
         }
         const rms = Math.sqrt(sum / arr.length);
         const now = Date.now();
-        const speaking = rms > 0.03;
+        if (now < calibrationUntilRef.current) {
+          noiseFloorRef.current = Math.max(0.005, noiseFloorRef.current * 0.9 + rms * 0.1);
+        } else {
+          noiseFloorRef.current = Math.max(0.005, noiseFloorRef.current * 0.98 + rms * 0.02);
+        }
+
+        const dynamicThreshold = Math.max(0.018, noiseFloorRef.current * 2.8);
+        const speaking = rms > dynamicThreshold;
         if (speaking) {
           heardVoiceRef.current = true;
           lastVoiceMsRef.current = now;
+        }
+
+        if (!heardVoiceRef.current && now - startedAtRef.current > noVoiceAutoStopMs) {
+          stopListening();
+          return;
         }
 
         if (heardVoiceRef.current && now - lastVoiceMsRef.current > silenceAutoStopMs) {
