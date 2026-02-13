@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FirebaseError } from "firebase/app";
 import { doc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
@@ -13,6 +13,11 @@ import type { AssistantSuggestionDoc } from "@/types/firestore";
 import BundleCustomizeModal from "../_components/assistant/BundleCustomizeModal";
 
 const CONSENT_VERSION = 1;
+const ACTIONABLE_KINDS = new Set<AssistantSuggestionDoc["kind"]>([
+  "create_task",
+  "create_reminder",
+  "create_task_bundle",
+]);
 
 type SuggestionPayload = {
   title?: unknown;
@@ -41,6 +46,8 @@ export default function AssistantPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [busySuggestionId, setBusySuggestionId] = useState<string | null>(null);
   const [showAllStatuses, setShowAllStatuses] = useState(false);
+  const [showAIInsights, setShowAIInsights] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(8);
   const [expandedBundleId, setExpandedBundleId] = useState<string | null>(null);
 
   const [bundleCustomizeSuggestion, setBundleCustomizeSuggestion] = useState<AssistantSuggestionDoc | null>(null);
@@ -196,14 +203,27 @@ export default function AssistantPage() {
 
   const sorted = useMemo(() => {
     const arr = (suggestions ?? []).slice();
-    arr.sort((a, b) => toMillisSafe(b.updatedAt) - toMillisSafe(a.updatedAt));
+    arr.sort((a, b) => {
+      const ra = typeof a.rankScore === "number" && Number.isFinite(a.rankScore) ? a.rankScore : Number.NEGATIVE_INFINITY;
+      const rb = typeof b.rankScore === "number" && Number.isFinite(b.rankScore) ? b.rankScore : Number.NEGATIVE_INFINITY;
+      if (rb !== ra) return rb - ra;
+      return toMillisSafe(b.updatedAt) - toMillisSafe(a.updatedAt);
+    });
     return arr;
   }, [suggestions]);
 
   const visible = useMemo(() => {
-    if (showAllStatuses) return sorted;
-    return sorted.filter((s) => s.status === "proposed");
-  }, [sorted, showAllStatuses]);
+    const byStatus = showAllStatuses ? sorted : sorted.filter((s) => s.status === "proposed");
+    if (showAIInsights) return byStatus;
+    return byStatus.filter((s) => ACTIONABLE_KINDS.has(s.kind));
+  }, [sorted, showAllStatuses, showAIInsights]);
+
+  useEffect(() => {
+    setVisibleCount(8);
+  }, [showAllStatuses, showAIInsights]);
+
+  const displayedSuggestions = useMemo(() => visible.slice(0, visibleCount), [visible, visibleCount]);
+  const hasMoreSuggestions = displayedSuggestions.length < visible.length;
 
   const handleConfirmBundleCustomize = async (overrides: { selectedIndexes: number[]; tasksOverrides?: Record<number, Record<string, unknown>> }) => {
     const suggestion = bundleCustomizeSuggestion;
@@ -303,6 +323,15 @@ export default function AssistantPage() {
           Afficher aussi les acceptées/refusées
         </label>
 
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={showAIInsights}
+            onChange={(e) => setShowAIInsights(e.target.checked)}
+          />
+          Afficher aussi les analyses IA (résumé, points clés, tags…)
+        </label>
+
         {suggestionsError && (
           <div className="sn-alert sn-alert--error">Impossible de charger les suggestions.</div>
         )}
@@ -312,7 +341,7 @@ export default function AssistantPage() {
         )}
 
         <div className="space-y-3">
-          {visible.map((s) => {
+          {displayedSuggestions.map((s) => {
             const suggestionId = s.id ?? s.dedupeKey;
             const isBusy = !!suggestionId && busySuggestionId === suggestionId;
             const proposed = s.status === "proposed";
@@ -414,6 +443,18 @@ export default function AssistantPage() {
             );
           })}
         </div>
+
+        {hasMoreSuggestions ? (
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => setVisibleCount((prev) => prev + 8)}
+              className="px-3 py-2 rounded-md border border-input text-sm"
+            >
+              Afficher plus ({visible.length - displayedSuggestions.length} restantes)
+            </button>
+          </div>
+        ) : null}
       </div>
 
 
