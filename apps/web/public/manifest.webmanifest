@@ -1,9 +1,11 @@
 {
   "name": "Smart Notes",
-  "short_name": "Notes",
-  "start_url": "/dashboard",
+  "short_name": "Smart Notes",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
+  "lang": "fr",
   "background_color": "#ffffff",
   "theme_color": "#111827",
   "icons": [
