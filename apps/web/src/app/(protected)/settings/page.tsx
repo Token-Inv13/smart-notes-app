@@ -87,6 +87,11 @@ export default function SettingsPage() {
   const [assistantAIEnabledDraft, setAssistantAIEnabledDraft] = useState(true);
   const [assistantAIMinimizeDraft, setAssistantAIMinimizeDraft] = useState(true);
   const [assistantAIAllowFullDraft, setAssistantAIAllowFullDraft] = useState(false);
+  const [calendarConnected, setCalendarConnected] = useState(false);
+  const [calendarPrimaryId, setCalendarPrimaryId] = useState<string | null>(null);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarBusy, setCalendarBusy] = useState(false);
+  const [calendarMessage, setCalendarMessage] = useState<string | null>(null);
 
   useEffect(() => {
     setDisplayNameDraft(user?.displayName ?? "");
@@ -132,6 +137,97 @@ export default function SettingsPage() {
     setAssistantAIMinimizeDraft(aiMinimize !== false);
     setAssistantAIAllowFullDraft(aiAllowFull === true);
   }, [assistantSettings]);
+
+  const loadCalendarStatus = async () => {
+    setCalendarLoading(true);
+    try {
+      const res = await fetch("/api/google/calendar/status", { method: "GET", cache: "no-store" });
+      if (!res.ok) {
+        setCalendarConnected(false);
+        setCalendarPrimaryId(null);
+        return;
+      }
+      const data = (await res.json()) as { connected?: unknown; primaryCalendarId?: unknown };
+      setCalendarConnected(data?.connected === true);
+      setCalendarPrimaryId(typeof data?.primaryCalendarId === "string" ? data.primaryCalendarId : null);
+    } catch {
+      setCalendarConnected(false);
+      setCalendarPrimaryId(null);
+    } finally {
+      setCalendarLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadCalendarStatus();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const calendarState = params.get("calendar");
+    if (!calendarState) return;
+
+    if (calendarState === "connected") {
+      setCalendarMessage("Google Calendar connecté.");
+      void loadCalendarStatus();
+    } else if (calendarState === "auth_required") {
+      setCalendarMessage("Connexion requise pour Google Calendar.");
+    } else if (calendarState === "oauth_state_invalid") {
+      setCalendarMessage("Échec OAuth Google Calendar (state invalide).");
+    } else if (calendarState === "missing_env") {
+      setCalendarMessage("Configuration Google Calendar manquante côté serveur.");
+    } else if (calendarState === "token_exchange_failed") {
+      setCalendarMessage("Impossible d’échanger le code OAuth Google.");
+    } else if (calendarState === "token_missing") {
+      setCalendarMessage("Token Google Calendar manquant.");
+    } else if (calendarState === "error") {
+      setCalendarMessage("Erreur de connexion Google Calendar.");
+    }
+
+    params.delete("calendar");
+    const nextQuery = params.toString();
+    const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`;
+    window.history.replaceState({}, "", nextUrl);
+  }, []);
+
+  const handleConnectGoogleCalendar = async () => {
+    setCalendarBusy(true);
+    setCalendarMessage(null);
+    try {
+      const res = await fetch("/api/google/calendar/connect", { method: "GET", cache: "no-store" });
+      const data = (await res.json()) as { url?: unknown; error?: unknown };
+      if (!res.ok || typeof data?.url !== "string") {
+        setCalendarMessage(typeof data?.error === "string" ? data.error : "Impossible de lancer la connexion Google Calendar.");
+        return;
+      }
+      window.location.href = data.url;
+    } catch {
+      setCalendarMessage("Impossible de lancer la connexion Google Calendar.");
+    } finally {
+      setCalendarBusy(false);
+    }
+  };
+
+  const handleDisconnectGoogleCalendar = async () => {
+    setCalendarBusy(true);
+    setCalendarMessage(null);
+    try {
+      const res = await fetch("/api/google/calendar/disconnect", { method: "POST" });
+      const data = (await res.json()) as { ok?: unknown; error?: unknown };
+      if (!res.ok || data?.ok !== true) {
+        setCalendarMessage(typeof data?.error === "string" ? data.error : "Impossible de déconnecter Google Calendar.");
+        return;
+      }
+      setCalendarConnected(false);
+      setCalendarPrimaryId(null);
+      setCalendarMessage("Google Calendar déconnecté.");
+    } catch {
+      setCalendarMessage("Impossible de déconnecter Google Calendar.");
+    } finally {
+      setCalendarBusy(false);
+    }
+  };
 
   const applyAssistantSimpleMode = (mode: AssistantSimpleMode) => {
     const defaults = assistantSimpleModeDefaults(mode);
@@ -684,6 +780,50 @@ export default function SettingsPage() {
                 <option value="meetings">Réunions & décisions</option>
                 <option value="projects">Projets (pilotage)</option>
               </select>
+            </div>
+
+            <div className="space-y-2 rounded-lg border border-border/60 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium">Google Calendar (réunions)</div>
+                  <div className="text-xs text-muted-foreground">
+                    {calendarLoading
+                      ? "Chargement…"
+                      : calendarConnected
+                        ? "Connecté"
+                        : "Non connecté"}
+                  </div>
+                </div>
+                {!calendarConnected ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleConnectGoogleCalendar()}
+                    disabled={calendarBusy || calendarLoading}
+                    className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50"
+                  >
+                    {calendarBusy ? "Connexion…" : "Connecter"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void handleDisconnectGoogleCalendar()}
+                    disabled={calendarBusy || calendarLoading}
+                    className="px-3 py-2 rounded-md border border-input text-xs disabled:opacity-50"
+                  >
+                    {calendarBusy ? "Déconnexion…" : "Déconnecter"}
+                  </button>
+                )}
+              </div>
+
+              {calendarPrimaryId ? (
+                <div className="text-xs text-muted-foreground break-all">Calendrier principal: {calendarPrimaryId}</div>
+              ) : null}
+
+              {assistantJtbdDraft === "meetings" ? (
+                <div className="text-xs text-muted-foreground">Le mode “Réunions & décisions” fonctionne mieux avec Calendar connecté.</div>
+              ) : null}
+
+              {calendarMessage ? <div className="text-xs">{calendarMessage}</div> : null}
             </div>
 
             <div className="space-y-1">
