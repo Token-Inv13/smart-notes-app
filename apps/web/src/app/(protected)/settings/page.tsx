@@ -87,6 +87,7 @@ export default function SettingsPage() {
   const [assistantAIEnabledDraft, setAssistantAIEnabledDraft] = useState(true);
   const [assistantAIMinimizeDraft, setAssistantAIMinimizeDraft] = useState(true);
   const [assistantAIAllowFullDraft, setAssistantAIAllowFullDraft] = useState(false);
+  const [assistantAdvancedOpen, setAssistantAdvancedOpen] = useState(false);
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [calendarPrimaryId, setCalendarPrimaryId] = useState<string | null>(null);
   const [calendarLoading, setCalendarLoading] = useState(false);
@@ -763,6 +764,16 @@ export default function SettingsPage() {
             </div>
 
             <div className="space-y-1">
+              <button
+                type="button"
+                onClick={() => setAssistantAdvancedOpen((v) => !v)}
+                className="text-xs text-muted-foreground hover:underline"
+              >
+                {assistantAdvancedOpen ? "Masquer les options avancées" : "Afficher les options avancées"}
+              </button>
+            </div>
+
+            <div className="space-y-1">
               <div className="text-sm font-medium">JTBD principal</div>
               <select
                 value={assistantJtbdDraft}
@@ -826,86 +837,90 @@ export default function SettingsPage() {
               {calendarMessage ? <div className="text-xs">{calendarMessage}</div> : null}
             </div>
 
-            <div className="space-y-1">
-              <div className="text-sm font-medium">Proactivité</div>
-              <select
-                value={assistantProactivityDraft}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v === "off" || v === "suggestions" || v === "proactive") {
-                    setAssistantProactivityDraft(v);
-                  }
-                }}
-                className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
-                aria-label="Proactivité"
-              >
-                <option value="off">Off</option>
-                <option value="suggestions">Suggestions (B)</option>
-                <option value="proactive">Proactif (C)</option>
-              </select>
-            </div>
+            {assistantAdvancedOpen ? (
+              <>
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">Proactivité</div>
+                  <select
+                    value={assistantProactivityDraft}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === "off" || v === "suggestions" || v === "proactive") {
+                        setAssistantProactivityDraft(v);
+                      }
+                    }}
+                    className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
+                    aria-label="Proactivité"
+                  >
+                    <option value="off">Off</option>
+                    <option value="suggestions">Suggestions (B)</option>
+                    <option value="proactive">Proactif (C)</option>
+                  </select>
+                </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <div className="text-sm font-medium">Silence — début</div>
-                <input
-                  type="time"
-                  value={assistantQuietStartDraft}
-                  onChange={(e) => setAssistantQuietStartDraft(e.target.value)}
-                  className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
-                  aria-label="Silence début"
-                />
-              </div>
-              <div className="space-y-1">
-                <div className="text-sm font-medium">Silence — fin</div>
-                <input
-                  type="time"
-                  value={assistantQuietEndDraft}
-                  onChange={(e) => setAssistantQuietEndDraft(e.target.value)}
-                  className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
-                  aria-label="Silence fin"
-                />
-              </div>
-            </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">Silence — début</div>
+                    <input
+                      type="time"
+                      value={assistantQuietStartDraft}
+                      onChange={(e) => setAssistantQuietStartDraft(e.target.value)}
+                      className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
+                      aria-label="Silence début"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">Silence — fin</div>
+                    <input
+                      type="time"
+                      value={assistantQuietEndDraft}
+                      onChange={(e) => setAssistantQuietEndDraft(e.target.value)}
+                      className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
+                      aria-label="Silence fin"
+                    />
+                  </div>
+                </div>
 
-            <div className="space-y-1">
-              <div className="text-sm font-medium">Budget notifications (max / jour)</div>
-              <input
-                type="number"
-                min={0}
-                max={50}
-                value={assistantMaxPerDayDraft}
-                onChange={(e) => setAssistantMaxPerDayDraft(Number(e.target.value))}
-                className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
-                aria-label="Budget notifications"
-              />
-            </div>
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">Budget notifications (max / jour)</div>
+                  <input
+                    type="number"
+                    min={0}
+                    max={50}
+                    value={assistantMaxPerDayDraft}
+                    onChange={(e) => setAssistantMaxPerDayDraft(Number(e.target.value))}
+                    className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
+                    aria-label="Budget notifications"
+                  />
+                </div>
 
-            <div className="space-y-2">
-              <div className="text-sm font-medium">IA</div>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={assistantAIEnabledDraft} onChange={(e) => setAssistantAIEnabledDraft(e.target.checked)} />
-                Activer l’IA
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={assistantAIMinimizeDraft}
-                  onChange={(e) => setAssistantAIMinimizeDraft(e.target.checked)}
-                  disabled={!assistantAIEnabledDraft}
-                />
-                Minimiser les données envoyées
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={assistantAIAllowFullDraft}
-                  onChange={(e) => setAssistantAIAllowFullDraft(e.target.checked)}
-                  disabled={!assistantAIEnabledDraft}
-                />
-                Autoriser le contenu complet
-              </label>
-            </div>
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">IA</div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={assistantAIEnabledDraft} onChange={(e) => setAssistantAIEnabledDraft(e.target.checked)} />
+                    Activer l’IA
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={assistantAIMinimizeDraft}
+                      onChange={(e) => setAssistantAIMinimizeDraft(e.target.checked)}
+                      disabled={!assistantAIEnabledDraft}
+                    />
+                    Minimiser les données envoyées
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={assistantAIAllowFullDraft}
+                      onChange={(e) => setAssistantAIAllowFullDraft(e.target.checked)}
+                      disabled={!assistantAIEnabledDraft}
+                    />
+                    Autoriser le contenu complet
+                  </label>
+                </div>
+              </>
+            ) : null}
 
             <div className="flex items-center gap-2">
               <button
