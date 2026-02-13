@@ -61,6 +61,7 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
   const analyzedResultIdRef = useRef<string | null>(null);
   const noiseFloorRef = useRef(0.01);
   const calibrationUntilRef = useRef(0);
+  const clarificationInputRef = useRef<HTMLInputElement | null>(null);
 
   const maxDurationMs = 60 * 1000;
   const silenceAutoStopMs = 1000;
@@ -382,19 +383,37 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
     void startListening();
   };
 
-  const normalizeClarificationTimeInput = (input: string) => {
+  const parseClarificationTimeInput = (input: string): { normalized: string; shortLabel: string; displayLabel: string } | null => {
     const compact = input.trim().replace(/\s+/g, "");
-    if (!compact) return "";
+    if (!compact) return null;
 
     const hourOnly = /^([01]?\d|2[0-3])$/.exec(compact);
     if (hourOnly) {
-      return `${Number(hourOnly[1])}h`;
+      const hour = Number(hourOnly[1]);
+      return {
+        normalized: `${hour}h`,
+        shortLabel: `${hour}h`,
+        displayLabel: `${hour.toString().padStart(2, "0")}:00`,
+      };
     }
 
     const hourMinute = /^([01]?\d|2[0-3])(?::|h|\.)([0-5]\d)$/.exec(compact);
     if (hourMinute) {
-      return `${Number(hourMinute[1])}h${hourMinute[2]}`;
+      const hour = Number(hourMinute[1]);
+      const minute = hourMinute[2];
+      return {
+        normalized: `${hour}h${minute}`,
+        shortLabel: `${hour}h${minute}`,
+        displayLabel: `${hour.toString().padStart(2, "0")}:${minute}`,
+      };
     }
+
+    return null;
+  };
+
+  const normalizeClarificationTimeInput = (input: string) => {
+    const parsed = parseClarificationTimeInput(input);
+    if (parsed) return parsed.normalized;
 
     return input.trim();
   };
@@ -422,6 +441,15 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
     void startListening();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!(flowStep === "clarify" || result?.needsClarification === true)) return;
+    const id = window.setTimeout(() => {
+      clarificationInputRef.current?.focus();
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [flowStep, open, result?.needsClarification]);
 
   useEffect(() => {
     if (!open) return;
@@ -476,6 +504,15 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
   const clarificationPending = flowStep === "clarify" || result?.needsClarification === true;
   const isBusyStep = flowStep === "listening" || flowStep === "uploading" || flowStep === "transcribing" || flowStep === "executing";
   const clarificationButtonDisabled = !clarificationInput.trim() || clarificationSubmitting;
+  const parsedClarificationTime = useMemo(() => parseClarificationTimeInput(clarificationInput), [clarificationInput]);
+  const clarificationActionLabel = useMemo(() => {
+    if (clarificationSubmitting) return "Traitement...";
+    if (!parsedClarificationTime) return "OK";
+    const at = parsedClarificationTime.shortLabel;
+    if (result?.intent.kind === "schedule_meeting") return `Créer la réunion à ${at}`;
+    if (result?.intent.kind === "create_task") return `Créer la tâche à ${at}`;
+    return `Créer le rappel à ${at}`;
+  }, [clarificationSubmitting, parsedClarificationTime, result?.intent.kind]);
   const confirmationHint =
     flowStep === "review" && result?.intent?.requiresConfirmation
       ? "Dernière étape: appuie sur Oui pour confirmer la création."
@@ -573,12 +610,15 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
                 }}
               >
                 <input
+                  ref={clarificationInputRef}
                   type="text"
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  autoFocus
                   placeholder="Ex: 9, 9h, 9h30"
                   value={clarificationInput}
                   onChange={(e) => setClarificationInput(e.target.value)}
                 />
+                {parsedClarificationTime ? <div className="text-xs text-muted-foreground">Heure détectée : {parsedClarificationTime.displayLabel}</div> : null}
               </form>
             ) : null}
 
@@ -627,11 +667,11 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
                     disabled={clarificationButtonDisabled}
                     onClick={() => void applyClarification()}
                   >
-                    {clarificationSubmitting ? "Traitement..." : "OK"}
+                    {clarificationActionLabel}
                   </button>
                   <button
                     type="button"
-                    className="px-3 py-2 rounded-md border border-input text-sm"
+                    className="px-3 py-2 rounded-md border border-border bg-muted/40 text-muted-foreground text-sm"
                     onClick={closeModal}
                   >
                     Annuler
@@ -680,7 +720,7 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
 
               <button
                 type="button"
-                className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+                className="px-3 py-2 rounded-md border border-border bg-muted/40 text-muted-foreground text-sm disabled:opacity-50"
                 disabled={isBusyStep}
                 onClick={retryVoice}
               >
