@@ -3,6 +3,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb, verifySessionCookie } from "@/lib/firebaseAdmin";
 
 const OAUTH_STATE_COOKIE = "gcal_oauth_state";
+const OAUTH_VERIFIER_COOKIE = "gcal_oauth_verifier";
 
 type TokenResponse = {
   access_token?: string;
@@ -40,32 +41,39 @@ export async function GET(request: NextRequest) {
     const code = request.nextUrl.searchParams.get("code");
     const state = request.nextUrl.searchParams.get("state");
     const stateCookie = request.cookies.get(OAUTH_STATE_COOKIE)?.value;
+    const verifier = request.cookies.get(OAUTH_VERIFIER_COOKIE)?.value;
 
     if (!code || !state || !stateCookie || state !== stateCookie || !state.startsWith(`${decoded.uid}:`)) {
       redirectBase.searchParams.set("calendar", "oauth_state_invalid");
       const res = NextResponse.redirect(redirectBase);
       res.cookies.set(OAUTH_STATE_COOKIE, "", { path: "/", maxAge: 0 });
+      res.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
       return res;
     }
 
-    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientId = process.env.GOOGLE_CLIENT_ID ?? process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
     const redirectUri = process.env.GOOGLE_CALENDAR_REDIRECT_URI ?? `${request.nextUrl.origin}/api/google/calendar/callback`;
 
-    if (!clientId || !clientSecret) {
+    if (!clientId) {
       redirectBase.searchParams.set("calendar", "missing_env");
       const res = NextResponse.redirect(redirectBase);
       res.cookies.set(OAUTH_STATE_COOKIE, "", { path: "/", maxAge: 0 });
+      res.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
       return res;
     }
 
     const tokenBody = new URLSearchParams({
       code,
       client_id: clientId,
-      client_secret: clientSecret,
       redirect_uri: redirectUri,
       grant_type: "authorization_code",
     });
+    if (clientSecret) {
+      tokenBody.set("client_secret", clientSecret);
+    } else if (typeof verifier === "string" && verifier.length > 0) {
+      tokenBody.set("code_verifier", verifier);
+    }
 
     const tokenResp = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
@@ -78,6 +86,7 @@ export async function GET(request: NextRequest) {
       redirectBase.searchParams.set("calendar", "token_exchange_failed");
       const res = NextResponse.redirect(redirectBase);
       res.cookies.set(OAUTH_STATE_COOKIE, "", { path: "/", maxAge: 0 });
+      res.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
       return res;
     }
 
@@ -90,6 +99,7 @@ export async function GET(request: NextRequest) {
       redirectBase.searchParams.set("calendar", "token_missing");
       const res = NextResponse.redirect(redirectBase);
       res.cookies.set(OAUTH_STATE_COOKIE, "", { path: "/", maxAge: 0 });
+      res.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
       return res;
     }
 
@@ -131,11 +141,13 @@ export async function GET(request: NextRequest) {
     redirectBase.searchParams.set("calendar", "connected");
     const response = NextResponse.redirect(redirectBase);
     response.cookies.set(OAUTH_STATE_COOKIE, "", { path: "/", maxAge: 0 });
+    response.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
     return response;
   } catch {
     redirectBase.searchParams.set("calendar", "error");
     const response = NextResponse.redirect(redirectBase);
     response.cookies.set(OAUTH_STATE_COOKIE, "", { path: "/", maxAge: 0 });
+    response.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
     return response;
   }
 }

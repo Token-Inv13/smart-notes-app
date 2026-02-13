@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash, randomBytes } from "node:crypto";
 import { verifySessionCookie } from "@/lib/firebaseAdmin";
 
 const OAUTH_STATE_COOKIE = "gcal_oauth_state";
+const OAUTH_VERIFIER_COOKIE = "gcal_oauth_verifier";
+
+function base64url(input: Buffer): string {
+  return input
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,7 +25,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientId = process.env.GOOGLE_CLIENT_ID ?? process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
     const redirectUri = process.env.GOOGLE_CALENDAR_REDIRECT_URI ?? `${request.nextUrl.origin}/api/google/calendar/callback`;
 
     if (!clientId) {
@@ -23,6 +33,8 @@ export async function GET(request: NextRequest) {
     }
 
     const state = `${decoded.uid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+    const verifier = base64url(randomBytes(32));
+    const challenge = base64url(createHash("sha256").update(verifier).digest());
 
     const params = new URLSearchParams({
       client_id: clientId,
@@ -31,6 +43,8 @@ export async function GET(request: NextRequest) {
       access_type: "offline",
       prompt: "consent",
       include_granted_scopes: "true",
+      code_challenge: challenge,
+      code_challenge_method: "S256",
       scope: [
         "openid",
         "email",
@@ -44,6 +58,15 @@ export async function GET(request: NextRequest) {
     response.cookies.set({
       name: OAUTH_STATE_COOKIE,
       value: state,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 10,
+    });
+    response.cookies.set({
+      name: OAUTH_VERIFIER_COOKIE,
+      value: verifier,
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
