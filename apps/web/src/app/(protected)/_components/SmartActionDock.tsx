@@ -13,7 +13,7 @@ export default function SmartActionDock({ mobileHidden, voiceAction, createActio
 
   return (
     <div
-      className={`${visibilityClass} fixed z-[55] left-1/2 -translate-x-1/2 bottom-[calc(1rem+env(safe-area-inset-bottom))] md:left-auto md:right-6 md:bottom-6 md:translate-x-0 items-center rounded-full border border-white/15 bg-slate-950/65 backdrop-blur-md shadow-[0_12px_28px_rgba(0,0,0,0.35)] overflow-hidden`}
+      className={`${visibilityClass} fixed z-[55] left-1/2 -translate-x-1/2 bottom-[calc(1rem+env(safe-area-inset-bottom))] md:left-auto md:right-8 md:top-24 md:bottom-auto md:translate-x-0 items-center rounded-full border border-white/15 bg-slate-950/65 backdrop-blur-md shadow-[0_12px_28px_rgba(0,0,0,0.35)] overflow-hidden`}
       role="group"
       aria-label="Actions rapides"
     >
