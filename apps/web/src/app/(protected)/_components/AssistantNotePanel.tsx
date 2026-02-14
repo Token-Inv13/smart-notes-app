@@ -193,8 +193,8 @@ export default function AssistantNotePanel({ noteId }: Props) {
   const [isMobile, setIsMobile] = useState(false);
   const [sectionOpen, setSectionOpen] = useState<Record<SectionId, boolean>>({
     capture: true,
-    analyze: true,
-    transform: true,
+    analyze: false,
+    transform: false,
   });
 
   const [dismissedResultKeys, setDismissedResultKeys] = useState<Record<string, boolean>>({});
@@ -202,6 +202,7 @@ export default function AssistantNotePanel({ noteId }: Props) {
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   const [quickAction, setQuickAction] = useState<"analyze" | "reanalyze" | null>(null);
+  const [quickMenuOpen, setQuickMenuOpen] = useState(false);
   const prevAIJobStatusForAutoCloseRef = useRef<typeof aiJobStatus>(null);
   const prevJobStatusForAutoCloseRef = useRef<typeof jobStatus>(null);
 
@@ -549,8 +550,8 @@ export default function AssistantNotePanel({ noteId }: Props) {
         next.transform = prev.transform ?? false;
       } else {
         next.capture = true;
-        next.analyze = true;
-        next.transform = true;
+        next.analyze = prev.analyze ?? false;
+        next.transform = prev.transform ?? false;
       }
       return next;
     });
@@ -1167,23 +1168,14 @@ export default function AssistantNotePanel({ noteId }: Props) {
           <div className="space-y-5">
             <AssistantSection
               id="capture"
-              title="Capture"
+              title="Réunion"
               mobileCollapsible={isMobile}
               open={sectionOpen.capture}
               setOpen={setOpen}
             >
               <div className="space-y-3">
-                <div>
-                  <VoiceRecorderButton noteId={noteId} mode="append_to_note" />
-                </div>
-                <div className="flex flex-col md:flex-row md:items-center gap-2">
-                  <AssistantActionButton
-                    label={busyAIAnalysis ? "Améliorer…" : "Améliorer le texte"}
-                    onClick={() => void handleAIAnalyzeWithModes(["rewrite"])}
-                    disabled={!noteId || busyAIAnalysis}
-                    variant="secondary"
-                  />
-                </div>
+                <div className="text-xs text-muted-foreground">Enregistre un compte-rendu vocal de réunion, puis insère la transcription dans la note.</div>
+                <VoiceRecorderButton noteId={noteId} mode="append_to_note" showInternalActions={false} showTranscript={false} />
               </div>
             </AssistantSection>
 
@@ -1396,6 +1388,17 @@ export default function AssistantNotePanel({ noteId }: Props) {
                 type="button"
                 onClick={() => {
                   setDetailsOpen(true);
+                  setOpen("capture", true);
+                }}
+                disabled={!noteId}
+                className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+              >
+                Enregistrer une réunion
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDetailsOpen(true);
                   setQuickAction("analyze");
                   setOpen("analyze", true);
                   void handleAIAnalyzeWithModes(["summary"]);
@@ -1404,87 +1407,6 @@ export default function AssistantNotePanel({ noteId }: Props) {
                 className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
               >
                 {busyAIAnalysis ? "Résumé…" : "Résumer"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setDetailsOpen(true);
-                  setQuickAction("analyze");
-                  setOpen("transform", true);
-                  void handleAIAnalyzeWithModes(["rewrite"], "Traduis le texte en anglais de façon naturelle, fidèle au sens, sans ajouter d'informations.");
-                }}
-                disabled={!noteId || busyAIAnalysis}
-                className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-              >
-                {busyAIAnalysis ? "Traduction…" : "Traduction"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setDetailsOpen(true);
-                  setQuickAction("analyze");
-                  setOpen("transform", true);
-                  void handleAIAnalyzeWithModes(["rewrite"], "Corrige l'orthographe, la grammaire et la ponctuation en français. Conserve le fond et le ton.");
-                }}
-                disabled={!noteId || busyAIAnalysis}
-                className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-              >
-                {busyAIAnalysis ? "Correction…" : "Correction"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setDetailsOpen(true);
-                  setQuickAction("analyze");
-                  setOpen("transform", true);
-                  void handleAIAnalyzeWithModes(
-                    ["summary", "entities", "rewrite"],
-                    "Réécris le texte en le structurant avec des sections claires, des transitions nettes et une meilleure lisibilité.",
-                  );
-                }}
-                disabled={!noteId || busyAIAnalysis}
-                className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-              >
-                {busyAIAnalysis ? "Structuration…" : "Structurer / améliorer"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setDetailsOpen(true);
-                  setQuickAction("analyze");
-                  setOpen("transform", true);
-                  void handleAIAnalyzeWithModes(["rewrite"], "Reformule en style professionnel, clair, factuel et orienté action.");
-                }}
-                disabled={!noteId || busyAIAnalysis}
-                className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-              >
-                {busyAIAnalysis ? "Reformulation…" : "Reformuler (pro)"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setDetailsOpen(true);
-                  setQuickAction("analyze");
-                  setOpen("transform", true);
-                  void handleAIAnalyzeWithModes(["rewrite"], "Reformule avec une touche d'humour légère, positive et élégante, sans sarcasme blessant.");
-                }}
-                disabled={!noteId || busyAIAnalysis}
-                className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-              >
-                {busyAIAnalysis ? "Reformulation…" : "Reformuler (humour)"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setDetailsOpen(true);
-                  setQuickAction("analyze");
-                  setOpen("transform", true);
-                  void handleAIAnalyzeWithModes(["rewrite"], "Reformule de manière succincte, en allant droit au but, avec des phrases courtes.");
-                }}
-                disabled={!noteId || busyAIAnalysis}
-                className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-              >
-                {busyAIAnalysis ? "Reformulation…" : "Reformuler (succinct)"}
               </button>
               <button
                 type="button"
@@ -1499,6 +1421,101 @@ export default function AssistantNotePanel({ noteId }: Props) {
               >
                 {busyReanalysis ? "Création…" : "Créer tâches"}
               </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setQuickMenuOpen((v) => !v)}
+                  disabled={!noteId || busyAIAnalysis}
+                  className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+                >
+                  Plus
+                </button>
+                {quickMenuOpen ? (
+                  <div className="absolute right-0 bottom-11 z-40 min-w-[220px] rounded-md border border-border bg-card shadow-lg p-1">
+                    <button
+                      type="button"
+                      className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent"
+                      onClick={() => {
+                        setQuickMenuOpen(false);
+                        setDetailsOpen(true);
+                        setQuickAction("analyze");
+                        setOpen("transform", true);
+                        void handleAIAnalyzeWithModes(["rewrite"], "Traduis le texte en anglais de façon naturelle, fidèle au sens, sans ajouter d'informations.");
+                      }}
+                    >
+                      Traduction
+                    </button>
+                    <button
+                      type="button"
+                      className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent"
+                      onClick={() => {
+                        setQuickMenuOpen(false);
+                        setDetailsOpen(true);
+                        setQuickAction("analyze");
+                        setOpen("transform", true);
+                        void handleAIAnalyzeWithModes(["rewrite"], "Corrige l'orthographe, la grammaire et la ponctuation en français. Conserve le fond et le ton.");
+                      }}
+                    >
+                      Correction
+                    </button>
+                    <button
+                      type="button"
+                      className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent"
+                      onClick={() => {
+                        setQuickMenuOpen(false);
+                        setDetailsOpen(true);
+                        setQuickAction("analyze");
+                        setOpen("transform", true);
+                        void handleAIAnalyzeWithModes(
+                          ["summary", "entities", "rewrite"],
+                          "Réécris le texte en le structurant avec des sections claires, des transitions nettes et une meilleure lisibilité.",
+                        );
+                      }}
+                    >
+                      Structurer / améliorer
+                    </button>
+                    <button
+                      type="button"
+                      className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent"
+                      onClick={() => {
+                        setQuickMenuOpen(false);
+                        setDetailsOpen(true);
+                        setQuickAction("analyze");
+                        setOpen("transform", true);
+                        void handleAIAnalyzeWithModes(["rewrite"], "Reformule en style professionnel, clair, factuel et orienté action.");
+                      }}
+                    >
+                      Reformuler (pro)
+                    </button>
+                    <button
+                      type="button"
+                      className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent"
+                      onClick={() => {
+                        setQuickMenuOpen(false);
+                        setDetailsOpen(true);
+                        setQuickAction("analyze");
+                        setOpen("transform", true);
+                        void handleAIAnalyzeWithModes(["rewrite"], "Reformule avec une touche d'humour légère, positive et élégante, sans sarcasme blessant.");
+                      }}
+                    >
+                      Reformuler (humour)
+                    </button>
+                    <button
+                      type="button"
+                      className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent"
+                      onClick={() => {
+                        setQuickMenuOpen(false);
+                        setDetailsOpen(true);
+                        setQuickAction("analyze");
+                        setOpen("transform", true);
+                        void handleAIAnalyzeWithModes(["rewrite"], "Reformule de manière succincte, en allant droit au but, avec des phrases courtes.");
+                      }}
+                    >
+                      Reformuler (succinct)
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             </div>
             {aiJobStatus === "queued" || aiJobStatus === "processing" || jobStatus === "queued" || jobStatus === "processing" ? (
               <div className="text-xs text-muted-foreground md:ml-auto">En cours…</div>
