@@ -15,7 +15,7 @@ type Props = {
 
 type ExecuteIntentResponse = {
   intent: {
-    kind: "create_task" | "create_reminder" | "schedule_meeting";
+    kind: "create_todo" | "create_task" | "create_reminder" | "schedule_meeting";
     title: string;
     confidence: number;
     requiresConfirmation: boolean;
@@ -26,7 +26,7 @@ type ExecuteIntentResponse = {
   needsClarification?: boolean;
   missingFields?: string[];
   clarificationQuestion?: string | null;
-  createdCoreObjects: Array<{ type: "task" | "taskReminder" | "calendarEvent"; id: string }>;
+  createdCoreObjects: Array<{ type: "task" | "taskReminder" | "calendarEvent" | "todo"; id: string }>;
   message: string;
 };
 
@@ -493,6 +493,7 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
     if (!result) return null;
     const intent = result.intent;
     const conf = `${Math.round((intent.confidence ?? 0) * 100)}%`;
+    if (intent.kind === "create_todo") return `Compris: créer une todo — “${intent.title}” (${conf}).`;
     if (intent.kind === "create_task") return `Compris: créer une tâche — “${intent.title}” (${conf}).`;
     if (intent.kind === "create_reminder") {
       return `Compris: créer un rappel — “${intent.title}”${intent.remindAtIso ? ` à ${new Date(intent.remindAtIso).toLocaleString("fr-FR")}` : ""} (${conf}).`;

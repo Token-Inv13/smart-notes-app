@@ -3892,6 +3892,28 @@ function parseAssistantVoiceIntent(transcript, now) {
             clarificationQuestion: missingFields.length > 0 ? 'Je peux le faire. À quelle heure veux-tu ce rappel ?' : undefined,
         };
     }
+    const todoLike = lower.includes('todo') ||
+        lower.includes('to-do') ||
+        lower.includes('checklist') ||
+        lower.includes('à faire') ||
+        lower.includes('a faire') ||
+        lower.includes('liste');
+    const taskLike = lower.includes('tâche') ||
+        lower.includes('tache') ||
+        lower.includes('task') ||
+        lower.includes('projet') ||
+        lower.includes('deadline') ||
+        lower.includes('échéance') ||
+        lower.includes('echeance');
+    if (todoLike && !taskLike) {
+        return {
+            kind: 'create_todo',
+            title: cleaned || raw || 'Nouvelle todo',
+            confidence: 0.84,
+            requiresConfirmation: false,
+            remindAt: null,
+        };
+    }
     return {
         kind: 'create_task',
         title: cleaned || raw || 'Nouvelle tâche',
@@ -3959,6 +3981,26 @@ exports.assistantExecuteIntent = functions.https.onCall(async (data, context) =>
     const isPro = userPlan === 'pro';
     const createdAt = admin.firestore.FieldValue.serverTimestamp();
     const updatedAt = admin.firestore.FieldValue.serverTimestamp();
+    if (parsed.kind === 'create_todo') {
+        const todoRef = db.collection('todos').doc();
+        await todoRef.create({
+            userId,
+            workspaceId: null,
+            title: parsed.title,
+            items: [],
+            dueDate: null,
+            priority: null,
+            completed: false,
+            favorite: false,
+            source: {
+                assistant: true,
+                channel: 'voice_intent',
+            },
+            createdAt,
+            updatedAt,
+        });
+        return Object.assign(Object.assign({}, responseBase), { executed: true, createdCoreObjects: [{ type: 'todo', id: todoRef.id }], message: 'ToDo créé.' });
+    }
     if (parsed.kind === 'create_task') {
         const taskRef = db.collection('tasks').doc();
         await taskRef.create({

@@ -4879,7 +4879,7 @@ export const assistantRequestVoiceTranscription = functions
     }
   });
 
-type AssistantVoiceIntentKind = 'create_task' | 'create_reminder' | 'schedule_meeting';
+type AssistantVoiceIntentKind = 'create_todo' | 'create_task' | 'create_reminder' | 'schedule_meeting';
 type AssistantVoiceMissingField = 'time';
 
 type AssistantVoiceIntent = {
@@ -5025,6 +5025,32 @@ function parseAssistantVoiceIntent(transcript: string, now: Date): AssistantVoic
     };
   }
 
+  const todoLike =
+    lower.includes('todo') ||
+    lower.includes('to-do') ||
+    lower.includes('checklist') ||
+    lower.includes('à faire') ||
+    lower.includes('a faire') ||
+    lower.includes('liste');
+  const taskLike =
+    lower.includes('tâche') ||
+    lower.includes('tache') ||
+    lower.includes('task') ||
+    lower.includes('projet') ||
+    lower.includes('deadline') ||
+    lower.includes('échéance') ||
+    lower.includes('echeance');
+
+  if (todoLike && !taskLike) {
+    return {
+      kind: 'create_todo',
+      title: cleaned || raw || 'Nouvelle todo',
+      confidence: 0.84,
+      requiresConfirmation: false,
+      remindAt: null,
+    };
+  }
+
   return {
     kind: 'create_task',
     title: cleaned || raw || 'Nouvelle tâche',
@@ -5076,7 +5102,7 @@ export const assistantExecuteIntent = functions.https.onCall(async (data, contex
     missingFields,
     clarificationQuestion: parsed.clarificationQuestion ?? null,
     executed: false,
-    createdCoreObjects: [] as Array<{ type: 'task' | 'taskReminder' | 'calendarEvent'; id: string }>,
+    createdCoreObjects: [] as Array<{ type: 'task' | 'taskReminder' | 'calendarEvent' | 'todo'; id: string }>,
     message: needsClarification
       ? (parsed.clarificationQuestion ?? 'Il me manque une information.')
       : !execute && parsed.kind === 'schedule_meeting'
@@ -5104,6 +5130,33 @@ export const assistantExecuteIntent = functions.https.onCall(async (data, contex
   const isPro = userPlan === 'pro';
   const createdAt = admin.firestore.FieldValue.serverTimestamp();
   const updatedAt = admin.firestore.FieldValue.serverTimestamp();
+
+  if (parsed.kind === 'create_todo') {
+    const todoRef = db.collection('todos').doc();
+    await todoRef.create({
+      userId,
+      workspaceId: null,
+      title: parsed.title,
+      items: [],
+      dueDate: null,
+      priority: null,
+      completed: false,
+      favorite: false,
+      source: {
+        assistant: true,
+        channel: 'voice_intent',
+      },
+      createdAt,
+      updatedAt,
+    });
+
+    return {
+      ...responseBase,
+      executed: true,
+      createdCoreObjects: [{ type: 'todo' as const, id: todoRef.id }],
+      message: 'ToDo créé.',
+    };
+  }
 
   if (parsed.kind === 'create_task') {
     const taskRef = db.collection('tasks').doc();
