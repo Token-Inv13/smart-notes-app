@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { FirebaseError } from "firebase/app";
+import { httpsCallable } from "firebase/functions";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+import { auth, db, functions as fbFunctions } from "@/lib/firebase";
 import { useUserNotes } from "@/hooks/useUserNotes";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
@@ -19,6 +20,101 @@ const newNoteSchema = z.object({
   content: z.string().optional(),
   workspaceId: z.string().optional(),
 });
+
+type AssistantActionId =
+  | "summary"
+  | "correction"
+  | "structure"
+  | "translation"
+  | "rewrite_pro"
+  | "rewrite_humor"
+  | "rewrite_short";
+
+const ASSISTANT_ACTIONS: Record<AssistantActionId, { label: string; instruction: string }> = {
+  summary: {
+    label: "Résumer",
+    instruction:
+      "Résume cette note en gardant les points essentiels. Réponds avec un titre concis puis un contenu structuré en paragraphes courts.",
+  },
+  correction: {
+    label: "Correction",
+    instruction: "Corrige l'orthographe, la grammaire et la ponctuation de cette note en français, sans changer le sens.",
+  },
+  structure: {
+    label: "Structurer",
+    instruction:
+      "Réorganise cette note pour qu'elle soit claire et actionnable: titre explicite, sections courtes, points importants en évidence.",
+  },
+  translation: {
+    label: "Traduction",
+    instruction: "Traduis la note en anglais naturel en conservant le sens et la structure.",
+  },
+  rewrite_pro: {
+    label: "Reformuler (pro)",
+    instruction: "Reformule la note avec un ton professionnel, clair et orienté décision/action.",
+  },
+  rewrite_humor: {
+    label: "Reformuler (humour)",
+    instruction: "Reformule la note avec une légère touche d'humour, tout en restant utile et lisible.",
+  },
+  rewrite_short: {
+    label: "Reformuler (succinct)",
+    instruction: "Reformule la note de manière très concise, avec des phrases courtes.",
+  },
+};
+
+function noteHtmlToPlainText(html: string): string {
+  return String(html || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function noteDraftToAssistantText(title: string, contentHtml: string): string {
+  const safeTitle = title.trim() || "Nouvelle note";
+  const plain = noteHtmlToPlainText(contentHtml);
+  return plain ? `${safeTitle}\n\n${plain}` : safeTitle;
+}
+
+function plainTextToNoteHtml(text: string): string {
+  const escaped = String(text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  const blocks = escaped
+    .split(/\n{2,}/)
+    .map((b) => b.trim())
+    .filter(Boolean)
+    .map((b) => `<p>${b.replace(/\n/g, "<br>")}</p>`);
+
+  return blocks.join("") || "<p></p>";
+}
+
+function parseAssistantNoteText(raw: string, fallbackTitle: string): { title: string; contentHtml: string } {
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    return { title: fallbackTitle || "Nouvelle note", contentHtml: "<p></p>" };
+  }
+
+  const first = lines[0]?.replace(/^[-*•#\d.\s)]+/, "").trim() || "";
+  const title = first || fallbackTitle || "Nouvelle note";
+  const body = lines.slice(1).join("\n").trim();
+  const contentHtml = plainTextToNoteHtml(body || raw);
+  return { title, contentHtml };
+}
 
 type Props = {
   initialWorkspaceId?: string;
@@ -45,6 +141,10 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const [dictationStatus, setDictationStatus] = useState<"idle" | "listening" | "stopped" | "error">("idle");
   const [dictationError, setDictationError] = useState<string | null>(null);
+  const [assistantMenuOpen, setAssistantMenuOpen] = useState(false);
+  const [assistantBusyAction, setAssistantBusyAction] = useState<AssistantActionId | null>(null);
+  const [assistantInfo, setAssistantInfo] = useState<string | null>(null);
+  const [assistantError, setAssistantError] = useState<string | null>(null);
 
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedDraftRef = useRef<string>("");
@@ -98,6 +198,45 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
       draftTimerRef.current = null;
     };
   }, [noteTitle, noteContent, noteWorkspaceId]);
+
+  const runAssistantAction = async (actionId: AssistantActionId) => {
+    if (assistantBusyAction || creating) return;
+    const action = ASSISTANT_ACTIONS[actionId];
+
+    setAssistantBusyAction(actionId);
+    setAssistantInfo(null);
+    setAssistantError(null);
+    setAssistantMenuOpen(false);
+
+    try {
+      const fn = httpsCallable<
+        { text: string; instruction: string },
+        { text: string; model?: string | null }
+      >(fbFunctions, "assistantRewriteText");
+
+      const source = noteDraftToAssistantText(noteTitle, noteContent);
+      const response = await fn({ text: source, instruction: action.instruction });
+      const transformed = typeof response.data?.text === "string" ? response.data.text.trim() : "";
+      if (!transformed) throw new Error("Réponse IA vide.");
+
+      const parsed = parseAssistantNoteText(transformed, noteTitle || "Nouvelle note");
+      setNoteTitle(parsed.title);
+      setNoteContent(parsed.contentHtml);
+      setAssistantInfo(`${action.label} appliqué.`);
+    } catch (e) {
+      if (e instanceof FirebaseError) {
+        const code = String(e.code || "");
+        if (code.includes("internal")) setAssistantError("Assistant IA indisponible pour le moment. Réessaie dans quelques secondes.");
+        else setAssistantError(`${e.code}: ${e.message}`);
+      } else if (e instanceof Error) {
+        setAssistantError(e.message);
+      } else {
+        setAssistantError("Impossible d’appliquer l’action assistant.");
+      }
+    } finally {
+      setAssistantBusyAction(null);
+    }
+  };
 
   const handleCreateNote = async () => {
     const user = auth.currentUser;
@@ -267,6 +406,55 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
         <label className="sr-only" htmlFor="note-content">
           Contenu
         </label>
+        <div className="mb-2 rounded-md border border-border/70 bg-background/40 px-2 py-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] text-muted-foreground mr-1">Assistant</span>
+            <button
+              type="button"
+              className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+              disabled={creating || !!assistantBusyAction}
+              onClick={() => void runAssistantAction("summary")}
+            >
+              {assistantBusyAction === "summary" ? "Résumé…" : "Résumer"}
+            </button>
+            <button
+              type="button"
+              className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+              disabled={creating || !!assistantBusyAction}
+              onClick={() => void runAssistantAction("correction")}
+            >
+              {assistantBusyAction === "correction" ? "Correction…" : "Correction"}
+            </button>
+            <button
+              type="button"
+              className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+              disabled={creating || !!assistantBusyAction}
+              onClick={() => void runAssistantAction("structure")}
+            >
+              {assistantBusyAction === "structure" ? "Structure…" : "Structurer"}
+            </button>
+            <div className="relative">
+              <button
+                type="button"
+                className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+                disabled={creating || !!assistantBusyAction}
+                onClick={() => setAssistantMenuOpen((v) => !v)}
+              >
+                Plus
+              </button>
+              {assistantMenuOpen ? (
+                <div className="absolute right-0 mt-1 z-20 min-w-[210px] rounded-md border border-border bg-card shadow-lg p-1">
+                  <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("translation")}>Traduction</button>
+                  <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("rewrite_pro")}>Reformuler (pro)</button>
+                  <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("rewrite_humor")}>Reformuler (humour)</button>
+                  <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("rewrite_short")}>Reformuler (succinct)</button>
+                </div>
+              ) : null}
+            </div>
+          </div>
+          {assistantInfo ? <div className="mt-1 text-[11px] text-muted-foreground">{assistantInfo}</div> : null}
+          {assistantError ? <div className="mt-1 text-[11px] text-destructive">{assistantError}</div> : null}
+        </div>
         <RichTextEditor
           value={noteContent}
           onChange={setNoteContent}
