@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { FirebaseError } from "firebase/app";
 import { httpsCallable } from "firebase/functions";
 import { doc, onSnapshot } from "firebase/firestore";
@@ -567,6 +568,189 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
       })
     : null;
 
+  const voiceModal = open ? (
+    <div
+      className="fixed inset-0 z-[70] bg-black/45 p-0 md:p-4 flex items-end md:items-center md:justify-center"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Assistant vocal"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) closeModal();
+      }}
+    >
+      <div
+        className="w-full md:max-w-[440px] rounded-t-2xl md:rounded-xl border border-border bg-card p-3 md:p-4 space-y-2 md:space-y-3 shadow-2xl max-h-[82vh] overflow-y-auto"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm font-semibold">Assistant vocal</div>
+          <button type="button" className="text-sm text-muted-foreground" onClick={closeModal}>
+            Fermer
+          </button>
+        </div>
+
+        <div className="flex flex-col items-center justify-center gap-2 py-1 md:py-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (flowStep === "listening") {
+                stopListening();
+              } else {
+                void startListening();
+              }
+            }}
+            className={
+              "relative h-20 w-20 md:h-24 md:w-24 rounded-full border border-primary/40 text-2xl md:text-3xl flex items-center justify-center transition-all " +
+              (flowStep === "listening" ? "bg-primary/20 animate-pulse" : "bg-primary/10")
+            }
+            aria-label={flowStep === "listening" ? "Stopper l’écoute" : "Démarrer l’écoute"}
+            title={flowStep === "listening" ? "Stop" : "Parler"}
+          >
+            🎤
+          </button>
+          {flowStep === "listening" ? <div className="text-xs text-muted-foreground">{Math.max(0, Math.floor(elapsedMs / 1000))}s</div> : null}
+          <div className="text-xs text-muted-foreground text-center">{stepHint}</div>
+        </div>
+
+        {transcript ? (
+          <div className="rounded-md border border-border bg-background p-2.5 md:p-3 text-sm whitespace-pre-wrap max-h-24 overflow-y-auto">{transcript}</div>
+        ) : null}
+
+        {clarificationPending ? (
+          <form
+            className="space-y-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void applyClarification();
+            }}
+          >
+            <input
+              ref={clarificationInputRef}
+              type="text"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              autoFocus
+              placeholder="Ex: 9, 9h, 9h30"
+              value={clarificationInput}
+              onChange={(e) => setClarificationInput(e.target.value)}
+            />
+            {parsedClarificationTime ? <div className="text-xs text-muted-foreground">Heure détectée : {parsedClarificationTime.displayLabel}</div> : null}
+          </form>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          {flowStep === "listening" ? (
+            <button
+              type="button"
+              className="px-3 py-2 rounded-md border border-input text-sm"
+              onClick={stopListening}
+            >
+              STOP
+            </button>
+          ) : null}
+
+          {flowStep === "review" && !clarificationPending ? (
+            <>
+              <button
+                type="button"
+                className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm"
+                onClick={() => void runIntent(true)}
+              >
+                Oui
+              </button>
+              <button
+                type="button"
+                className="px-3 py-2 rounded-md border border-input text-sm"
+                onClick={retryVoice}
+              >
+                Non
+              </button>
+              <button
+                type="button"
+                className="px-3 py-2 rounded-md border border-input text-sm"
+                onClick={closeModal}
+              >
+                Annuler
+              </button>
+            </>
+          ) : null}
+
+          {clarificationPending ? (
+            <>
+              <button
+                type="button"
+                className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
+                disabled={clarificationButtonDisabled}
+                onClick={() => void applyClarification()}
+              >
+                {clarificationActionLabel}
+              </button>
+              <button
+                type="button"
+                className="px-3 py-2 rounded-md border border-border bg-muted/40 text-muted-foreground text-sm"
+                onClick={closeModal}
+              >
+                Annuler
+              </button>
+            </>
+          ) : null}
+
+          {flowStep === "done" ? (
+            <button
+              type="button"
+              className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm"
+              onClick={closeModal}
+            >
+              OK
+            </button>
+          ) : null}
+
+          {flowStep === "error" ? (
+            <>
+              <button
+                type="button"
+                className="px-3 py-2 rounded-md border border-input text-sm"
+                onClick={retryVoice}
+              >
+                Réessayer
+              </button>
+              <button
+                type="button"
+                className="px-3 py-2 rounded-md border border-input text-sm"
+                onClick={closeModal}
+              >
+                Annuler
+              </button>
+            </>
+          ) : null}
+
+          {flowStep === "idle" ? (
+            <button
+              type="button"
+              className="px-3 py-2 rounded-md border border-input text-sm"
+              onClick={() => void startListening()}
+            >
+              Parler
+            </button>
+          ) : null}
+
+          <button
+            type="button"
+            className="px-3 py-2 rounded-md border border-border bg-muted/40 text-muted-foreground text-sm disabled:opacity-50"
+            disabled={isBusyStep}
+            onClick={retryVoice}
+          >
+            Nouvelle commande
+          </button>
+        </div>
+
+        {displayedHint ? <div className="text-sm">{displayedHint}</div> : null}
+        {result?.message ? <div className="text-xs text-muted-foreground">{result.message}</div> : null}
+        {confirmationHint ? <div className="text-xs text-amber-600">{confirmationHint}</div> : null}
+        {error ? <div className="text-xs text-destructive">{error}</div> : null}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <>
       {renderCustomTrigger ? (
@@ -597,188 +781,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
         </>
       )}
 
-      {open ? (
-        <div
-          className="fixed inset-0 z-[70] bg-black/45 p-0 md:p-4 flex items-end md:items-center md:justify-center"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Assistant vocal"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) closeModal();
-          }}
-        >
-          <div
-            className="w-full md:max-w-[440px] rounded-t-2xl md:rounded-xl border border-border bg-card p-3 md:p-4 space-y-2 md:space-y-3 shadow-2xl max-h-[82vh] overflow-y-auto"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-sm font-semibold">Assistant vocal</div>
-              <button type="button" className="text-sm text-muted-foreground" onClick={closeModal}>
-                Fermer
-              </button>
-            </div>
-
-            <div className="flex flex-col items-center justify-center gap-2 py-1 md:py-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (flowStep === "listening") {
-                    stopListening();
-                  } else {
-                    void startListening();
-                  }
-                }}
-                className={
-                  "relative h-20 w-20 md:h-24 md:w-24 rounded-full border border-primary/40 text-2xl md:text-3xl flex items-center justify-center transition-all " +
-                  (flowStep === "listening" ? "bg-primary/20 animate-pulse" : "bg-primary/10")
-                }
-                aria-label={flowStep === "listening" ? "Stopper l’écoute" : "Démarrer l’écoute"}
-                title={flowStep === "listening" ? "Stop" : "Parler"}
-              >
-                🎤
-              </button>
-              {flowStep === "listening" ? <div className="text-xs text-muted-foreground">{Math.max(0, Math.floor(elapsedMs / 1000))}s</div> : null}
-              <div className="text-xs text-muted-foreground text-center">{stepHint}</div>
-            </div>
-
-            {transcript ? (
-              <div className="rounded-md border border-border bg-background p-2.5 md:p-3 text-sm whitespace-pre-wrap max-h-24 overflow-y-auto">{transcript}</div>
-            ) : null}
-
-            {clarificationPending ? (
-              <form
-                className="space-y-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void applyClarification();
-                }}
-              >
-                <input
-                  ref={clarificationInputRef}
-                  type="text"
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  autoFocus
-                  placeholder="Ex: 9, 9h, 9h30"
-                  value={clarificationInput}
-                  onChange={(e) => setClarificationInput(e.target.value)}
-                />
-                {parsedClarificationTime ? <div className="text-xs text-muted-foreground">Heure détectée : {parsedClarificationTime.displayLabel}</div> : null}
-              </form>
-            ) : null}
-
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              {flowStep === "listening" ? (
-                <button
-                  type="button"
-                  className="px-3 py-2 rounded-md border border-input text-sm"
-                  onClick={stopListening}
-                >
-                  STOP
-                </button>
-              ) : null}
-
-              {flowStep === "review" && !clarificationPending ? (
-                <>
-                  <button
-                    type="button"
-                    className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm"
-                    onClick={() => void runIntent(true)}
-                  >
-                    Oui
-                  </button>
-                  <button
-                    type="button"
-                    className="px-3 py-2 rounded-md border border-input text-sm"
-                    onClick={retryVoice}
-                  >
-                    Non
-                  </button>
-                  <button
-                    type="button"
-                    className="px-3 py-2 rounded-md border border-input text-sm"
-                    onClick={closeModal}
-                  >
-                    Annuler
-                  </button>
-                </>
-              ) : null}
-
-              {clarificationPending ? (
-                <>
-                  <button
-                    type="button"
-                    className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
-                    disabled={clarificationButtonDisabled}
-                    onClick={() => void applyClarification()}
-                  >
-                    {clarificationActionLabel}
-                  </button>
-                  <button
-                    type="button"
-                    className="px-3 py-2 rounded-md border border-border bg-muted/40 text-muted-foreground text-sm"
-                    onClick={closeModal}
-                  >
-                    Annuler
-                  </button>
-                </>
-              ) : null}
-
-              {flowStep === "done" ? (
-                <button
-                  type="button"
-                  className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm"
-                  onClick={closeModal}
-                >
-                  OK
-                </button>
-              ) : null}
-
-              {flowStep === "error" ? (
-                <>
-                  <button
-                    type="button"
-                    className="px-3 py-2 rounded-md border border-input text-sm"
-                    onClick={retryVoice}
-                  >
-                    Réessayer
-                  </button>
-                  <button
-                    type="button"
-                    className="px-3 py-2 rounded-md border border-input text-sm"
-                    onClick={closeModal}
-                  >
-                    Annuler
-                  </button>
-                </>
-              ) : null}
-
-              {flowStep === "idle" ? (
-                <button
-                  type="button"
-                  className="px-3 py-2 rounded-md border border-input text-sm"
-                  onClick={() => void startListening()}
-                >
-                  Parler
-                </button>
-              ) : null}
-
-              <button
-                type="button"
-                className="px-3 py-2 rounded-md border border-border bg-muted/40 text-muted-foreground text-sm disabled:opacity-50"
-                disabled={isBusyStep}
-                onClick={retryVoice}
-              >
-                Nouvelle commande
-              </button>
-            </div>
-
-            {displayedHint ? <div className="text-sm">{displayedHint}</div> : null}
-            {result?.message ? <div className="text-xs text-muted-foreground">{result.message}</div> : null}
-            {confirmationHint ? <div className="text-xs text-amber-600">{confirmationHint}</div> : null}
-            {error ? <div className="text-xs text-destructive">{error}</div> : null}
-          </div>
-        </div>
-      ) : null}
+      {voiceModal ? (typeof document !== "undefined" ? createPortal(voiceModal, document.body) : voiceModal) : null}
     </>
   );
 }
