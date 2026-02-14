@@ -30,7 +30,8 @@ export function middleware(request: NextRequest) {
 
   if (!sessionCookie) {
     const url = new URL('/login', request.url);
-    url.searchParams.set('next', pathname);
+    const fullPath = `${pathname}${request.nextUrl.search}`;
+    url.searchParams.set('next', fullPath);
     return NextResponse.redirect(url);
   }
 
