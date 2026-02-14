@@ -3,11 +3,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
+import type { ReactNode } from "react";
 
 type CreateContext = "notes" | "tasks";
 
 type Props = {
   mobileHidden?: boolean;
+  renderCustomTrigger?: (args: {
+    onClick: () => void;
+    className: string;
+    ariaLabel: string;
+    title: string;
+  }) => ReactNode;
 };
 
 function getCreateContext(pathname: string): CreateContext {
@@ -16,7 +23,7 @@ function getCreateContext(pathname: string): CreateContext {
   return "notes";
 }
 
-export default function CreateButton({ mobileHidden }: Props) {
+export default function CreateButton({ mobileHidden, renderCustomTrigger }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -173,6 +180,15 @@ export default function CreateButton({ mobileHidden }: Props) {
   const buttonBaseClass =
     "inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg h-12 w-12 text-2xl font-semibold select-none transition-transform active:scale-95";
 
+  const customTrigger = renderCustomTrigger
+    ? renderCustomTrigger({
+        onClick: handleClick,
+        className: buttonBaseClass,
+        ariaLabel: "Créer",
+        title: "Créer",
+      })
+    : null;
+
   const desktopButton = (
     <button
       type="button"
@@ -203,6 +219,15 @@ export default function CreateButton({ mobileHidden }: Props) {
   const canPortal = !!desktopSlot && desktopSlot.isConnected;
 
   if (shouldHide) return null;
+
+  if (renderCustomTrigger) {
+    return (
+      <>
+        {customTrigger}
+        {favoritesPicker}
+      </>
+    );
+  }
 
   if (canPortal) {
     return (

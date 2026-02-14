@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { FirebaseError } from "firebase/app";
 import { httpsCallable } from "firebase/functions";
 import { doc, onSnapshot } from "firebase/firestore";
@@ -11,6 +12,11 @@ import { useAuth } from "@/hooks/useAuth";
 
 type Props = {
   mobileHidden?: boolean;
+  renderCustomTrigger?: (args: {
+    onClick: () => void;
+    ariaLabel: string;
+    title: string;
+  }) => ReactNode;
 };
 
 type ExecuteIntentResponse = {
@@ -32,7 +38,7 @@ type ExecuteIntentResponse = {
 
 type VoiceFlowStep = "idle" | "listening" | "uploading" | "transcribing" | "review" | "clarify" | "executing" | "done" | "error";
 
-export default function VoiceAgentButton({ mobileHidden }: Props) {
+export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: Props) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [flowStep, setFlowStep] = useState<VoiceFlowStep>("idle");
@@ -553,29 +559,43 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
     return "Appuie sur le micro pour commencer.";
   }, [flowStep, result?.clarificationQuestion]);
 
+  const customTrigger = renderCustomTrigger
+    ? renderCustomTrigger({
+        onClick: () => setOpen(true),
+        ariaLabel: "Assistant vocal",
+        title: "Assistant vocal",
+      })
+    : null;
+
   return (
     <>
-      <button
-        type="button"
-        className="hidden md:inline-flex fixed right-8 bottom-8 z-50 h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg"
-        onClick={() => setOpen(true)}
-        aria-label="Assistant vocal"
-        title="Assistant vocal"
-      >
-        🎤
-      </button>
+      {renderCustomTrigger ? (
+        customTrigger
+      ) : (
+        <>
+          <button
+            type="button"
+            className="hidden md:inline-flex fixed right-8 bottom-8 z-50 h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg"
+            onClick={() => setOpen(true)}
+            aria-label="Assistant vocal"
+            title="Assistant vocal"
+          >
+            🎤
+          </button>
 
-      {!mobileHidden ? (
-        <button
-          type="button"
-          className="md:hidden fixed right-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-50 h-11 w-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg"
-          onClick={() => setOpen(true)}
-          aria-label="Assistant vocal"
-          title="Assistant vocal"
-        >
-          🎤
-        </button>
-      ) : null}
+          {!mobileHidden ? (
+            <button
+              type="button"
+              className="md:hidden fixed right-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-50 h-11 w-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg"
+              onClick={() => setOpen(true)}
+              aria-label="Assistant vocal"
+              title="Assistant vocal"
+            >
+              🎤
+            </button>
+          ) : null}
+        </>
+      )}
 
       {open ? (
         <div

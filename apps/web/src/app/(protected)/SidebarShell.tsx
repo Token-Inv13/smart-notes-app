@@ -6,6 +6,7 @@ import { PanelLeft, Menu, X } from "lucide-react";
 import SidebarWorkspaces from "./SidebarWorkspaces";
 import PwaInstallCta from "./_components/PwaInstallCta";
 import CreateButton from "./_components/CreateButton";
+import SmartActionDock from "./_components/SmartActionDock";
 import VoiceAgentButton from "./_components/assistant/VoiceAgentButton";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useAuth } from "@/hooks/useAuth";
@@ -378,7 +379,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
           )}
         </div>
 
-        <main className="flex-1 p-4 min-w-0">
+        <main className="flex-1 p-4 pb-24 md:pb-20 min-w-0">
           <PwaInstallCta />
           {proactiveBanner ? (
             <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3">
@@ -407,8 +408,41 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
             <div className="mb-4 text-sm text-muted-foreground truncate">📁 {currentWorkspaceName}</div>
           )}
           {children}
-          <VoiceAgentButton mobileHidden={mobileOpen} />
-          <CreateButton mobileHidden={mobileOpen} />
+          <SmartActionDock
+            mobileHidden={mobileOpen}
+            voiceAction={(
+              <VoiceAgentButton
+                mobileHidden={mobileOpen}
+                renderCustomTrigger={({ onClick, ariaLabel, title }) => (
+                  <button
+                    type="button"
+                    onClick={onClick}
+                    aria-label={ariaLabel}
+                    title={title}
+                    className="h-10 w-10 rounded-full border border-white/10 bg-white/5 text-white/85 text-lg transition-transform duration-150 hover:scale-[1.04] hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 active:scale-95"
+                  >
+                    🎤
+                  </button>
+                )}
+              />
+            )}
+            createAction={(
+              <CreateButton
+                mobileHidden={mobileOpen}
+                renderCustomTrigger={({ onClick, ariaLabel, title }) => (
+                  <button
+                    type="button"
+                    onClick={onClick}
+                    aria-label={ariaLabel}
+                    title={title}
+                    className="h-11 w-11 rounded-full bg-primary text-primary-foreground text-2xl font-semibold leading-none transition-transform duration-150 hover:scale-[1.04] hover:shadow-[0_0_16px_rgba(59,130,246,0.45)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 active:scale-95"
+                  >
+                    +
+                  </button>
+                )}
+              />
+            )}
+          />
         </main>
       </div>
     </div>
