@@ -980,7 +980,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
     <>
       <div className="h-full border border-border rounded-xl bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 shadow-sm p-2.5 md:p-3 space-y-2.5 overflow-y-auto">
         <div className="flex items-center justify-between gap-2">
-          <div className="text-sm font-semibold">Assistant IA</div>
+          <div className="text-sm font-semibold">Aide à la rédaction</div>
           <button type="button" onClick={() => setSuggestionsOpen((v) => !v)} className="px-2 py-1 rounded-md border border-input text-[11px]">
             {suggestionsOpen ? "Masquer les suggestions" : "Voir les suggestions"}
           </button>
@@ -1003,12 +1003,6 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
               onClick={() => void handleAIAnalyzeWithModes(["rewrite"], null, "Amélioration")}
               disabled={!noteId || busyAIAnalysis}
               variant="secondary"
-            />
-            <AssistantActionButton
-              label={busyReanalysis ? "Création…" : "Créer tâches"}
-              onClick={() => void handleReanalyze()}
-              disabled={!noteId || busyReanalysis || cooldownActive}
-              variant="primary"
             />
             <button
               type="button"
@@ -1047,6 +1041,16 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
               <button
                 type="button"
                 onClick={() =>
+                  void handleAIAnalyzeWithModes(["rewrite"], "Reformule en style professionnel, clair, factuel et orienté action.", "Reformulation pro")
+                }
+                disabled={!noteId || busyAIAnalysis}
+                className="px-2 py-1 rounded-md border border-input text-[11px] whitespace-nowrap disabled:opacity-50"
+              >
+                Reformuler
+              </button>
+              <button
+                type="button"
+                onClick={() =>
                   void handleAIAnalyzeWithModes(
                     ["summary", "entities", "rewrite"],
                     "Réécris le texte en le structurant avec des sections claires, des transitions nettes et une meilleure lisibilité.",
@@ -1060,13 +1064,11 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
               </button>
               <button
                 type="button"
-                onClick={() =>
-                  void handleAIAnalyzeWithModes(["rewrite"], "Reformule en style professionnel, clair, factuel et orienté action.", "Reformulation pro")
-                }
-                disabled={!noteId || busyAIAnalysis}
+                onClick={() => void handleReanalyze()}
+                disabled={!noteId || busyReanalysis || cooldownActive}
                 className="px-2 py-1 rounded-md border border-input text-[11px] whitespace-nowrap disabled:opacity-50"
               >
-                Reformuler (pro)
+                {busyReanalysis ? "Création…" : "Créer des tâches à partir de cette note"}
               </button>
             </div>
             <VoiceRecorderButton noteId={noteId} mode="append_to_note" showInternalActions={false} showTranscript={false} />

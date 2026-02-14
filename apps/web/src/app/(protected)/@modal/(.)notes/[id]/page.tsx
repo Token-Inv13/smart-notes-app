@@ -966,7 +966,7 @@ export default function NoteDetailModal(props: any) {
                       onClick={() => setAssistantDrawerOpen((v) => !v)}
                       className="px-3 py-2 rounded-md border border-input text-sm"
                     >
-                      {assistantDrawerOpen ? "Fermer IA" : "Assistant IA"}
+                      {assistantDrawerOpen ? "Fermer l’aide" : "Aide à la rédaction"}
                     </button>
 
                     <button
@@ -1175,7 +1175,7 @@ export default function NoteDetailModal(props: any) {
                         type="button"
                         onClick={() => setAssistantDrawerOpen(false)}
                         className="absolute top-2 right-2 z-20 h-8 w-8 rounded-full border border-input bg-background text-sm leading-none"
-                        aria-label="Fermer l'assistant"
+                        aria-label="Fermer l’aide à la rédaction"
                         title="Fermer"
                       >
                         ×
@@ -1201,7 +1201,7 @@ export default function NoteDetailModal(props: any) {
                     type="button"
                     onClick={() => setAssistantDrawerOpen(false)}
                     className="absolute top-2 right-2 z-20 h-8 w-8 rounded-full border border-input bg-background text-sm leading-none"
-                    aria-label="Fermer l'assistant"
+                    aria-label="Fermer l’aide à la rédaction"
                     title="Fermer"
                   >
                     ×

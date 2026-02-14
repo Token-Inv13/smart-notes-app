@@ -294,7 +294,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
     } catch (e) {
       if (e instanceof FirebaseError) {
         const code = String(e.code || "");
-        if (code.includes("internal")) setAssistantError("Assistant IA indisponible pour le moment. Réessaie dans quelques secondes.");
+        if (code.includes("internal")) setAssistantError("Aide à la rédaction indisponible pour le moment. Réessaie dans quelques secondes.");
         else setAssistantError(`${e.code}: ${e.message}`);
       }
       else if (e instanceof Error) setAssistantError(e.message);
