@@ -136,6 +136,7 @@ export default function NoteDetailModal(props: any) {
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const [dictationStatus, setDictationStatus] = useState<"idle" | "listening" | "stopped" | "error">("idle");
   const [dictationError, setDictationError] = useState<string | null>(null);
+  const [assistantDrawerOpen, setAssistantDrawerOpen] = useState(false);
 
   const [, setIsDirty] = useState(false);
 
@@ -821,14 +822,17 @@ export default function NoteDetailModal(props: any) {
         if (!note) return null;
 
         return (
-          <div className="max-h-[90svh] md:max-h-[90vh] overflow-y-auto">
-            <div className="space-y-4">
+          <>
+            <div className="max-h-[90svh] md:max-h-[90vh] overflow-y-auto">
+              <div className="space-y-4">
               {shareFeedback && <div className="sn-alert">{shareFeedback}</div>}
               {exportFeedback && <div className="sn-alert">{exportFeedback}</div>}
               {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
               {attachmentError && <div className="sn-alert sn-alert--error">{attachmentError}</div>}
 
-              <div className="sn-card p-4 space-y-3">
+              <div className="relative">
+                <div className={assistantDrawerOpen ? "lg:pr-[34%]" : undefined}>
+                  <div className="sn-card p-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     {mode === "view" ? (
@@ -935,6 +939,14 @@ export default function NoteDetailModal(props: any) {
                         </button>
                       </>
                     )}
+
+                    <button
+                      type="button"
+                      onClick={() => setAssistantDrawerOpen((v) => !v)}
+                      className="px-3 py-2 rounded-md border border-input text-sm"
+                    >
+                      {assistantDrawerOpen ? "Fermer IA" : "Assistant IA"}
+                    </button>
 
                     <button
                       type="button"
@@ -1133,10 +1145,50 @@ export default function NoteDetailModal(props: any) {
                   </div>
                 )}
               </div>
+                </div>
 
-              <AssistantNotePanel noteId={note.id} />
+                {assistantDrawerOpen ? (
+                  <aside className="hidden lg:block absolute inset-y-0 right-0 w-[32%] min-w-[320px] max-w-[440px]">
+                    <div className="h-full space-y-2">
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setAssistantDrawerOpen(false)}
+                          className="px-3 py-1.5 rounded-md border border-input text-xs"
+                        >
+                          Fermer
+                        </button>
+                      </div>
+                      <div className="h-[calc(100%-2.25rem)]">
+                        <AssistantNotePanel noteId={note.id} currentNoteContent={mode === "edit" ? editContent : note.content ?? ""} />
+                      </div>
+                    </div>
+                  </aside>
+                ) : null}
+              </div>
             </div>
-          </div>
+            </div>
+
+            {assistantDrawerOpen ? (
+              <div className="lg:hidden fixed inset-0 z-[60] bg-background/85 backdrop-blur-sm p-2">
+                <div className="h-full rounded-xl border border-border bg-card p-2 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-medium">Assistant IA</div>
+                    <button
+                      type="button"
+                      onClick={() => setAssistantDrawerOpen(false)}
+                      className="px-3 py-1.5 rounded-md border border-input text-xs"
+                    >
+                      Fermer
+                    </button>
+                  </div>
+                  <div className="h-[calc(100%-2.25rem)]">
+                    <AssistantNotePanel noteId={note.id} currentNoteContent={mode === "edit" ? editContent : note.content ?? ""} />
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </>
         );
       }}
     </Modal>
