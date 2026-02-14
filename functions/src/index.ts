@@ -5040,8 +5040,14 @@ function parseAssistantVoiceIntent(transcript: string, now: Date): AssistantVoic
     lower.includes('deadline') ||
     lower.includes('échéance') ||
     lower.includes('echeance');
+  const textForRouting = (cleaned || raw).trim();
+  const words = textForRouting.split(/\s+/).filter(Boolean);
+  const shortActionLike = words.length > 0 && words.length <= 5;
+  const projectLike = /\b(projet|client|livrable|sp[ée]cification|sp[ée]cifications|roadmap|plan|strat[ée]gie|r[ée]union|meeting)\b/i.test(lower);
+  const hasScheduleSignal = /\b(avant|apr[èe]s|pour\s+demain|ce\s+soir|ce\s+matin|cette\s+semaine|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b/i.test(lower);
+  const toDoPreferred = todoLike || (!taskLike && !projectLike && !hasScheduleSignal && shortActionLike);
 
-  if (todoLike && !taskLike) {
+  if (toDoPreferred) {
     return {
       kind: 'create_todo',
       title: cleaned || raw || 'Nouvelle todo',

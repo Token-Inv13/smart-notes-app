@@ -94,6 +94,29 @@ export default function VoiceAgentButton({ mobileHidden }: Props) {
       return "Pré-analyse rapide: rappel détecté.";
     }
 
+    const hasTodoKeyword =
+      lower.includes("todo") ||
+      lower.includes("to-do") ||
+      lower.includes("checklist") ||
+      lower.includes("à faire") ||
+      lower.includes("a faire") ||
+      lower.includes("liste");
+    const hasTaskKeyword =
+      lower.includes("tâche") ||
+      lower.includes("tache") ||
+      lower.includes("task") ||
+      lower.includes("projet") ||
+      lower.includes("deadline") ||
+      lower.includes("échéance") ||
+      lower.includes("echeance");
+    const words = raw.split(/\s+/).filter(Boolean);
+    const shortActionLike = words.length > 0 && words.length <= 5;
+    const hasScheduleSignal = /\b(demain|ce soir|ce matin|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b/i.test(lower);
+
+    if (hasTodoKeyword || (!hasTaskKeyword && !hasScheduleSignal && shortActionLike)) {
+      return "Pré-analyse rapide: todo détectée.";
+    }
+
     return "Pré-analyse rapide: tâche détectée.";
   };
 

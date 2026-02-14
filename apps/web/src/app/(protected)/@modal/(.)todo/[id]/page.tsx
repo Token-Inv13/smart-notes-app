@@ -288,14 +288,15 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
       }
 
       const parsed = parseAssistantTodoText(transformed, todo.title);
-      if (parsed.items.length === 0) {
-        throw new Error("Aucun élément exploitable détecté.");
-      }
-
-      await persistTodo({ title: parsed.title, items: parsed.items, completed: false });
+      const nextItems = parsed.items.length > 0 ? parsed.items : (todo.items ?? []);
+      await persistTodo({ title: parsed.title, items: nextItems, completed: false });
       setAssistantInfo(`${action.label} appliqué.`);
     } catch (e) {
-      if (e instanceof FirebaseError) setAssistantError(`${e.code}: ${e.message}`);
+      if (e instanceof FirebaseError) {
+        const code = String(e.code || "");
+        if (code.includes("internal")) setAssistantError("Assistant IA indisponible pour le moment. Réessaie dans quelques secondes.");
+        else setAssistantError(`${e.code}: ${e.message}`);
+      }
       else if (e instanceof Error) setAssistantError(e.message);
       else setAssistantError("Impossible d’appliquer l’action assistant.");
     } finally {
