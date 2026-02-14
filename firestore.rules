@@ -235,7 +235,12 @@ service cloud.firestore {
         && request.resource.data.name.size() <= 80;
       allow update: if isAuthenticated() && 
         isOwner(resource.data.ownerId) &&
-        request.resource.data.ownerId == resource.data.ownerId;
+        request.resource.data.ownerId == resource.data.ownerId &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0 &&
+        request.resource.data.name.size() <= 80 &&
+        request.resource.data.members is list &&
+        request.resource.data.members.size() == resource.data.members.size();
       allow delete: if isAuthenticated() && 
         isOwner(resource.data.ownerId);
     }
