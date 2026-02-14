@@ -10,6 +10,7 @@ import { useAssistantSettings } from "@/hooks/useAssistantSettings";
 import { useNoteAssistantSuggestions } from "@/hooks/useNoteAssistantSuggestions";
 import { useAuth } from "@/hooks/useAuth";
 import { formatTimestampForInput, parseLocalDateTimeToTimestamp } from "@/lib/datetime";
+import { htmlToReadableText, sanitizeNoteHtml } from "@/lib/richText";
 import type { AssistantAIResultDoc, AssistantSuggestionDoc, Priority } from "@/types/firestore";
 import Modal from "../Modal";
 import BundleCustomizeModal from "./assistant/BundleCustomizeModal";
@@ -18,6 +19,7 @@ import VoiceRecorderButton from "./assistant/VoiceRecorderButton";
 type Props = {
   noteId?: string;
   currentNoteContent?: string;
+  onNoteContentUpdated?: (nextContent: string) => void;
 };
 
 function AssistantActionButton({
@@ -49,7 +51,7 @@ function AssistantActionButton({
   );
 }
 
-export default function AssistantNotePanel({ noteId, currentNoteContent }: Props) {
+export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteContentUpdated }: Props) {
   const { user } = useAuth();
   const {
     data: assistantSettings,
@@ -99,6 +101,13 @@ export default function AssistantNotePanel({ noteId, currentNoteContent }: Props
     clarity: false,
     content: false,
   });
+  const [categoryVisibleCount, setCategoryVisibleCount] = useState<Record<"structure" | "clarity" | "content", number>>({
+    structure: 3,
+    clarity: 3,
+    content: 3,
+  });
+  const [expandedSuggestionIds, setExpandedSuggestionIds] = useState<Record<string, boolean>>({});
+  const [hiddenSuggestionIds, setHiddenSuggestionIds] = useState<Record<string, boolean>>({});
   const [pendingPreviewAction, setPendingPreviewAction] = useState<string | null>(null);
 
   const [textModal, setTextModal] = useState<{
@@ -106,6 +115,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent }: Props
     text: string;
     originalText?: string;
     allowReplaceNote?: boolean;
+    suggestionId?: string;
   } | null>(null);
   const [textModalDraft, setTextModalDraft] = useState<string>("");
 
@@ -225,8 +235,10 @@ export default function AssistantNotePanel({ noteId, currentNoteContent }: Props
       return 0;
     };
     arr.sort((a, b) => toMillisSafe(b.updatedAt) - toMillisSafe(a.updatedAt));
-    return arr;
-  }, [suggestions]);
+    return arr.filter((s) => !hiddenSuggestionIds[(s.id ?? s.dedupeKey) || ""]);
+  }, [hiddenSuggestionIds, suggestions]);
+
+  const noteTextBefore = useMemo(() => htmlToReadableText(currentNoteContent ?? ""), [currentNoteContent]);
 
   const doneBannerMessage = useMemo(() => {
     if (jobStatus !== "done") return null;
@@ -292,9 +304,35 @@ export default function AssistantNotePanel({ noteId, currentNoteContent }: Props
     }
   };
 
-  const handleReplaceNoteContent = async (nextContent: string) => {
+  const applySuggestionDecision = async (suggestionId: string) => {
+    const fn = httpsCallable<{ suggestionId: string }, ApplySuggestionResult>(fbFunctions, "assistantApplySuggestion");
+    await fn({ suggestionId });
+  };
+
+  const requestReanalysisSilently = async () => {
     if (!noteId) return;
-    const t = (nextContent ?? "").trim();
+    try {
+      const fn = httpsCallable<{ noteId: string }, { jobId: string }>(fbFunctions, "assistantRequestReanalysis");
+      await fn({ noteId });
+    } catch (e) {
+      console.warn("[assistant] reanalysis refresh failed", e);
+    }
+  };
+
+  const saveNoteContent = async (nextContent: string) => {
+    if (!noteId) throw new Error("Missing noteId");
+    const cleaned = sanitizeNoteHtml(nextContent);
+    await updateDoc(doc(db, "notes", noteId), {
+      content: cleaned,
+      updatedAt: serverTimestamp(),
+    });
+    onNoteContentUpdated?.(cleaned);
+    return cleaned;
+  };
+
+  const handleReplaceNoteContent = async (nextContent: string, suggestionId?: string) => {
+    if (!noteId) return;
+    const t = sanitizeNoteHtml(nextContent ?? "").trim();
     if (!t) {
       setActionError("Contenu proposé vide.");
       return;
@@ -303,13 +341,20 @@ export default function AssistantNotePanel({ noteId, currentNoteContent }: Props
     if (!ok) return;
 
     try {
-      await updateDoc(doc(db, "notes", noteId), {
-        content: t,
-        updatedAt: serverTimestamp(),
-      });
-      setActionMessage("Contenu remplacé.");
+      await saveNoteContent(t);
+      if (suggestionId) {
+        await applySuggestionDecision(suggestionId);
+        setHiddenSuggestionIds((prev) => ({ ...prev, [suggestionId]: true }));
+        await refetchSuggestions();
+        void requestReanalysisSilently();
+        setActionMessage("Suggestion appliquée.");
+      } else {
+        void requestReanalysisSilently();
+        setActionMessage("Contenu remplacé.");
+      }
       setTextModal(null);
     } catch (e) {
+      console.error("[assistant] replace note content failed", { noteId, suggestionId, error: e });
       if (e instanceof FirebaseError) setActionError(`${e.code}: ${e.message}`);
       else if (e instanceof Error) setActionError(e.message);
       else setActionError("Impossible de remplacer le contenu.");
@@ -358,13 +403,88 @@ export default function AssistantNotePanel({ noteId, currentNoteContent }: Props
     decisionId?: string | null;
   };
 
+  const appendGeneratedContentToNote = async (s: AssistantSuggestionDoc) => {
+    const payloadObj = s.payload && typeof s.payload === "object" ? (s.payload as any) : null;
+    const baseTitle = typeof payloadObj?.title === "string" ? String(payloadObj.title).trim() : "Suggestion";
+    const summaryShort = typeof payloadObj?.summaryShort === "string" ? String(payloadObj.summaryShort).trim() : "";
+    const explanation = typeof payloadObj?.explanation === "string" ? String(payloadObj.explanation).trim() : "";
+    const keyPoints = Array.isArray(payloadObj?.keyPoints) ? (payloadObj.keyPoints as unknown[]).filter((x): x is string => typeof x === "string") : [];
+    const hooks = Array.isArray(payloadObj?.hooks) ? (payloadObj.hooks as unknown[]).filter((x): x is string => typeof x === "string") : [];
+    const tags = Array.isArray(payloadObj?.tags) ? (payloadObj.tags as unknown[]).filter((x): x is string => typeof x === "string") : [];
+
+    const sections: string[] = [];
+    if (summaryShort) sections.push(summaryShort);
+    if (keyPoints.length > 0) sections.push(`Points clés\n${keyPoints.slice(0, 8).map((x) => `- ${x}`).join("\n")}`);
+    if (hooks.length > 0) sections.push(`Hooks\n${hooks.slice(0, 8).map((x) => `- ${x}`).join("\n")}`);
+    if (tags.length > 0) sections.push(`Tags: ${tags.join(", ")}`);
+    if (!sections.length && explanation) sections.push(explanation);
+
+    const plain = sections.join("\n\n").trim();
+    if (!plain) {
+      throw new Error("Aucun contenu textuel exploitable dans la suggestion.");
+    }
+
+    const escapeHtml = (value: string) =>
+      value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+    const htmlBody = plain.split("\n").map((line) => escapeHtml(line)).join("<br>");
+    const safeCurrent = sanitizeNoteHtml(currentNoteContent ?? "").trim();
+    const block = `<p><strong>${escapeHtml(baseTitle)}</strong></p><p>${htmlBody}</p>`;
+    const next = safeCurrent ? `${safeCurrent}<p><br></p>${block}` : block;
+
+    await saveNoteContent(next);
+  };
+
+  const getSuggestionDetails = (s: AssistantSuggestionDoc) => {
+    const payloadObj = s.payload && typeof s.payload === "object" ? (s.payload as any) : null;
+    const fromText = typeof payloadObj?.origin?.fromText === "string" ? String(payloadObj.origin.fromText) : "";
+    const targetRaw = fromText.trim() || noteTextBefore;
+    const targetExcerpt = targetRaw.slice(0, 280).trim();
+
+    const rewrite = typeof payloadObj?.rewriteContent === "string" ? String(payloadObj.rewriteContent).trim() : "";
+    const summary = typeof payloadObj?.summaryShort === "string" ? String(payloadObj.summaryShort).trim() : "";
+    const explanation = typeof payloadObj?.explanation === "string" ? String(payloadObj.explanation).trim() : "";
+    const keyPoints = Array.isArray(payloadObj?.keyPoints) ? (payloadObj.keyPoints as unknown[]).filter((x): x is string => typeof x === "string") : [];
+    const hooks = Array.isArray(payloadObj?.hooks) ? (payloadObj.hooks as unknown[]).filter((x): x is string => typeof x === "string") : [];
+
+    const afterPreview = rewrite
+      || summary
+      || (keyPoints.length > 0 ? keyPoints.slice(0, 4).map((x) => `- ${x}`).join("\n") : "")
+      || (hooks.length > 0 ? hooks.slice(0, 4).map((x) => `- ${x}`).join("\n") : "")
+      || explanation;
+
+    const changeLabel =
+      s.kind === "rewrite_note"
+        ? "Réécriture du texte"
+        : s.kind === "generate_summary"
+          ? "Ajout d’un résumé"
+          : s.kind === "extract_key_points"
+            ? "Extraction de points clés"
+            : s.kind === "generate_hook"
+              ? "Ajout de hooks"
+              : s.kind === "tag_entities"
+                ? "Structuration par tags/entités"
+                : "Application de la suggestion";
+
+    return {
+      targetExcerpt: targetExcerpt || "(Aucun extrait détecté)",
+      afterPreview: afterPreview || "(Aucune prévisualisation fournie)",
+      changeLabel,
+    };
+  };
+
   const handleAccept = async (s: AssistantSuggestionDoc) => {
+    const suggestionId = s.id ?? s.dedupeKey;
+
     if (s.kind === "rewrite_note") {
       openSuggestionModify(s);
       return;
     }
-
-    const suggestionId = s.id ?? s.dedupeKey;
     if (!suggestionId) return;
     if (busySuggestionId) return;
 
@@ -373,11 +493,20 @@ export default function AssistantNotePanel({ noteId, currentNoteContent }: Props
     setActionError(null);
 
     try {
+      if (s.kind === "generate_summary" || s.kind === "extract_key_points" || s.kind === "generate_hook" || s.kind === "tag_entities") {
+        await appendGeneratedContentToNote(s);
+      }
       const fn = httpsCallable<{ suggestionId: string }, ApplySuggestionResult>(fbFunctions, "assistantApplySuggestion");
       const res = await fn({ suggestionId });
       const count = Array.isArray(res.data?.createdCoreObjects) ? res.data.createdCoreObjects.length : 0;
-      setActionMessage(count > 0 ? `Suggestion acceptée (${count} objet(s) créé(s)).` : "Suggestion acceptée.");
+      setHiddenSuggestionIds((prev) => ({ ...prev, [suggestionId]: true }));
+      await refetchSuggestions();
+      if (s.kind === "generate_summary" || s.kind === "extract_key_points" || s.kind === "generate_hook" || s.kind === "tag_entities") {
+        void requestReanalysisSilently();
+      }
+      setActionMessage(count > 0 ? `Suggestion appliquée (${count} objet(s) créé(s)).` : "Suggestion appliquée.");
     } catch (e) {
+      console.error("[assistant] apply suggestion failed", { suggestionId, kind: s.kind, error: e });
       if (isCallableUnauthenticated(e)) {
         void invalidateAuthSession();
         return;
@@ -430,8 +559,11 @@ export default function AssistantNotePanel({ noteId, currentNoteContent }: Props
       const res = await fn({ suggestionId, overrides });
       const count = Array.isArray(res.data?.createdCoreObjects) ? res.data.createdCoreObjects.length : 0;
       setActionMessage(count > 0 ? `Plan créé (${count} objet(s) créé(s)).` : "Plan créé.");
+      setHiddenSuggestionIds((prev) => ({ ...prev, [suggestionId]: true }));
+      await refetchSuggestions();
       setBundleCustomizeSuggestion(null);
     } catch (e) {
+      console.error("[assistant] bundle apply failed", { suggestionId, error: e });
       if (isCallableUnauthenticated(e)) {
         void invalidateAuthSession();
         return;
@@ -489,9 +621,12 @@ export default function AssistantNotePanel({ noteId, currentNoteContent }: Props
       );
       const res = await fn({ suggestionId, overrides });
       const count = Array.isArray(res.data?.createdCoreObjects) ? res.data.createdCoreObjects.length : 0;
-      setActionMessage(count > 0 ? `Suggestion acceptée (${count} objet(s) créé(s)).` : "Suggestion acceptée.");
+      setHiddenSuggestionIds((prev) => ({ ...prev, [suggestionId]: true }));
+      await refetchSuggestions();
+      setActionMessage(count > 0 ? `Suggestion appliquée (${count} objet(s) créé(s)).` : "Suggestion appliquée.");
       closeEdit();
     } catch (e) {
+      console.error("[assistant] apply edited suggestion failed", { suggestionId, error: e });
       if (isCallableUnauthenticated(e)) {
         void invalidateAuthSession();
         return;
@@ -519,12 +654,12 @@ export default function AssistantNotePanel({ noteId, currentNoteContent }: Props
     setTextModal({
       title: `Prévisualisation · ${pendingPreviewAction}`,
       text: rewriteContent,
-      originalText: currentNoteContent ?? "",
+      originalText: noteTextBefore,
       allowReplaceNote: true,
     });
     setTextModalDraft(rewriteContent);
     setPendingPreviewAction(null);
-  }, [aiJobStatus, aiResult, currentNoteContent, pendingPreviewAction]);
+  }, [aiJobStatus, aiResult, noteTextBefore, pendingPreviewAction]);
 
   if (assistantLoading) {
     return (
@@ -624,7 +759,8 @@ export default function AssistantNotePanel({ noteId, currentNoteContent }: Props
       const payloadObj = s.payload && typeof s.payload === "object" ? (s.payload as any) : null;
       const rewriteContent = typeof payloadObj?.rewriteContent === "string" ? String(payloadObj.rewriteContent) : "";
       if (!rewriteContent.trim()) return;
-      setTextModal({ title: "Prévisualisation avant remplacement", text: rewriteContent, originalText: currentNoteContent ?? "", allowReplaceNote: true });
+      const suggestionId = s.id ?? s.dedupeKey;
+      setTextModal({ title: "Prévisualisation avant remplacement", text: rewriteContent, originalText: noteTextBefore, allowReplaceNote: true, suggestionId: suggestionId || undefined });
       setTextModalDraft(rewriteContent);
     }
   };
@@ -644,6 +780,8 @@ export default function AssistantNotePanel({ noteId, currentNoteContent }: Props
     const isBusy = !!suggestionId && busySuggestionId === suggestionId;
     const expired = s.status === "expired";
     const canModify = s.kind === "create_task" || s.kind === "create_reminder" || s.kind === "create_task_bundle" || s.kind === "rewrite_note";
+    const details = getSuggestionDetails(s);
+    const expanded = !!(suggestionId && expandedSuggestionIds[suggestionId]);
 
     return (
       <div key={suggestionId ?? s.dedupeKey} className="border border-border rounded-md bg-card p-2.5 space-y-2">
@@ -652,6 +790,30 @@ export default function AssistantNotePanel({ noteId, currentNoteContent }: Props
             {s.payload?.title || "Suggestion"}
             {expired ? <span className="ml-2 text-[11px] text-muted-foreground">(expirée)</span> : null}
           </div>
+          <div className="text-[11px] text-muted-foreground">{details.changeLabel}</div>
+          <div className="text-[11px] text-muted-foreground line-clamp-3">{details.targetExcerpt}</div>
+          <button
+            type="button"
+            className="text-[11px] underline text-muted-foreground"
+            onClick={() => {
+              if (!suggestionId) return;
+              setExpandedSuggestionIds((prev) => ({ ...prev, [suggestionId]: !prev[suggestionId] }));
+            }}
+          >
+            {expanded ? "Masquer le détail" : "Voir le détail"}
+          </button>
+          {expanded ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
+              <div className="rounded-md border border-input p-2 bg-muted/20">
+                <div className="uppercase tracking-wide text-muted-foreground mb-1">Avant</div>
+                <div className="whitespace-pre-wrap line-clamp-4">{details.targetExcerpt}</div>
+              </div>
+              <div className="rounded-md border border-input p-2 bg-background">
+                <div className="uppercase tracking-wide text-muted-foreground mb-1">Après</div>
+                <div className="whitespace-pre-wrap line-clamp-4">{details.afterPreview}</div>
+              </div>
+            </div>
+          ) : null}
           <div className="text-[11px] text-muted-foreground line-clamp-3">{renderSuggestionPreview(s)}</div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -888,6 +1050,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent }: Props
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Suggestions</div>
             {(["structure", "clarity", "content"] as const).map((cat) => {
               const items = suggestionGroups[cat];
+              const visibleItems = items.slice(0, categoryVisibleCount[cat]);
               const title = cat === "structure" ? "Structure" : cat === "clarity" ? "Clarté" : "Contenu";
               const isOpen = categoryOpen[cat];
               return (
@@ -903,7 +1066,16 @@ export default function AssistantNotePanel({ noteId, currentNoteContent }: Props
                   {isOpen ? (
                     <div className="px-3 pb-2.5 space-y-1.5">
                       {items.length === 0 ? <div className="text-[11px] text-muted-foreground">Aucune amélioration détectée.</div> : null}
-                      {items.map(renderSuggestionCard)}
+                      {visibleItems.map(renderSuggestionCard)}
+                      {items.length > visibleItems.length ? (
+                        <button
+                          type="button"
+                          className="px-2.5 py-1 rounded-md border border-input text-[11px]"
+                          onClick={() => setCategoryVisibleCount((prev) => ({ ...prev, [cat]: prev[cat] + 3 }))}
+                        >
+                          Voir plus
+                        </button>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -972,7 +1144,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent }: Props
               {textModal.allowReplaceNote ? (
                 <button
                   type="button"
-                  onClick={() => void handleReplaceNoteContent(textModalDraft)}
+                  onClick={() => void handleReplaceNoteContent(textModalDraft, textModal.suggestionId)}
                   disabled={!noteId}
                   className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
                 >

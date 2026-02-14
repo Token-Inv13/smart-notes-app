@@ -713,6 +713,27 @@ export default function NoteDetailModal(props: any) {
     }
   };
 
+  const handleAssistantNoteContentUpdated = (nextContent: string) => {
+    if (!note) return;
+
+    setNote((prev) =>
+      prev
+        ? {
+            ...prev,
+            content: nextContent,
+          }
+        : prev,
+    );
+
+    setEditContent(nextContent);
+    lastSavedSnapshotRef.current = JSON.stringify({
+      title: note.title ?? "",
+      content: nextContent,
+      workspaceId: typeof note.workspaceId === "string" ? note.workspaceId : "",
+    });
+    setDirty(false);
+  };
+
   useEffect(() => {
     if (mode !== "edit") return;
 
@@ -1160,7 +1181,11 @@ export default function NoteDetailModal(props: any) {
                         </button>
                       </div>
                       <div className="h-[calc(100%-2.25rem)]">
-                        <AssistantNotePanel noteId={note.id} currentNoteContent={mode === "edit" ? editContent : note.content ?? ""} />
+                        <AssistantNotePanel
+                          noteId={note.id}
+                          currentNoteContent={mode === "edit" ? editContent : note.content ?? ""}
+                          onNoteContentUpdated={handleAssistantNoteContentUpdated}
+                        />
                       </div>
                     </div>
                   </aside>
@@ -1183,7 +1208,11 @@ export default function NoteDetailModal(props: any) {
                     </button>
                   </div>
                   <div className="h-[calc(100%-2.25rem)]">
-                    <AssistantNotePanel noteId={note.id} currentNoteContent={mode === "edit" ? editContent : note.content ?? ""} />
+                    <AssistantNotePanel
+                      noteId={note.id}
+                      currentNoteContent={mode === "edit" ? editContent : note.content ?? ""}
+                      onNoteContentUpdated={handleAssistantNoteContentUpdated}
+                    />
                   </div>
                 </div>
               </div>

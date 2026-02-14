@@ -127,3 +127,29 @@ export function htmlToPlainText(html: string) {
   const text = container.textContent ?? "";
   return text.replace(/\s+/g, " ").trim();
 }
+
+export function htmlToReadableText(html: string) {
+  const raw = String(html ?? "");
+  const normalized = raw
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\s*\/\s*(p|div|li|h1|h2|h3|h4|h5|h6)\s*>/gi, "\n")
+    .replace(/<\s*hr\s*\/?>/gi, "\n---\n");
+
+  if (!isBrowser()) {
+    return normalized
+      .replace(/<[^>]*>/g, "")
+      .replace(/\u00a0/g, " ")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  const container = document.createElement("div");
+  container.innerHTML = normalized;
+  const text = container.textContent ?? "";
+  return text
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
