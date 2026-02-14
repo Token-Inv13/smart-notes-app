@@ -21,6 +21,15 @@ function getFirebaseAuthErrorCode(err: unknown): string | undefined {
   return typeof code === "string" ? code : undefined;
 }
 
+function normalizeNextPath(raw: string | null): string {
+  const fallback = "/dashboard";
+  if (!raw) return fallback;
+  const next = raw.trim();
+  if (!next.startsWith("/")) return fallback;
+  if (next.startsWith("//")) return fallback;
+  return next;
+}
+
 function getFirebaseAuthErrorRawMessage(err: unknown): string {
   if (typeof err !== "object" || err === null) return "";
   const message = (err as Record<string, unknown>).message;
@@ -67,7 +76,7 @@ export default function LoginPage() {
 function LoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const nextPath = searchParams.get("next") || "/dashboard";
+  const nextPath = normalizeNextPath(searchParams.get("next"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
