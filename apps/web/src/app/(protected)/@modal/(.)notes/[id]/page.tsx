@@ -1170,17 +1170,17 @@ export default function NoteDetailModal(props: any) {
 
                 {assistantDrawerOpen ? (
                   <aside className="hidden lg:block absolute inset-y-0 right-0 w-[32%] min-w-[320px] max-w-[440px]">
-                    <div className="h-full space-y-2">
-                      <div className="flex justify-end">
-                        <button
-                          type="button"
-                          onClick={() => setAssistantDrawerOpen(false)}
-                          className="px-3 py-1.5 rounded-md border border-input text-xs"
-                        >
-                          Fermer
-                        </button>
-                      </div>
-                      <div className="h-[calc(100%-2.25rem)]">
+                    <div className="relative h-full">
+                      <button
+                        type="button"
+                        onClick={() => setAssistantDrawerOpen(false)}
+                        className="absolute top-2 right-2 z-20 h-8 w-8 rounded-full border border-input bg-background text-sm leading-none"
+                        aria-label="Fermer l'assistant"
+                        title="Fermer"
+                      >
+                        ×
+                      </button>
+                      <div className="h-full pt-12">
                         <AssistantNotePanel
                           noteId={note.id}
                           currentNoteContent={mode === "edit" ? editContent : note.content ?? ""}
@@ -1196,18 +1196,17 @@ export default function NoteDetailModal(props: any) {
 
             {assistantDrawerOpen ? (
               <div className="lg:hidden fixed inset-0 z-[60] bg-background/85 backdrop-blur-sm p-2">
-                <div className="h-full rounded-xl border border-border bg-card p-2 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-medium">Assistant IA</div>
-                    <button
-                      type="button"
-                      onClick={() => setAssistantDrawerOpen(false)}
-                      className="px-3 py-1.5 rounded-md border border-input text-xs"
-                    >
-                      Fermer
-                    </button>
-                  </div>
-                  <div className="h-[calc(100%-2.25rem)]">
+                <div className="relative h-full rounded-xl border border-border bg-card p-2">
+                  <button
+                    type="button"
+                    onClick={() => setAssistantDrawerOpen(false)}
+                    className="absolute top-2 right-2 z-20 h-8 w-8 rounded-full border border-input bg-background text-sm leading-none"
+                    aria-label="Fermer l'assistant"
+                    title="Fermer"
+                  >
+                    ×
+                  </button>
+                  <div className="h-full pt-12">
                     <AssistantNotePanel
                       noteId={note.id}
                       currentNoteContent={mode === "edit" ? editContent : note.content ?? ""}

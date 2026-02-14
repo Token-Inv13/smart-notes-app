@@ -16,6 +16,8 @@ import Modal from "../Modal";
 import BundleCustomizeModal from "./assistant/BundleCustomizeModal";
 import VoiceRecorderButton from "./assistant/VoiceRecorderButton";
 
+const EXCLUDED_SUGGESTION_KINDS = new Set<AssistantSuggestionDoc["kind"]>(["generate_summary", "extract_key_points"]);
+
 type Props = {
   noteId?: string;
   currentNoteContent?: string;
@@ -96,18 +98,17 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
 
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [advancedActionsOpen, setAdvancedActionsOpen] = useState(false);
-  const [categoryOpen, setCategoryOpen] = useState<Record<"structure" | "clarity" | "content", boolean>>({
-    structure: false,
+  const [categoryOpen, setCategoryOpen] = useState<Record<"clarity" | "content", boolean>>({
     clarity: false,
     content: false,
   });
-  const [categoryVisibleCount, setCategoryVisibleCount] = useState<Record<"structure" | "clarity" | "content", number>>({
-    structure: 3,
+  const [categoryVisibleCount, setCategoryVisibleCount] = useState<Record<"clarity" | "content", number>>({
     clarity: 3,
     content: 3,
   });
   const [expandedSuggestionIds, setExpandedSuggestionIds] = useState<Record<string, boolean>>({});
   const [hiddenSuggestionIds, setHiddenSuggestionIds] = useState<Record<string, boolean>>({});
+  const [confirmingSuggestionId, setConfirmingSuggestionId] = useState<string | null>(null);
   const [pendingPreviewAction, setPendingPreviewAction] = useState<string | null>(null);
 
   const [textModal, setTextModal] = useState<{
@@ -229,13 +230,21 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
 
   const sorted = useMemo(() => {
     const arr = (suggestions ?? []).slice();
+    const score = (s: AssistantSuggestionDoc) =>
+      typeof s.rankScore === "number" && Number.isFinite(s.rankScore) ? s.rankScore : Number.NEGATIVE_INFINITY;
     const toMillisSafe = (ts: unknown) => {
       const maybe = ts as { toMillis?: () => number };
       if (maybe && typeof maybe.toMillis === "function") return maybe.toMillis();
       return 0;
     };
-    arr.sort((a, b) => toMillisSafe(b.updatedAt) - toMillisSafe(a.updatedAt));
-    return arr.filter((s) => !hiddenSuggestionIds[(s.id ?? s.dedupeKey) || ""]);
+    arr.sort((a, b) => {
+      const byScore = score(b) - score(a);
+      if (byScore !== 0) return byScore;
+      return toMillisSafe(b.updatedAt) - toMillisSafe(a.updatedAt);
+    });
+    return arr
+      .filter((s) => !EXCLUDED_SUGGESTION_KINDS.has(s.kind))
+      .filter((s) => !hiddenSuggestionIds[(s.id ?? s.dedupeKey) || ""]);
   }, [hiddenSuggestionIds, suggestions]);
 
   const noteTextBefore = useMemo(() => htmlToReadableText(currentNoteContent ?? ""), [currentNoteContent]);
@@ -345,7 +354,8 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
       if (suggestionId) {
         await applySuggestionDecision(suggestionId);
         setHiddenSuggestionIds((prev) => ({ ...prev, [suggestionId]: true }));
-        await refetchSuggestions();
+        setConfirmingSuggestionId((prev) => (prev === suggestionId ? null : prev));
+        void refetchSuggestions();
         void requestReanalysisSilently();
         setActionMessage("Suggestion appliquée.");
       } else {
@@ -429,7 +439,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
-        .replace(/\"/g, "&quot;")
+        .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
 
     const htmlBody = plain.split("\n").map((line) => escapeHtml(line)).join("<br>");
@@ -443,8 +453,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
   const getSuggestionDetails = (s: AssistantSuggestionDoc) => {
     const payloadObj = s.payload && typeof s.payload === "object" ? (s.payload as any) : null;
     const fromText = typeof payloadObj?.origin?.fromText === "string" ? String(payloadObj.origin.fromText) : "";
-    const targetRaw = fromText.trim() || noteTextBefore;
-    const targetExcerpt = targetRaw.slice(0, 280).trim();
+    const targetExcerpt = fromText.trim().slice(0, 280).trim();
 
     const rewrite = typeof payloadObj?.rewriteContent === "string" ? String(payloadObj.rewriteContent).trim() : "";
     const summary = typeof payloadObj?.summaryShort === "string" ? String(payloadObj.summaryShort).trim() : "";
@@ -478,6 +487,12 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
     };
   };
 
+  const shouldDisplaySuggestion = (s: AssistantSuggestionDoc) => {
+    const payloadObj = s.payload && typeof s.payload === "object" ? (s.payload as any) : null;
+    const fromText = typeof payloadObj?.origin?.fromText === "string" ? String(payloadObj.origin.fromText).trim() : "";
+    return fromText.length > 0;
+  };
+
   const handleAccept = async (s: AssistantSuggestionDoc) => {
     const suggestionId = s.id ?? s.dedupeKey;
 
@@ -500,7 +515,8 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
       const res = await fn({ suggestionId });
       const count = Array.isArray(res.data?.createdCoreObjects) ? res.data.createdCoreObjects.length : 0;
       setHiddenSuggestionIds((prev) => ({ ...prev, [suggestionId]: true }));
-      await refetchSuggestions();
+      setConfirmingSuggestionId((prev) => (prev === suggestionId ? null : prev));
+      void refetchSuggestions();
       if (s.kind === "generate_summary" || s.kind === "extract_key_points" || s.kind === "generate_hook" || s.kind === "tag_entities") {
         void requestReanalysisSilently();
       }
@@ -718,21 +734,20 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
     );
   }
 
-  const getSuggestionCategory = (s: AssistantSuggestionDoc): "structure" | "clarity" | "content" => {
-    if (s.kind === "rewrite_note" || s.kind === "tag_entities" || s.kind === "create_task_bundle") return "structure";
-    if (s.kind === "generate_summary" || s.kind === "extract_key_points" || s.kind === "generate_hook" || s.kind === "update_task_meta") {
+  const getSuggestionCategory = (s: AssistantSuggestionDoc): "clarity" | "content" => {
+    if (s.kind === "generate_hook" || s.kind === "tag_entities" || s.kind === "update_task_meta") {
       return "clarity";
     }
     return "content";
   };
 
   const suggestionGroups = (() => {
-    const grouped: Record<"structure" | "clarity" | "content", AssistantSuggestionDoc[]> = {
-      structure: [],
+    const grouped: Record<"clarity" | "content", AssistantSuggestionDoc[]> = {
       clarity: [],
       content: [],
     };
     for (const s of sorted) {
+      if (!shouldDisplaySuggestion(s)) continue;
       grouped[getSuggestionCategory(s)].push(s);
     }
     return grouped;
@@ -740,7 +755,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
 
   const visibleSuggestionsCount = suggestionsLoading || suggestionsError
     ? 0
-    : suggestionGroups.structure.length + suggestionGroups.clarity.length + suggestionGroups.content.length;
+    : suggestionGroups.clarity.length + suggestionGroups.content.length;
 
   const openSuggestionModify = (s: AssistantSuggestionDoc) => {
     if (s.kind === "create_task" || s.kind === "create_reminder") {
@@ -782,9 +797,11 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
     const canModify = s.kind === "create_task" || s.kind === "create_reminder" || s.kind === "create_task_bundle" || s.kind === "rewrite_note";
     const details = getSuggestionDetails(s);
     const expanded = !!(suggestionId && expandedSuggestionIds[suggestionId]);
+    const requiresInlineConfirm = s.kind !== "rewrite_note";
+    const isConfirming = !!suggestionId && confirmingSuggestionId === suggestionId;
 
     return (
-      <div key={suggestionId ?? s.dedupeKey} className="border border-border rounded-md bg-card p-2.5 space-y-2">
+      <div key={suggestionId ?? s.dedupeKey} className="rounded-md bg-card/70 p-2 space-y-1.5">
         <div className="space-y-1">
           <div className="text-sm font-medium leading-snug">
             {s.payload?.title || "Suggestion"}
@@ -824,12 +841,16 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
                 window.location.href = "/upgrade";
                 return;
               }
+              if (requiresInlineConfirm) {
+                setConfirmingSuggestionId((prev) => (prev === suggestionId ? null : suggestionId || null));
+                return;
+              }
               void handleAccept(s);
             }}
             disabled={isBusy || expired}
             className="px-2.5 py-1 rounded-md bg-primary text-primary-foreground text-[11px] font-medium disabled:opacity-50"
           >
-            {isBusy ? "Application…" : s.kind === "rewrite_note" ? "Prévisualiser" : "Appliquer"}
+            {isBusy ? "Application…" : s.kind === "rewrite_note" ? "Prévisualiser" : isConfirming ? "Confirmer ?" : "Appliquer"}
           </button>
           <button
             type="button"
@@ -840,6 +861,26 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
             Modifier
           </button>
         </div>
+        {isConfirming ? (
+          <div className="flex items-center gap-2 text-[11px]">
+            <span className="text-muted-foreground">Confirmer l’application ?</span>
+            <button
+              type="button"
+              onClick={() => void handleAccept(s)}
+              disabled={isBusy || expired}
+              className="px-2 py-0.5 rounded-md bg-primary text-primary-foreground disabled:opacity-50"
+            >
+              Confirmer
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmingSuggestionId(null)}
+              className="px-2 py-0.5 rounded-md border border-input"
+            >
+              Annuler
+            </button>
+          </div>
+        ) : null}
       </div>
     );
   };
@@ -930,7 +971,6 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
 
   const aiRecommendations = (() => {
     const list: string[] = [];
-    if (suggestionGroups.structure.length > 0) list.push("Clarifier la structure globale de la note.");
     if (suggestionGroups.clarity.length > 0) list.push("Améliorer la lisibilité et la formulation.");
     if (suggestionGroups.content.length > 0) list.push("Compléter le contenu avec actions et éléments concrets.");
     return list.slice(0, 3);
@@ -938,7 +978,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
 
   return (
     <>
-      <div className="h-full border border-border rounded-xl bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 shadow-sm p-3 md:p-4 space-y-3 overflow-y-auto">
+      <div className="h-full border border-border rounded-xl bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 shadow-sm p-2.5 md:p-3 space-y-2.5 overflow-y-auto">
         <div className="flex items-center justify-between gap-2">
           <div className="text-sm font-semibold">Assistant IA</div>
           <button type="button" onClick={() => setSuggestionsOpen((v) => !v)} className="px-2 py-1 rounded-md border border-input text-[11px]">
@@ -1046,25 +1086,25 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
         </section>
 
         {suggestionsOpen ? (
-          <section className="space-y-1.5">
+          <section className="space-y-1">
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Suggestions</div>
-            {(["structure", "clarity", "content"] as const).map((cat) => {
+            {(["clarity", "content"] as const).map((cat) => {
               const items = suggestionGroups[cat];
               const visibleItems = items.slice(0, categoryVisibleCount[cat]);
-              const title = cat === "structure" ? "Structure" : cat === "clarity" ? "Clarté" : "Contenu";
+              const title = cat === "clarity" ? "Clarté" : "Contenu";
               const isOpen = categoryOpen[cat];
               return (
-                <div key={cat} className="border border-border rounded-lg bg-card">
+                <div key={cat} className="rounded-lg bg-card/70">
                   <button
                     type="button"
-                    className="w-full flex items-center justify-between gap-3 px-3 py-1.5 text-sm"
+                    className="w-full flex items-center justify-between gap-3 px-2.5 py-1.5 text-sm"
                     onClick={() => setCategoryOpen((prev) => ({ ...prev, [cat]: !prev[cat] }))}
                   >
                     <span>{title}</span>
                     <span className="text-[11px] text-muted-foreground">{items.length} · {isOpen ? "Masquer" : "Voir"}</span>
                   </button>
                   {isOpen ? (
-                    <div className="px-3 pb-2.5 space-y-1.5">
+                    <div className="px-2.5 pb-2 space-y-1.5">
                       {items.length === 0 ? <div className="text-[11px] text-muted-foreground">Aucune amélioration détectée.</div> : null}
                       {visibleItems.map(renderSuggestionCard)}
                       {items.length > visibleItems.length ? (
