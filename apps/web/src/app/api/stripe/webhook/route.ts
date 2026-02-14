@@ -6,6 +6,8 @@ import type { UserDoc } from '@/types/firestore';
 
 export const runtime = 'nodejs';
 
+const STRIPE_EVENTS_COLLECTION = 'stripeWebhookEvents';
+
 function getStripeClient() {
   const secretKey = process.env.STRIPE_SECRET_KEY;
   if (!secretKey) {
@@ -86,6 +88,13 @@ export async function POST(request: Request) {
       return new NextResponse('Invalid signature', { status: 400 });
     }
 
+    const db = getAdminDb();
+    const eventRef = db.collection(STRIPE_EVENTS_COLLECTION).doc(event.id);
+    const existingEvent = await eventRef.get();
+    if (existingEvent.exists) {
+      return NextResponse.json({ received: true, deduped: true });
+    }
+
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
@@ -144,6 +153,16 @@ export async function POST(request: Request) {
       default:
         break;
     }
+
+    await eventRef.set(
+      {
+        eventId: event.id,
+        type: event.type,
+        livemode: event.livemode === true,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: false },
+    );
 
     return NextResponse.json({ received: true });
   } catch (e) {
