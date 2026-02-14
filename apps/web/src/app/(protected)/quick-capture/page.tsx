@@ -16,7 +16,7 @@ function escapeHtml(text: string) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
+    .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
 
@@ -69,7 +69,7 @@ export default function QuickCapturePage() {
       updatedAt: serverTimestamp(),
     };
 
-    const ref = await addDoc(collection(db, "notes"), payload as any);
+    const ref = await addDoc(collection(db, "notes"), payload);
     return ref.id;
   };
 
@@ -92,7 +92,7 @@ export default function QuickCapturePage() {
       updatedAt: serverTimestamp(),
     };
 
-    const ref = await addDoc(collection(db, "todos"), payload as any);
+    const ref = await addDoc(collection(db, "todos"), payload);
     return ref.id;
   };
 

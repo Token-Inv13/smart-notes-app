@@ -32,7 +32,7 @@ function escapeHtml(text: string) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
+    .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
 
@@ -324,7 +324,7 @@ export default function VoiceRecorderButton({
         updatedAt: serverTimestamp(),
       };
 
-      const ref = await addDoc(collection(db, "notes"), payload as any);
+      const ref = await addDoc(collection(db, "notes"), payload);
       window.location.href = `/notes/${encodeURIComponent(ref.id)}`;
     } catch (e) {
       if (e instanceof FirebaseError) setError(`${e.code}: ${e.message}`);
@@ -342,9 +342,9 @@ export default function VoiceRecorderButton({
     const unsub = onSnapshot(
       jobRef,
       (snap) => {
-        const data = snap.exists() ? (snap.data() as any as AssistantVoiceJobDoc) : null;
+        const data = snap.exists() ? (snap.data() as AssistantVoiceJobDoc) : null;
         const st = data?.status;
-        const err = typeof (data as any)?.errorMessage === "string" ? String((data as any).errorMessage) : null;
+        const err = typeof data?.errorMessage === "string" ? data.errorMessage : null;
         if (st === "error" && err) {
           setError(err);
           setStatus("error");
@@ -366,8 +366,8 @@ export default function VoiceRecorderButton({
     const unsub = onSnapshot(
       rRef,
       (snap) => {
-        const data = snap.exists() ? (snap.data() as any as AssistantVoiceResultDoc) : null;
-        const t = typeof (data as any)?.transcript === "string" ? String((data as any).transcript) : "";
+        const data = snap.exists() ? (snap.data() as AssistantVoiceResultDoc) : null;
+        const t = typeof data?.transcript === "string" ? data.transcript : "";
         if (t) {
           setTranscript(t);
           try {

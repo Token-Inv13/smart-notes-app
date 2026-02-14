@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://www.tachesnotes.com/sitemap.xml
+Host: https://www.tachesnotes.com

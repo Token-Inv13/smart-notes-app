@@ -226,9 +226,16 @@ service cloud.firestore {
         isOwner(resource.data.ownerId) || 
         request.auth.uid in resource.data.members
       );
-      allow create: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.members is list
+        && request.resource.data.members.size() == 0
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 80;
       allow update: if isAuthenticated() && 
-        isOwner(resource.data.ownerId);
+        isOwner(resource.data.ownerId) &&
+        request.resource.data.ownerId == resource.data.ownerId;
       allow delete: if isAuthenticated() && 
         isOwner(resource.data.ownerId);
     }

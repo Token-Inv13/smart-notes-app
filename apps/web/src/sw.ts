@@ -5,7 +5,38 @@ import { precacheAndRoute } from 'workbox-precaching';
 import { registerRoute } from 'workbox-routing';
 import { NetworkFirst, StaleWhileRevalidate } from 'workbox-strategies';
 
-declare const self: ServiceWorkerGlobalScope & { __WB_MANIFEST: any };
+type ManifestEntry = {
+  url: string;
+  revision?: string | null;
+};
+
+type FirebaseBackgroundPayload = {
+  notification?: {
+    title?: string;
+    body?: string;
+  };
+  data?: Record<string, string>;
+};
+
+type FirebaseCompat = {
+  apps?: unknown[];
+  initializeApp: (config: {
+    apiKey?: string;
+    authDomain?: string;
+    projectId?: string;
+    appId?: string;
+    messagingSenderId?: string;
+  }) => void;
+  messaging: () => {
+    onBackgroundMessage: (cb: (payload: FirebaseBackgroundPayload) => void) => void;
+  };
+};
+
+declare const self: ServiceWorkerGlobalScope & {
+  __WB_MANIFEST: ManifestEntry[];
+  importScripts: (...urls: string[]) => void;
+  firebase?: FirebaseCompat;
+};
 
 declare const process: {
   env: {
@@ -47,28 +78,27 @@ try {
 
   const missing = Object.values(config).some((v) => !v);
   if (!missing) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (self as any).importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (self as any).importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js');
+    self.importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js');
+    self.importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js');
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const firebase = (self as any).firebase as any;
-    if (firebase?.apps?.length === 0) {
-      firebase.initializeApp(config);
-    }
+    const firebase = self.firebase;
+    if (firebase) {
+      if (firebase.apps?.length === 0) {
+        firebase.initializeApp(config);
+      }
 
-    const messaging = firebase.messaging();
-    messaging.onBackgroundMessage((payload: any) => {
-      const title = payload?.notification?.title || 'Notification';
-      const body = payload?.notification?.body || '';
-      const data = payload?.data || {};
+      const messaging = firebase.messaging();
+      messaging.onBackgroundMessage((payload) => {
+        const title = payload?.notification?.title || 'Notification';
+        const body = payload?.notification?.body || '';
+        const data = payload?.data || {};
 
-      self.registration.showNotification(title, {
-        body,
-        data,
+        self.registration.showNotification(title, {
+          body,
+          data,
+        });
       });
-    });
+    }
   }
 } catch {
   // ignore

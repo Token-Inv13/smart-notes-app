@@ -1,30 +1,36 @@
 "use client";
 
 import { useEffect, useMemo, useState, type MouseEvent } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import type { NoteDoc } from "@/types/firestore";
 import { sanitizeNoteHtml } from "@/lib/richText";
 import AssistantNotePanel from "@/app/(protected)/_components/AssistantNotePanel";
 
+type MaybeTimestamp = {
+  toDate?: () => Date;
+};
+
 function formatFrDateTime(ts?: NoteDoc["updatedAt"] | NoteDoc["createdAt"] | null) {
   if (!ts) return "—";
-  if (typeof (ts as any)?.toDate !== "function") return "—";
-  const d = (ts as any).toDate() as Date;
+  const candidate = ts as MaybeTimestamp;
+  if (typeof candidate.toDate !== "function") return "—";
+  const d = candidate.toDate();
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(
     d.getMinutes(),
   )}`;
 }
 
-export default function NoteDetailPage(props: any) {
+export default function NoteDetailPage() {
   const router = useRouter();
+  const params = useParams<{ id?: string }>();
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId");
   const suffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
 
-  const noteId: string | undefined = props?.params?.id;
+  const noteId = typeof params?.id === "string" ? params.id : undefined;
 
   const [note, setNote] = useState<NoteDoc | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,7 +67,7 @@ export default function NoteDetailPage(props: any) {
         }
 
         if (!cancelled) {
-          setNote({ id: snap.id, ...(data as any) });
+          setNote({ id: snap.id, ...data });
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Erreur lors du chargement.";

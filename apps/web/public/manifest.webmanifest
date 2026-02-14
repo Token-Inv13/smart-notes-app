@@ -1,13 +1,17 @@
 {
+  "id": "/",
   "name": "Smart Notes",
   "short_name": "Smart Notes",
+  "description": "Notes, tâches et rappels dans une app simple et rapide.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "lang": "fr",
+  "dir": "ltr",
   "background_color": "#ffffff",
   "theme_color": "#111827",
+  "categories": ["productivity", "utilities"],
   "icons": [
     {
       "src": "/favicon.svg",

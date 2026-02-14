@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb, verifySessionCookie } from "@/lib/firebaseAdmin";
+import { encryptGoogleToken, hasGoogleTokenEncryptionKey } from "@/lib/googleCalendarCrypto";
 
 const OAUTH_STATE_COOKIE = "gcal_oauth_state";
 const OAUTH_VERIFIER_COOKIE = "gcal_oauth_verifier";
@@ -122,14 +123,32 @@ export async function GET(request: NextRequest) {
 
     const nowMs = Date.now();
     const expiresAtMs = nowMs + Math.max(60, expiresIn) * 1000;
+    const encryptedAccessToken = encryptGoogleToken(accessToken);
+    const encryptedRefreshToken = refreshToken ? encryptGoogleToken(refreshToken) : null;
+    const shouldUseEncryptedStorage = hasGoogleTokenEncryptionKey() && Boolean(encryptedAccessToken);
+
+    const tokenPayload = shouldUseEncryptedStorage
+      ? {
+          tokenStorageMode: "encrypted",
+          accessTokenEncrypted: encryptedAccessToken,
+          ...(encryptedRefreshToken ? { refreshTokenEncrypted: encryptedRefreshToken } : {}),
+          accessToken: FieldValue.delete(),
+          refreshToken: FieldValue.delete(),
+        }
+      : {
+          tokenStorageMode: "plain",
+          accessToken,
+          ...(refreshToken ? { refreshToken } : {}),
+          accessTokenEncrypted: FieldValue.delete(),
+          refreshTokenEncrypted: FieldValue.delete(),
+        };
 
     await ref.set(
       {
         provider: "google_calendar",
         connected: true,
         primaryCalendarId,
-        accessToken,
-        ...(refreshToken ? { refreshToken } : {}),
+        ...tokenPayload,
         accessTokenExpiresAtMs: expiresAtMs,
         scope: typeof tokenJson.scope === "string" ? tokenJson.scope : "",
         lastConnectedAt: FieldValue.serverTimestamp(),

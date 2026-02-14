@@ -14,6 +14,14 @@ function getStripeClient() {
   return new Stripe(secretKey, { apiVersion: '2024-06-20' });
 }
 
+function getCustomerId(value: Stripe.Subscription['customer']): string | null {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object' && 'id' in value && typeof value.id === 'string') {
+    return value.id;
+  }
+  return null;
+}
+
 async function resolveUserIdFromStripeIds(params: {
   stripeSubscriptionId?: string | null;
   stripeCustomerId?: string | null;
@@ -97,13 +105,7 @@ export async function POST(request: Request) {
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted': {
         const subscription = event.data.object as Stripe.Subscription;
-        const subscriptionCustomer = (subscription.customer as any) as string | { id?: string } | null;
-        const stripeCustomerId =
-          typeof subscriptionCustomer === 'string'
-            ? subscriptionCustomer
-            : typeof subscriptionCustomer?.id === 'string'
-              ? subscriptionCustomer.id
-              : null;
+        const stripeCustomerId = getCustomerId(subscription.customer);
 
         const userIdFromMetadata = subscription.metadata?.userId as string | undefined;
         const userId =

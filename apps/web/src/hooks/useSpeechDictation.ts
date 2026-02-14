@@ -25,10 +25,15 @@ type SpeechRecognitionLike = {
   abort?: () => void;
 };
 
+interface WindowWithSpeechRecognition extends Window {
+  SpeechRecognition?: new () => SpeechRecognitionLike;
+  webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+}
+
 function getSpeechRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
   if (typeof window === "undefined") return null;
-  const w = window as unknown as { SpeechRecognition?: any; webkitSpeechRecognition?: any };
-  return (w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null) as any;
+  const w = window as WindowWithSpeechRecognition;
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
 function mapError(err?: string): string {
@@ -109,9 +114,9 @@ export function useSpeechDictation(params: {
 
       for (let i = idx; i < results.length; i += 1) {
         const r = results[i];
-        const transcript = (r as any)?.[0]?.transcript;
+        const transcript = r?.[0]?.transcript;
         const t = typeof transcript === "string" ? transcript : "";
-        if ((r as any)?.isFinal) {
+        if (r?.isFinal) {
           finalAppend += t;
         } else {
           interim += t;

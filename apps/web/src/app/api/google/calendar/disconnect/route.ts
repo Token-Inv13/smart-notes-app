@@ -21,8 +21,11 @@ export async function POST(request: NextRequest) {
       {
         connected: false,
         primaryCalendarId: null,
+        tokenStorageMode: FieldValue.delete(),
         accessToken: FieldValue.delete(),
         refreshToken: FieldValue.delete(),
+        accessTokenEncrypted: FieldValue.delete(),
+        refreshTokenEncrypted: FieldValue.delete(),
         accessTokenExpiresAtMs: FieldValue.delete(),
         scope: FieldValue.delete(),
         updatedAt: FieldValue.serverTimestamp(),

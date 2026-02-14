@@ -42,6 +42,24 @@ function getTaskId(decision: AssistantDecisionDoc): string | null {
   return task?.id ?? null;
 }
 
+function extractPayloadSearchText(payload: AssistantDecisionDoc["beforePayload"] | AssistantDecisionDoc["finalPayload"]) {
+  if (!payload || typeof payload !== "object") {
+    return { title: "", explanation: "", excerpt: "" };
+  }
+
+  const obj = payload as {
+    title?: unknown;
+    explanation?: unknown;
+    origin?: { fromText?: unknown };
+  };
+
+  return {
+    title: typeof obj.title === "string" ? obj.title : "",
+    explanation: typeof obj.explanation === "string" ? obj.explanation : "",
+    excerpt: typeof obj.origin?.fromText === "string" ? obj.origin.fromText : "",
+  };
+}
+
 export default function AssistantHistoryPage() {
   const searchParams = useSearchParams();
   const initialNoteId = searchParams.get("noteId") ?? "";
@@ -82,11 +100,11 @@ export default function AssistantHistoryPage() {
       }
 
       if (q) {
-        const before = d.beforePayload as any;
-        const final = d.finalPayload as any;
-        const title = String(final?.title ?? before?.title ?? "");
-        const explanation = String(final?.explanation ?? before?.explanation ?? "");
-        const excerpt = String(before?.origin?.fromText ?? final?.origin?.fromText ?? "");
+        const before = extractPayloadSearchText(d.beforePayload);
+        const final = extractPayloadSearchText(d.finalPayload);
+        const title = final.title || before.title;
+        const explanation = final.explanation || before.explanation;
+        const excerpt = before.excerpt || final.excerpt;
         const objectId = String(d.objectId ?? "");
         const suggestionId = String(d.suggestionId ?? "");
         const hay = `${title}\n${explanation}\n${excerpt}\n${objectId}\n${suggestionId}`.toLowerCase();

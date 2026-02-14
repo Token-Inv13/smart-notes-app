@@ -8,16 +8,26 @@ export const runtime = 'nodejs';
 
 const SESSION_COOKIE_NAME = 'session';
 
-function isNoSuchCustomerError(err: any): boolean {
-  const message = typeof err?.message === 'string' ? err.message : '';
+type StripeLikeError = {
+  message?: string;
+  code?: string;
+  param?: string;
+  type?: string;
+  requestId?: string;
+  statusCode?: number;
+};
+
+function isNoSuchCustomerError(err: unknown): boolean {
+  const stripeErr = err as StripeLikeError;
+  const message = typeof stripeErr?.message === 'string' ? stripeErr.message : '';
   const lower = message.toLowerCase();
   if (lower.includes('no such customer')) return true;
-  if (err?.code === 'resource_missing' && (err?.param === 'customer' || lower.includes('customer'))) return true;
+  if (stripeErr?.code === 'resource_missing' && (stripeErr?.param === 'customer' || lower.includes('customer'))) return true;
   return false;
 }
 
 function getCustomerIdFromSubscription(sub: Stripe.Subscription): string | null {
-  const customer = (sub as any)?.customer;
+  const customer = sub.customer;
   if (!customer) return null;
   if (typeof customer === 'string') return customer;
   if (typeof customer?.id === 'string') return customer.id;
@@ -81,7 +91,7 @@ export async function POST() {
         return_url: `${origin}/upgrade`,
       });
 
-    const attemptRecoveryAndCreate = async (err: any) => {
+    const attemptRecoveryAndCreate = async (err: unknown) => {
       if (!isNoSuchCustomerError(err)) throw err;
 
       // Recovery path #1: derive customer from subscription id (if present)
@@ -156,7 +166,7 @@ export async function POST() {
       return await attemptRecoveryAndCreate(err);
     }
   } catch (e) {
-    const stripeError = e as any;
+    const stripeError = e as StripeLikeError;
     const message = typeof stripeError?.message === 'string' ? stripeError.message : '';
     const lower = message.toLowerCase();
 

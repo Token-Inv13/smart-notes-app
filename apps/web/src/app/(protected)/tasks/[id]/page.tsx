@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import type { TaskDoc } from "@/types/firestore";
@@ -21,13 +21,14 @@ function statusLabel(s?: TaskDoc["status"] | null) {
   return "À faire";
 }
 
-export default function TaskDetailPage(props: any) {
+export default function TaskDetailPage() {
   const router = useRouter();
+  const params = useParams<{ id?: string }>();
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId");
   const suffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
 
-  const taskId: string | undefined = props?.params?.id;
+  const taskId = typeof params?.id === "string" ? params.id : undefined;
 
   const [task, setTask] = useState<TaskDoc | null>(null);
   const [loading, setLoading] = useState(true);
@@ -64,7 +65,7 @@ export default function TaskDetailPage(props: any) {
         }
 
         if (!cancelled) {
-          setTask({ id: snap.id, ...(data as any) });
+          setTask({ id: snap.id, ...data });
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Erreur lors du chargement.";

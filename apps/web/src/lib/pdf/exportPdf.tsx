@@ -16,9 +16,19 @@ function sanitizeFilename(raw: string) {
   return base || "sans-titre";
 }
 
-function formatFrDateTime(ts?: any | null) {
+function formatFrDateTime(ts?: unknown | null) {
   if (!ts) return null;
-  const d = typeof ts?.toDate === "function" ? ts.toDate() : new Date(ts);
+  const d = (() => {
+    if (typeof ts === "object" && ts !== null && "toDate" in ts) {
+      const candidate = ts as { toDate?: () => Date };
+      if (typeof candidate.toDate === "function") return candidate.toDate();
+    }
+    if (ts instanceof Date) return ts;
+    if (typeof ts === "string" || typeof ts === "number") return new Date(ts);
+    return null;
+  })();
+  if (!d) return null;
+  if (Number.isNaN(d.getTime())) return null;
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
@@ -73,7 +83,8 @@ async function renderOffscreen(node: React.ReactNode) {
 
   // Wait for fonts (best-effort)
   try {
-    await (document as any).fonts?.ready;
+    const fonts = (document as unknown as { fonts?: { ready?: Promise<unknown> } }).fonts;
+    await fonts?.ready;
   } catch {
     // ignore
   }
@@ -209,9 +220,9 @@ export async function exportTaskPdf(task: TaskDoc, workspaceName: string | null)
       workspaceName={workspaceName}
       statusLabel={statusLabelFr(task.status)}
       dueDateLabel={formatFrDateTime(task.dueDate)}
-      createdAtLabel={formatFrDateTime((task as any).createdAt)}
-      updatedAtLabel={formatFrDateTime((task as any).updatedAt)}
-      description={sanitizeExportBody((task as any).description ?? "")}
+      createdAtLabel={formatFrDateTime(task.createdAt)}
+      updatedAtLabel={formatFrDateTime(task.updatedAt)}
+      description={sanitizeExportBody(task.description ?? "")}
       exportDateLabel={exportDateLabel}
     />
   );

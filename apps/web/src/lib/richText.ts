@@ -40,10 +40,10 @@ function extractAllowedInlineStyle(style: CSSStyleDeclaration) {
   const color = normalizeCssColor(style.color || "");
   if (color) out.push(`color: ${color}`);
 
-  const backgroundColor = normalizeCssColor((style as any).backgroundColor || "");
+  const backgroundColor = normalizeCssColor(style.backgroundColor || "");
   if (backgroundColor) out.push(`background-color: ${backgroundColor}`);
 
-  const fontSize = (style as any).fontSize as string | undefined;
+  const fontSize = style.fontSize;
   if (fontSize) {
     const match = String(fontSize).match(/^(\d+(?:\.\d+)?)(px|rem|em|%)$/);
     if (match) out.push(`font-size: ${match[1]}${match[2]}`);

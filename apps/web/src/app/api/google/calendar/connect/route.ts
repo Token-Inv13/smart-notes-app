@@ -45,11 +45,7 @@ export async function GET(request: NextRequest) {
       include_granted_scopes: "true",
       code_challenge: challenge,
       code_challenge_method: "S256",
-      scope: [
-        "openid",
-        "email",
-        "https://www.googleapis.com/auth/calendar.readonly",
-      ].join(" "),
+      scope: "https://www.googleapis.com/auth/calendar.readonly",
       state,
     });
 
