@@ -69,6 +69,8 @@ async function setUserPlan(userId: string, plan: 'free' | 'pro', updates?: Parti
 }
 
 export async function POST(request: Request) {
+  let lockAcquired = false;
+  let lockedEventRef: FirebaseFirestore.DocumentReference | null = null;
   try {
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
     if (!webhookSecret) return new NextResponse('Missing STRIPE_WEBHOOK_SECRET', { status: 500 });
@@ -90,9 +92,27 @@ export async function POST(request: Request) {
 
     const db = getAdminDb();
     const eventRef = db.collection(STRIPE_EVENTS_COLLECTION).doc(event.id);
-    const existingEvent = await eventRef.get();
-    if (existingEvent.exists) {
-      return NextResponse.json({ received: true, deduped: true });
+    lockedEventRef = eventRef;
+
+    const nowMs = Date.now();
+    const expiresAt = admin.firestore.Timestamp.fromMillis(nowMs + 90 * 24 * 60 * 60 * 1000);
+
+    try {
+      await eventRef.create({
+        eventId: event.id,
+        type: event.type,
+        livemode: event.livemode === true,
+        status: 'processing',
+        receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+        expiresAt,
+      });
+      lockAcquired = true;
+    } catch (e) {
+      const code = typeof (e as { code?: unknown })?.code === 'number' ? (e as { code?: number }).code : null;
+      if (code === 6) {
+        return NextResponse.json({ received: true, deduped: true });
+      }
+      throw e;
     }
 
     switch (event.type) {
@@ -156,16 +176,21 @@ export async function POST(request: Request) {
 
     await eventRef.set(
       {
-        eventId: event.id,
-        type: event.type,
-        livemode: event.livemode === true,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        status: 'processed',
+        processedAt: admin.firestore.FieldValue.serverTimestamp(),
       },
-      { merge: false },
+      { merge: true },
     );
 
     return NextResponse.json({ received: true });
   } catch (e) {
+    if (lockAcquired && lockedEventRef) {
+      try {
+        await lockedEventRef.delete();
+      } catch {
+        // ignore cleanup failure
+      }
+    }
     console.error('Stripe webhook error', e);
     const message = e instanceof Error ? e.message : 'Webhook handler failed';
     return new NextResponse(message, { status: 500 });
