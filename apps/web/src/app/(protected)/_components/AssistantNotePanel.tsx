@@ -504,6 +504,28 @@ export default function AssistantNotePanel({ noteId, currentNoteContent }: Props
     }
   };
 
+  useEffect(() => {
+    if (!pendingPreviewAction) return;
+
+    const out = (aiResult as any)?.output ?? null;
+    const rewriteContent = typeof out?.rewriteContent === "string" ? String(out.rewriteContent) : "";
+    if (!rewriteContent.trim()) {
+      if (aiJobStatus === "done" || aiJobStatus === "error") {
+        setPendingPreviewAction(null);
+      }
+      return;
+    }
+
+    setTextModal({
+      title: `Prévisualisation · ${pendingPreviewAction}`,
+      text: rewriteContent,
+      originalText: currentNoteContent ?? "",
+      allowReplaceNote: true,
+    });
+    setTextModalDraft(rewriteContent);
+    setPendingPreviewAction(null);
+  }, [aiJobStatus, aiResult, currentNoteContent, pendingPreviewAction]);
+
   if (assistantLoading) {
     return (
       <div className="sn-card p-4 space-y-3">
@@ -751,26 +773,6 @@ export default function AssistantNotePanel({ noteId, currentNoteContent }: Props
     if (suggestionGroups.content.length > 0) list.push("Compléter le contenu avec actions et éléments concrets.");
     return list.slice(0, 3);
   })();
-
-  useEffect(() => {
-    if (!pendingPreviewAction) return;
-    const rewriteCard = aiCards.find((card) => card.allowReplaceNote && card.text.trim().length > 0);
-    if (!rewriteCard) {
-      if (aiJobStatus === "done" || aiJobStatus === "error") {
-        setPendingPreviewAction(null);
-      }
-      return;
-    }
-
-    setTextModal({
-      title: `Prévisualisation · ${pendingPreviewAction}`,
-      text: rewriteCard.text,
-      originalText: currentNoteContent ?? "",
-      allowReplaceNote: true,
-    });
-    setTextModalDraft(rewriteCard.text);
-    setPendingPreviewAction(null);
-  }, [aiCards, aiJobStatus, currentNoteContent, pendingPreviewAction]);
 
   return (
     <>
