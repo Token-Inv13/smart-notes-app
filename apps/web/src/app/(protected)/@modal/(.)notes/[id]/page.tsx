@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { use, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Timestamp, deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { z } from "zod";
 import { auth, db, storage } from "@/lib/firebase";
 import { exportNotePdf } from "@/lib/pdf/exportPdf";
@@ -57,12 +57,21 @@ function iconForMime(mime: string) {
   return "📎";
 }
 
+interface CryptoLike {
+  randomUUID?: () => string;
+  getRandomValues?: (array: Uint8Array) => Uint8Array;
+}
+
+interface GlobalWithCrypto {
+  crypto?: CryptoLike;
+}
+
 function safeId() {
-  const cryptoAny = globalThis as any;
-  if (typeof cryptoAny?.crypto?.randomUUID === "function") return cryptoAny.crypto.randomUUID();
-  if (typeof cryptoAny?.crypto?.getRandomValues === "function") {
+  const g = globalThis as unknown as GlobalWithCrypto;
+  if (typeof g.crypto?.randomUUID === "function") return g.crypto.randomUUID();
+  if (typeof g.crypto?.getRandomValues === "function") {
     const bytes = new Uint8Array(16);
-    cryptoAny.crypto.getRandomValues(bytes);
+    g.crypto.getRandomValues(bytes);
     return Array.from(bytes)
       .map((b: number) => b.toString(16).padStart(2, "0"))
       .join("");
@@ -91,10 +100,15 @@ function normalizeStoragePath(path: string) {
   return String(path ?? "").replace(/^\/+/, "");
 }
 
+type MaybeTimestamp = {
+  toDate?: () => Date;
+};
+
 function formatFrDateTime(ts?: NoteDoc["updatedAt"] | NoteDoc["createdAt"] | null) {
   if (!ts) return "—";
-  if (typeof (ts as any)?.toDate !== "function") return "—";
-  const d = (ts as any).toDate() as Date;
+  const maybe = ts as MaybeTimestamp;
+  if (typeof maybe.toDate !== "function") return "—";
+  const d = maybe.toDate();
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
@@ -105,11 +119,32 @@ const editNoteSchema = z.object({
   workspaceId: z.string().optional(),
 });
 
-export default function NoteDetailModal(props: any) {
+interface NoteDetailModalProps {
+  params: Promise<{ id: string }>;
+}
+
+type FirebaseLikeError = {
+  name?: string;
+  code?: string;
+  message?: string;
+  serverResponse?: string;
+  customData?: {
+    serverResponse?: string;
+  };
+};
+
+type NavigatorWithShare = {
+  share?: (data: { title?: string; text?: string; url?: string }) => Promise<void>;
+};
+
+export default function NoteDetailModal(props: NoteDetailModalProps) {
   const router = useRouter();
-  const noteId: string | undefined = props?.params?.id;
-  const fallbackHref: string | undefined = typeof props?.fallbackHref === "string" ? props.fallbackHref : undefined;
-  const fullscreen: boolean = props?.fullscreen === true;
+  const params = use(props.params);
+  const noteId = typeof params?.id === "string" ? params.id : undefined;
+  const searchParams = useSearchParams();
+  const workspaceId = searchParams.get("workspaceId");
+  const fallbackHref = workspaceId ? `/notes?workspaceId=${encodeURIComponent(workspaceId)}` : "/notes";
+  const fullscreen = searchParams.get("fullscreen") === "1";
 
   const { data: workspaces } = useUserWorkspaces();
   const { data: userSettings } = useUserSettings();
@@ -238,7 +273,7 @@ export default function NoteDetailModal(props: any) {
 
       setNote((prev) => (prev ? { ...prev, attachments: next } : prev));
     } catch (e) {
-      const err = e as any;
+      const err = e as FirebaseLikeError;
       const code = typeof err?.code === "string" ? err.code : undefined;
       const message = typeof err?.message === "string" ? err.message : undefined;
       const serverResponse =
@@ -353,7 +388,7 @@ export default function NoteDetailModal(props: any) {
       try {
         await deleteObject(ref(storage, normalizeStoragePath(att.storagePath)));
       } catch (e) {
-        const err = e as any;
+        const err = e as FirebaseLikeError;
         if (typeof err?.code === "string" && err.code === "storage/object-not-found") {
           // continue
         } else {
@@ -450,7 +485,7 @@ export default function NoteDetailModal(props: any) {
         }
 
         if (!cancelled) {
-          setNote({ id: snap.id, ...(data as any) });
+          setNote({ id: snap.id, ...data });
           setMode("view");
         }
       } catch (e) {
@@ -545,8 +580,9 @@ export default function NoteDetailModal(props: any) {
     const url = `${origin}/notes/${encodeURIComponent(note.id)}`;
 
     try {
-      if (typeof navigator !== "undefined" && typeof (navigator as any).share === "function") {
-        await (navigator as any).share({ title: note.title ?? "Note", url });
+      const nav = typeof navigator !== "undefined" ? (navigator as NavigatorWithShare) : null;
+      if (typeof nav?.share === "function") {
+        await nav.share({ title: note.title ?? "Note", url });
         setShareFeedback("Partage ouvert.");
         return;
       }

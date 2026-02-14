@@ -61,6 +61,10 @@ function statusLabel(s?: TaskDoc["status"] | null) {
 
 type TaskStatus = "todo" | "doing" | "done";
 
+type NavigatorWithShare = {
+  share?: (data: { title?: string; text?: string; url?: string }) => Promise<void>;
+};
+
 const editTaskSchema = z.object({
   title: z.string().min(1, "Le titre est requis."),
   status: z.union([z.literal("todo"), z.literal("doing"), z.literal("done")]),
@@ -142,7 +146,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
         }
 
         if (!cancelled) {
-          setTask({ id: snap.id, ...(data as any) });
+          setTask({ id: snap.id, ...data });
           setMode("view");
         }
       } catch (e) {
@@ -242,8 +246,9 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     const url = `${origin}/tasks/${encodeURIComponent(task.id)}`;
 
     try {
-      if (typeof navigator !== "undefined" && typeof (navigator as any).share === "function") {
-        await (navigator as any).share({ title: task.title ?? "Tâche", url });
+      const nav = typeof navigator !== "undefined" ? (navigator as NavigatorWithShare) : null;
+      if (typeof nav?.share === "function") {
+        await nav.share({ title: task.title ?? "Tâche", url });
         setShareFeedback("Partage ouvert.");
         return;
       }

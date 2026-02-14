@@ -24,6 +24,38 @@ type Props = {
   onNoteContentUpdated?: (nextContent: string) => void;
 };
 
+type AssistantPayloadLike = {
+  title?: unknown;
+  explanation?: unknown;
+  summaryShort?: unknown;
+  rewriteContent?: unknown;
+  keyPoints?: unknown;
+  hooks?: unknown;
+  tags?: unknown;
+  dueDate?: unknown;
+  remindAt?: unknown;
+  priority?: unknown;
+  origin?: {
+    fromText?: unknown;
+  };
+};
+
+type AssistantJobDocLike = {
+  status?: unknown;
+  result?: unknown;
+};
+
+type AssistantAIJobDocLike = {
+  status?: unknown;
+  resultId?: unknown;
+  error?: unknown;
+};
+
+function toPayloadObject(payload: unknown): AssistantPayloadLike | null {
+  if (!payload || typeof payload !== "object") return null;
+  return payload as AssistantPayloadLike;
+}
+
 function AssistantActionButton({
   label,
   onClick,
@@ -140,7 +172,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
     const unsub = onSnapshot(
       jobRef,
       (snap) => {
-        const data = snap.exists() ? (snap.data() as any) : null;
+        const data = snap.exists() ? (snap.data() as AssistantJobDocLike) : null;
         const nextStatus = data ? ((data?.status as typeof jobStatus) ?? null) : null;
         const nextResult = data && typeof data?.result === "object" && data.result ? (data.result as JobResult) : null;
 
@@ -178,7 +210,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
     const unsub = onSnapshot(
       jobRef,
       (snap) => {
-        const data = snap.exists() ? (snap.data() as any) : null;
+        const data = snap.exists() ? (snap.data() as AssistantAIJobDocLike) : null;
         const nextStatus = data ? ((data?.status as typeof aiJobStatus) ?? null) : null;
         const nextResultId = data && typeof data?.resultId === "string" ? String(data.resultId) : null;
         const nextError = data && typeof data?.error === "string" ? String(data.error) : null;
@@ -211,7 +243,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
     const unsub = onSnapshot(
       resultRef,
       (snap) => {
-        const data = snap.exists() ? (snap.data() as any) : null;
+        const data = snap.exists() ? (snap.data() as AssistantAIResultDoc) : null;
         if (!data) {
           setAIResult(null);
           return;
@@ -414,7 +446,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
   };
 
   const appendGeneratedContentToNote = async (s: AssistantSuggestionDoc) => {
-    const payloadObj = s.payload && typeof s.payload === "object" ? (s.payload as any) : null;
+    const payloadObj = toPayloadObject(s.payload);
     const baseTitle = typeof payloadObj?.title === "string" ? String(payloadObj.title).trim() : "Suggestion";
     const summaryShort = typeof payloadObj?.summaryShort === "string" ? String(payloadObj.summaryShort).trim() : "";
     const explanation = typeof payloadObj?.explanation === "string" ? String(payloadObj.explanation).trim() : "";
@@ -451,7 +483,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
   };
 
   const getSuggestionDetails = (s: AssistantSuggestionDoc) => {
-    const payloadObj = s.payload && typeof s.payload === "object" ? (s.payload as any) : null;
+    const payloadObj = toPayloadObject(s.payload);
     const fromText = typeof payloadObj?.origin?.fromText === "string" ? String(payloadObj.origin.fromText) : "";
     const targetExcerpt = fromText.trim().slice(0, 280).trim();
 
@@ -488,7 +520,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
   };
 
   const shouldDisplaySuggestion = (s: AssistantSuggestionDoc) => {
-    const payloadObj = s.payload && typeof s.payload === "object" ? (s.payload as any) : null;
+    const payloadObj = toPayloadObject(s.payload);
     const fromText = typeof payloadObj?.origin?.fromText === "string" ? String(payloadObj.origin.fromText).trim() : "";
     return fromText.length > 0;
   };
@@ -539,13 +571,22 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
     if (s.kind !== "create_task" && s.kind !== "create_reminder") return;
     setEditing(s);
     setEditError(null);
-    const payload = s.payload;
-    const payloadObj = payload && typeof payload === "object" ? (payload as any) : null;
+    const payloadObj = toPayloadObject(s.payload);
     setEditTitle(typeof payloadObj?.title === "string" ? String(payloadObj.title) : "");
     if (s.kind === "create_task") {
-      setEditDate(payloadObj && "dueDate" in payloadObj ? formatTimestampForInput(payloadObj.dueDate ?? null) : "");
+      const dueDateRaw = payloadObj && "dueDate" in payloadObj ? payloadObj.dueDate : null;
+      const dueDate =
+        dueDateRaw && typeof dueDateRaw === "object" && "toDate" in dueDateRaw
+          ? (dueDateRaw as Parameters<typeof formatTimestampForInput>[0])
+          : null;
+      setEditDate(formatTimestampForInput(dueDate));
     } else {
-      setEditDate(payloadObj && "remindAt" in payloadObj ? formatTimestampForInput(payloadObj.remindAt ?? null) : "");
+      const remindAtRaw = payloadObj && "remindAt" in payloadObj ? payloadObj.remindAt : null;
+      const remindAt =
+        remindAtRaw && typeof remindAtRaw === "object" && "toDate" in remindAtRaw
+          ? (remindAtRaw as Parameters<typeof formatTimestampForInput>[0])
+          : null;
+      setEditDate(formatTimestampForInput(remindAt));
     }
     const p = payloadObj && "priority" in payloadObj ? payloadObj.priority : undefined;
     setEditPriority(p === "low" || p === "medium" || p === "high" ? p : "");
@@ -620,7 +661,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
       overrides.remindAt = dt ? dt.toMillis() : null;
     }
 
-    const editingPayloadObj = editing.payload && typeof editing.payload === "object" ? (editing.payload as any) : null;
+    const editingPayloadObj = toPayloadObject(editing.payload);
     if (editingPayloadObj && "priority" in editingPayloadObj) {
       overrides.priority = editPriority ? editPriority : null;
     }
@@ -658,7 +699,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
   useEffect(() => {
     if (!pendingPreviewAction) return;
 
-    const out = (aiResult as any)?.output ?? null;
+    const out = aiResult?.output ?? null;
     const rewriteContent = typeof out?.rewriteContent === "string" ? String(out.rewriteContent) : "";
     if (!rewriteContent.trim()) {
       if (aiJobStatus === "done" || aiJobStatus === "error") {
@@ -771,7 +812,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
       return;
     }
     if (s.kind === "rewrite_note") {
-      const payloadObj = s.payload && typeof s.payload === "object" ? (s.payload as any) : null;
+      const payloadObj = toPayloadObject(s.payload);
       const rewriteContent = typeof payloadObj?.rewriteContent === "string" ? String(payloadObj.rewriteContent) : "";
       if (!rewriteContent.trim()) return;
       const suggestionId = s.id ?? s.dedupeKey;
@@ -781,7 +822,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
   };
 
   const renderSuggestionPreview = (s: AssistantSuggestionDoc) => {
-    const payloadObj = s.payload && typeof s.payload === "object" ? (s.payload as any) : null;
+    const payloadObj = toPayloadObject(s.payload);
     const explanation = typeof payloadObj?.explanation === "string" ? String(payloadObj.explanation).trim() : "";
     const title = typeof payloadObj?.title === "string" ? String(payloadObj.title).trim() : "";
     const rewriteContent = typeof payloadObj?.rewriteContent === "string" ? String(payloadObj.rewriteContent).trim() : "";
@@ -887,18 +928,18 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
 
   const aiCards = (() => {
     if (!aiResult) return [] as Array<{ key: string; title: string; text: string; allowReplaceNote?: boolean }>;
-    const out = (aiResult as any)?.output ?? null;
-    const refusal = typeof (aiResult as any)?.refusal === "string" ? String((aiResult as any).refusal) : "";
+    const out = aiResult.output ?? null;
+    const refusal = typeof aiResult.refusal === "string" ? String(aiResult.refusal) : "";
     if (refusal) {
       return [{ key: `refusal_${aiResult.id ?? "x"}`, title: "Refus", text: refusal }];
     }
 
     const summaryShort = typeof out?.summaryShort === "string" ? String(out.summaryShort) : "";
-    const summaryStructured = Array.isArray(out?.summaryStructured) ? (out.summaryStructured as any[]) : [];
-    const keyPoints = Array.isArray(out?.keyPoints) ? (out.keyPoints as any[]) : [];
-    const hooks = Array.isArray(out?.hooks) ? (out.hooks as any[]) : [];
-    const tags = Array.isArray(out?.tags) ? (out.tags as any[]) : [];
-    const entities = out?.entities && typeof out.entities === "object" ? (out.entities as any) : null;
+    const summaryStructured = Array.isArray(out?.summaryStructured) ? out.summaryStructured : [];
+    const keyPoints = Array.isArray(out?.keyPoints) ? out.keyPoints : [];
+    const hooks = Array.isArray(out?.hooks) ? out.hooks : [];
+    const tags = Array.isArray(out?.tags) ? out.tags : [];
+    const entities = out?.entities && typeof out.entities === "object" ? out.entities : null;
     const rewriteContent = typeof out?.rewriteContent === "string" ? String(out.rewriteContent) : "";
 
     const cards: Array<{ key: string; title: string; text: string; allowReplaceNote?: boolean }> = [];
@@ -911,7 +952,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
       const lines: string[] = [];
       for (const sec of summaryStructured) {
         const title = typeof sec?.title === "string" ? sec.title : "";
-        const bullets = Array.isArray(sec?.bullets) ? (sec.bullets as any[]) : [];
+        const bullets = Array.isArray(sec?.bullets) ? sec.bullets : [];
         if (title) lines.push(title);
         for (const b of bullets) {
           if (typeof b === "string" && b.trim()) lines.push(`- ${b}`);
@@ -940,7 +981,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
       if (entities) {
         for (const [k, v] of Object.entries(entities)) {
           if (!Array.isArray(v) || v.length === 0) continue;
-          const joined = (v as any[]).filter((x) => typeof x === "string").join(", ");
+          const joined = v.filter((x): x is string => typeof x === "string").join(", ");
           if (joined) lines.push(`${k}: ${joined}`);
         }
       }
@@ -1232,7 +1273,10 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
               </div>
             </div>
 
-            {editing.payload && typeof editing.payload === "object" && "priority" in (editing.payload as any) && (
+            {(() => {
+              const editingPayloadObj = toPayloadObject(editing.payload);
+              return !!(editingPayloadObj && "priority" in editingPayloadObj);
+            })() && (
               <div className="space-y-1">
                 <label className="text-sm font-medium" htmlFor="assistant-edit-priority">
                   Priorité
