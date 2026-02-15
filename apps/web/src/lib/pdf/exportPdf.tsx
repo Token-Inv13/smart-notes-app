@@ -63,6 +63,25 @@ function sanitizeExportBody(raw: string) {
   return cleaned.join("\n").replace(/\n{4,}/g, "\n\n\n").trim();
 }
 
+function downloadBlob(blob: Blob, filename: string) {
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = filename;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch {
+    window.open(objectUrl, "_blank", "noopener,noreferrer");
+  } finally {
+    window.setTimeout(() => {
+      URL.revokeObjectURL(objectUrl);
+    }, 30_000);
+  }
+}
+
 async function renderOffscreen(node: React.ReactNode) {
   const host = document.createElement("div");
   host.style.position = "fixed";
@@ -198,7 +217,8 @@ export async function exportNotePdf(note: NoteDoc, workspaceName: string | null)
 
   try {
     const doc = await buildPdfFromElement(element);
-    doc.save(`${sanitizeFilename(note.title ?? "")}.pdf`);
+    const blob = doc.output("blob");
+    downloadBlob(blob, `${sanitizeFilename(note.title ?? "")}.pdf`);
   } finally {
     cleanup();
   }
@@ -229,7 +249,8 @@ export async function exportTaskPdf(task: TaskDoc, workspaceName: string | null)
 
   try {
     const doc = await buildPdfFromElement(element);
-    doc.save(`smartnotes-task-${sanitizeFilename(task.title ?? "")}.pdf`);
+    const blob = doc.output("blob");
+    downloadBlob(blob, `smartnotes-task-${sanitizeFilename(task.title ?? "")}.pdf`);
   } finally {
     cleanup();
   }

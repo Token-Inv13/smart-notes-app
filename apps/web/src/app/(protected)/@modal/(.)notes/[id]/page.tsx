@@ -137,6 +137,25 @@ type NavigatorWithShare = {
   share?: (data: { title?: string; text?: string; url?: string }) => Promise<void>;
 };
 
+function downloadBlobFile(blob: Blob, filename: string) {
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = filename;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch {
+    window.open(objectUrl, "_blank", "noopener,noreferrer");
+  } finally {
+    window.setTimeout(() => {
+      URL.revokeObjectURL(objectUrl);
+    }, 30_000);
+  }
+}
+
 export default function NoteDetailModal(props: NoteDetailModalProps) {
   const router = useRouter();
   const params = use(props.params);
@@ -161,6 +180,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
   const [, setDeleting] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+  const [sharedUrl, setSharedUrl] = useState<string | null>(null);
   const [exportFeedback, setExportFeedback] = useState<string | null>(null);
 
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
@@ -551,15 +571,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
 
     try {
       const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.rel = "noopener";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      downloadBlobFile(blob, filename);
 
       setExportFeedback("Export téléchargé.");
     } catch (e) {
@@ -578,6 +590,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
         ? window.location.origin
         : "https://app.tachesnotes.com";
     const url = `${origin}/notes/${encodeURIComponent(note.id)}`;
+    setSharedUrl(url);
 
     try {
       const nav = typeof navigator !== "undefined" ? (navigator as NavigatorWithShare) : null;
@@ -606,6 +619,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
     setEditWorkspaceId(typeof note.workspaceId === "string" ? note.workspaceId : "");
     setEditError(null);
     setShareFeedback(null);
+    setSharedUrl(null);
     setExportFeedback(null);
 
     lastSavedSnapshotRef.current = JSON.stringify({
@@ -883,6 +897,32 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
             <div className="max-h-[90svh] md:max-h-[90vh] overflow-y-auto">
               <div className="space-y-4">
               {shareFeedback && <div className="sn-alert">{shareFeedback}</div>}
+              {sharedUrl && (
+                <div className="sn-card p-3">
+                  <div className="text-xs text-muted-foreground mb-1">Lien de partage</div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={sharedUrl}
+                      readOnly
+                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                      aria-label="Lien de partage généré"
+                    />
+                    <button
+                      type="button"
+                      className="px-3 py-2 rounded-md border border-input text-sm"
+                      onClick={() => {
+                        if (!sharedUrl) return;
+                        void navigator.clipboard.writeText(sharedUrl).then(
+                          () => setShareFeedback("Lien copié."),
+                          () => setEditError("Impossible de copier le lien."),
+                        );
+                      }}
+                    >
+                      Copier
+                    </button>
+                  </div>
+                </div>
+              )}
               {exportFeedback && <div className="sn-alert">{exportFeedback}</div>}
               {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
               {attachmentError && <div className="sn-alert sn-alert--error">{attachmentError}</div>}
