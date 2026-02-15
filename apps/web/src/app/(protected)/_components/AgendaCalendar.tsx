@@ -122,6 +122,7 @@ export default function AgendaCalendar({
 }: AgendaCalendarProps) {
   const calendarRef = useRef<FullCalendar | null>(null);
   const [viewMode, setViewMode] = useState<CalendarViewMode>("timeGridWeek");
+  const [editScope, setEditScope] = useState<"series" | "occurrence">("series");
   const [visibleRange, setVisibleRange] = useState<{ start: Date; end: Date } | null>(null);
   const [navDate, setNavDate] = useState(toLocalDateInputValue(new Date()));
   const [label, setLabel] = useState("");
@@ -243,6 +244,7 @@ export default function AgendaCalendar({
   }, [tasks, visibleRange, workspaces]);
 
   const openDraftFromSelect = (arg: DateSelectArg) => {
+    setEditScope("series");
     setDraft({
       title: "",
       startLocal: arg.allDay ? toLocalDateInputValue(arg.start) : toLocalInputValue(arg.start),
@@ -260,10 +262,12 @@ export default function AgendaCalendar({
     const end = arg.event.end;
     if (!start || !end) return;
     const recurrence = (arg.event.extendedProps.recurrence as TaskDoc["recurrence"] | null) ?? null;
+    const instanceDate = (arg.event.extendedProps.instanceDate as string | undefined) ?? undefined;
+    setEditScope(recurrence?.freq && instanceDate ? "occurrence" : "series");
 
     setDraft({
       taskId: ((arg.event.extendedProps.taskId as string) || arg.event.id) as string,
-      instanceDate: (arg.event.extendedProps.instanceDate as string | undefined) ?? undefined,
+      instanceDate,
       title: arg.event.title,
       startLocal: arg.event.allDay ? toLocalDateInputValue(start) : toLocalInputValue(start),
       endLocal: arg.event.allDay ? toLocalDateInputValue(new Date(end.getTime() - 1)) : toLocalInputValue(end),
@@ -311,6 +315,26 @@ export default function AgendaCalendar({
     setSaving(true);
     setError(null);
     try {
+      if (draft.taskId && draft.instanceDate && draft.recurrenceFreq && editScope === "occurrence") {
+        if (!onSkipOccurrence) {
+          setError("Impossible d’éditer cette occurrence pour le moment.");
+          return;
+        }
+
+        await onSkipOccurrence(draft.taskId, draft.instanceDate);
+        await onCreateEvent({
+          title: draft.title.trim(),
+          start,
+          end: allDayEnd,
+          allDay: draft.allDay,
+          workspaceId: draft.workspaceId || null,
+          priority: draft.priority || null,
+          recurrence: null,
+        });
+        setDraft(null);
+        return;
+      }
+
       if (draft.taskId) {
         await onUpdateEvent({
           taskId: draft.taskId,
@@ -346,8 +370,30 @@ export default function AgendaCalendar({
       const start = arg.event.start;
       const end = arg.event.end;
       const taskId = ((arg.event.extendedProps.taskId as string) || arg.event.id) as string;
+      const instanceDate = (arg.event.extendedProps.instanceDate as string | undefined) ?? undefined;
+      const recurrence = (arg.event.extendedProps.recurrence as TaskDoc["recurrence"] | null) ?? null;
       if (!taskId || !start || !end) {
         arg.revert();
+        return;
+      }
+
+      if (instanceDate && recurrence?.freq) {
+        if (!onSkipOccurrence) {
+          arg.revert();
+          setError("Impossible de modifier cette occurrence pour le moment.");
+          return;
+        }
+
+        await onSkipOccurrence(taskId, instanceDate);
+        await onCreateEvent({
+          title: typeof arg.event.extendedProps.title === "string" ? (arg.event.extendedProps.title as string) : "Occurrence",
+          start,
+          end,
+          allDay: arg.event.allDay,
+          workspaceId: ((arg.event.extendedProps.workspaceId as string) || null),
+          priority: ((arg.event.extendedProps.priority as Priority | "") || null),
+          recurrence: null,
+        });
         return;
       }
 
@@ -399,6 +445,7 @@ export default function AgendaCalendar({
   };
 
   const openQuickDraft = useCallback(() => {
+    setEditScope("series");
     const start = new Date();
     const end = new Date(start.getTime() + 60 * 60 * 1000);
     setDraft({
@@ -630,6 +677,25 @@ export default function AgendaCalendar({
           />
           <div className="absolute bottom-0 left-0 right-0 sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:right-auto sm:w-[min(92vw,560px)] sm:-translate-x-1/2 sm:-translate-y-1/2 rounded-t-lg sm:rounded-lg border border-border bg-card shadow-lg p-4 space-y-3">
             <div className="text-sm font-semibold">{draft.taskId ? "Modifier l’élément d’agenda" : "Nouvel élément d’agenda"}</div>
+
+            {draft.taskId && draft.instanceDate && draft.recurrenceFreq && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditScope("occurrence")}
+                  className={`h-9 rounded-md border text-sm ${editScope === "occurrence" ? "border-primary bg-accent" : "border-border bg-background"}`}
+                >
+                  Cette occurrence
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditScope("series")}
+                  className={`h-9 rounded-md border text-sm ${editScope === "series" ? "border-primary bg-accent" : "border-border bg-background"}`}
+                >
+                  Toute la série
+                </button>
+              </div>
+            )}
 
             <input
               value={draft.title}
