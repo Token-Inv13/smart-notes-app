@@ -15,6 +15,7 @@ import type {
 import type { TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq } from "@/types/firestore";
 
 type CalendarViewMode = "dayGridMonth" | "timeGridWeek" | "timeGridDay";
+type AgendaDisplayMode = "calendar" | "planning";
 type CalendarPriorityFilter = "" | Priority;
 type CalendarTimeWindowFilter = "" | "allDay" | "morning" | "afternoon" | "evening";
 type CalendarFilterStorage = {
@@ -132,6 +133,7 @@ export default function AgendaCalendar({
 }: AgendaCalendarProps) {
   const calendarRef = useRef<FullCalendar | null>(null);
   const [viewMode, setViewMode] = useState<CalendarViewMode>("timeGridWeek");
+  const [displayMode, setDisplayMode] = useState<AgendaDisplayMode>("calendar");
   const [editScope, setEditScope] = useState<"series" | "occurrence">("series");
   const [showRecurringOnly, setShowRecurringOnly] = useState(false);
   const [showConflictsOnly, setShowConflictsOnly] = useState(false);
@@ -633,6 +635,29 @@ export default function AgendaCalendar({
     onVisibleRangeChange?.({ start: arg.start, end: arg.end });
   };
 
+  const planningSections = useMemo(() => {
+    const grouped = new Map<string, EventInput[]>();
+
+    for (const event of calendarData.events) {
+      if (!(event.start instanceof Date)) continue;
+      const key = toLocalDateInputValue(event.start);
+      const existing = grouped.get(key) ?? [];
+      existing.push(event);
+      grouped.set(key, existing);
+    }
+
+    return Array.from(grouped.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([dateKey, events]) => ({
+        dateKey,
+        events: [...events].sort((a, b) => {
+          const aStart = a.start instanceof Date ? a.start.getTime() : 0;
+          const bStart = b.start instanceof Date ? b.start.getTime() : 0;
+          return aStart - bStart;
+        }),
+      }));
+  }, [calendarData.events]);
+
   return (
     <section className="space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -670,8 +695,26 @@ export default function AgendaCalendar({
           <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit">
           <button
             type="button"
+            className={`px-3 py-1.5 text-sm ${displayMode === "calendar" ? "bg-accent font-semibold" : ""}`}
+            onClick={() => setDisplayMode("calendar")}
+          >
+            Calendrier
+          </button>
+          <button
+            type="button"
+            className={`px-3 py-1.5 text-sm border-l border-border ${displayMode === "planning" ? "bg-accent font-semibold" : ""}`}
+            onClick={() => setDisplayMode("planning")}
+          >
+            Planning
+          </button>
+          </div>
+
+          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit">
+          <button
+            type="button"
             className={`px-3 py-1.5 text-sm ${viewMode === "dayGridMonth" ? "bg-accent font-semibold" : ""}`}
             onClick={() => changeView("dayGridMonth")}
+            disabled={displayMode === "planning"}
           >
             Mois
           </button>
@@ -679,6 +722,7 @@ export default function AgendaCalendar({
             type="button"
             className={`px-3 py-1.5 text-sm border-l border-border ${viewMode === "timeGridWeek" ? "bg-accent font-semibold" : ""}`}
             onClick={() => changeView("timeGridWeek")}
+            disabled={displayMode === "planning"}
           >
             Semaine
           </button>
@@ -686,6 +730,7 @@ export default function AgendaCalendar({
             type="button"
             className={`px-3 py-1.5 text-sm border-l border-border ${viewMode === "timeGridDay" ? "bg-accent font-semibold" : ""}`}
             onClick={() => changeView("timeGridDay")}
+            disabled={displayMode === "planning"}
           >
             Jour
           </button>
@@ -797,42 +842,90 @@ export default function AgendaCalendar({
         </aside>
 
         <div className="sn-card p-2">
-          <FullCalendar
-            ref={calendarRef}
-            plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-            initialView={viewMode}
-            headerToolbar={false}
-            locale="fr"
-            firstDay={1}
-            nowIndicator
-            selectable
-            selectMirror
-            editable
-            dayMaxEvents
-            allDayMaintainDuration
-            eventDisplay="block"
-            slotMinTime="06:00:00"
-            slotMaxTime="23:30:00"
-            events={calendarData.events}
-            datesSet={onDatesSet}
-            select={openDraftFromSelect}
-            dateClick={(arg) =>
-              openDraftFromSelect({
-                allDay: true,
-                end: new Date(arg.date.getFullYear(), arg.date.getMonth(), arg.date.getDate() + 1),
-                endStr: "",
-                jsEvent: arg.jsEvent,
-                start: arg.date,
-                startStr: "",
-                view: arg.view,
-              } as DateSelectArg)
-            }
-            eventClick={openDraftFromEvent}
-            eventDrop={handleMoveOrResize}
-            eventResize={handleMoveOrResize}
-            eventContent={eventContent}
-            timeZone="Europe/Paris"
-          />
+          {displayMode === "calendar" ? (
+            <FullCalendar
+              ref={calendarRef}
+              plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+              initialView={viewMode}
+              headerToolbar={false}
+              locale="fr"
+              firstDay={1}
+              nowIndicator
+              selectable
+              selectMirror
+              editable
+              dayMaxEvents
+              allDayMaintainDuration
+              eventDisplay="block"
+              slotMinTime="06:00:00"
+              slotMaxTime="23:30:00"
+              events={calendarData.events}
+              datesSet={onDatesSet}
+              select={openDraftFromSelect}
+              dateClick={(arg) =>
+                openDraftFromSelect({
+                  allDay: true,
+                  end: new Date(arg.date.getFullYear(), arg.date.getMonth(), arg.date.getDate() + 1),
+                  endStr: "",
+                  jsEvent: arg.jsEvent,
+                  start: arg.date,
+                  startStr: "",
+                  view: arg.view,
+                } as DateSelectArg)
+              }
+              eventClick={openDraftFromEvent}
+              eventDrop={handleMoveOrResize}
+              eventResize={handleMoveOrResize}
+              eventContent={eventContent}
+              timeZone="Europe/Paris"
+            />
+          ) : (
+            <div className="space-y-4 p-2">
+              {planningSections.length === 0 ? (
+                <div className="text-sm text-muted-foreground">Aucun élément à afficher dans le planning.</div>
+              ) : (
+                planningSections.map((section) => (
+                  <div key={section.dateKey} className="space-y-2">
+                    <div className="text-sm font-semibold">{section.dateKey}</div>
+                    <ul className="space-y-2">
+                      {section.events.map((event) => {
+                        const start = event.start instanceof Date ? event.start : null;
+                        const end = event.end instanceof Date ? event.end : null;
+                        const workspaceName = typeof event.extendedProps?.workspaceName === "string" ? event.extendedProps.workspaceName : "Sans dossier";
+                        const taskId = typeof event.extendedProps?.taskId === "string" ? event.extendedProps.taskId : "";
+                        const conflict = event.extendedProps?.conflict === true;
+
+                        const timeLabel =
+                          start && end
+                            ? `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")} - ${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}`
+                            : "Heure non définie";
+
+                        return (
+                          <li key={String(event.id)} className="relative pl-4">
+                            <span className="absolute left-0 top-2 h-2 w-2 rounded-full bg-primary" />
+                            <button
+                              type="button"
+                              className="w-full text-left rounded-md border border-border bg-background px-3 py-2 hover:bg-accent"
+                              onClick={() => {
+                                if (taskId) onOpenTask(taskId);
+                              }}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="text-sm font-medium truncate">{event.title}</div>
+                                {conflict && <span className="text-[10px] text-red-600">Conflit</span>}
+                              </div>
+                              <div className="text-xs text-muted-foreground">{timeLabel}</div>
+                              <div className="text-xs text-muted-foreground">{workspaceName}</div>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
       </div>
 
