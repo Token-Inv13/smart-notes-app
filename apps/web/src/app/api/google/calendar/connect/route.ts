@@ -5,6 +5,14 @@ import { getServerAppOrigin } from "@/lib/serverOrigin";
 
 const OAUTH_STATE_COOKIE = "gcal_oauth_state";
 const OAUTH_VERIFIER_COOKIE = "gcal_oauth_verifier";
+const OAUTH_RETURN_TO_COOKIE = "gcal_oauth_return_to";
+
+function sanitizeReturnTo(value: string | null): string {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) {
+    return "/settings";
+  }
+  return value;
+}
 
 function base64url(input: Buffer): string {
   return input
@@ -38,6 +46,8 @@ export async function GET(request: NextRequest) {
     const verifier = base64url(randomBytes(32));
     const challenge = base64url(createHash("sha256").update(verifier).digest());
 
+    const returnTo = sanitizeReturnTo(request.nextUrl.searchParams.get("returnTo"));
+
     const params = new URLSearchParams({
       client_id: clientId,
       redirect_uri: redirectUri,
@@ -65,6 +75,15 @@ export async function GET(request: NextRequest) {
     response.cookies.set({
       name: OAUTH_VERIFIER_COOKIE,
       value: verifier,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 10,
+    });
+    response.cookies.set({
+      name: OAUTH_RETURN_TO_COOKIE,
+      value: returnTo,
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",

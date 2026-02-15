@@ -154,6 +154,115 @@ export default function AgendaCalendar({
   const [selectedPlanningIds, setSelectedPlanningIds] = useState<string[]>([]);
   const [duplicatingPlanning, setDuplicatingPlanning] = useState(false);
   const [showPlanningAvailability, setShowPlanningAvailability] = useState(true);
+  const [calendarConnected, setCalendarConnected] = useState(false);
+  const [calendarPrimaryId, setCalendarPrimaryId] = useState<string | null>(null);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarBusy, setCalendarBusy] = useState(false);
+  const [calendarMessage, setCalendarMessage] = useState<string | null>(null);
+
+  const loadGoogleCalendarStatus = useCallback(async () => {
+    setCalendarLoading(true);
+    try {
+      const res = await fetch("/api/google/calendar/status", { method: "GET", cache: "no-store" });
+      if (!res.ok) {
+        setCalendarConnected(false);
+        setCalendarPrimaryId(null);
+        return;
+      }
+
+      const data = (await res.json()) as { connected?: unknown; primaryCalendarId?: unknown };
+      setCalendarConnected(data.connected === true);
+      setCalendarPrimaryId(typeof data.primaryCalendarId === "string" ? data.primaryCalendarId : null);
+    } catch {
+      setCalendarConnected(false);
+      setCalendarPrimaryId(null);
+    } finally {
+      setCalendarLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadGoogleCalendarStatus();
+  }, [loadGoogleCalendarStatus]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const calendarState = params.get("calendar");
+    if (!calendarState) return;
+
+    if (calendarState === "connected") {
+      setCalendarMessage("Google Calendar connecté.");
+      void loadGoogleCalendarStatus();
+    } else if (calendarState === "auth_required") {
+      setCalendarMessage("Connexion requise pour Google Calendar.");
+    } else if (calendarState === "oauth_state_invalid") {
+      setCalendarMessage("Échec OAuth Google Calendar (state invalide).");
+    } else if (calendarState === "missing_env") {
+      setCalendarMessage("Configuration Google Calendar manquante côté serveur.");
+    } else if (calendarState === "token_exchange_failed") {
+      setCalendarMessage("Impossible d’échanger le code OAuth Google.");
+    } else if (calendarState === "token_missing") {
+      setCalendarMessage("Token Google Calendar manquant.");
+    } else if (calendarState === "error") {
+      setCalendarMessage("Erreur de connexion Google Calendar.");
+    }
+
+    params.delete("calendar");
+    const nextQuery = params.toString();
+    const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`;
+    window.history.replaceState({}, "", nextUrl);
+  }, [loadGoogleCalendarStatus]);
+
+  const handleConnectGoogleCalendar = async () => {
+    setCalendarBusy(true);
+    setCalendarMessage(null);
+    try {
+      const returnTo =
+        typeof window !== "undefined"
+          ? `${window.location.pathname}${window.location.search}`
+          : "/tasks";
+      const encodedReturnTo = encodeURIComponent(returnTo.startsWith("/") ? returnTo : "/tasks");
+      const res = await fetch(`/api/google/calendar/connect?returnTo=${encodedReturnTo}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+      const data = (await res.json()) as { url?: unknown; error?: unknown };
+      if (!res.ok || typeof data.url !== "string") {
+        setCalendarMessage(typeof data.error === "string" ? data.error : "Impossible de lancer la connexion Google Calendar.");
+        return;
+      }
+
+      if (typeof window !== "undefined") {
+        window.location.href = data.url;
+      }
+    } catch {
+      setCalendarMessage("Impossible de lancer la connexion Google Calendar.");
+    } finally {
+      setCalendarBusy(false);
+    }
+  };
+
+  const handleDisconnectGoogleCalendar = async () => {
+    setCalendarBusy(true);
+    setCalendarMessage(null);
+    try {
+      const res = await fetch("/api/google/calendar/disconnect", { method: "POST" });
+      const data = (await res.json()) as { ok?: unknown; error?: unknown };
+      if (!res.ok || data.ok !== true) {
+        setCalendarMessage(typeof data.error === "string" ? data.error : "Impossible de déconnecter Google Calendar.");
+        return;
+      }
+
+      setCalendarConnected(false);
+      setCalendarPrimaryId(null);
+      setCalendarMessage("Google Calendar déconnecté.");
+    } catch {
+      setCalendarMessage("Impossible de déconnecter Google Calendar.");
+    } finally {
+      setCalendarBusy(false);
+    }
+  };
 
   const calendarData = useMemo(() => {
     const rangeStart = visibleRange?.start ?? new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
@@ -963,6 +1072,43 @@ export default function AgendaCalendar({
         <span className="sn-badge">Total: {calendarData.stats.total}</span>
         <span className="sn-badge">Récurrents: {calendarData.stats.recurring}</span>
         <span className="sn-badge">Conflits: {calendarData.stats.conflicts}</span>
+      </div>
+
+      <div className="rounded-md border border-border bg-background px-3 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold">Google Calendar</div>
+            <div className="text-xs text-muted-foreground">
+              {calendarLoading ? "Chargement…" : calendarConnected ? "Connecté" : "Non connecté"}
+            </div>
+          </div>
+
+          {!calendarConnected ? (
+            <button
+              type="button"
+              onClick={() => void handleConnectGoogleCalendar()}
+              disabled={calendarBusy || calendarLoading}
+              className="h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50"
+            >
+              {calendarBusy ? "Connexion…" : "Connecter"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void handleDisconnectGoogleCalendar()}
+              disabled={calendarBusy || calendarLoading}
+              className="h-8 px-3 rounded-md border border-input text-xs disabled:opacity-50"
+            >
+              {calendarBusy ? "Déconnexion…" : "Déconnecter"}
+            </button>
+          )}
+        </div>
+
+        {calendarPrimaryId ? (
+          <div className="mt-1 text-xs text-muted-foreground break-all">Calendrier principal: {calendarPrimaryId}</div>
+        ) : null}
+
+        {calendarMessage ? <div className="mt-1 text-xs">{calendarMessage}</div> : null}
       </div>
 
       {error && <div className="sn-alert sn-alert--error">{error}</div>}

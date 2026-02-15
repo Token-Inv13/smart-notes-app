@@ -6,6 +6,14 @@ import { getServerAppOrigin } from "@/lib/serverOrigin";
 
 const OAUTH_STATE_COOKIE = "gcal_oauth_state";
 const OAUTH_VERIFIER_COOKIE = "gcal_oauth_verifier";
+const OAUTH_RETURN_TO_COOKIE = "gcal_oauth_return_to";
+
+function sanitizeReturnTo(value: string | null): string {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) {
+    return "/settings";
+  }
+  return value;
+}
 
 type TokenResponse = {
   access_token?: string;
@@ -25,7 +33,8 @@ type CalendarListResponse = {
 };
 
 export async function GET(request: NextRequest) {
-  const redirectBase = new URL("/settings", request.nextUrl.origin);
+  const returnTo = sanitizeReturnTo(request.cookies.get(OAUTH_RETURN_TO_COOKIE)?.value ?? null);
+  const redirectBase = new URL(returnTo, request.nextUrl.origin);
 
   try {
     const sessionCookie = request.cookies.get("session")?.value;
@@ -50,6 +59,7 @@ export async function GET(request: NextRequest) {
       const res = NextResponse.redirect(redirectBase);
       res.cookies.set(OAUTH_STATE_COOKIE, "", { path: "/", maxAge: 0 });
       res.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
+      res.cookies.set(OAUTH_RETURN_TO_COOKIE, "", { path: "/", maxAge: 0 });
       return res;
     }
 
@@ -63,6 +73,7 @@ export async function GET(request: NextRequest) {
       const res = NextResponse.redirect(redirectBase);
       res.cookies.set(OAUTH_STATE_COOKIE, "", { path: "/", maxAge: 0 });
       res.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
+      res.cookies.set(OAUTH_RETURN_TO_COOKIE, "", { path: "/", maxAge: 0 });
       return res;
     }
 
@@ -90,6 +101,7 @@ export async function GET(request: NextRequest) {
       const res = NextResponse.redirect(redirectBase);
       res.cookies.set(OAUTH_STATE_COOKIE, "", { path: "/", maxAge: 0 });
       res.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
+      res.cookies.set(OAUTH_RETURN_TO_COOKIE, "", { path: "/", maxAge: 0 });
       return res;
     }
 
@@ -103,6 +115,7 @@ export async function GET(request: NextRequest) {
       const res = NextResponse.redirect(redirectBase);
       res.cookies.set(OAUTH_STATE_COOKIE, "", { path: "/", maxAge: 0 });
       res.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
+      res.cookies.set(OAUTH_RETURN_TO_COOKIE, "", { path: "/", maxAge: 0 });
       return res;
     }
 
@@ -163,12 +176,14 @@ export async function GET(request: NextRequest) {
     const response = NextResponse.redirect(redirectBase);
     response.cookies.set(OAUTH_STATE_COOKIE, "", { path: "/", maxAge: 0 });
     response.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
+    response.cookies.set(OAUTH_RETURN_TO_COOKIE, "", { path: "/", maxAge: 0 });
     return response;
   } catch {
     redirectBase.searchParams.set("calendar", "error");
     const response = NextResponse.redirect(redirectBase);
     response.cookies.set(OAUTH_STATE_COOKIE, "", { path: "/", maxAge: 0 });
     response.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
+    response.cookies.set(OAUTH_RETURN_TO_COOKIE, "", { path: "/", maxAge: 0 });
     return response;
   }
 }
