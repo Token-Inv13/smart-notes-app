@@ -16,15 +16,15 @@ export default function SmartActionDock({ mobileHidden, mode = "floating", hidde
   const visibilityClass = mobileHidden ? "hidden md:flex" : "flex";
   const mobileLayoutClass =
     mode === "agenda-sticky"
-      ? "left-1/2 w-[min(calc(100vw-1rem),560px)] -translate-x-1/2 justify-center rounded-2xl px-2"
-      : "left-1/2 -translate-x-1/2 rounded-full";
+      ? "max-md:left-1/2 max-md:w-[min(calc(100vw-1rem),560px)] max-md:-translate-x-1/2 max-md:justify-center max-md:rounded-2xl max-md:px-2"
+      : "max-md:left-1/2 max-md:-translate-x-1/2 max-md:rounded-full";
   const hiddenClass = hiddenOnScroll
     ? "translate-y-[130%] opacity-0 pointer-events-none md:translate-y-0 md:opacity-100 md:pointer-events-auto"
     : "translate-y-0 opacity-100";
 
   return (
     <div
-      className={`${visibilityClass} fixed z-[55] ${mobileLayoutClass} ${hiddenClass} bottom-[calc(0.75rem+env(safe-area-inset-bottom))] md:left-auto md:right-6 md:top-32 md:bottom-auto md:translate-x-0 items-center border border-white/15 bg-slate-950/65 backdrop-blur-md shadow-[0_12px_28px_rgba(0,0,0,0.35)] overflow-hidden transition-all duration-220 ease-out`}
+      className={`${visibilityClass} fixed z-[55] ${mobileLayoutClass} ${hiddenClass} bottom-[calc(0.75rem+env(safe-area-inset-bottom))] md:left-auto md:right-6 md:bottom-6 md:translate-x-0 md:rounded-full md:px-0 items-center border border-white/15 bg-slate-950/65 backdrop-blur-md shadow-[0_12px_28px_rgba(0,0,0,0.35)] overflow-hidden transition-all duration-220 ease-out`}
       role="group"
       aria-label="Actions rapides"
     >
