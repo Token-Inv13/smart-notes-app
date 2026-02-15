@@ -25,6 +25,14 @@ type CalendarFilterStorage = {
   timeWindowFilter: CalendarTimeWindowFilter;
 };
 
+type GoogleCalendarEvent = {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+};
+
 const CALENDAR_FILTERS_STORAGE_KEY = "agenda-calendar-filters-v1";
 
 interface CalendarDraft {
@@ -159,6 +167,7 @@ export default function AgendaCalendar({
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarBusy, setCalendarBusy] = useState(false);
   const [calendarMessage, setCalendarMessage] = useState<string | null>(null);
+  const [googleCalendarEvents, setGoogleCalendarEvents] = useState<GoogleCalendarEvent[]>([]);
 
   const loadGoogleCalendarStatus = useCallback(async () => {
     setCalendarLoading(true);
@@ -242,6 +251,38 @@ export default function AgendaCalendar({
       setCalendarBusy(false);
     }
   };
+
+  const loadGoogleCalendarEvents = useCallback(async () => {
+    if (!calendarConnected || !visibleRange) {
+      setGoogleCalendarEvents([]);
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams({
+        timeMin: visibleRange.start.toISOString(),
+        timeMax: visibleRange.end.toISOString(),
+      });
+      const res = await fetch(`/api/google/calendar/events?${params.toString()}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      if (!res.ok) {
+        setGoogleCalendarEvents([]);
+        return;
+      }
+
+      const data = (await res.json()) as { events?: GoogleCalendarEvent[] };
+      setGoogleCalendarEvents(Array.isArray(data.events) ? data.events : []);
+    } catch {
+      setGoogleCalendarEvents([]);
+    }
+  }, [calendarConnected, visibleRange]);
+
+  useEffect(() => {
+    void loadGoogleCalendarEvents();
+  }, [loadGoogleCalendarEvents]);
 
   const handleDisconnectGoogleCalendar = async () => {
     setCalendarBusy(true);
@@ -474,6 +515,10 @@ export default function AgendaCalendar({
   };
 
   const openDraftFromEvent = (arg: EventClickArg) => {
+    if (arg.event.extendedProps.source === "google-calendar") {
+      return;
+    }
+
     const start = arg.event.start;
     const end = arg.event.end;
     if (!start || !end) return;
@@ -751,10 +796,69 @@ export default function AgendaCalendar({
     onVisibleRangeChange?.({ start: arg.start, end: arg.end });
   };
 
+  const googleCalendarEventInputs = useMemo(() => {
+    return googleCalendarEvents
+      .map((event) => {
+        const start = new Date(event.start);
+        const end = new Date(event.end);
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+
+        return {
+          id: `gcal__${event.id}`,
+          title: event.title || "Événement Google",
+          start,
+          end,
+          allDay: event.allDay,
+          backgroundColor: "#2563eb",
+          borderColor: "#2563eb",
+          editable: false,
+          extendedProps: {
+            workspaceName: "Google Calendar",
+            source: "google-calendar",
+            conflict: false,
+          },
+        } as EventInput;
+      })
+      .filter((event): event is EventInput => Boolean(event));
+  }, [googleCalendarEvents]);
+
+  const agendaEvents = useMemo(() => {
+    const base = [...calendarData.events, ...googleCalendarEventInputs].sort((a, b) => {
+      const aStart = a.start instanceof Date ? a.start.getTime() : 0;
+      const bStart = b.start instanceof Date ? b.start.getTime() : 0;
+      return aStart - bStart;
+    });
+
+    const conflictIds = new Set<string>();
+    for (let i = 0; i < base.length; i += 1) {
+      const left = base[i];
+      if (!(left?.start instanceof Date) || !(left?.end instanceof Date)) continue;
+      for (let j = i + 1; j < base.length; j += 1) {
+        const right = base[j];
+        if (!(right?.start instanceof Date) || !(right?.end instanceof Date)) continue;
+        if (right.start.getTime() >= left.end.getTime()) break;
+        conflictIds.add(String(left.id));
+        conflictIds.add(String(right.id));
+      }
+    }
+
+    return base.map((event) => {
+      const existingConflict = event.extendedProps?.conflict === true;
+      const mergedConflict = existingConflict || conflictIds.has(String(event.id));
+      return {
+        ...event,
+        extendedProps: {
+          ...(event.extendedProps ?? {}),
+          conflict: mergedConflict,
+        },
+      } as EventInput;
+    });
+  }, [calendarData.events, googleCalendarEventInputs]);
+
   const planningSections = useMemo(() => {
     const grouped = new Map<string, EventInput[]>();
 
-    for (const event of calendarData.events) {
+    for (const event of agendaEvents) {
       if (!(event.start instanceof Date)) continue;
       const key = toLocalDateInputValue(event.start);
       const existing = grouped.get(key) ?? [];
@@ -772,11 +876,11 @@ export default function AgendaCalendar({
           return aStart - bStart;
         }),
       }));
-  }, [calendarData.events]);
+  }, [agendaEvents]);
 
   const planningAvailabilityByDate = useMemo(() => {
     const dateMap = new Map<string, EventInput[]>();
-    for (const event of calendarData.events) {
+    for (const event of agendaEvents) {
       if (!(event.start instanceof Date)) continue;
       const key = toLocalDateInputValue(event.start);
       const existing = dateMap.get(key) ?? [];
@@ -855,7 +959,7 @@ export default function AgendaCalendar({
     }
 
     return output;
-  }, [calendarData.events]);
+  }, [agendaEvents]);
 
   const planningEventMap = useMemo(() => {
     const map = new Map<string, EventInput>();
@@ -1160,7 +1264,7 @@ export default function AgendaCalendar({
               eventDisplay="block"
               slotMinTime="06:00:00"
               slotMaxTime="23:30:00"
-              events={calendarData.events}
+              events={agendaEvents}
               datesSet={onDatesSet}
               select={openDraftFromSelect}
               dateClick={(arg) =>
@@ -1222,6 +1326,7 @@ export default function AgendaCalendar({
                         const workspaceName = typeof event.extendedProps?.workspaceName === "string" ? event.extendedProps.workspaceName : "Sans dossier";
                         const taskId = typeof event.extendedProps?.taskId === "string" ? event.extendedProps.taskId : "";
                         const conflict = event.extendedProps?.conflict === true;
+                        const isExternal = !taskId;
 
                         const timeLabel =
                           start && end
@@ -1232,13 +1337,19 @@ export default function AgendaCalendar({
                           <li key={String(event.id)} className="relative pl-4">
                             <span className="absolute left-0 top-2 h-2 w-2 rounded-full bg-primary" />
                             <div className="flex items-start gap-2 rounded-md border border-border bg-background px-2 py-2">
-                              <input
-                                type="checkbox"
-                                className="mt-1"
-                                checked={selectedPlanningIds.includes(String(event.id))}
-                                onChange={() => togglePlanningSelection(String(event.id))}
-                                aria-label={`Sélectionner ${event.title}`}
-                              />
+                              {isExternal ? (
+                                <span className="mt-1 inline-flex h-4 min-w-4 items-center justify-center rounded border border-border px-1 text-[10px] text-muted-foreground">
+                                  G
+                                </span>
+                              ) : (
+                                <input
+                                  type="checkbox"
+                                  className="mt-1"
+                                  checked={selectedPlanningIds.includes(String(event.id))}
+                                  onChange={() => togglePlanningSelection(String(event.id))}
+                                  aria-label={`Sélectionner ${event.title}`}
+                                />
+                              )}
                               <button
                                 type="button"
                                 className="flex-1 text-left hover:bg-accent rounded-md px-1 py-1"
@@ -1248,7 +1359,10 @@ export default function AgendaCalendar({
                               >
                                 <div className="flex items-center justify-between gap-2">
                                   <div className="text-sm font-medium truncate">{event.title}</div>
-                                  {conflict && <span className="text-[10px] text-red-600">Conflit</span>}
+                                  <div className="inline-flex items-center gap-1">
+                                    {isExternal && <span className="text-[10px] text-blue-600">Google</span>}
+                                    {conflict && <span className="text-[10px] text-red-600">Conflit</span>}
+                                  </div>
                                 </div>
                                 <div className="text-xs text-muted-foreground">{timeLabel}</div>
                                 <div className="text-xs text-muted-foreground">{workspaceName}</div>
