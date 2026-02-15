@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { addDoc, collection, doc, Timestamp, updateDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserNotes } from "@/hooks/useUserNotes";
@@ -20,14 +20,16 @@ import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
+import AgendaCalendar from "../_components/AgendaCalendar";
 import { registerFcmToken } from "@/lib/fcm";
-import type { TaskDoc } from "@/types/firestore";
+import type { Priority, TaskDoc } from "@/types/firestore";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
 
 type TaskStatus = "todo" | "doing" | "done";
 type TaskStatusFilter = "all" | TaskStatus;
 type WorkspaceFilter = "all" | string;
+type TaskViewMode = "list" | "grid" | "kanban" | "calendar";
 
 type TaskPriorityFilter = "all" | NonNullable<TaskDoc["priority"]>;
 type DueFilter = "all" | "today" | "overdue";
@@ -36,7 +38,7 @@ type TaskSortBy = "dueDate" | "updatedAt" | "createdAt";
 export default function TasksPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const { data: tasks, loading, error } = useUserTasks();
+  const { data: allTasks, loading, error } = useUserTasks();
   const searchParams = useSearchParams();
   const highlightedTaskId = searchParams.get("taskId");
   const workspaceIdParam = searchParams.get("workspaceId");
@@ -58,6 +60,62 @@ export default function TasksPage() {
     } catch {
       return "";
     }
+  };
+
+  const handleCalendarCreate = async (input: {
+    title: string;
+    start: Date;
+    end: Date;
+    allDay: boolean;
+    workspaceId?: string | null;
+    priority?: Priority | null;
+  }) => {
+    const user = auth.currentUser;
+    if (!user) {
+      setEditError("Connecte-toi pour créer un élément d’agenda.");
+      return;
+    }
+
+    await addDoc(collection(db, "tasks"), {
+      userId: user.uid,
+      title: input.title,
+      description: "",
+      status: "todo",
+      startDate: Timestamp.fromDate(input.start),
+      dueDate: Timestamp.fromDate(input.end),
+      workspaceId: input.workspaceId ?? null,
+      priority: input.priority ?? null,
+      favorite: false,
+      archived: false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  };
+
+  const handleCalendarUpdate = async (input: {
+    taskId: string;
+    title?: string;
+    start: Date;
+    end: Date;
+    allDay: boolean;
+    workspaceId?: string | null;
+    priority?: Priority | null;
+  }) => {
+    const user = auth.currentUser;
+    const current = tasks.find((t) => t.id === input.taskId);
+    if (!user || !current || current.userId !== user.uid) {
+      setEditError("Impossible de modifier cet élément d’agenda.");
+      return;
+    }
+
+    await updateDoc(doc(db, "tasks", input.taskId), {
+      title: input.title ?? current.title,
+      startDate: Timestamp.fromDate(input.start),
+      dueDate: Timestamp.fromDate(input.end),
+      workspaceId: input.workspaceId ?? current.workspaceId ?? null,
+      priority: input.priority ?? current.priority ?? null,
+      updatedAt: serverTimestamp(),
+    });
   };
 
   const formatStartDate = (ts: TaskDoc["startDate"] | null | undefined) => {
@@ -96,7 +154,8 @@ export default function TasksPage() {
   const [workspaceFilter, setWorkspaceFilter] = useState<WorkspaceFilter>("all");
   const [archiveView, setArchiveView] = useState<"active" | "archived">("active");
 
-  const [viewMode, setViewMode] = useState<"list" | "grid" | "kanban">("list");
+  const [viewMode, setViewMode] = useState<TaskViewMode>("list");
+  const [calendarRange, setCalendarRange] = useState<{ start: Date; end: Date } | null>(null);
   const [flashHighlightTaskId, setFlashHighlightTaskId] = useState<string | null>(null);
 
   const [editError, setEditError] = useState<string | null>(null);
@@ -107,6 +166,24 @@ export default function TasksPage() {
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null);
   const [optimisticStatusById, setOptimisticStatusById] = useState<Record<string, TaskStatus>>({});
+
+  const calendarRangeFromTs = useMemo(
+    () => (calendarRange ? Timestamp.fromDate(calendarRange.start) : undefined),
+    [calendarRange],
+  );
+  const calendarRangeToTs = useMemo(
+    () => (calendarRange ? Timestamp.fromDate(calendarRange.end) : undefined),
+    [calendarRange],
+  );
+
+  const { data: calendarWindowTasks } = useUserTasks({
+    enabled: viewMode === "calendar",
+    workspaceId: workspaceFilter !== "all" ? workspaceFilter : undefined,
+    dueDateFrom: calendarRangeFromTs,
+    dueDateTo: calendarRangeToTs,
+  });
+
+  const tasks = viewMode === "calendar" ? calendarWindowTasks : allTasks;
 
   const suppressNextKanbanClickRef = useRef(false);
 
@@ -180,7 +257,7 @@ export default function TasksPage() {
 
   useEffect(() => {
     if (!highlightedTaskId) return;
-    const target = tasks.find((t) => t.id === highlightedTaskId);
+    const target = allTasks.find((t) => t.id === highlightedTaskId);
     if (!target) return;
 
     setArchiveView(target.archived === true ? "archived" : "active");
@@ -195,16 +272,25 @@ export default function TasksPage() {
     }, 2600);
 
     return () => window.clearTimeout(timer);
-  }, [highlightedTaskId, tasks]);
+  }, [highlightedTaskId, allTasks]);
 
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem("tasksViewMode");
-      if (raw === "list" || raw === "grid" || raw === "kanban") {
-        setViewMode(raw);
+      if (raw === "list" || raw === "grid" || raw === "kanban" || raw === "calendar") {
+        setViewMode(raw as TaskViewMode);
       }
     } catch {
       // ignore
+    }
+  }, []);
+
+  const applyViewMode = useCallback((next: TaskViewMode) => {
+    setViewMode(next);
+    try {
+      window.localStorage.setItem("tasksViewMode", next);
+    } catch {
+      // ignore localStorage errors
     }
   }, []);
 
@@ -379,20 +465,20 @@ export default function TasksPage() {
   );
 
   const activeArchiveCount = useMemo(() => {
-    let result = tasks.filter((t) => t.archived !== true);
+    let result = allTasks.filter((t) => t.archived !== true);
     if (workspaceFilter !== "all") {
       result = result.filter((task) => task.workspaceId === workspaceFilter);
     }
     return result.length;
-  }, [tasks, workspaceFilter]);
+  }, [allTasks, workspaceFilter]);
 
   const archivedArchiveCount = useMemo(() => {
-    let result = tasks.filter((t) => t.archived === true);
+    let result = allTasks.filter((t) => t.archived === true);
     if (workspaceFilter !== "all") {
       result = result.filter((task) => task.workspaceId === workspaceFilter);
     }
     return result.length;
-  }, [tasks, workspaceFilter]);
+  }, [allTasks, workspaceFilter]);
 
   const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
 
@@ -501,7 +587,7 @@ export default function TasksPage() {
       return;
     }
 
-    const task = tasks.find((t) => t.id === taskId);
+    const task = allTasks.find((t) => t.id === taskId);
     if (!task || task.userId !== user.uid) {
       setEditError("Impossible de modifier cet élément d’agenda.");
       return;
@@ -683,11 +769,43 @@ export default function TasksPage() {
               Archivées ({archivedArchiveCount})
             </button>
           </div>
+
+          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap w-fit">
+            <button
+              type="button"
+              onClick={() => applyViewMode("list")}
+              className={`px-3 py-1 text-sm ${viewMode === "list" ? "bg-accent" : ""}`}
+            >
+              Liste
+            </button>
+            <button
+              type="button"
+              onClick={() => applyViewMode("grid")}
+              className={`px-3 py-1 text-sm border-l border-border ${viewMode === "grid" ? "bg-accent" : ""}`}
+            >
+              Grille
+            </button>
+            <button
+              type="button"
+              onClick={() => applyViewMode("kanban")}
+              className={`px-3 py-1 text-sm border-l border-border ${viewMode === "kanban" ? "bg-accent" : ""}`}
+            >
+              Kanban
+            </button>
+            <button
+              type="button"
+              onClick={() => applyViewMode("calendar")}
+              className={`px-3 py-1 text-sm border-l border-border ${viewMode === "calendar" ? "bg-accent" : ""}`}
+            >
+              Calendrier
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
           <div className="relative flex-1 min-w-0">
             <input
+              id="tasks-search-input"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Rechercher (titre, contenu, dossier)…"
@@ -1000,6 +1118,24 @@ export default function TasksPage() {
             );
           })}
         </ul>
+      )}
+
+      {!loading && !error && archiveView === "active" && viewMode === "calendar" && (
+        <AgendaCalendar
+          tasks={mainTasks}
+          workspaces={workspaces}
+          onCreateEvent={handleCalendarCreate}
+          onUpdateEvent={handleCalendarUpdate}
+          onVisibleRangeChange={(range) => {
+            const bufferedStart = new Date(range.start.getTime() - 7 * 24 * 60 * 60 * 1000);
+            const bufferedEnd = new Date(range.end.getTime() + 7 * 24 * 60 * 60 * 1000);
+            setCalendarRange({ start: bufferedStart, end: bufferedEnd });
+          }}
+          onOpenTask={(taskId) => {
+            const qs = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
+            router.push(`/tasks/${taskId}${qs}`);
+          }}
+        />
       )}
 
       {!loading && !error && archiveView === "active" && viewMode === "list" && mainTasks.length > 0 && (
@@ -1318,7 +1454,7 @@ export default function TasksPage() {
         </section>
       )}
 
-      {!loading && !error && archiveView === "active" && viewMode !== "kanban" && statusFilter === "all" && completedTasks.length > 0 && (
+      {!loading && !error && archiveView === "active" && viewMode !== "kanban" && viewMode !== "calendar" && statusFilter === "all" && completedTasks.length > 0 && (
         <section>
           <h2 className="text-lg font-semibold mt-6 mb-2">Terminées</h2>
           <ul className="space-y-2">

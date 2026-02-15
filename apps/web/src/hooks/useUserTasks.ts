@@ -6,6 +6,7 @@ import {
   query,
   where,
   orderBy,
+  Timestamp,
   limit as fsLimit,
   type Query,
   type CollectionReference,
@@ -17,10 +18,13 @@ import { useCollection } from '@/hooks/useCollection';
 import type { TaskDoc } from '@/types/firestore';
 
 interface UseUserTasksParams {
+  enabled?: boolean;
   workspaceId?: string;
   status?: 'todo' | 'doing' | 'done';
   favoriteOnly?: boolean;
   limit?: number;
+  dueDateFrom?: Timestamp;
+  dueDateTo?: Timestamp;
 }
 
 export function useUserTasks(params?: UseUserTasksParams) {
@@ -28,6 +32,7 @@ export function useUserTasks(params?: UseUserTasksParams) {
   const userUid = user?.uid;
 
   const tasksQuery: Query<TaskDoc> | null = useMemo(() => {
+    if (params?.enabled === false) return null;
     if (!userUid) return null;
 
     const baseRef = collection(db, 'tasks') as CollectionReference<TaskDoc>;
@@ -41,6 +46,14 @@ export function useUserTasks(params?: UseUserTasksParams) {
       constraints.push(where('favorite', '==', true));
     }
 
+    if (params?.dueDateFrom) {
+      constraints.push(where('dueDate', '>=', params.dueDateFrom));
+    }
+
+    if (params?.dueDateTo) {
+      constraints.push(where('dueDate', '<=', params.dueDateTo));
+    }
+
     // We order by dueDate only (index exists). Fallback by updatedAt will be handled client-side.
     constraints.push(orderBy('dueDate', 'asc'));
 
@@ -49,7 +62,15 @@ export function useUserTasks(params?: UseUserTasksParams) {
     }
 
     return query(baseRef, ...constraints) as Query<TaskDoc>;
-  }, [userUid, params?.workspaceId, params?.favoriteOnly, params?.limit]);
+  }, [
+    userUid,
+    params?.enabled,
+    params?.workspaceId,
+    params?.favoriteOnly,
+    params?.limit,
+    params?.dueDateFrom,
+    params?.dueDateTo,
+  ]);
 
   return useCollection<TaskDoc>(tasksQuery);
 }
