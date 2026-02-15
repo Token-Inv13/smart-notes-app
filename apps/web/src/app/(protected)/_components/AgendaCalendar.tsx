@@ -147,6 +147,8 @@ export default function AgendaCalendar({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<CalendarDraft | null>(null);
+  const [selectedPlanningIds, setSelectedPlanningIds] = useState<string[]>([]);
+  const [duplicatingPlanning, setDuplicatingPlanning] = useState(false);
 
   const calendarData = useMemo(() => {
     const rangeStart = visibleRange?.start ?? new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
@@ -658,6 +660,71 @@ export default function AgendaCalendar({
       }));
   }, [calendarData.events]);
 
+  const planningEventMap = useMemo(() => {
+    const map = new Map<string, EventInput>();
+    for (const event of calendarData.events) {
+      map.set(String(event.id), event);
+    }
+    return map;
+  }, [calendarData.events]);
+
+  useEffect(() => {
+    if (displayMode === "calendar" && selectedPlanningIds.length > 0) {
+      setSelectedPlanningIds([]);
+    }
+  }, [displayMode, selectedPlanningIds.length]);
+
+  const togglePlanningSelection = (eventId: string) => {
+    setSelectedPlanningIds((prev) =>
+      prev.includes(eventId) ? prev.filter((id) => id !== eventId) : [...prev, eventId],
+    );
+  };
+
+  const duplicatePlanningSelection = async () => {
+    if (selectedPlanningIds.length === 0) return;
+
+    setDuplicatingPlanning(true);
+    setError(null);
+    try {
+      for (const id of selectedPlanningIds) {
+        const source = planningEventMap.get(id);
+        if (!source) continue;
+        const start = source.start instanceof Date ? source.start : null;
+        const end = source.end instanceof Date ? source.end : null;
+        if (!start || !end) continue;
+
+        const nextStart = new Date(start);
+        nextStart.setDate(nextStart.getDate() + 1);
+        const nextEnd = new Date(end);
+        nextEnd.setDate(nextEnd.getDate() + 1);
+
+        await onCreateEvent({
+          title: source.title ?? "Élément agenda",
+          start: nextStart,
+          end: nextEnd,
+          allDay: source.allDay === true,
+          workspaceId:
+            typeof source.extendedProps?.workspaceId === "string" && source.extendedProps.workspaceId
+              ? source.extendedProps.workspaceId
+              : null,
+          priority:
+            source.extendedProps?.priority === "low" ||
+            source.extendedProps?.priority === "medium" ||
+            source.extendedProps?.priority === "high"
+              ? (source.extendedProps.priority as Priority)
+              : null,
+          recurrence: null,
+        });
+      }
+
+      setSelectedPlanningIds([]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Impossible de dupliquer la sélection.");
+    } finally {
+      setDuplicatingPlanning(false);
+    }
+  };
+
   return (
     <section className="space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -881,6 +948,26 @@ export default function AgendaCalendar({
             />
           ) : (
             <div className="space-y-4 p-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-muted-foreground">Sélection: {selectedPlanningIds.length}</span>
+                <button
+                  type="button"
+                  className="h-8 px-3 rounded-md border border-border bg-background text-xs"
+                  onClick={duplicatePlanningSelection}
+                  disabled={selectedPlanningIds.length === 0 || duplicatingPlanning}
+                >
+                  {duplicatingPlanning ? "Duplication…" : "Dupliquer en J+1"}
+                </button>
+                <button
+                  type="button"
+                  className="h-8 px-3 rounded-md border border-border bg-background text-xs"
+                  onClick={() => setSelectedPlanningIds([])}
+                  disabled={selectedPlanningIds.length === 0 || duplicatingPlanning}
+                >
+                  Vider
+                </button>
+              </div>
+
               {planningSections.length === 0 ? (
                 <div className="text-sm text-muted-foreground">Aucun élément à afficher dans le planning.</div>
               ) : (
@@ -903,20 +990,29 @@ export default function AgendaCalendar({
                         return (
                           <li key={String(event.id)} className="relative pl-4">
                             <span className="absolute left-0 top-2 h-2 w-2 rounded-full bg-primary" />
-                            <button
-                              type="button"
-                              className="w-full text-left rounded-md border border-border bg-background px-3 py-2 hover:bg-accent"
-                              onClick={() => {
-                                if (taskId) onOpenTask(taskId);
-                              }}
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="text-sm font-medium truncate">{event.title}</div>
-                                {conflict && <span className="text-[10px] text-red-600">Conflit</span>}
-                              </div>
-                              <div className="text-xs text-muted-foreground">{timeLabel}</div>
-                              <div className="text-xs text-muted-foreground">{workspaceName}</div>
-                            </button>
+                            <div className="flex items-start gap-2 rounded-md border border-border bg-background px-2 py-2">
+                              <input
+                                type="checkbox"
+                                className="mt-1"
+                                checked={selectedPlanningIds.includes(String(event.id))}
+                                onChange={() => togglePlanningSelection(String(event.id))}
+                                aria-label={`Sélectionner ${event.title}`}
+                              />
+                              <button
+                                type="button"
+                                className="flex-1 text-left hover:bg-accent rounded-md px-1 py-1"
+                                onClick={() => {
+                                  if (taskId) onOpenTask(taskId);
+                                }}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="text-sm font-medium truncate">{event.title}</div>
+                                  {conflict && <span className="text-[10px] text-red-600">Conflit</span>}
+                                </div>
+                                <div className="text-xs text-muted-foreground">{timeLabel}</div>
+                                <div className="text-xs text-muted-foreground">{workspaceName}</div>
+                              </button>
+                            </div>
                           </li>
                         );
                       })}
