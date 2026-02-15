@@ -144,7 +144,7 @@ export default function CreateButton({ mobileHidden, renderCustomTrigger }: Prop
               router.push(href ? `/tasks/new?${href}` : "/tasks/new");
             }}
           >
-            Tâche
+            Agenda
           </button>
 
           <button
@@ -160,7 +160,7 @@ export default function CreateButton({ mobileHidden, renderCustomTrigger }: Prop
               router.push(href ? `/todo/new?${href}` : "/todo/new");
             }}
           >
-            ToDo
+            Checklist
           </button>
         </div>
 

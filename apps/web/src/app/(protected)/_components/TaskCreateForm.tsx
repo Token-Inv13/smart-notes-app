@@ -35,7 +35,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === "pro";
   const freeLimitMessage =
-    "Limite Free atteinte. Passe en Pro pour créer plus de tâches et utiliser les favoris sans limite.";
+    "Limite Free atteinte. Passe en Pro pour créer plus d’éléments d’agenda et utiliser les favoris sans limite.";
 
   const { data: allTasksForLimit } = useUserTasks({ limit: 16 });
   const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
@@ -174,7 +174,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
   const handleCreateTask = async () => {
     const user = auth.currentUser;
     if (!user) {
-      setCreateError("Connecte-toi pour créer ta première tâche.");
+      setCreateError("Connecte-toi pour créer ton premier élément d’agenda.");
       return;
     }
 
@@ -239,7 +239,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
           if (typeof window !== "undefined") {
             window.sessionStorage.setItem(
               "smartnotes:flash",
-              "Tâche créée, mais non épinglée (limite Free). Passe en Pro ou retire un favori.",
+              "Élément d’agenda créé, mais non épinglé (limite Free). Passe en Pro ou retire un favori.",
             );
           }
         } catch {
@@ -286,7 +286,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
       } else if (e instanceof Error) {
         setCreateError(e.message);
       } else {
-        setCreateError("Erreur lors de la création de la tâche.");
+        setCreateError("Erreur lors de la création de l’élément d’agenda.");
       }
     } finally {
       setCreating(false);
@@ -470,7 +470,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
           disabled={creating || !canCreate}
           className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50"
         >
-          {creating ? "Création…" : "Créer la tâche"}
+          {creating ? "Création…" : "Ajouter à l’Agenda"}
         </button>
       </div>
 

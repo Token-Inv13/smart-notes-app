@@ -391,7 +391,7 @@ export default function AssistantBriefingPage() {
                   {isBundle ? (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between gap-2">
-                        <div className="text-xs text-muted-foreground">{bundleTasks.length} tâche(s)</div>
+                        <div className="text-xs text-muted-foreground">{bundleTasks.length} élément(s) d’agenda</div>
                         <button
                           type="button"
                           onClick={() => {
@@ -406,7 +406,7 @@ export default function AssistantBriefingPage() {
                       {isExpanded ? (
                         <ol className="list-decimal pl-5 space-y-1 text-sm">
                           {bundleTasks.slice(0, 6).map((t: { title?: unknown }, idx: number) => (
-                            <li key={`${suggestionId ?? "bundle"}_${idx}`}>{typeof t?.title === "string" ? t.title : "Tâche"}</li>
+                            <li key={`${suggestionId ?? "bundle"}_${idx}`}>{typeof t?.title === "string" ? t.title : "Élément d’agenda"}</li>
                           ))}
                         </ol>
                       ) : null}

@@ -55,7 +55,7 @@ const ASSISTANT_ACTIONS: Record<AssistantActionId, { label: string; instruction:
 };
 
 function todoDraftToAssistantText(title: string, items: NonNullable<TodoDoc["items"]>): string {
-  const safeTitle = title.trim() || "ToDo";
+  const safeTitle = title.trim() || "Checklist";
   const lines = [safeTitle, "", "Éléments actifs:"];
   if (items.length === 0) lines.push("- Aucun");
   for (const item of items) {
@@ -72,7 +72,7 @@ function parseAssistantTodoText(raw: string, fallbackTitle: string): { title: st
     .filter(Boolean);
   const first = lines[0] ?? "";
   const cleanedTitle = first.replace(/^[-*•#\d.\s)]+/, "").trim();
-  const title = cleanedTitle || fallbackTitle || "ToDo";
+  const title = cleanedTitle || fallbackTitle || "Checklist";
 
   const bulletItems = lines
     .slice(1)
@@ -193,7 +193,7 @@ export default function TodoCreateForm({
       const transformed = typeof response.data?.text === "string" ? response.data.text.trim() : "";
       if (!transformed) throw new Error("Réponse IA vide.");
 
-      const parsed = parseAssistantTodoText(transformed, title || "ToDo");
+      const parsed = parseAssistantTodoText(transformed, title || "Checklist");
       setTitle(parsed.title);
       if (parsed.items.length > 0) setItemsDraft(parsed.items);
       setAssistantInfo(`${action.label} appliqué.`);
@@ -261,7 +261,7 @@ export default function TodoCreateForm({
       } else if (e instanceof Error) {
         setCreateError(e.message);
       } else {
-        setCreateError("Erreur lors de la création de la ToDo.");
+        setCreateError("Erreur lors de la création de la checklist.");
       }
     } finally {
       setCreating(false);
@@ -466,7 +466,7 @@ export default function TodoCreateForm({
           onToggle={(e) => setItemsOpen((e.currentTarget as HTMLDetailsElement).open)}
         >
           <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium">
-            Ajouter des sous-tâches
+            Ajouter des éléments
             <span className="text-muted-foreground font-normal"> (optionnel)</span>
             {itemsDraft.length > 0 ? <span className="text-muted-foreground font-normal"> · {itemsDraft.length}</span> : null}
           </summary>

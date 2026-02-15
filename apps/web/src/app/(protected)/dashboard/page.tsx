@@ -277,7 +277,7 @@ export default function DashboardPage() {
             onClick={() => scrollToSlide(0)}
             className={`px-3 py-1 text-sm ${activeSlideIndex === 0 ? 'bg-accent font-semibold' : ''}`}
           >
-            To-Dos ({todoFavoriteCount})
+            Checklist ({todoFavoriteCount})
           </button>
           <button
             type="button"
@@ -291,7 +291,7 @@ export default function DashboardPage() {
             onClick={() => scrollToSlide(2)}
             className={`px-3 py-1 text-sm ${activeSlideIndex === 2 ? 'bg-accent font-semibold' : ''}`}
           >
-            Tâches ({tasksFavoriteCount})
+            Agenda ({tasksFavoriteCount})
           </button>
         </div>
       </div>
@@ -319,11 +319,11 @@ export default function DashboardPage() {
           className="flex-none w-full snap-start"
         >
           <section>
-            <h2 className="text-lg font-semibold mb-2">Tes ToDo importantes</h2>
+            <h2 className="text-lg font-semibold mb-2">Ta checklist importante</h2>
             {favoriteTodos.length === 0 && (
               <div className="sn-empty">
                 <div className="sn-empty-title">Aucun favori pour l’instant</div>
-                <div className="sn-empty-desc">Depuis ToDo, épingle les éléments à garder sous la main ⭐.</div>
+                <div className="sn-empty-desc">Depuis Checklist, épingle les éléments à garder sous la main ⭐.</div>
               </div>
             )}
             {favoriteTodos.length > 0 && (
@@ -518,7 +518,7 @@ export default function DashboardPage() {
           className="flex-none w-full snap-start"
         >
           <section>
-            <h2 className="text-lg font-semibold mb-2">Tes tâches importantes</h2>
+            <h2 className="text-lg font-semibold mb-2">Ton agenda important</h2>
             {tasksLoading && (
               <div className="sn-empty sn-animate-in">
                 <div className="space-y-3">
@@ -529,7 +529,7 @@ export default function DashboardPage() {
                 </div>
               </div>
             )}
-            {tasksError && <div className="sn-alert sn-alert--error">Impossible de charger les tâches favorites.</div>}
+            {tasksError && <div className="sn-alert sn-alert--error">Impossible de charger l’agenda favori.</div>}
             {taskActionError && (
               <div className="space-y-2">
                 <div className="sn-alert sn-alert--error" role="status" aria-live="polite">
@@ -548,7 +548,7 @@ export default function DashboardPage() {
             {!tasksLoading && !tasksError && activeFavoriteTasks.length === 0 && (
               <div className="sn-empty">
                 <div className="sn-empty-title">Aucun favori pour l’instant</div>
-                <div className="sn-empty-desc">Depuis Tâches, épingle les priorités ⭐ pour les retrouver ici.</div>
+                <div className="sn-empty-desc">Depuis Agenda, épingle les priorités ⭐ pour les retrouver ici.</div>
               </div>
             )}
             {!tasksLoading && !tasksError && activeFavoriteTasks.length > 0 && (

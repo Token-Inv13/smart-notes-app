@@ -39,7 +39,7 @@ export default function TaskDetailPage() {
 
     async function run() {
       if (!taskId) {
-        setError("ID de tâche manquant.");
+        setError("ID d’élément d’agenda manquant.");
         setLoading(false);
         return;
       }
@@ -56,7 +56,7 @@ export default function TaskDetailPage() {
       try {
         const snap = await getDoc(doc(db, "tasks", taskId));
         if (!snap.exists()) {
-          throw new Error("Tâche introuvable.");
+          throw new Error("Élément d’agenda introuvable.");
         }
 
         const data = snap.data() as TaskDoc;
@@ -86,7 +86,7 @@ export default function TaskDetailPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold truncate">Détail de la tâche</h1>
+        <h1 className="text-xl font-semibold truncate">Détail de l’élément d’agenda</h1>
         <button
           type="button"
           onClick={() => router.push(`/dashboard${suffix}`)}
@@ -118,7 +118,7 @@ export default function TaskDetailPage() {
             <textarea
               readOnly
               value={task.description ?? ""}
-              aria-label="Description de la tâche"
+              aria-label="Description de l’élément d’agenda"
               className="w-full min-h-[160px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
             />
           </div>

@@ -24,7 +24,7 @@ export default function TodoDetailPage(props: { params: Promise<{ id: string }> 
 
     async function run() {
       if (!todoId) {
-        setError("ID de ToDo manquant.");
+        setError("ID de checklist manquant.");
         setLoading(false);
         return;
       }
@@ -41,7 +41,7 @@ export default function TodoDetailPage(props: { params: Promise<{ id: string }> 
       try {
         const snap = await getDoc(doc(db, "todos", todoId));
         if (!snap.exists()) {
-          throw new Error("ToDo introuvable.");
+          throw new Error("Checklist introuvable.");
         }
 
         const data = snap.data() as TodoDoc;
@@ -73,7 +73,7 @@ export default function TodoDetailPage(props: { params: Promise<{ id: string }> 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold truncate">Détail de la ToDo</h1>
+        <h1 className="text-xl font-semibold truncate">Détail de la checklist</h1>
         <button
           type="button"
           onClick={() => router.push(`/dashboard${suffix}`)}

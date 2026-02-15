@@ -14,7 +14,6 @@ import { htmlToReadableText, sanitizeNoteHtml } from "@/lib/richText";
 import type { AssistantAIResultDoc, AssistantSuggestionDoc, Priority } from "@/types/firestore";
 import Modal from "../Modal";
 import BundleCustomizeModal from "./assistant/BundleCustomizeModal";
-import VoiceRecorderButton from "./assistant/VoiceRecorderButton";
 
 const EXCLUDED_SUGGESTION_KINDS = new Set<AssistantSuggestionDoc["kind"]>(["generate_summary", "extract_key_points"]);
 
@@ -1109,10 +1108,9 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
                 disabled={!noteId || busyReanalysis || cooldownActive}
                 className="px-2 py-1 rounded-md border border-input text-[11px] whitespace-nowrap disabled:opacity-50"
               >
-                {busyReanalysis ? "Création…" : "Créer des tâches à partir de cette note"}
+                {busyReanalysis ? "Création…" : "Planifier dans l’Agenda à partir de cette note"}
               </button>
             </div>
-            <VoiceRecorderButton noteId={noteId} mode="append_to_note" showInternalActions={false} showTranscript={false} />
           </section>
         ) : null}
 
@@ -1192,7 +1190,6 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
                 <div className="space-y-1">
                   <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Après (modifiable)</div>
                   <textarea
-                    id="assistant-text-modal"
                     aria-label="Proposition IA"
                     ref={previewTextareaRef}
                     value={textModalDraft}
@@ -1203,7 +1200,6 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
               </div>
             ) : (
               <textarea
-                id="assistant-text-modal"
                 aria-label="Proposition IA"
                 ref={previewTextareaRef}
                 value={textModalDraft}

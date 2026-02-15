@@ -223,7 +223,7 @@ export default function UpgradePage() {
               L’essentiel pour organiser tes notes au quotidien.
             </p>
             <ul className="text-sm text-muted-foreground space-y-1">
-              <li>Notes, tâches et todo</li>
+              <li>Notes, agenda et checklist</li>
               <li>Import images &amp; PDF (jusqu’à 20 Mo)</li>
               <li>Rappels désactivés</li>
             </ul>

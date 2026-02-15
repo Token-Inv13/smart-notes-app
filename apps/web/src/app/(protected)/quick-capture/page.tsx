@@ -132,7 +132,7 @@ export default function QuickCapturePage() {
     } catch (e) {
       if (e instanceof FirebaseError) setError(`${e.code}: ${e.message}`);
       else if (e instanceof Error) setError(e.message);
-      else setError("Création de ToDo impossible.");
+      else setError("Création de checklist impossible.");
     } finally {
       setBusy(null);
     }
@@ -220,7 +220,7 @@ export default function QuickCapturePage() {
             disabled={!finalText.trim() || !!busy}
             onClick={() => void handleCreateTodo()}
           >
-            {busy === "todo" ? "Création…" : "Créer une todo"}
+            {busy === "todo" ? "Création…" : "Ajouter à la Checklist"}
           </button>
 
           <button

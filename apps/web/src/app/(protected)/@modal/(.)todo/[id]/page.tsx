@@ -80,7 +80,7 @@ const ASSISTANT_ACTIONS: Record<AssistantActionId, { label: string; instruction:
 };
 
 function todoToAssistantText(todo: TodoDoc): string {
-  const title = typeof todo.title === "string" && todo.title.trim() ? todo.title.trim() : "ToDo";
+  const title = typeof todo.title === "string" && todo.title.trim() ? todo.title.trim() : "Checklist";
   const active = Array.isArray(todo.items) ? todo.items.filter((it) => it?.done !== true) : [];
   const done = Array.isArray(todo.items) ? todo.items.filter((it) => it?.done === true) : [];
   const lines = [title, "", "Éléments actifs:"];
@@ -106,7 +106,7 @@ function parseAssistantTodoText(raw: string, fallbackTitle: string): { title: st
     .filter(Boolean);
   const first = lines[0] ?? "";
   const cleanedTitle = first.replace(/^[-*•#\d.\s)]+/, "").trim();
-  const title = cleanedTitle || fallbackTitle || "ToDo";
+  const title = cleanedTitle || fallbackTitle || "Checklist";
 
   const bulletItems = lines
     .slice(1)
@@ -153,7 +153,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
 
     async function run() {
       if (!todoId) {
-        setError("ID de ToDo manquant.");
+        setError("ID de checklist manquant.");
         setLoading(false);
         return;
       }
@@ -170,7 +170,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
       try {
         const snap = await getDoc(doc(db, "todos", todoId));
         if (!snap.exists()) {
-          throw new Error("ToDo introuvable.");
+          throw new Error("Checklist introuvable.");
         }
 
         const data = snap.data() as TodoDoc;
@@ -272,8 +272,8 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
     if (!todo) return;
     const trimmed = todo.title.trim();
     if (!trimmed) {
-      setTitleDraft("ToDo");
-      await persistTodo({ title: "ToDo" });
+      setTitleDraft("Checklist");
+      await persistTodo({ title: "Checklist" });
       return;
     }
     if (trimmed !== todo.title) {
@@ -451,7 +451,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                         }
                       }}
                       className="flex-1 w-full bg-transparent text-sm font-semibold outline-none"
-                      aria-label="Titre de la ToDo"
+                      aria-label="Titre de la checklist"
                       disabled={saving}
                     />
                     <DictationMicButton
@@ -694,7 +694,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
 
               {activeItems.length === 0 && doneItems.length === 0 && (
                 <div className="sn-empty">
-                  <div className="sn-empty-title">ToDo vide</div>
+                  <div className="sn-empty-title">Checklist vide</div>
                   <div className="sn-empty-desc">Ajoute un premier élément avec + ou le champ ci-dessus.</div>
                 </div>
               )}

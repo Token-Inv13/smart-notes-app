@@ -221,7 +221,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
     async function run() {
       if (!taskId) {
-        setError("ID de tâche manquant.");
+        setError("ID d’élément d’agenda manquant.");
         setLoading(false);
         return;
       }
@@ -238,7 +238,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       try {
         const snap = await getDoc(doc(db, "tasks", taskId));
         if (!snap.exists()) {
-          throw new Error("Tâche introuvable.");
+          throw new Error("Élément d’agenda introuvable.");
         }
 
         const data = snap.data() as TaskDoc;
@@ -342,7 +342,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     try {
       const nav = typeof navigator !== "undefined" ? (navigator as NavigatorWithShare) : null;
       if (typeof nav?.share === "function") {
-        await nav.share({ title: task.title ?? "Tâche", url });
+        await nav.share({ title: task.title ?? "Élément d’agenda", url });
         setShareFeedback("Partage ouvert.");
         return;
       }
@@ -442,7 +442,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) {
-      setEditError("Impossible de modifier cette tâche.");
+      setEditError("Impossible de modifier cet élément d’agenda.");
       return;
     }
 
@@ -463,7 +463,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
       const reminderDoc = remindersSnap.docs[0] ?? null;
       if (!reminderDoc) {
-        setEditError('Aucun rappel existant pour cette tâche.');
+        setEditError('Aucun rappel existant pour cet élément d’agenda.');
         return;
       }
 
@@ -505,7 +505,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) {
-      setEditError("Impossible de modifier cette tâche.");
+      setEditError("Impossible de modifier cet élément d’agenda.");
       return;
     }
 
@@ -551,7 +551,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) {
-      setEditError("Impossible de modifier cette tâche.");
+      setEditError("Impossible de modifier cet élément d’agenda.");
       return;
     }
 
@@ -596,7 +596,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) {
-      setEditError("Impossible de modifier cette tâche.");
+      setEditError("Impossible de modifier cet élément d’agenda.");
       console.warn("[task modal] saveEdits blocked: unauth or not owner", {
         hasUser: Boolean(user),
         userId: user?.uid,
@@ -738,7 +738,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       return true;
     } catch (e) {
       console.error("Error updating task (modal)", e);
-      setEditError(e instanceof Error ? e.message : "Erreur lors de la modification de la tâche.");
+      setEditError(e instanceof Error ? e.message : "Erreur lors de la modification de l’élément d’agenda.");
       return false;
     } finally {
       setSaving(false);
@@ -776,7 +776,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) {
-      setEditError("Impossible d’archiver cette tâche.");
+      setEditError("Impossible d’archiver cet élément d’agenda.");
       return;
     }
 
@@ -792,7 +792,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       router.back();
     } catch (e) {
       console.error("Error archiving task (modal)", e);
-      setEditError(e instanceof Error ? e.message : "Erreur lors de l’archivage de la tâche.");
+      setEditError(e instanceof Error ? e.message : "Erreur lors de l’archivage de l’élément d’agenda.");
     } finally {
       setSaving(false);
     }
@@ -803,11 +803,11 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) {
-      setEditError("Impossible de supprimer cette tâche.");
+      setEditError("Impossible de supprimer cet élément d’agenda.");
       return;
     }
 
-    if (!confirm("Supprimer cette tâche ?")) return;
+    if (!confirm("Supprimer cet élément d’agenda ?")) return;
 
     setDeleting(true);
     setEditError(null);
@@ -817,7 +817,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       router.back();
     } catch (e) {
       console.error("Error deleting task (modal)", e);
-      setEditError(e instanceof Error ? e.message : "Erreur lors de la suppression de la tâche.");
+      setEditError(e instanceof Error ? e.message : "Erreur lors de la suppression de l’élément d’agenda.");
     } finally {
       setDeleting(false);
     }
@@ -890,7 +890,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                 {mode === "view" ? (
                   <div className="text-sm font-semibold truncate">{task.title}</div>
                 ) : (
-                  <div className="text-sm font-semibold">Modifier la tâche</div>
+                  <div className="text-sm font-semibold">Modifier l’élément d’agenda</div>
                 )}
               </div>
 
@@ -1027,7 +1027,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                     {remindersLoading ? (
                       <div className="text-xs text-muted-foreground">Chargement des rappels…</div>
                     ) : taskReminders.length === 0 ? (
-                      <div className="text-xs text-muted-foreground">Aucun rappel pour cette tâche.</div>
+                      <div className="text-xs text-muted-foreground">Aucun rappel pour cet élément d’agenda.</div>
                     ) : (
                       <div className="space-y-2">
                         {taskReminders.map((reminder) => (

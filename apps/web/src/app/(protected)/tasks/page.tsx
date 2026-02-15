@@ -43,7 +43,7 @@ export default function TasksPage() {
   const createParam = searchParams.get("create");
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === "pro";
-  const freeLimitMessage = "Limite Free atteinte. Passe en Pro pour créer plus de tâches et utiliser les favoris sans limite.";
+  const freeLimitMessage = "Limite Free atteinte. Passe en Pro pour créer plus d’éléments d’agenda et utiliser les favoris sans limite.";
 
   const statusLabel = (s: TaskStatus) => {
     if (s === "todo") return "À faire";
@@ -430,14 +430,14 @@ export default function TasksPage() {
           onClick={() => router.push(`/tasks${hrefSuffix}`)}
           className={`px-3 py-1 text-sm ${pathname.startsWith("/tasks") ? "bg-accent font-semibold" : ""}`}
         >
-          Tâches ({visibleTasksCount})
+          Agenda ({visibleTasksCount})
         </button>
         <button
           type="button"
           onClick={() => router.push(`/todo${hrefSuffix}`)}
           className={`px-3 py-1 text-sm ${pathname.startsWith("/todo") ? "bg-accent font-semibold" : ""}`}
         >
-          ToDo ({visibleTodosCount})
+          Checklist ({visibleTodosCount})
         </button>
       </div>
     </div>
@@ -447,7 +447,7 @@ export default function TasksPage() {
     if (!task.id) return;
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) {
-      setEditError("Impossible de modifier cette tâche.");
+      setEditError("Impossible de modifier cet élément d’agenda.");
       return;
     }
 
@@ -465,7 +465,7 @@ export default function TasksPage() {
       });
 
       if (!nextDone) {
-        setActionFeedback("Tâche restaurée.");
+        setActionFeedback("Élément d’agenda restauré.");
         window.setTimeout(() => setActionFeedback(null), 1800);
       }
     } catch (e) {
@@ -475,7 +475,7 @@ export default function TasksPage() {
         delete next[task.id!];
         return next;
       });
-      setEditError(toErrorMessage(e, "Erreur lors de la mise à jour de la tâche."));
+      setEditError(toErrorMessage(e, "Erreur lors de la mise à jour de l’élément d’agenda."));
     }
   };
 
@@ -497,13 +497,13 @@ export default function TasksPage() {
   const handleKanbanDrop = async (taskId: string, targetStatus: TaskStatus) => {
     const user = auth.currentUser;
     if (!user) {
-      setEditError("Connecte-toi pour modifier tes tâches.");
+      setEditError("Connecte-toi pour modifier ton agenda.");
       return;
     }
 
     const task = tasks.find((t) => t.id === taskId);
     if (!task || task.userId !== user.uid) {
-      setEditError("Impossible de modifier cette tâche.");
+      setEditError("Impossible de modifier cet élément d’agenda.");
       return;
     }
 
@@ -526,7 +526,7 @@ export default function TasksPage() {
         delete next[taskId];
         return next;
       });
-      setEditError(toErrorMessage(e, "Erreur lors du déplacement de la tâche."));
+      setEditError(toErrorMessage(e, "Erreur lors du déplacement de l’élément d’agenda."));
     }
   };
 
@@ -550,7 +550,7 @@ export default function TasksPage() {
     if (!task.id) return;
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) {
-      setEditError("Impossible de modifier cette tâche.");
+      setEditError("Impossible de modifier cet élément d’agenda.");
       return;
     }
 
@@ -562,12 +562,12 @@ export default function TasksPage() {
         updatedAt: serverTimestamp(),
       });
 
-      setActionFeedback("Tâche restaurée.");
+      setActionFeedback("Élément d’agenda restauré.");
       window.setTimeout(() => setActionFeedback(null), 1800);
       setArchiveView("active");
     } catch (e) {
       console.error("Error restoring archived task", e);
-      setEditError(toErrorMessage(e, "Erreur lors de la restauration de la tâche."));
+      setEditError(toErrorMessage(e, "Erreur lors de la restauration de l’élément d’agenda."));
     }
   };
 
@@ -575,7 +575,7 @@ export default function TasksPage() {
     if (!task.id) return;
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) {
-      setEditError("Impossible de modifier cette tâche.");
+      setEditError("Impossible de modifier cet élément d’agenda.");
       return;
     }
 
@@ -659,7 +659,7 @@ export default function TasksPage() {
       {workspaceIdParam && tabs}
       <header className="flex flex-col gap-2 mb-4">
         <div className="flex items-center justify-between gap-3">
-          <h1 className="text-xl font-semibold">Tâches</h1>
+          <h1 className="text-xl font-semibold">Agenda</h1>
           <div id="sn-create-slot" data-task-view-mode={viewMode} />
         </div>
 
@@ -692,7 +692,7 @@ export default function TasksPage() {
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Rechercher (titre, contenu, dossier)…"
               className="w-full border border-input rounded-md px-3 py-2 pr-10 bg-background text-sm"
-              aria-label="Rechercher dans les tâches"
+              aria-label="Rechercher dans l’agenda"
             />
             {searchInput.trim().length > 0 && (
               <button
@@ -717,7 +717,7 @@ export default function TasksPage() {
         </div>
 
         {filtersOpen && (
-          <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Filtres tâches">
+          <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Filtres agenda">
             <button
               type="button"
               className="absolute inset-0 bg-black/40"
@@ -789,7 +789,7 @@ export default function TasksPage() {
                     <select
                       value={sortBy}
                       onChange={(e) => setSortBy(e.target.value as TaskSortBy)}
-                      aria-label="Trier les tâches"
+                      aria-label="Trier l’agenda"
                       className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
                     >
                       <option value="dueDate">Échéance</option>
@@ -918,21 +918,21 @@ export default function TasksPage() {
 
       {actionFeedback && <div className="sn-alert" role="status" aria-live="polite">{actionFeedback}</div>}
 
-      {error && <div className="sn-alert sn-alert--error">Impossible de charger les tâches pour le moment.</div>}
+      {error && <div className="sn-alert sn-alert--error">Impossible de charger l’agenda pour le moment.</div>}
 
       {!loading && !error && archiveView === "active" && mainTasks.length === 0 && (
         <div className="sn-empty">
-          <div className="sn-empty-title">{hasActiveSearchOrFilters ? "Aucun résultat" : "Aucune tâche pour le moment"}</div>
+          <div className="sn-empty-title">{hasActiveSearchOrFilters ? "Aucun résultat" : "Aucun élément d’agenda pour le moment"}</div>
           <div className="sn-empty-desc">
-            {hasActiveSearchOrFilters ? "Essaie d’effacer la recherche ou de réinitialiser les filtres." : "Commence par créer une tâche."}
+            {hasActiveSearchOrFilters ? "Essaie d’effacer la recherche ou de réinitialiser les filtres." : "Commence par ajouter un élément à l’agenda."}
           </div>
         </div>
       )}
 
       {!loading && !error && archiveView === "archived" && archivedTasks.length === 0 && (
         <div className="sn-empty">
-          <div className="sn-empty-title">Aucune tâche archivée</div>
-          <div className="sn-empty-desc">Archive une tâche pour la retrouver ici et la restaurer plus tard.</div>
+          <div className="sn-empty-title">Aucun élément d’agenda archivé</div>
+          <div className="sn-empty-desc">Archive un élément d’agenda pour le retrouver ici et le restaurer plus tard.</div>
         </div>
       )}
 
@@ -1242,7 +1242,7 @@ export default function TasksPage() {
                           onClick={openTaskModal}
                           draggable={!!task.id}
                           className="min-w-0 flex-1 text-left bg-transparent p-0 border-0 cursor-move"
-                          aria-label={`Ouvrir la tâche : ${task.title}`}
+                          aria-label={`Ouvrir l’élément d’agenda : ${task.title}`}
                         >
                           <div className="text-sm font-medium truncate">{task.title}</div>
                           {(startLabel || dueLabel || task.priority) && (
@@ -1273,7 +1273,7 @@ export default function TasksPage() {
                             className="md:hidden text-xs border border-input rounded px-2 py-1 bg-background"
                             value={statusForTask(task)}
                             disabled={!task.id}
-                            aria-label="Déplacer la tâche"
+                            aria-label="Déplacer l’élément d’agenda"
                             onChange={async (e) => {
                               if (!task.id) return;
                               await handleKanbanDrop(task.id, e.target.value as TaskStatus);
@@ -1310,7 +1310,7 @@ export default function TasksPage() {
                 })}
 
                 {groupedTasks[colStatus].length === 0 && (
-                  <div className="text-sm text-muted-foreground">Glisse une tâche ici</div>
+                  <div className="text-sm text-muted-foreground">Glisse un élément d’agenda ici</div>
                 )}
               </div>
             </div>

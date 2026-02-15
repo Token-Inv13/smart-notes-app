@@ -616,7 +616,7 @@ export default function SettingsPage() {
 
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">
-                <div className="text-sm font-medium">Rappels de tâches</div>
+                <div className="text-sm font-medium">Rappels d’agenda</div>
                 <div className="text-sm text-muted-foreground">
                   {user.settings?.notifications?.taskReminders ? "Activés" : "Désactivés"}
                 </div>
@@ -626,8 +626,8 @@ export default function SettingsPage() {
                 type="button"
                 onClick={handleToggleTaskReminders}
                 disabled={toggling}
-                aria-label="Rappels de tâches"
-                title="Rappels de tâches"
+                aria-label="Rappels d’agenda"
+                title="Rappels d’agenda"
                 className={`relative inline-flex h-9 w-14 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background disabled:opacity-50 ${
                   user.settings?.notifications?.taskReminders ? "bg-primary/30 border-primary/30" : "bg-muted border-border"
                 }`}
@@ -962,12 +962,12 @@ export default function SettingsPage() {
             </div>
 
             <div className="space-y-1">
-              <div className="text-sm font-medium">Tâches</div>
+              <div className="text-sm font-medium">Agenda</div>
               <select
                 value={tasksViewMode}
                 onChange={(e) => setAndPersistTasksViewMode(e.target.value as "list" | "grid" | "kanban")}
                 className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
-                aria-label="Affichage des tâches"
+                aria-label="Affichage de l’agenda"
               >
                 <option value="list">Liste</option>
                 <option value="grid">Vignettes</option>

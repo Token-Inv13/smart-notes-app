@@ -11,7 +11,7 @@ export default function NewTodoModal() {
   const initialFavorite = searchParams.get("favorite") === "1";
 
   return (
-    <Modal title="Nouvelle ToDo">
+    <Modal title="Nouvelle checklist">
       <TodoCreateForm
         initialWorkspaceId={workspaceId}
         initialFavorite={initialFavorite}

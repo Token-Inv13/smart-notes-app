@@ -266,7 +266,7 @@ export default function AssistantHistoryPage() {
                       href={`/tasks/${encodeURIComponent(taskId)}`}
                       className="px-3 py-2 rounded-md border border-input text-sm hover:bg-accent"
                     >
-                      Voir la tâche
+                      Voir l’élément d’agenda
                     </a>
                   ) : null}
                   {noteId ? (

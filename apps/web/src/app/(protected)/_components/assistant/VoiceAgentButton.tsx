@@ -165,10 +165,10 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
     const hasScheduleSignal = /\b(demain|ce soir|ce matin|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b/i.test(lower);
 
     if (hasTodoKeyword || (!hasTaskKeyword && !hasScheduleSignal && shortActionLike)) {
-      return "Pré-analyse rapide: todo détectée.";
+      return "Pré-analyse rapide: checklist détectée.";
     }
 
-    return "Pré-analyse rapide: tâche détectée.";
+    return "Pré-analyse rapide: élément d’agenda détecté.";
   };
 
   const isCallableUnauthenticated = (err: unknown) => {
@@ -566,8 +566,8 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
     if (!result) return null;
     const intent = result.intent;
     const conf = `${Math.round((intent.confidence ?? 0) * 100)}%`;
-    if (intent.kind === "create_todo") return `Compris: créer une todo — “${intent.title}” (${conf}).`;
-    if (intent.kind === "create_task") return `Compris: créer une tâche — “${intent.title}” (${conf}).`;
+    if (intent.kind === "create_todo") return `Compris: créer une checklist — “${intent.title}” (${conf}).`;
+    if (intent.kind === "create_task") return `Compris: créer un élément d’agenda — “${intent.title}” (${conf}).`;
     if (intent.kind === "create_reminder") {
       return `Compris: créer un rappel — “${intent.title}”${intent.remindAtIso ? ` à ${new Date(intent.remindAtIso).toLocaleString("fr-FR")}` : ""} (${conf}).`;
     }
@@ -584,7 +584,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
     if (!parsedClarificationTime) return "OK";
     const at = parsedClarificationTime.shortLabel;
     if (result?.intent.kind === "schedule_meeting") return `Créer la réunion à ${at}`;
-    if (result?.intent.kind === "create_task") return `Créer la tâche à ${at}`;
+    if (result?.intent.kind === "create_task") return `Créer l’élément d’agenda à ${at}`;
     return `Créer le rappel à ${at}`;
   }, [clarificationSubmitting, parsedClarificationTime, result?.intent.kind]);
   const confirmationHint =

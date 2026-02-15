@@ -250,14 +250,14 @@ export default function NotesPage() {
           onClick={() => router.push(`/tasks${hrefSuffix}`)}
           className={`px-3 py-1 text-sm ${pathname.startsWith("/tasks") ? "bg-accent font-semibold" : ""}`}
         >
-          Tâches ({visibleTasksCount})
+          Agenda ({visibleTasksCount})
         </button>
         <button
           type="button"
           onClick={() => router.push(`/todo${hrefSuffix}`)}
           className={`px-3 py-1 text-sm ${pathname.startsWith("/todo") ? "bg-accent font-semibold" : ""}`}
         >
-          ToDo ({visibleTodosCount})
+          Checklist ({visibleTodosCount})
         </button>
       </div>
     </div>

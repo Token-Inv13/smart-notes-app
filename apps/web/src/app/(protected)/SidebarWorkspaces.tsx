@@ -369,7 +369,7 @@ export default function SidebarWorkspaces({
     const user = auth.currentUser;
     if (!user || user.uid !== ws.ownerId) return;
 
-    if (!confirm("Supprimer ce dossier ? Toutes les notes et tâches qu'il contient seront définitivement supprimées.")) return;
+    if (!confirm("Supprimer ce dossier ? Toutes les notes, éléments d’agenda et checklists qu'il contient seront définitivement supprimés.")) return;
 
     setDeletingId(ws.id);
     try {
@@ -425,21 +425,21 @@ export default function SidebarWorkspaces({
               type="button"
               onClick={navigateToTasks}
               className={iconButtonClass(isNavActive("/tasks"))}
-              aria-label="Tâches"
-              title="Tâches"
+              aria-label="Agenda"
+              title="Agenda"
             >
               {isNavActive("/tasks") && (
                 <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r bg-primary" />
               )}
-              <span className="text-sm font-semibold">T</span>
+              <span className="text-sm font-semibold">A</span>
             </button>
 
             <button
               type="button"
               onClick={navigateToTodo}
               className={iconButtonClass(pathname.startsWith("/todo"))}
-              aria-label="ToDo"
-              title="ToDo"
+              aria-label="Checklist"
+              title="Checklist"
             >
               {pathname.startsWith("/todo") && (
                 <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r bg-primary" />
@@ -544,9 +544,9 @@ export default function SidebarWorkspaces({
               className={navButtonClass(isNavActive("/tasks"))}
             >
               <span className="h-4 w-4 inline-flex items-center justify-center rounded text-[11px] font-semibold bg-muted text-muted-foreground">
-                T
+                A
               </span>
-              <span>Tâches</span>
+              <span>Agenda</span>
             </button>
 
             <button
@@ -557,7 +557,7 @@ export default function SidebarWorkspaces({
               <span className="h-4 w-4 inline-flex items-center justify-center rounded text-[11px] font-semibold bg-muted text-muted-foreground">
                 ✓
               </span>
-              <span>ToDo</span>
+              <span>Checklist</span>
             </button>
           </div>
           <div className="h-px bg-border/40" />

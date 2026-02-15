@@ -110,7 +110,7 @@ export default function BundleCustomizeModal({ open, onClose, suggestion, onConf
     }
 
     if (selectedIndexes.length === 0) {
-      setError("Sélectionne au moins une tâche.");
+      setError("Sélectionne au moins un élément d’agenda.");
       return;
     }
 
@@ -281,7 +281,7 @@ export default function BundleCustomizeModal({ open, onClose, suggestion, onConf
         </div>
 
         <div className="flex items-center justify-between gap-3">
-          <div className="text-sm text-muted-foreground">Créer {selectedCount} tâche(s)</div>
+          <div className="text-sm text-muted-foreground">Créer {selectedCount} élément(s) d’agenda</div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={onClose} className="px-3 py-2 rounded-md border border-input text-sm">
               Annuler
@@ -292,7 +292,7 @@ export default function BundleCustomizeModal({ open, onClose, suggestion, onConf
               disabled={effectiveLoading || selectedCount === 0}
               className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
             >
-              {effectiveLoading ? "Création…" : `Créer ${selectedCount} tâche(s)`}
+              {effectiveLoading ? "Création…" : `Créer ${selectedCount} élément(s) d’agenda`}
             </button>
           </div>
         </div>

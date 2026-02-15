@@ -11,7 +11,7 @@ export default function NewTaskModal() {
   const initialFavorite = searchParams.get("favorite") === "1";
 
   return (
-    <Modal title="Nouvelle tâche">
+    <Modal title="Nouvel élément d’agenda">
       <TaskCreateForm initialWorkspaceId={workspaceId} initialFavorite={initialFavorite} onCreated={() => router.back()} />
     </Modal>
   );

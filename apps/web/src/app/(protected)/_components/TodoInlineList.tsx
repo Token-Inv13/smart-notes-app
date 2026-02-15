@@ -200,7 +200,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
         updatedAt: serverTimestamp(),
       });
 
-      setActionFeedback(nextCompleted ? "ToDo terminée." : "ToDo restaurée.");
+      setActionFeedback(nextCompleted ? "Checklist terminée." : "Checklist restaurée.");
       window.setTimeout(() => setActionFeedback(null), 1800);
     } catch (e) {
       console.error("Error toggling todo completed", e);
@@ -236,7 +236,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
       {actionFeedback && <div className="sn-alert" role="status" aria-live="polite">{actionFeedback}</div>}
       {error && (
         <div className="sn-alert sn-alert--error">
-          Impossible de charger les ToDo pour le moment.
+          Impossible de charger la checklist pour le moment.
           {error.message ? ` (${error.message})` : ""}
         </div>
       )}
@@ -280,7 +280,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                 onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="Rechercher (titre, items, dossier)…"
                 className="w-full border border-input rounded-md px-3 py-2 pr-10 bg-background text-sm"
-                aria-label="Rechercher dans les ToDo"
+                aria-label="Rechercher dans la checklist"
               />
               {searchInput.trim().length > 0 && (
                 <button
@@ -305,7 +305,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
           </div>
 
           {filtersOpen && (
-            <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Filtres ToDo">
+            <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Filtres checklist">
               <button
                 type="button"
                 className="absolute inset-0 bg-black/40"
@@ -373,7 +373,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                     <select
                       value={sortBy}
                       onChange={(e) => setSortBy(e.target.value as TodoSortBy)}
-                      aria-label="Trier les ToDo"
+                      aria-label="Trier la checklist"
                       className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
                     >
                       <option value="updatedAt">Dernière modification</option>
@@ -411,13 +411,13 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
           {filteredTodos.length === 0 && (
             <div className="sn-empty">
               <div className="sn-empty-title">
-                {hasActiveSearchOrFilters ? "Aucun résultat" : todoView === "completed" ? "Aucune ToDo terminée" : "Aucune ToDo"}
+                {hasActiveSearchOrFilters ? "Aucun résultat" : todoView === "completed" ? "Aucune checklist terminée" : "Aucune checklist"}
               </div>
               <div className="sn-empty-desc">
                 {hasActiveSearchOrFilters
                   ? "Essaie d’effacer la recherche ou de réinitialiser les filtres."
                   : todoView === "completed"
-                    ? "Marque une ToDo comme terminée pour la retrouver ici."
+                    ? "Marque une checklist comme terminée pour la retrouver ici."
                     : "Appuie sur + pour en créer une."}
               </div>
             </div>
@@ -433,7 +433,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                     <button
                       type="button"
                       className="absolute inset-0 rounded-[inherit] z-0"
-                      aria-label="Ouvrir la ToDo"
+                      aria-label="Ouvrir la checklist"
                       onClick={() => {
                         if (!todo.id) return;
                         const qs = new URLSearchParams(searchParams.toString());
@@ -498,7 +498,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                           }}
                           onMouseDown={(e) => e.stopPropagation()}
                           className="sn-text-btn shrink-0"
-                          aria-label="Restaurer la ToDo"
+                          aria-label="Restaurer la checklist"
                           title="Restaurer"
                         >
                           Restaurer
