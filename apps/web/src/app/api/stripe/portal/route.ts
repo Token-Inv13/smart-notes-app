@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import Stripe from 'stripe';
 import { getAdminDb, verifySessionCookie } from '@/lib/firebaseAdmin';
 import { getServerAppOrigin } from '@/lib/serverOrigin';
+import { normalizeEmail, normalizeStripeId } from '@/lib/stripeUtils';
 import type { UserDoc } from '@/types/firestore';
 
 export const runtime = 'nodejs';
@@ -25,27 +26,6 @@ function isNoSuchCustomerError(err: unknown): boolean {
   if (lower.includes('no such customer')) return true;
   if (stripeErr?.code === 'resource_missing' && (stripeErr?.param === 'customer' || lower.includes('customer'))) return true;
   return false;
-}
-
-function normalizeStripeId(value: unknown): string | null {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-  if (value && typeof value === 'object' && 'id' in value) {
-    const id = (value as { id?: unknown }).id;
-    if (typeof id === 'string') {
-      const trimmed = id.trim();
-      return trimmed.length > 0 ? trimmed : null;
-    }
-  }
-  return null;
-}
-
-function normalizeEmail(value: string | null | undefined): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
 }
 
 function getCustomerIdFromSubscription(sub: Stripe.Subscription): string | null {

@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import Stripe from 'stripe';
 import admin from 'firebase-admin';
 import { getAdminDb, getAdminProjectId, verifySessionCookie } from '@/lib/firebaseAdmin';
+import { getStripeModeFromSecret, normalizeEmail, normalizeStripeId, type StripeMode } from '@/lib/stripeUtils';
 import type { UserDoc } from '@/types/firestore';
 
 export const runtime = 'nodejs';
@@ -17,38 +18,10 @@ function getStripeClient() {
   return new Stripe(secretKey, { apiVersion: '2024-06-20' });
 }
 
-function getStripeModeFromSecret(): 'live' | 'test' | 'unknown' {
-  const secretKey = process.env.STRIPE_SECRET_KEY ?? '';
-  if (secretKey.startsWith('sk_live_')) return 'live';
-  if (secretKey.startsWith('sk_test_')) return 'test';
-  return 'unknown';
-}
-
-function isSubscriptionModeMismatch(sub: Stripe.Subscription, stripeMode: 'live' | 'test' | 'unknown'): boolean {
+function isSubscriptionModeMismatch(sub: Stripe.Subscription, stripeMode: StripeMode): boolean {
   if (stripeMode === 'unknown') return false;
   const subMode: 'live' | 'test' = sub.livemode ? 'live' : 'test';
   return subMode !== stripeMode;
-}
-
-function normalizeStripeId(value: unknown): string | null {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-  if (value && typeof value === 'object' && 'id' in value) {
-    const id = (value as { id?: unknown }).id;
-    if (typeof id === 'string') {
-      const trimmed = id.trim();
-      return trimmed.length > 0 ? trimmed : null;
-    }
-  }
-  return null;
-}
-
-function normalizeEmail(value: string | null | undefined): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
 }
 
 function getCustomerIdFromSubscription(sub: Stripe.Subscription): string | null {
@@ -165,7 +138,7 @@ export async function POST() {
       userData,
     });
 
-    const stripeMode = getStripeModeFromSecret();
+    const stripeMode = getStripeModeFromSecret(process.env.STRIPE_SECRET_KEY);
     const adminProjectId = getAdminProjectId();
 
     if (!sub) {

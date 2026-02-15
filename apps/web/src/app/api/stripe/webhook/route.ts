@@ -1,19 +1,13 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { getAdminDb } from '@/lib/firebaseAdmin';
+import { getStripeModeFromSecret, normalizeStripeId } from '@/lib/stripeUtils';
 import admin from 'firebase-admin';
 import type { UserDoc } from '@/types/firestore';
 
 export const runtime = 'nodejs';
 
 const STRIPE_EVENTS_COLLECTION = 'stripeWebhookEvents';
-
-function getStripeModeFromSecret(): 'live' | 'test' | 'unknown' {
-  const secretKey = process.env.STRIPE_SECRET_KEY ?? '';
-  if (secretKey.startsWith('sk_live_')) return 'live';
-  if (secretKey.startsWith('sk_test_')) return 'test';
-  return 'unknown';
-}
 
 function getStripeClient() {
   const secretKey = process.env.STRIPE_SECRET_KEY;
@@ -24,32 +18,13 @@ function getStripeClient() {
 }
 
 function getCustomerId(value: Stripe.Subscription['customer']): string | null {
-  if (typeof value === 'string') return value;
-  if (value && typeof value === 'object' && 'id' in value && typeof value.id === 'string') {
-    return value.id;
-  }
-  return null;
+  return normalizeStripeId(value);
 }
 
 function normalizeUserId(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
-}
-
-function normalizeStripeId(value: unknown): string | null {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-  if (value && typeof value === 'object' && 'id' in value) {
-    const id = (value as { id?: unknown }).id;
-    if (typeof id === 'string') {
-      const trimmed = id.trim();
-      return trimmed.length > 0 ? trimmed : null;
-    }
-  }
-  return null;
 }
 
 async function resolveUserIdFromStripeIds(params: {
@@ -127,7 +102,7 @@ export async function POST(request: Request) {
       return new NextResponse('Invalid signature', { status: 400 });
     }
 
-    const stripeMode = getStripeModeFromSecret();
+    const stripeMode = getStripeModeFromSecret(process.env.STRIPE_SECRET_KEY);
     if (stripeMode !== 'unknown') {
       const eventMode = event.livemode ? 'live' : 'test';
       if (eventMode !== stripeMode) {
