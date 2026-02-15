@@ -8,6 +8,13 @@ export const runtime = 'nodejs';
 
 const STRIPE_EVENTS_COLLECTION = 'stripeWebhookEvents';
 
+function getStripeModeFromSecret(): 'live' | 'test' | 'unknown' {
+  const secretKey = process.env.STRIPE_SECRET_KEY ?? '';
+  if (secretKey.startsWith('sk_live_')) return 'live';
+  if (secretKey.startsWith('sk_test_')) return 'test';
+  return 'unknown';
+}
+
 function getStripeClient() {
   const secretKey = process.env.STRIPE_SECRET_KEY;
   if (!secretKey) {
@@ -88,6 +95,20 @@ export async function POST(request: Request) {
     } catch (err) {
       console.error('Stripe webhook signature verification failed', err);
       return new NextResponse('Invalid signature', { status: 400 });
+    }
+
+    const stripeMode = getStripeModeFromSecret();
+    if (stripeMode !== 'unknown') {
+      const eventMode = event.livemode ? 'live' : 'test';
+      if (eventMode !== stripeMode) {
+        console.warn('Stripe webhook ignored due to mode mismatch', {
+          eventId: event.id,
+          eventType: event.type,
+          eventMode,
+          stripeMode,
+        });
+        return NextResponse.json({ received: true, ignored: true, reason: 'mode_mismatch' });
+      }
     }
 
     const db = getAdminDb();
