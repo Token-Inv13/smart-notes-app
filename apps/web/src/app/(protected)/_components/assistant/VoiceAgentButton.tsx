@@ -39,6 +39,50 @@ type ExecuteIntentResponse = {
 
 type VoiceFlowStep = "idle" | "listening" | "uploading" | "transcribing" | "review" | "clarify" | "executing" | "done" | "error";
 
+function mapMicrophoneAccessError(err: unknown): string {
+  if (err instanceof DOMException) {
+    const name = String(err.name || "").toLowerCase();
+    const message = String(err.message || "").toLowerCase();
+    if (name.includes("notfound") || message.includes("requested device not found") || message.includes("device not found")) {
+      return "Aucun micro disponible. Vérifie ton appareil audio puis réessaie.";
+    }
+    if (name.includes("notallowed") || name.includes("security") || message.includes("permission") || message.includes("denied")) {
+      return "Permission micro refusée. Autorise le micro dans ton navigateur puis recharge la page.";
+    }
+    if (name.includes("notreadable") || message.includes("could not start audio source")) {
+      return "Le micro est indisponible (utilisé par une autre application ou bloqué par le système).";
+    }
+    return err.message || "Impossible d’accéder au micro.";
+  }
+
+  if (err instanceof Error) {
+    const msg = err.message.toLowerCase();
+    if (msg.includes("requested device not found") || msg.includes("device not found")) {
+      return "Aucun micro disponible. Vérifie ton appareil audio puis réessaie.";
+    }
+    if (msg.includes("permission") || msg.includes("notallowed") || msg.includes("denied")) {
+      return "Permission micro refusée. Autorise le micro dans ton navigateur puis recharge la page.";
+    }
+    if (msg.includes("not supported") || msg.includes("unsupported")) {
+      return "Enregistrement micro non supporté sur cet appareil.";
+    }
+    return err.message;
+  }
+
+  if (typeof err === "string") {
+    const msg = err.toLowerCase();
+    if (msg.includes("requested device not found") || msg.includes("device not found")) {
+      return "Aucun micro disponible. Vérifie ton appareil audio puis réessaie.";
+    }
+    if (msg.includes("permission") || msg.includes("notallowed") || msg.includes("denied")) {
+      return "Permission micro refusée. Autorise le micro dans ton navigateur puis recharge la page.";
+    }
+    return `Impossible d’accéder au micro: ${err}`;
+  }
+
+  return "Impossible d’accéder au micro.";
+}
+
 export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: Props) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
@@ -384,8 +428,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
         }
       }, 180);
     } catch (e) {
-      if (e instanceof Error) setError(e.message);
-      else setError("Impossible d’accéder au micro.");
+      setError(mapMicrophoneAccessError(e));
       setFlowStep("error");
       hardStopRecordingResources();
     }

@@ -56,6 +56,44 @@ function mapError(err?: string): string {
   return err ? `Dictée: ${err}` : "Erreur de dictée.";
 }
 
+function mapStartError(err: unknown): string {
+  if (typeof err === "string") {
+    const msg = err.toLowerCase();
+    if (msg.includes("requested device not found") || msg.includes("device not found")) {
+      return "Aucun micro disponible. Vérifie ton appareil audio puis réessaie.";
+    }
+    if (msg.includes("permission") || msg.includes("notallowed") || msg.includes("denied")) {
+      return "Permission micro refusée. Autorise le micro dans ton navigateur.";
+    }
+    return `Dictée: ${err}`;
+  }
+
+  if (err instanceof DOMException) {
+    const name = String(err.name || "").toLowerCase();
+    const message = String(err.message || "").toLowerCase();
+    if (name.includes("notfound") || message.includes("requested device not found") || message.includes("device not found")) {
+      return "Aucun micro disponible. Vérifie ton appareil audio puis réessaie.";
+    }
+    if (name.includes("notallowed") || name.includes("security") || message.includes("permission") || message.includes("denied")) {
+      return "Permission micro refusée. Autorise le micro dans ton navigateur.";
+    }
+    return err.message || "Erreur de dictée.";
+  }
+
+  if (err instanceof Error) {
+    const msg = err.message.toLowerCase();
+    if (msg.includes("requested device not found") || msg.includes("device not found")) {
+      return "Aucun micro disponible. Vérifie ton appareil audio puis réessaie.";
+    }
+    if (msg.includes("permission") || msg.includes("notallowed") || msg.includes("denied")) {
+      return "Permission micro refusée. Autorise le micro dans ton navigateur.";
+    }
+    return err.message;
+  }
+
+  return "Erreur de dictée.";
+}
+
 export function useSpeechDictation(params: {
   onFinalText: (text: string) => void;
   lang?: string;
@@ -156,7 +194,7 @@ export function useSpeechDictation(params: {
       setStatusSafe("listening");
       rec.start();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erreur de dictée.");
+      setError(mapStartError(e));
       setStatusSafe("error");
       recognitionRef.current = null;
     }
