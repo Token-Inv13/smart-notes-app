@@ -12,7 +12,7 @@ import type {
   EventContentArg,
   EventInput,
 } from "@fullcalendar/core";
-import type { TaskDoc, WorkspaceDoc, Priority } from "@/types/firestore";
+import type { TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq } from "@/types/firestore";
 
 type CalendarViewMode = "dayGridMonth" | "timeGridWeek" | "timeGridDay";
 
@@ -24,7 +24,16 @@ interface CalendarDraft {
   allDay: boolean;
   workspaceId: string;
   priority: "" | Priority;
+  recurrenceFreq: "" | TaskRecurrenceFreq;
+  recurrenceUntil: string;
 }
+
+type CalendarRecurrenceInput = {
+  freq: TaskRecurrenceFreq;
+  interval?: number;
+  until?: Date | null;
+  exceptions?: string[];
+} | null;
 
 interface AgendaCalendarProps {
   tasks: TaskDoc[];
@@ -36,6 +45,7 @@ interface AgendaCalendarProps {
     allDay: boolean;
     workspaceId?: string | null;
     priority?: Priority | null;
+    recurrence?: CalendarRecurrenceInput;
   }) => Promise<void>;
   onUpdateEvent: (input: {
     taskId: string;
@@ -45,6 +55,7 @@ interface AgendaCalendarProps {
     allDay: boolean;
     workspaceId?: string | null;
     priority?: Priority | null;
+    recurrence?: CalendarRecurrenceInput;
   }) => Promise<void>;
   onOpenTask: (taskId: string) => void;
   onVisibleRangeChange?: (range: { start: Date; end: Date }) => void;
@@ -86,6 +97,18 @@ function priorityColor(priority: Priority | "") {
   return "#3b82f6";
 }
 
+function addRecurrenceStep(base: Date, freq: TaskRecurrenceFreq, interval: number) {
+  const next = new Date(base);
+  if (freq === "daily") next.setDate(next.getDate() + interval);
+  else if (freq === "weekly") next.setDate(next.getDate() + interval * 7);
+  else next.setMonth(next.getMonth() + interval);
+  return next;
+}
+
+function overlapsRange(start: Date, end: Date, rangeStart: Date, rangeEnd: Date) {
+  return end.getTime() > rangeStart.getTime() && start.getTime() < rangeEnd.getTime();
+}
+
 export default function AgendaCalendar({
   tasks,
   workspaces,
@@ -96,28 +119,80 @@ export default function AgendaCalendar({
 }: AgendaCalendarProps) {
   const calendarRef = useRef<FullCalendar | null>(null);
   const [viewMode, setViewMode] = useState<CalendarViewMode>("timeGridWeek");
+  const [visibleRange, setVisibleRange] = useState<{ start: Date; end: Date } | null>(null);
+  const [navDate, setNavDate] = useState(toLocalDateInputValue(new Date()));
   const [label, setLabel] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<CalendarDraft | null>(null);
 
   const events = useMemo(() => {
-    const withDates = tasks
-      .map((task) => {
-        const start = task.startDate?.toDate?.() ?? task.dueDate?.toDate?.();
-        if (!start) return null;
+    const rangeStart = visibleRange?.start ?? new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
+    const rangeEnd = visibleRange?.end ?? new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
 
-        const due = task.dueDate?.toDate?.();
-        const fallbackEnd = new Date(start.getTime() + 60 * 60 * 1000);
-        const end = due && due.getTime() > start.getTime() ? due : fallbackEnd;
-        return {
-          task,
-          start,
-          end,
-        };
-      })
-      .filter((item): item is { task: TaskDoc; start: Date; end: Date } => item !== null)
-      .sort((a, b) => a.start.getTime() - b.start.getTime());
+    const withDates = [] as Array<{
+      eventId: string;
+      taskId: string;
+      task: TaskDoc;
+      start: Date;
+      end: Date;
+      recurrence: TaskDoc["recurrence"] | null;
+      instanceDate?: string;
+    }>;
+
+    for (const task of tasks) {
+      if (!task.id) continue;
+      const start = task.startDate?.toDate?.() ?? task.dueDate?.toDate?.();
+      if (!start) continue;
+
+      const due = task.dueDate?.toDate?.();
+      const fallbackEnd = new Date(start.getTime() + 60 * 60 * 1000);
+      const end = due && due.getTime() > start.getTime() ? due : fallbackEnd;
+
+      const recurrence = task.recurrence ?? null;
+      if (!recurrence?.freq) {
+        if (overlapsRange(start, end, rangeStart, rangeEnd)) {
+          withDates.push({
+            eventId: task.id,
+            taskId: task.id,
+            task,
+            start,
+            end,
+            recurrence: null,
+          });
+        }
+        continue;
+      }
+
+      const interval = Math.max(1, Number(recurrence.interval ?? 1));
+      const until = recurrence.until?.toDate?.() ?? null;
+      const exceptions = new Set(Array.isArray(recurrence.exceptions) ? recurrence.exceptions : []);
+
+      let cursorStart = new Date(start);
+      let cursorEnd = new Date(end);
+      for (let i = 0; i < 400; i += 1) {
+        if (until && cursorStart.getTime() > until.getTime()) break;
+        if (cursorStart.getTime() > rangeEnd.getTime()) break;
+
+        const instanceDate = toLocalDateInputValue(cursorStart);
+        if (!exceptions.has(instanceDate) && overlapsRange(cursorStart, cursorEnd, rangeStart, rangeEnd)) {
+          withDates.push({
+            eventId: `${task.id}__${cursorStart.toISOString()}`,
+            taskId: task.id,
+            task,
+            start: new Date(cursorStart),
+            end: new Date(cursorEnd),
+            recurrence,
+            instanceDate,
+          });
+        }
+
+        cursorStart = addRecurrenceStep(cursorStart, recurrence.freq, interval);
+        cursorEnd = addRecurrenceStep(cursorEnd, recurrence.freq, interval);
+      }
+    }
+
+    withDates.sort((a, b) => a.start.getTime() - b.start.getTime());
 
     const conflictIds = new Set<string>();
     for (let i = 0; i < withDates.length; i += 1) {
@@ -127,15 +202,14 @@ export default function AgendaCalendar({
         const right = withDates[j];
         if (!right) continue;
         if (right.start.getTime() >= left.end.getTime()) break;
-        if (!left.task.id || !right.task.id) continue;
-        conflictIds.add(left.task.id);
-        conflictIds.add(right.task.id);
+        conflictIds.add(left.eventId);
+        conflictIds.add(right.eventId);
       }
     }
 
     const output: EventInput[] = [];
     for (const item of withDates) {
-      const { task, start, end } = item;
+      const { task, start, end, recurrence, taskId, eventId, instanceDate } = item;
 
       const looksAllDay =
         start.getHours() === 0 &&
@@ -144,7 +218,7 @@ export default function AgendaCalendar({
         end.getMinutes() === 0;
 
       output.push({
-        id: task.id,
+        id: eventId,
         title: task.title,
         start,
         end,
@@ -152,15 +226,18 @@ export default function AgendaCalendar({
         backgroundColor: priorityColor((task.priority ?? "") as Priority | ""),
         borderColor: priorityColor((task.priority ?? "") as Priority | ""),
         extendedProps: {
+          taskId,
           workspaceId: task.workspaceId ?? "",
           workspaceName: workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "Sans dossier",
           priority: (task.priority ?? "") as Priority | "",
-          conflict: task.id ? conflictIds.has(task.id) : false,
+          recurrence,
+          instanceDate,
+          conflict: conflictIds.has(eventId),
         },
       });
     }
     return output;
-  }, [tasks, workspaces]);
+  }, [tasks, visibleRange, workspaces]);
 
   const openDraftFromSelect = (arg: DateSelectArg) => {
     setDraft({
@@ -170,6 +247,8 @@ export default function AgendaCalendar({
       allDay: arg.allDay,
       workspaceId: "",
       priority: "",
+      recurrenceFreq: "",
+      recurrenceUntil: "",
     });
   };
 
@@ -177,15 +256,18 @@ export default function AgendaCalendar({
     const start = arg.event.start;
     const end = arg.event.end;
     if (!start || !end) return;
+    const recurrence = (arg.event.extendedProps.recurrence as TaskDoc["recurrence"] | null) ?? null;
 
     setDraft({
-      taskId: arg.event.id,
+      taskId: ((arg.event.extendedProps.taskId as string) || arg.event.id) as string,
       title: arg.event.title,
       startLocal: arg.event.allDay ? toLocalDateInputValue(start) : toLocalInputValue(start),
       endLocal: arg.event.allDay ? toLocalDateInputValue(new Date(end.getTime() - 1)) : toLocalInputValue(end),
       allDay: arg.event.allDay,
       workspaceId: (arg.event.extendedProps.workspaceId as string) ?? "",
       priority: ((arg.event.extendedProps.priority as Priority | "") ?? "") as "" | Priority,
+      recurrenceFreq: recurrence?.freq ?? "",
+      recurrenceUntil: recurrence?.until?.toDate ? toLocalDateInputValue(recurrence.until.toDate()) : "",
     });
   };
 
@@ -213,6 +295,15 @@ export default function AgendaCalendar({
       return;
     }
 
+    const recurrence = draft.recurrenceFreq
+      ? {
+          freq: draft.recurrenceFreq,
+          interval: 1,
+          until: draft.recurrenceUntil ? new Date(`${draft.recurrenceUntil}T23:59:59`) : null,
+          exceptions: [],
+        }
+      : null;
+
     setSaving(true);
     setError(null);
     try {
@@ -225,6 +316,7 @@ export default function AgendaCalendar({
           allDay: draft.allDay,
           workspaceId: draft.workspaceId || null,
           priority: draft.priority || null,
+          recurrence,
         });
       } else {
         await onCreateEvent({
@@ -234,6 +326,7 @@ export default function AgendaCalendar({
           allDay: draft.allDay,
           workspaceId: draft.workspaceId || null,
           priority: draft.priority || null,
+          recurrence,
         });
       }
       setDraft(null);
@@ -248,18 +341,29 @@ export default function AgendaCalendar({
     try {
       const start = arg.event.start;
       const end = arg.event.end;
-      if (!arg.event.id || !start || !end) {
+      const taskId = ((arg.event.extendedProps.taskId as string) || arg.event.id) as string;
+      if (!taskId || !start || !end) {
         arg.revert();
         return;
       }
 
       await onUpdateEvent({
-        taskId: arg.event.id,
+        taskId,
         start,
         end,
         allDay: arg.event.allDay,
         workspaceId: ((arg.event.extendedProps.workspaceId as string) || null),
         priority: ((arg.event.extendedProps.priority as Priority | "") || null),
+        recurrence: (() => {
+          const rec = (arg.event.extendedProps.recurrence as TaskDoc["recurrence"] | null) ?? null;
+          if (!rec?.freq) return null;
+          return {
+            freq: rec.freq,
+            interval: rec.interval ?? 1,
+            until: rec.until?.toDate ? rec.until.toDate() : null,
+            exceptions: Array.isArray(rec.exceptions) ? rec.exceptions : [],
+          };
+        })(),
       });
     } catch {
       arg.revert();
@@ -300,6 +404,8 @@ export default function AgendaCalendar({
       allDay: false,
       workspaceId: "",
       priority: "",
+      recurrenceFreq: "",
+      recurrenceUntil: "",
     });
   }, []);
 
@@ -347,6 +453,8 @@ export default function AgendaCalendar({
 
   const onDatesSet = (arg: DatesSetArg) => {
     setLabel(arg.view.title);
+    setVisibleRange({ start: arg.start, end: arg.end });
+    setNavDate(toLocalDateInputValue(arg.start));
     onVisibleRangeChange?.({ start: arg.start, end: arg.end });
   };
 
@@ -361,7 +469,30 @@ export default function AgendaCalendar({
 
         <div className="text-sm font-semibold">{label}</div>
 
-        <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className="inline-flex items-center gap-2">
+            <input
+              type="date"
+              value={navDate}
+              onChange={(e) => setNavDate(e.target.value)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+              aria-label="Aller à la date"
+            />
+            <button
+              type="button"
+              className="px-2 py-1.5 text-xs rounded-md border border-border bg-background"
+              onClick={() => {
+                if (!navDate) return;
+                const date = new Date(`${navDate}T12:00:00`);
+                if (Number.isNaN(date.getTime())) return;
+                calendarRef.current?.getApi().gotoDate(date);
+              }}
+            >
+              Aller
+            </button>
+          </div>
+
+          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit">
           <button
             type="button"
             className={`px-3 py-1.5 text-sm ${viewMode === "dayGridMonth" ? "bg-accent font-semibold" : ""}`}
@@ -383,6 +514,7 @@ export default function AgendaCalendar({
           >
             Jour
           </button>
+          </div>
         </div>
       </div>
 
@@ -523,6 +655,33 @@ export default function AgendaCalendar({
                 <option value="medium">Moyenne</option>
                 <option value="high">Haute</option>
               </select>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <select
+                value={draft.recurrenceFreq}
+                onChange={(e) =>
+                  setDraft((prev) =>
+                    prev ? { ...prev, recurrenceFreq: e.target.value as "" | TaskRecurrenceFreq } : prev,
+                  )
+                }
+                className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                aria-label="Récurrence"
+              >
+                <option value="">Sans récurrence</option>
+                <option value="daily">Chaque jour</option>
+                <option value="weekly">Chaque semaine</option>
+                <option value="monthly">Chaque mois</option>
+              </select>
+
+              <input
+                type="date"
+                value={draft.recurrenceUntil}
+                onChange={(e) => setDraft((prev) => (prev ? { ...prev, recurrenceUntil: e.target.value } : prev))}
+                className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                aria-label="Récurrence jusqu’au"
+                disabled={!draft.recurrenceFreq}
+              />
             </div>
 
             <div className="flex items-center justify-between gap-3">

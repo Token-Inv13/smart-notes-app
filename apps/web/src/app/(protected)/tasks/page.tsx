@@ -30,6 +30,12 @@ type TaskStatus = "todo" | "doing" | "done";
 type TaskStatusFilter = "all" | TaskStatus;
 type WorkspaceFilter = "all" | string;
 type TaskViewMode = "list" | "grid" | "kanban" | "calendar";
+type CalendarRecurrenceInput = {
+  freq: "daily" | "weekly" | "monthly";
+  interval?: number;
+  until?: Date | null;
+  exceptions?: string[];
+} | null;
 
 type TaskPriorityFilter = "all" | NonNullable<TaskDoc["priority"]>;
 type DueFilter = "all" | "today" | "overdue";
@@ -69,6 +75,7 @@ export default function TasksPage() {
     allDay: boolean;
     workspaceId?: string | null;
     priority?: Priority | null;
+    recurrence?: CalendarRecurrenceInput;
   }) => {
     const user = auth.currentUser;
     if (!user) {
@@ -85,6 +92,14 @@ export default function TasksPage() {
       dueDate: Timestamp.fromDate(input.end),
       workspaceId: input.workspaceId ?? null,
       priority: input.priority ?? null,
+      recurrence: input.recurrence
+        ? {
+            freq: input.recurrence.freq,
+            interval: input.recurrence.interval ?? 1,
+            until: input.recurrence.until ? Timestamp.fromDate(input.recurrence.until) : null,
+            exceptions: input.recurrence.exceptions ?? [],
+          }
+        : null,
       favorite: false,
       archived: false,
       createdAt: serverTimestamp(),
@@ -100,6 +115,7 @@ export default function TasksPage() {
     allDay: boolean;
     workspaceId?: string | null;
     priority?: Priority | null;
+    recurrence?: CalendarRecurrenceInput;
   }) => {
     const user = auth.currentUser;
     const current = tasks.find((t) => t.id === input.taskId);
@@ -114,6 +130,17 @@ export default function TasksPage() {
       dueDate: Timestamp.fromDate(input.end),
       workspaceId: input.workspaceId ?? current.workspaceId ?? null,
       priority: input.priority ?? current.priority ?? null,
+      recurrence:
+        input.recurrence === undefined
+          ? (current.recurrence ?? null)
+          : input.recurrence
+            ? {
+                freq: input.recurrence.freq,
+                interval: input.recurrence.interval ?? 1,
+                until: input.recurrence.until ? Timestamp.fromDate(input.recurrence.until) : null,
+                exceptions: input.recurrence.exceptions ?? [],
+              }
+            : null,
       updatedAt: serverTimestamp(),
     });
   };

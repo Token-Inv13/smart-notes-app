@@ -1,6 +1,14 @@
 import type { FieldValue, Timestamp } from 'firebase/firestore';
 
 export type Priority = 'low' | 'medium' | 'high';
+export type TaskRecurrenceFreq = 'daily' | 'weekly' | 'monthly';
+
+export interface TaskRecurrenceRule {
+  freq: TaskRecurrenceFreq;
+  interval?: number;
+  until?: Timestamp | null;
+  exceptions?: string[];
+}
 
 export interface UserDoc {
   uid: string;
@@ -95,6 +103,7 @@ export interface TaskDoc {
   startDate?: Timestamp | null;
   dueDate?: Timestamp | null;
   priority?: Priority | null;
+  recurrence?: TaskRecurrenceRule | null;
   favorite?: boolean;
   completed?: boolean;
   archived?: boolean;
