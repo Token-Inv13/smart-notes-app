@@ -8,6 +8,8 @@ export const runtime = 'nodejs';
 
 const SESSION_COOKIE_NAME = 'session';
 
+const FALLBACK_APP_ORIGIN = 'https://app.tachesnotes.com';
+
 type StripeLikeError = {
   message?: string;
   code?: string;
@@ -24,6 +26,32 @@ function isNoSuchCustomerError(err: unknown): boolean {
   if (lower.includes('no such customer')) return true;
   if (stripeErr?.code === 'resource_missing' && (stripeErr?.param === 'customer' || lower.includes('customer'))) return true;
   return false;
+}
+
+function parseOrigin(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+function isValidForwardedHost(value: string): boolean {
+  return /^[a-z0-9.-]+(?::\d+)?$/i.test(value);
+}
+
+async function getAppOrigin(): Promise<string> {
+  const configuredOrigin =
+    parseOrigin(process.env.NEXT_PUBLIC_APP_URL) ?? parseOrigin(process.env.APP_BASE_URL) ?? null;
+  if (configuredOrigin) return configuredOrigin;
+
+  const h = await headers();
+  const host = h.get('x-forwarded-host') ?? h.get('host');
+  if (!host || !isValidForwardedHost(host)) return FALLBACK_APP_ORIGIN;
+
+  const proto = h.get('x-forwarded-proto') === 'http' ? 'http' : 'https';
+  return `${proto}://${host}`;
 }
 
 function getCustomerIdFromSubscription(sub: Stripe.Subscription): string | null {
@@ -75,15 +103,7 @@ export async function POST() {
 
     const customer = userData.stripeCustomerId;
 
-    const h = await headers();
-    const origin = (() => {
-      const fromOrigin = h.get('origin');
-      if (fromOrigin) return fromOrigin;
-      const host = h.get('x-forwarded-host') ?? h.get('host');
-      if (!host) return 'https://app.tachesnotes.com';
-      const proto = h.get('x-forwarded-proto') ?? 'https';
-      return `${proto}://${host}`;
-    })();
+    const origin = await getAppOrigin();
 
     const attemptCreatePortal = async (customerId: string) =>
       stripe.billingPortal.sessions.create({

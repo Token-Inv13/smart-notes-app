@@ -8,6 +8,34 @@ const SESSION_COOKIE_NAME = 'session';
 
 export const runtime = 'nodejs';
 
+const FALLBACK_APP_ORIGIN = 'https://app.tachesnotes.com';
+
+function parseOrigin(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+function isValidForwardedHost(value: string): boolean {
+  return /^[a-z0-9.-]+(?::\d+)?$/i.test(value);
+}
+
+async function getAppOrigin(): Promise<string> {
+  const configuredOrigin =
+    parseOrigin(process.env.NEXT_PUBLIC_APP_URL) ?? parseOrigin(process.env.APP_BASE_URL) ?? null;
+  if (configuredOrigin) return configuredOrigin;
+
+  const h = await headers();
+  const host = h.get('x-forwarded-host') ?? h.get('host');
+  if (!host || !isValidForwardedHost(host)) return FALLBACK_APP_ORIGIN;
+
+  const proto = h.get('x-forwarded-proto') === 'http' ? 'http' : 'https';
+  return `${proto}://${host}`;
+}
+
 export async function POST() {
   try {
     const sessionCookie = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
@@ -24,8 +52,7 @@ export async function POST() {
 
     const stripe = new Stripe(secretKey, { apiVersion: '2024-06-20' });
 
-    const h = await headers();
-    const origin = h.get('origin') ?? 'http://localhost:3000';
+    const origin = await getAppOrigin();
 
     const db = getAdminDb();
     const userRef = db.collection('users').doc(decoded.uid);
