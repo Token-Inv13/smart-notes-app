@@ -127,6 +127,7 @@ export default function AgendaCalendar({
   const [showRecurringOnly, setShowRecurringOnly] = useState(false);
   const [showConflictsOnly, setShowConflictsOnly] = useState(false);
   const [priorityFilter, setPriorityFilter] = useState<CalendarPriorityFilter>("");
+  const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [visibleRange, setVisibleRange] = useState<{ start: Date; end: Date } | null>(null);
   const [navDate, setNavDate] = useState(toLocalDateInputValue(new Date()));
   const [label, setLabel] = useState("");
@@ -499,10 +500,22 @@ export default function AgendaCalendar({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && showShortcutHelp) {
+        e.preventDefault();
+        setShowShortcutHelp(false);
+        return;
+      }
+
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName?.toLowerCase();
       const isEditing = tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable;
       if (isEditing) return;
+
+      if (e.key === "?") {
+        e.preventDefault();
+        setShowShortcutHelp((prev) => !prev);
+        return;
+      }
 
       if (e.key.toLowerCase() === "n") {
         e.preventDefault();
@@ -532,7 +545,7 @@ export default function AgendaCalendar({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openQuickDraft]);
+  }, [openQuickDraft, showShortcutHelp]);
 
   const changeView = (next: CalendarViewMode) => {
     setViewMode(next);
@@ -647,6 +660,14 @@ export default function AgendaCalendar({
             Réinitialiser
           </button>
         )}
+
+        <button
+          type="button"
+          onClick={() => setShowShortcutHelp(true)}
+          className="h-8 px-3 rounded-md border border-border bg-background text-xs"
+        >
+          Aide (?)
+        </button>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -728,8 +749,35 @@ export default function AgendaCalendar({
       </div>
 
       <div className="text-xs text-muted-foreground">
-        Raccourcis: N (nouvel élément), / (recherche), ←/→ (navigation).
+        Raccourcis: ? (aide), N (nouvel élément), / (recherche), ←/→ (navigation), Échap (fermer aide).
       </div>
+
+      {showShortcutHelp && (
+        <div className="fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-label="Aide raccourcis clavier">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/45"
+            onClick={() => setShowShortcutHelp(false)}
+            aria-label="Fermer l’aide"
+          />
+          <div className="absolute top-1/2 left-1/2 w-[min(92vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-card shadow-lg p-4 space-y-3">
+            <div className="text-sm font-semibold">Aide des raccourcis</div>
+            <ul className="space-y-2 text-sm">
+              <li className="flex items-center justify-between gap-3"><span>Ouvrir/fermer cette aide</span><span className="sn-badge">?</span></li>
+              <li className="flex items-center justify-between gap-3"><span>Créer un élément agenda</span><span className="sn-badge">N</span></li>
+              <li className="flex items-center justify-between gap-3"><span>Focus recherche globale</span><span className="sn-badge">/</span></li>
+              <li className="flex items-center justify-between gap-3"><span>Période précédente</span><span className="sn-badge">←</span></li>
+              <li className="flex items-center justify-between gap-3"><span>Période suivante</span><span className="sn-badge">→</span></li>
+              <li className="flex items-center justify-between gap-3"><span>Fermer l’aide</span><span className="sn-badge">Échap</span></li>
+            </ul>
+            <div className="flex justify-end">
+              <button type="button" className="sn-text-btn" onClick={() => setShowShortcutHelp(false)}>
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <button
         type="button"
