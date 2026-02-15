@@ -97,6 +97,7 @@ export default function TasksPage() {
   const [archiveView, setArchiveView] = useState<"active" | "archived">("active");
 
   const [viewMode, setViewMode] = useState<"list" | "grid" | "kanban">("list");
+  const [flashHighlightTaskId, setFlashHighlightTaskId] = useState<string | null>(null);
 
   const [editError, setEditError] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
@@ -176,6 +177,25 @@ export default function TasksPage() {
       : "/tasks/new";
     router.replace(href);
   }, [createParam, router, workspaceIdParam]);
+
+  useEffect(() => {
+    if (!highlightedTaskId) return;
+    const target = tasks.find((t) => t.id === highlightedTaskId);
+    if (!target) return;
+
+    setArchiveView(target.archived === true ? "archived" : "active");
+    setStatusFilter("all");
+    setPriorityFilter("all");
+    setDueFilter("all");
+    setSearchInput("");
+    setFlashHighlightTaskId(highlightedTaskId);
+
+    const timer = window.setTimeout(() => {
+      setFlashHighlightTaskId((prev) => (prev === highlightedTaskId ? null : prev));
+    }, 2600);
+
+    return () => window.clearTimeout(timer);
+  }, [highlightedTaskId, tasks]);
 
   useEffect(() => {
     try {
@@ -610,11 +630,29 @@ export default function TasksPage() {
 
   useEffect(() => {
     if (!highlightedTaskId) return;
-    const el = document.getElementById(`task-${highlightedTaskId}`);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  }, [highlightedTaskId, filteredTasks.length]);
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 12;
+
+    const tryScroll = () => {
+      if (cancelled) return;
+      const el = document.getElementById(`task-${highlightedTaskId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+      attempts += 1;
+      if (attempts < maxAttempts) {
+        window.setTimeout(tryScroll, 120);
+      }
+    };
+
+    tryScroll();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [highlightedTaskId, archiveView, viewMode, filteredTasks.length]);
 
   return (
     <div className="space-y-4">
@@ -978,7 +1016,11 @@ export default function TasksPage() {
               <li key={task.id} id={task.id ? `task-${task.id}` : undefined}>
                 <div
                   className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 ${
-                    task.id && task.id === highlightedTaskId ? "border-primary" : ""
+                    task.id && task.id === highlightedTaskId
+                      ? flashHighlightTaskId === task.id
+                        ? "border-primary ring-2 ring-primary/40"
+                        : "border-primary"
+                      : ""
                   }`}
                   onClick={() => {
                     if (!task.id) return;
@@ -1053,7 +1095,11 @@ export default function TasksPage() {
                 key={task.id}
                 id={task.id ? `task-${task.id}` : undefined}
                 className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 min-w-0 ${
-                  task.id && task.id === highlightedTaskId ? "border-primary" : ""
+                  task.id && task.id === highlightedTaskId
+                    ? flashHighlightTaskId === task.id
+                      ? "border-primary ring-2 ring-primary/40"
+                      : "border-primary"
+                    : ""
                 }`}
                 onClick={() => {
                   if (!task.id) return;
@@ -1164,6 +1210,7 @@ export default function TasksPage() {
                   return (
                     <div
                       key={task.id}
+                      id={task.id ? `task-${task.id}` : undefined}
                       draggable={!!task.id}
                       onDragStart={(e) => {
                         if (!task.id) return;
@@ -1180,7 +1227,13 @@ export default function TasksPage() {
                         }, 0);
                       }}
                       className={`border border-border rounded-md bg-background p-2 cursor-move transition-shadow ${
-                        draggingTaskId === task.id ? "opacity-60 ring-2 ring-primary/40" : ""
+                        draggingTaskId === task.id
+                          ? "opacity-60 ring-2 ring-primary/40"
+                          : task.id && task.id === highlightedTaskId
+                            ? flashHighlightTaskId === task.id
+                              ? "border-primary ring-2 ring-primary/40"
+                              : "border-primary"
+                            : ""
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -1270,7 +1323,17 @@ export default function TasksPage() {
           <h2 className="text-lg font-semibold mt-6 mb-2">Terminées</h2>
           <ul className="space-y-2">
             {completedTasks.map((task) => (
-              <li key={task.id} className={`sn-card sn-card--task sn-card--muted p-4 ${task.favorite ? " sn-card--favorite" : ""}`}>
+              <li
+                key={task.id}
+                id={task.id ? `task-${task.id}` : undefined}
+                className={`sn-card sn-card--task sn-card--muted p-4 ${task.favorite ? " sn-card--favorite" : ""} ${
+                  task.id && task.id === highlightedTaskId
+                    ? flashHighlightTaskId === task.id
+                      ? "border-primary ring-2 ring-primary/40"
+                      : "border-primary"
+                    : ""
+                }`}
+              >
                 <div className="sn-card-header">
                   <div className="min-w-0">
                     <div className="sn-card-title truncate">{task.title}</div>
