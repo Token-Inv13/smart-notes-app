@@ -5,6 +5,27 @@ import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firest
 import { getMessagingInstance } from './firebase';
 import { auth, db } from './firebase';
 
+function toTasksQueryUrl(raw?: string | null, taskIdFallback?: string | null): string | undefined {
+  const fallback =
+    typeof taskIdFallback === 'string' && taskIdFallback
+      ? `/tasks?taskId=${encodeURIComponent(taskIdFallback)}`
+      : undefined;
+
+  if (!raw) return fallback;
+
+  const absolute = raw.startsWith('http://') || raw.startsWith('https://');
+  if (absolute) return raw;
+
+  if (raw.startsWith('/tasks?')) return raw;
+
+  const taskPathMatch = raw.match(/^\/tasks\/([^/?#]+)/);
+  if (taskPathMatch?.[1]) {
+    return `/tasks?taskId=${encodeURIComponent(taskPathMatch[1])}`;
+  }
+
+  return raw || fallback;
+}
+
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<T>((_, reject) => {
@@ -136,7 +157,7 @@ export function listenToForegroundMessages() {
       const title = payload.notification?.title || 'Notification';
       const body = payload.notification?.body || '';
       const data = payload.data as { url?: string; taskId?: string } | undefined;
-      const url = data?.url || (data?.taskId ? `/tasks/${data.taskId}` : undefined);
+      const url = toTasksQueryUrl(data?.url, data?.taskId);
 
       if (typeof Notification === 'undefined') {
         console.log('Received foreground message', payload);

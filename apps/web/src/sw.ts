@@ -32,6 +32,23 @@ type FirebaseCompat = {
   };
 };
 
+function toTasksQueryUrl(raw?: string, taskIdFallback?: string): string {
+  const fallback = taskIdFallback ? `/tasks?taskId=${encodeURIComponent(taskIdFallback)}` : '/tasks';
+  if (!raw) return fallback;
+
+  const isAbsolute = raw.startsWith('http://') || raw.startsWith('https://');
+  if (isAbsolute) return raw;
+
+  if (raw.startsWith('/tasks?')) return raw;
+
+  const taskPathMatch = raw.match(/^\/tasks\/([^/?#]+)/);
+  if (taskPathMatch?.[1]) {
+    return `/tasks?taskId=${encodeURIComponent(taskPathMatch[1])}`;
+  }
+
+  return raw;
+}
+
 declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: ManifestEntry[];
   importScripts: (...urls: string[]) => void;
@@ -108,8 +125,7 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
   const data = event.notification.data as { url?: string; taskId?: string } | undefined;
-  const taskId = data?.taskId;
-  const targetUrl = data?.url || (taskId ? `/tasks/${taskId}` : '/tasks');
+  const targetUrl = toTasksQueryUrl(data?.url, data?.taskId);
 
   event.waitUntil(
     (async () => {
