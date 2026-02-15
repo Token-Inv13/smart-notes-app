@@ -16,7 +16,7 @@ import {
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { auth, db } from "@/lib/firebase";
-import type { TaskDoc } from "@/types/firestore";
+import type { TaskDoc, TaskReminderDoc } from "@/types/firestore";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { exportTaskPdf } from "@/lib/pdf/exportPdf";
@@ -44,6 +44,26 @@ function formatFrDate(ts?: TaskDoc["startDate"] | null) {
   const d = ts.toDate();
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+function formatIsoForDateTimeInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const yyyy = date.getFullYear();
+  const mm = pad(date.getMonth() + 1);
+  const dd = pad(date.getDate());
+  const hh = pad(date.getHours());
+  const min = pad(date.getMinutes());
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+}
+
+function formatReminderDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "Date invalide";
+  return date.toLocaleString("fr-FR");
 }
 
 function priorityLabel(p?: TaskDoc["priority"] | null) {
@@ -121,6 +141,12 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
   const [exportFeedback, setExportFeedback] = useState<string | null>(null);
   const [snoozing, setSnoozing] = useState(false);
   const [snoozeFeedback, setSnoozeFeedback] = useState<string | null>(null);
+  const [taskReminders, setTaskReminders] = useState<TaskReminderDoc[]>([]);
+  const [remindersLoading, setRemindersLoading] = useState(false);
+  const [addingReminder, setAddingReminder] = useState(false);
+  const [busyReminderId, setBusyReminderId] = useState<string | null>(null);
+  const [reminderDraft, setReminderDraft] = useState("");
+  const [reminderFeedback, setReminderFeedback] = useState<string | null>(null);
 
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const [dictationStatus, setDictationStatus] = useState<"idle" | "listening" | "stopped" | "error">("idle");
@@ -133,6 +159,61 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
   const setDirty = (next: boolean) => {
     isDirtyRef.current = next;
     setIsDirty(next);
+  };
+
+  const loadTaskReminders = async (opts?: { keepDraft?: boolean }) => {
+    if (!task?.id) {
+      setTaskReminders([]);
+      if (!opts?.keepDraft) setReminderDraft("");
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (!user || user.uid !== task.userId) {
+      setTaskReminders([]);
+      if (!opts?.keepDraft) setReminderDraft("");
+      return;
+    }
+
+    setRemindersLoading(true);
+    try {
+      const remindersRef = collection(db, "taskReminders");
+      const remindersSnap = await getDocs(
+        query(
+          remindersRef,
+          where("userId", "==", user.uid),
+          where("taskId", "==", task.id),
+        ),
+      );
+
+      const reminders = remindersSnap.docs
+        .map((d) => ({ id: d.id, ...(d.data() as TaskReminderDoc) }))
+        .sort((a, b) => {
+          const aTs = new Date(a.reminderTime ?? "").getTime();
+          const bTs = new Date(b.reminderTime ?? "").getTime();
+          const safeA = Number.isNaN(aTs) ? Number.MAX_SAFE_INTEGER : aTs;
+          const safeB = Number.isNaN(bTs) ? Number.MAX_SAFE_INTEGER : bTs;
+          return safeA - safeB;
+        });
+
+      setTaskReminders(reminders);
+
+      if (!opts?.keepDraft) {
+        if (reminders[0]?.reminderTime) {
+          setReminderDraft(formatIsoForDateTimeInput(reminders[0].reminderTime));
+        } else if (task.dueDate) {
+          setReminderDraft(formatTimestampForInput(task.dueDate));
+        } else {
+          setReminderDraft("");
+        }
+      }
+    } catch (e) {
+      console.error("Error loading task reminders", e);
+      setEditError(e instanceof Error ? e.message : "Erreur lors du chargement des rappels.");
+      setTaskReminders([]);
+    } finally {
+      setRemindersLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -290,6 +371,8 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     setShareFeedback(null);
     setSharedUrl(null);
     setExportFeedback(null);
+    setSnoozeFeedback(null);
+    setReminderFeedback(null);
 
     lastSavedSnapshotRef.current = JSON.stringify({
       title: task.title ?? "",
@@ -301,6 +384,16 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     });
     setDirty(false);
   }, [task]);
+
+  useEffect(() => {
+    if (!isPro) {
+      setTaskReminders([]);
+      setReminderDraft("");
+      return;
+    }
+    void loadTaskReminders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPro, task?.id]);
 
   const dueLabel = useMemo(() => formatFrDateTime(task?.dueDate ?? null), [task?.dueDate]);
   const startLabel = useMemo(() => formatFrDate(task?.startDate ?? null), [task?.startDate]);
@@ -356,6 +449,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     setSnoozing(true);
     setEditError(null);
     setSnoozeFeedback(null);
+    setReminderFeedback(null);
 
     try {
       const remindersRef = collection(db, 'taskReminders');
@@ -395,11 +489,85 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       });
 
       setSnoozeFeedback('Rappel reprogrammé.');
+      setReminderDraft(formatIsoForDateTimeInput(nextDate.toISOString()));
+      await loadTaskReminders({ keepDraft: true });
     } catch (e) {
       console.error('Error snoozing reminder', e);
       setEditError(e instanceof Error ? e.message : 'Erreur lors du snooze du rappel.');
     } finally {
       setSnoozing(false);
+    }
+  };
+
+  const handleAddReminder = async () => {
+    if (!task?.id) return;
+    if (!isPro) return;
+
+    const user = auth.currentUser;
+    if (!user || user.uid !== task.userId) {
+      setEditError("Impossible de modifier cette tâche.");
+      return;
+    }
+
+    if (!reminderDraft) {
+      setEditError("Choisis une date de rappel.");
+      return;
+    }
+
+    const reminderDate = new Date(reminderDraft);
+    if (Number.isNaN(reminderDate.getTime())) {
+      setEditError("Date de rappel invalide (format attendu: AAAA-MM-JJTHH:MM).");
+      return;
+    }
+
+    setAddingReminder(true);
+    setEditError(null);
+    setSnoozeFeedback(null);
+    setReminderFeedback(null);
+    try {
+      await addDoc(collection(db, "taskReminders"), {
+        userId: user.uid,
+        taskId: task.id,
+        dueDate: task.dueDate ? task.dueDate.toDate().toISOString() : reminderDate.toISOString(),
+        reminderTime: reminderDate.toISOString(),
+        sent: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setReminderFeedback("Rappel ajouté.");
+      await loadTaskReminders({ keepDraft: true });
+    } catch (e) {
+      console.error("Error adding task reminder", e);
+      setEditError(e instanceof Error ? e.message : "Erreur lors de l’ajout du rappel.");
+    } finally {
+      setAddingReminder(false);
+    }
+  };
+
+  const handleDeleteReminder = async (reminderId: string) => {
+    if (!task?.id) return;
+    if (!isPro) return;
+    if (!confirm("Supprimer ce rappel ?")) return;
+
+    const user = auth.currentUser;
+    if (!user || user.uid !== task.userId) {
+      setEditError("Impossible de modifier cette tâche.");
+      return;
+    }
+
+    setBusyReminderId(reminderId);
+    setEditError(null);
+    setSnoozeFeedback(null);
+    setReminderFeedback(null);
+    try {
+      await deleteDoc(doc(db, "taskReminders", reminderId));
+      setReminderFeedback("Rappel supprimé.");
+      await loadTaskReminders({ keepDraft: true });
+    } catch (e) {
+      console.error("Error deleting task reminder", e);
+      setEditError(e instanceof Error ? e.message : "Erreur lors de la suppression du rappel.");
+    } finally {
+      setBusyReminderId(null);
     }
   };
 
@@ -514,21 +682,20 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
           const existingDocs = remindersSnap.docs;
 
-          if (!validation.data.dueDate) {
-            await Promise.all(existingDocs.map((d) => deleteDoc(d.ref)));
-          } else {
+          if (validation.data.dueDate) {
             const reminderDate = new Date(validation.data.dueDate);
             if (!Number.isNaN(reminderDate.getTime())) {
-              const primary = existingDocs[0] ?? null;
+              const primary = existingDocs.find((d) => {
+                const data = d.data() as TaskReminderDoc;
+                return data.dueDate === data.reminderTime;
+              }) ?? existingDocs[0] ?? null;
               if (primary) {
                 await updateDoc(primary.ref, {
                   dueDate: dueTimestamp ? dueTimestamp.toDate().toISOString() : "",
                   reminderTime: reminderDate.toISOString(),
                   sent: false,
+                  updatedAt: serverTimestamp(),
                 });
-                if (existingDocs.length > 1) {
-                  await Promise.all(existingDocs.slice(1).map((d) => deleteDoc(d.ref)));
-                }
               } else {
                 await addDoc(remindersRef, {
                   userId: user.uid,
@@ -537,6 +704,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                   reminderTime: reminderDate.toISOString(),
                   sent: false,
                   createdAt: serverTimestamp(),
+                  updatedAt: serverTimestamp(),
                 });
               }
             }
@@ -544,6 +712,10 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
         } catch (e) {
           console.error("Error syncing task reminder (modal)", e);
         }
+      }
+
+      if (isPro) {
+        await loadTaskReminders({ keepDraft: true });
       }
 
       setTask((prev) =>
@@ -710,6 +882,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
           )}
           {exportFeedback && <div className="sn-alert">{exportFeedback}</div>}
           {snoozeFeedback && <div className="sn-alert">{snoozeFeedback}</div>}
+          {reminderFeedback && <div className="sn-alert">{reminderFeedback}</div>}
           {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
           <div className="sn-card p-4 space-y-3">
             <div className="flex items-start justify-between gap-3">
@@ -816,6 +989,75 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                   <span className="font-medium">Dossier:</span>{" "}
                   {workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—"}
                 </div>
+
+                {isPro && (
+                  <div className="rounded-md border border-border/70 bg-background/40 p-3 space-y-2">
+                    <div className="text-sm font-medium">Rappels</div>
+
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
+                      <div className="space-y-1 flex-1">
+                        <label className="text-xs text-muted-foreground" htmlFor="task-reminder-draft">
+                          Date et heure du rappel
+                        </label>
+                        <input
+                          id="task-reminder-draft"
+                          type="datetime-local"
+                          value={reminderDraft}
+                          onChange={(e) => setReminderDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              void handleAddReminder();
+                            }
+                          }}
+                          className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                          disabled={addingReminder || Boolean(busyReminderId) || saving}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleAddReminder()}
+                        disabled={addingReminder || !reminderDraft || Boolean(busyReminderId) || saving}
+                        className="h-10 px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+                      >
+                        {addingReminder ? "Ajout…" : "Ajouter"}
+                      </button>
+                    </div>
+
+                    {remindersLoading ? (
+                      <div className="text-xs text-muted-foreground">Chargement des rappels…</div>
+                    ) : taskReminders.length === 0 ? (
+                      <div className="text-xs text-muted-foreground">Aucun rappel pour cette tâche.</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {taskReminders.map((reminder) => (
+                          <div
+                            key={reminder.id}
+                            className="flex items-center justify-between gap-3 rounded-md border border-input px-3 py-2"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-sm">{formatReminderDate(reminder.reminderTime)}</div>
+                              <div className="text-xs text-muted-foreground">
+                                Statut: {reminder.sent === true ? "envoyé" : "en attente"}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!reminder.id) return;
+                                void handleDeleteReminder(reminder.id);
+                              }}
+                              disabled={!reminder.id || busyReminderId === reminder.id || addingReminder || saving}
+                              className="px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+                            >
+                              {busyReminderId === reminder.id ? "Suppression…" : "Supprimer"}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </>
             ) : (
               <>
