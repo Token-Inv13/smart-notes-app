@@ -134,7 +134,7 @@ export default function AgendaCalendar({
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<CalendarDraft | null>(null);
 
-  const events = useMemo(() => {
+  const calendarData = useMemo(() => {
     const rangeStart = visibleRange?.start ?? new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
     const rangeEnd = visibleRange?.end ?? new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
 
@@ -251,7 +251,19 @@ export default function AgendaCalendar({
         },
       });
     }
-    return output;
+    const total = withDates.length;
+    const recurring = withDates.filter((item) => Boolean(item.recurrence?.freq)).length;
+    const conflicts = conflictIds.size;
+
+    return {
+      events: output,
+      stats: {
+        total,
+        displayed: output.length,
+        recurring,
+        conflicts,
+      },
+    };
   }, [priorityFilter, showConflictsOnly, showRecurringOnly, tasks, visibleRange, workspaces]);
 
   const openDraftFromSelect = (arg: DateSelectArg) => {
@@ -637,6 +649,13 @@ export default function AgendaCalendar({
         )}
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span className="sn-badge">Affichés: {calendarData.stats.displayed}</span>
+        <span className="sn-badge">Total: {calendarData.stats.total}</span>
+        <span className="sn-badge">Récurrents: {calendarData.stats.recurring}</span>
+        <span className="sn-badge">Conflits: {calendarData.stats.conflicts}</span>
+      </div>
+
       {error && <div className="sn-alert sn-alert--error">{error}</div>}
 
       <div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
@@ -685,7 +704,7 @@ export default function AgendaCalendar({
             eventDisplay="block"
             slotMinTime="06:00:00"
             slotMaxTime="23:30:00"
-            events={events}
+            events={calendarData.events}
             datesSet={onDatesSet}
             select={openDraftFromSelect}
             dateClick={(arg) =>
