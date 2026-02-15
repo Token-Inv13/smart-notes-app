@@ -1,11 +1,12 @@
 import './globals.css';
 import type { ReactNode } from 'react';
 import ThemeClientProvider from './ThemeClientProvider';
+import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from '@/lib/siteConfig';
 
 export const metadata = {
-  metadataBase: new URL('https://app.tachesnotes.com'),
-  title: 'Smart Notes',
-  description: 'Notes and tasks with reminders',
+  metadataBase: new URL(SITE_URL),
+  title: SITE_NAME,
+  description: SITE_DESCRIPTION,
   alternates: {
     canonical: '/',
   },
@@ -16,18 +17,18 @@ export const metadata = {
     apple: '/favicon.svg',
   },
   openGraph: {
-    title: 'Smart Notes',
-    description: 'Notes and tasks with reminders',
-    url: 'https://app.tachesnotes.com/',
-    siteName: 'Smart Notes',
+    title: SITE_NAME,
+    description: SITE_DESCRIPTION,
+    url: `${SITE_URL}/`,
+    siteName: SITE_NAME,
     locale: 'fr_FR',
     type: 'website',
     images: [{ url: '/favicon.svg' }],
   },
   twitter: {
     card: 'summary',
-    title: 'Smart Notes',
-    description: 'Notes and tasks with reminders',
+    title: SITE_NAME,
+    description: SITE_DESCRIPTION,
     images: ['/favicon.svg'],
   },
 };
