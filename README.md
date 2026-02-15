@@ -38,3 +38,26 @@ Les alias explicites existent aussi :
 - `apps/web` : application Next.js (source of truth)
 - `functions` : Cloud Functions Firebase
 - `landing` : pages statiques marketing (déploiement indépendant)
+
+## Déploiement Vercel (`apps/web`)
+
+Créer un projet Vercel pointant ce repository avec :
+
+- **Root Directory**: `apps/web`
+- **Install Command**: `pnpm install`
+- **Build Command**: `pnpm build`
+- **Node.js**: 20.x
+
+Variables d'environnement à configurer en production :
+
+- `NEXT_PUBLIC_FIREBASE_API_KEY`
+- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+- `NEXT_PUBLIC_FIREBASE_APP_ID`
+- `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
+- `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID` (optionnel)
+- `NEXT_PUBLIC_FCM_VAPID_KEY`
+
+⚠️ En production Vercel, **ne pas définir** `NEXT_PUBLIC_USE_EMULATORS=true`.
+
+Un modèle local est disponible dans `apps/web/.env.example`.
