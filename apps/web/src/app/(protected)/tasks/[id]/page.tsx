@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { doc, getDoc } from "firebase/firestore";
+import { arrayRemove, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import type { TaskDoc } from "@/types/firestore";
 
@@ -21,6 +21,14 @@ function statusLabel(s?: TaskDoc["status"] | null) {
   return "À faire";
 }
 
+function recurrenceLabel(task: TaskDoc | null) {
+  const rec = task?.recurrence;
+  if (!rec?.freq) return "Aucune";
+  if (rec.freq === "daily") return "Tous les jours";
+  if (rec.freq === "weekly") return "Toutes les semaines";
+  return "Tous les mois";
+}
+
 export default function TaskDetailPage() {
   const router = useRouter();
   const params = useParams<{ id?: string }>();
@@ -33,40 +41,44 @@ export default function TaskDetailPage() {
   const [task, setTask] = useState<TaskDoc | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [busyException, setBusyException] = useState<string | null>(null);
+
+  const loadTask = async () => {
+    if (!taskId) {
+      setError("ID d’élément d’agenda manquant.");
+      setLoading(false);
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (!user) {
+      setError("Tu dois être connecté.");
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    const snap = await getDoc(doc(db, "tasks", taskId));
+    if (!snap.exists()) {
+      throw new Error("Élément d’agenda introuvable.");
+    }
+
+    const data = snap.data() as TaskDoc;
+    if (data.userId !== user.uid) {
+      throw new Error("Accès refusé.");
+    }
+
+    setTask({ id: snap.id, ...data });
+  };
 
   useEffect(() => {
     let cancelled = false;
 
     async function run() {
-      if (!taskId) {
-        setError("ID d’élément d’agenda manquant.");
-        setLoading(false);
-        return;
-      }
-
-      const user = auth.currentUser;
-      if (!user) {
-        setError("Tu dois être connecté.");
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-      setError(null);
       try {
-        const snap = await getDoc(doc(db, "tasks", taskId));
-        if (!snap.exists()) {
-          throw new Error("Élément d’agenda introuvable.");
-        }
-
-        const data = snap.data() as TaskDoc;
-        if (data.userId !== user.uid) {
-          throw new Error("Accès refusé.");
-        }
-
-        if (!cancelled) {
-          setTask({ id: snap.id, ...data });
-        }
+        await loadTask();
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Erreur lors du chargement.";
         if (!cancelled) setError(msg);
@@ -82,6 +94,35 @@ export default function TaskDetailPage() {
   }, [taskId]);
 
   const dueLabel = useMemo(() => formatFrDateTime(task?.dueDate ?? null), [task?.dueDate]);
+  const recurrenceUntilLabel = useMemo(() => formatFrDateTime(task?.recurrence?.until ?? null), [task?.recurrence?.until]);
+  const recurrenceExceptions = useMemo(() => {
+    const list = Array.isArray(task?.recurrence?.exceptions) ? task?.recurrence?.exceptions : [];
+    return [...list].sort((a, b) => a.localeCompare(b));
+  }, [task?.recurrence?.exceptions]);
+
+  const restoreOccurrence = async (occurrenceDate: string) => {
+    if (!task?.id) return;
+    const user = auth.currentUser;
+    if (!user || task.userId !== user.uid) {
+      setError("Accès refusé.");
+      return;
+    }
+
+    setBusyException(occurrenceDate);
+    setActionMsg(null);
+    try {
+      await updateDoc(doc(db, "tasks", task.id), {
+        "recurrence.exceptions": arrayRemove(occurrenceDate),
+        updatedAt: serverTimestamp(),
+      });
+      await loadTask();
+      setActionMsg("Occurrence restaurée.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Impossible de restaurer cette occurrence.");
+    } finally {
+      setBusyException(null);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -105,6 +146,7 @@ export default function TaskDetailPage() {
         </div>
       )}
       {error && <div className="sn-alert sn-alert--error">{error}</div>}
+      {actionMsg && <div className="sn-alert sn-alert--success">{actionMsg}</div>}
 
       {!loading && !error && task && (
         <div className="sn-card p-4 space-y-3">
@@ -130,6 +172,38 @@ export default function TaskDetailPage() {
             <div>
               <span className="font-medium">Rappel:</span> {dueLabel || "Aucun rappel"}
             </div>
+          </div>
+
+          <div className="space-y-2 border-t border-border pt-3">
+            <div className="text-sm font-medium">Récurrence & exceptions</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+              <div>
+                <span className="font-medium">Règle:</span> {recurrenceLabel(task)}
+              </div>
+              <div>
+                <span className="font-medium">Jusqu’au:</span> {recurrenceUntilLabel || "Sans fin"}
+              </div>
+            </div>
+
+            {recurrenceExceptions.length === 0 ? (
+              <div className="text-xs text-muted-foreground">Aucune occurrence ignorée.</div>
+            ) : (
+              <ul className="space-y-2">
+                {recurrenceExceptions.map((exceptionDate) => (
+                  <li key={exceptionDate} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="sn-badge">{exceptionDate}</span>
+                    <button
+                      type="button"
+                      onClick={() => restoreOccurrence(exceptionDate)}
+                      disabled={busyException === exceptionDate}
+                      className="sn-text-btn"
+                    >
+                      {busyException === exceptionDate ? "Restauration…" : "Restaurer"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       )}
