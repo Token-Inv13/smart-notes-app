@@ -3,15 +3,23 @@ import { getAdminDb, verifySessionCookie } from "@/lib/firebaseAdmin";
 
 type IntegrationDoc = {
   connected?: boolean;
-  primaryCalendarId?: string | null;
-  lastConnectedAt?: { toMillis?: () => number };
-  updatedAt?: { toMillis?: () => number };
+  primaryCalendarId?: string;
+  lastConnectedAt?: unknown;
+  updatedAt?: unknown;
 };
 
+function hasToMillis(value: unknown): value is { toMillis: () => number } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "toMillis" in value &&
+    typeof (value as { toMillis?: unknown }).toMillis === "function"
+  );
+}
+
 function toMillisSafe(value: unknown): number | null {
-  const ts = value as { toMillis?: () => number };
-  if (ts && typeof ts.toMillis === "function") {
-    return ts.toMillis();
+  if (hasToMillis(value)) {
+    return value.toMillis();
   }
   return null;
 }
@@ -44,7 +52,7 @@ export async function GET(request: NextRequest) {
       updatedAtMs: toMillisSafe(data?.updatedAt),
     });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Failed to load status";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("Google calendar status error", e);
+    return NextResponse.json({ error: "Failed to load status" }, { status: 500 });
   }
 }
