@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, randomBytes } from "node:crypto";
 import { verifySessionCookie } from "@/lib/firebaseAdmin";
+import { getServerAppOrigin } from "@/lib/serverOrigin";
 
 const OAUTH_STATE_COOKIE = "gcal_oauth_state";
 const OAUTH_VERIFIER_COOKIE = "gcal_oauth_verifier";
@@ -26,7 +27,8 @@ export async function GET(request: NextRequest) {
     }
 
     const clientId = process.env.GOOGLE_CLIENT_ID ?? process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    const redirectUri = process.env.GOOGLE_CALENDAR_REDIRECT_URI ?? `${request.nextUrl.origin}/api/google/calendar/callback`;
+    const appOrigin = await getServerAppOrigin();
+    const redirectUri = process.env.GOOGLE_CALENDAR_REDIRECT_URI ?? `${appOrigin}/api/google/calendar/callback`;
 
     if (!clientId) {
       return NextResponse.json({ error: "Missing GOOGLE_CLIENT_ID" }, { status: 500 });
