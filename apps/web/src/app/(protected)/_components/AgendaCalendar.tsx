@@ -718,15 +718,27 @@ export default function AgendaCalendar({
     const end = arg.event.end;
     const durationMinutes =
       start instanceof Date && end instanceof Date ? Math.round((end.getTime() - start.getTime()) / (60 * 1000)) : 60;
+    const isMonthView = arg.view.type === "dayGridMonth";
     const isDenseTimeGrid = arg.view.type !== "dayGridMonth" && !arg.event.allDay && durationMinutes <= 45;
     const compactPresentation = effectiveCalendarDensity === "compact" || isDenseTimeGrid;
+
+    if (isMonthView) {
+      return (
+        <div className="px-1 py-0.5 text-[11px] leading-tight text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]">
+          <div className="flex items-center gap-1.5">
+            <span className="truncate font-semibold">{arg.event.title}</span>
+            {hasConflict && <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-red-200" aria-hidden />}
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div className="px-1 py-0.5 text-[11px] leading-tight text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]">
         <div className="font-semibold truncate">{arg.event.title}</div>
         {compactPresentation ? (
           <div className="mt-0.5 inline-flex items-center gap-1 text-[9px] text-white/90">
-            <span className="rounded-full bg-black/25 px-1.5 py-0.5 font-semibold uppercase tracking-wide">{sourceLabel}</span>
+            <span className="rounded-full bg-black/25 px-1.5 py-0.5 font-semibold uppercase tracking-wide">{sourceLabel === "Google" ? "G" : "L"}</span>
             {hasConflict && <span className="rounded-full bg-red-500/85 px-1.5 py-0.5 font-semibold">C · P{Math.min(9, conflictScore)}</span>}
           </div>
         ) : (
@@ -1314,10 +1326,10 @@ export default function AgendaCalendar({
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span className="sn-badge">Affichés: {agendaEvents.length}</span>
-        <span className="sn-badge">Total local: {calendarData.stats.total}</span>
-        <span className="sn-badge">Google: {googleCalendarEvents.length}</span>
-        <span className="sn-badge">Récurrents: {calendarData.stats.recurring}</span>
         <span className="sn-badge">Conflits: {agendaConflictCount}</span>
+        <span className="sn-badge hidden sm:inline-flex">Total local: {calendarData.stats.total}</span>
+        <span className="sn-badge hidden sm:inline-flex">Google: {googleCalendarEvents.length}</span>
+        <span className="sn-badge hidden sm:inline-flex">Récurrents: {calendarData.stats.recurring}</span>
         {calendarDensity === "comfort" && effectiveCalendarDensity === "compact" && (
           <span className="sn-badge">Auto compact (conflits élevés)</span>
         )}
@@ -1391,7 +1403,7 @@ export default function AgendaCalendar({
           </div>
         </aside>
 
-        <div className="sn-card p-2 bg-[radial-gradient(1200px_circle_at_100%_-10%,rgba(59,130,246,0.12),transparent_45%),linear-gradient(180deg,rgba(15,23,42,0.26),transparent_35%)]">
+        <div className="sn-card p-2 bg-[radial-gradient(900px_circle_at_100%_-10%,rgba(59,130,246,0.08),transparent_50%),linear-gradient(180deg,rgba(15,23,42,0.14),transparent_42%)]">
           {displayMode === "calendar" ? (
             <div
               className={`agenda-premium-calendar ${effectiveCalendarDensity === "compact" ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"}`}
