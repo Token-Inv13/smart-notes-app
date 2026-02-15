@@ -24,6 +24,12 @@ function getStripeModeFromSecret(): 'live' | 'test' | 'unknown' {
   return 'unknown';
 }
 
+function isSubscriptionModeMismatch(sub: Stripe.Subscription, stripeMode: 'live' | 'test' | 'unknown'): boolean {
+  if (stripeMode === 'unknown') return false;
+  const subMode: 'live' | 'test' = sub.livemode ? 'live' : 'test';
+  return subMode !== stripeMode;
+}
+
 function getCustomerIdFromSubscription(sub: Stripe.Subscription): string | null {
   const customer = sub.customer;
   if (!customer) return null;
@@ -161,6 +167,25 @@ export async function POST() {
       }
 
       return NextResponse.json({ ok: true, found: false, stripeMode, adminProjectId, attempts });
+    }
+
+    if (isSubscriptionModeMismatch(sub, stripeMode)) {
+      const subscriptionMode = sub.livemode ? 'live' : 'test';
+      console.warn('Stripe sync ignored due to mode mismatch', {
+        uid: decoded.uid,
+        stripeMode,
+        subscriptionMode,
+        subscriptionId: sub.id,
+      });
+      return NextResponse.json({
+        ok: true,
+        found: false,
+        ignored: true,
+        reason: 'mode_mismatch',
+        stripeMode,
+        adminProjectId,
+        attempts,
+      });
     }
 
     const status = sub.status;
