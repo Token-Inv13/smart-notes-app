@@ -109,6 +109,11 @@ export default function TasksPage() {
 
   const suppressNextKanbanClickRef = useRef(false);
 
+  const toErrorMessage = (e: unknown, fallback: string) => {
+    if (e instanceof Error && e.message) return e.message;
+    return fallback;
+  };
+
   const toMillisSafe = (ts: unknown) => {
     const maybeTs = ts as { toMillis?: () => number };
     if (maybeTs && typeof maybeTs.toMillis === "function") {
@@ -421,9 +426,13 @@ export default function TasksPage() {
   const toggleDone = async (task: TaskDoc, nextDone: boolean) => {
     if (!task.id) return;
     const user = auth.currentUser;
-    if (!user || user.uid !== task.userId) return;
+    if (!user || user.uid !== task.userId) {
+      setEditError("Impossible de modifier cette tâche.");
+      return;
+    }
 
     const nextStatus: TaskStatus = nextDone ? "done" : "todo";
+    setEditError(null);
     setOptimisticStatusById((prev) => ({ ...prev, [task.id!]: nextStatus }));
     try {
       await updateDoc(doc(db, "tasks", task.id), {
@@ -446,6 +455,7 @@ export default function TasksPage() {
         delete next[task.id!];
         return next;
       });
+      setEditError(toErrorMessage(e, "Erreur lors de la mise à jour de la tâche."));
     }
   };
 
@@ -466,10 +476,16 @@ export default function TasksPage() {
 
   const handleKanbanDrop = async (taskId: string, targetStatus: TaskStatus) => {
     const user = auth.currentUser;
-    if (!user) return;
+    if (!user) {
+      setEditError("Connecte-toi pour modifier tes tâches.");
+      return;
+    }
 
     const task = tasks.find((t) => t.id === taskId);
-    if (!task || task.userId !== user.uid) return;
+    if (!task || task.userId !== user.uid) {
+      setEditError("Impossible de modifier cette tâche.");
+      return;
+    }
 
     const source = statusForTask(task);
     if (source === targetStatus) return;
@@ -490,7 +506,7 @@ export default function TasksPage() {
         delete next[taskId];
         return next;
       });
-      setEditError("Erreur lors du déplacement de la tâche.");
+      setEditError(toErrorMessage(e, "Erreur lors du déplacement de la tâche."));
     }
   };
 
@@ -513,8 +529,12 @@ export default function TasksPage() {
   const restoreArchivedTask = async (task: TaskDoc) => {
     if (!task.id) return;
     const user = auth.currentUser;
-    if (!user || user.uid !== task.userId) return;
+    if (!user || user.uid !== task.userId) {
+      setEditError("Impossible de modifier cette tâche.");
+      return;
+    }
 
+    setEditError(null);
     try {
       await updateDoc(doc(db, "tasks", task.id), {
         archived: false,
@@ -527,14 +547,17 @@ export default function TasksPage() {
       setArchiveView("active");
     } catch (e) {
       console.error("Error restoring archived task", e);
-      setEditError("Erreur lors de la restauration de la tâche.");
+      setEditError(toErrorMessage(e, "Erreur lors de la restauration de la tâche."));
     }
   };
 
   const toggleFavorite = async (task: TaskDoc) => {
     if (!task.id) return;
     const user = auth.currentUser;
-    if (!user || user.uid !== task.userId) return;
+    if (!user || user.uid !== task.userId) {
+      setEditError("Impossible de modifier cette tâche.");
+      return;
+    }
 
     const favoriteActiveCount = favoriteTasksForLimit.filter((t) => t.archived !== true).length;
     if (!isPro && task.favorite !== true && favoriteActiveCount >= 15) {
@@ -542,6 +565,7 @@ export default function TasksPage() {
       return;
     }
 
+    setEditError(null);
     try {
       await updateDoc(doc(db, "tasks", task.id), {
         title: task.title,
@@ -553,6 +577,7 @@ export default function TasksPage() {
       });
     } catch (e) {
       console.error("Error toggling favorite", e);
+      setEditError(toErrorMessage(e, "Erreur lors de la mise à jour des favoris."));
     }
   };
 

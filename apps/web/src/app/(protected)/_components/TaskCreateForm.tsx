@@ -203,6 +203,16 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
     const startTimestamp = validation.data.startDate ? parseLocalDateToTimestamp(validation.data.startDate) : null;
     const dueTimestamp = validation.data.dueDate ? parseLocalDateTimeToTimestamp(validation.data.dueDate) : null;
 
+    if (validation.data.startDate && !startTimestamp) {
+      setCreateError("Date de début invalide (format attendu: AAAA-MM-JJ).");
+      return;
+    }
+
+    if (validation.data.dueDate && !dueTimestamp) {
+      setCreateError("Date d’échéance invalide (format attendu: AAAA-MM-JJTHH:MM).");
+      return;
+    }
+
     setCreating(true);
     try {
       const activeFavoriteCount = favoriteTasksForLimit.filter((t) => t.archived !== true).length;
