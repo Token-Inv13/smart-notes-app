@@ -30,12 +30,30 @@ function isSubscriptionModeMismatch(sub: Stripe.Subscription, stripeMode: 'live'
   return subMode !== stripeMode;
 }
 
+function normalizeStripeId(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (value && typeof value === 'object' && 'id' in value) {
+    const id = (value as { id?: unknown }).id;
+    if (typeof id === 'string') {
+      const trimmed = id.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+  }
+  return null;
+}
+
+function normalizeEmail(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function getCustomerIdFromSubscription(sub: Stripe.Subscription): string | null {
   const customer = sub.customer;
-  if (!customer) return null;
-  if (typeof customer === 'string') return customer;
-  if (typeof customer === 'object' && 'id' in customer && typeof customer.id === 'string') return customer.id;
-  return null;
+  return normalizeStripeId(customer);
 }
 
 function pickMostRecentSubscription(subs: Stripe.Subscription[]): Stripe.Subscription | null {
@@ -50,12 +68,15 @@ async function getSubscriptionForUser(params: {
   userData: Partial<UserDoc>;
 }): Promise<{ subscription: Stripe.Subscription | null; attempts: Array<{ step: string; ok: boolean; detail?: string }> }> {
   const { stripe, uid, email, userData } = params;
+  const stripeSubscriptionId = normalizeStripeId(userData.stripeSubscriptionId);
+  const stripeCustomerId = normalizeStripeId(userData.stripeCustomerId);
+  const normalizedEmail = normalizeEmail(email);
 
   const attempts: Array<{ step: string; ok: boolean; detail?: string }> = [];
 
-  if (typeof userData.stripeSubscriptionId === 'string' && userData.stripeSubscriptionId) {
+  if (stripeSubscriptionId) {
     try {
-      const sub = await stripe.subscriptions.retrieve(userData.stripeSubscriptionId);
+      const sub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
       attempts.push({ step: 'retrieve_by_subscription_id', ok: true });
       return { subscription: sub, attempts };
     } catch (e) {
@@ -66,9 +87,9 @@ async function getSubscriptionForUser(params: {
 
   attempts.push({ step: 'retrieve_by_subscription_id', ok: false, detail: 'missing_subscription_id' });
 
-  if (typeof userData.stripeCustomerId === 'string' && userData.stripeCustomerId) {
+  if (stripeCustomerId) {
     try {
-      const res = await stripe.subscriptions.list({ customer: userData.stripeCustomerId, status: 'all', limit: 10 });
+      const res = await stripe.subscriptions.list({ customer: stripeCustomerId, status: 'all', limit: 10 });
       const sub = pickMostRecentSubscription(res.data);
       if (sub) {
         attempts.push({ step: 'list_by_customer_id', ok: true });
@@ -96,10 +117,10 @@ async function getSubscriptionForUser(params: {
     attempts.push({ step: 'search_by_metadata_user_id', ok: false, detail: message });
   }
 
-  if (typeof email === 'string' && email) {
+  if (normalizedEmail) {
     try {
-      const customers = await stripe.customers.list({ email, limit: 1 });
-      const customerId = customers.data?.[0]?.id;
+      const customers = await stripe.customers.list({ email: normalizedEmail, limit: 1 });
+      const customerId = normalizeStripeId(customers.data?.[0]?.id);
       if (customerId) {
         const res = await stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 10 });
         const sub = pickMostRecentSubscription(res.data);

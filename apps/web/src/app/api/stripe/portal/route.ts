@@ -27,18 +27,35 @@ function isNoSuchCustomerError(err: unknown): boolean {
   return false;
 }
 
+function normalizeStripeId(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (value && typeof value === 'object' && 'id' in value) {
+    const id = (value as { id?: unknown }).id;
+    if (typeof id === 'string') {
+      const trimmed = id.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+  }
+  return null;
+}
+
+function normalizeEmail(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function getCustomerIdFromSubscription(sub: Stripe.Subscription): string | null {
   const customer = sub.customer;
-  if (!customer) return null;
-  if (typeof customer === 'string') return customer;
-  if (typeof customer?.id === 'string') return customer.id;
-  return null;
+  return normalizeStripeId(customer);
 }
 
 async function recoverCustomerIdByEmail(stripe: Stripe, email: string): Promise<string | null> {
   const res = await stripe.customers.list({ email, limit: 1 });
-  const first = res.data?.[0];
-  return first?.id ?? null;
+  return normalizeStripeId(res.data?.[0]?.id);
 }
 
 async function recoverFromSubscriptionSearch(
@@ -74,7 +91,9 @@ export async function POST() {
     const userSnap = await db.collection('users').doc(decoded.uid).get();
     const userData: Partial<UserDoc> = (userSnap.data() as UserDoc | undefined) ?? {};
 
-    const customer = userData.stripeCustomerId;
+    const customer = normalizeStripeId(userData.stripeCustomerId);
+    const stripeSubscriptionId = normalizeStripeId(userData.stripeSubscriptionId);
+    const normalizedEmail = normalizeEmail(decoded.email ?? null);
 
     const origin = await getServerAppOrigin();
 
@@ -88,9 +107,9 @@ export async function POST() {
       if (!isNoSuchCustomerError(err)) throw err;
 
       // Recovery path #1: derive customer from subscription id (if present)
-      if (typeof userData.stripeSubscriptionId === 'string' && userData.stripeSubscriptionId) {
+      if (stripeSubscriptionId) {
         try {
-          const sub = await stripe.subscriptions.retrieve(userData.stripeSubscriptionId);
+          const sub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
           const recoveredCustomer = getCustomerIdFromSubscription(sub);
           if (recoveredCustomer) {
             await db.collection('users').doc(decoded.uid).update({ stripeCustomerId: recoveredCustomer });
@@ -115,8 +134,8 @@ export async function POST() {
       }
 
       // Recovery path #3: find an existing live customer by email
-      if (typeof decoded.email === 'string' && decoded.email) {
-        const recoveredCustomer = await recoverCustomerIdByEmail(stripe, decoded.email);
+      if (normalizedEmail) {
+        const recoveredCustomer = await recoverCustomerIdByEmail(stripe, normalizedEmail);
         if (recoveredCustomer) {
           await db.collection('users').doc(decoded.uid).update({ stripeCustomerId: recoveredCustomer });
           const portal = await attemptCreatePortal(recoveredCustomer);
@@ -140,8 +159,8 @@ export async function POST() {
         return NextResponse.json({ url: portal.url });
       }
 
-      if (typeof decoded.email === 'string' && decoded.email) {
-        const recoveredCustomer = await recoverCustomerIdByEmail(stripe, decoded.email);
+      if (normalizedEmail) {
+        const recoveredCustomer = await recoverCustomerIdByEmail(stripe, normalizedEmail);
         if (recoveredCustomer) {
           await db.collection('users').doc(decoded.uid).update({ stripeCustomerId: recoveredCustomer });
           const portal = await attemptCreatePortal(recoveredCustomer);
