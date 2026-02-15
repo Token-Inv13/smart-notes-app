@@ -134,6 +134,12 @@ function overlapsRange(start: Date, end: Date, rangeStart: Date, rangeEnd: Date)
   return end.getTime() > rangeStart.getTime() && start.getTime() < rangeEnd.getTime();
 }
 
+function priorityConflictWeight(priority: unknown) {
+  if (priority === "high") return 3;
+  if (priority === "medium") return 2;
+  return 1;
+}
+
 export default function AgendaCalendar({
   tasks,
   workspaces,
@@ -161,7 +167,9 @@ export default function AgendaCalendar({
   const [draft, setDraft] = useState<CalendarDraft | null>(null);
   const [selectedPlanningIds, setSelectedPlanningIds] = useState<string[]>([]);
   const [duplicatingPlanning, setDuplicatingPlanning] = useState(false);
+  const [planningDuplicateDate, setPlanningDuplicateDate] = useState("");
   const [showPlanningAvailability, setShowPlanningAvailability] = useState(true);
+  const [planningAvailabilityTargetMinutes, setPlanningAvailabilityTargetMinutes] = useState(45);
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [calendarPrimaryId, setCalendarPrimaryId] = useState<string | null>(null);
   const [calendarLoading, setCalendarLoading] = useState(false);
@@ -686,13 +694,22 @@ export default function AgendaCalendar({
     const workspaceName = (arg.event.extendedProps.workspaceName as string) ?? "";
     const priority = ((arg.event.extendedProps.priority as Priority | "") ?? "") as "" | Priority;
     const hasConflict = arg.event.extendedProps.conflict === true;
+    const conflictSource = (arg.event.extendedProps.conflictSource as "local" | "google" | "mix" | null) ?? null;
+    const conflictScore = typeof arg.event.extendedProps.conflictScore === "number" ? arg.event.extendedProps.conflictScore : 0;
+
+    const conflictLabel =
+      conflictSource === "google"
+        ? "Local ↔ Google"
+        : conflictSource === "mix"
+          ? "Mixte"
+          : "Local";
 
     return (
       <div className="px-1 py-0.5 text-[11px] leading-tight">
         <div className="font-semibold truncate">{arg.event.title}</div>
         <div className="opacity-90 truncate">{workspaceName}</div>
         {priority && <div className="uppercase tracking-wide text-[10px]">{priority}</div>}
-        {hasConflict && <div className="text-[10px] text-red-600">Conflit</div>}
+        {hasConflict && <div className="text-[10px] text-red-600">Conflit {conflictLabel} · P{Math.min(9, conflictScore)}</div>}
       </div>
     );
   };
@@ -829,7 +846,19 @@ export default function AgendaCalendar({
       return aStart - bStart;
     });
 
-    const conflictIds = new Set<string>();
+    const conflictById = new Map<string, { local: boolean; google: boolean; score: number }>();
+
+    const bumpConflict = (event: EventInput, source: "local" | "google", withGoogle: boolean) => {
+      const key = String(event.id);
+      const current = conflictById.get(key) ?? { local: false, google: false, score: 0 };
+      if (withGoogle) current.google = true;
+      else current.local = true;
+
+      const priorityWeight = source === "local" ? priorityConflictWeight(event.extendedProps?.priority) : 1;
+      current.score += priorityWeight + (withGoogle ? 2 : 1);
+      conflictById.set(key, current);
+    };
+
     for (let i = 0; i < base.length; i += 1) {
       const left = base[i];
       if (!(left?.start instanceof Date) || !(left?.end instanceof Date)) continue;
@@ -837,23 +866,36 @@ export default function AgendaCalendar({
         const right = base[j];
         if (!(right?.start instanceof Date) || !(right?.end instanceof Date)) continue;
         if (right.start.getTime() >= left.end.getTime()) break;
-        conflictIds.add(String(left.id));
-        conflictIds.add(String(right.id));
+
+        const leftSource = left.extendedProps?.source === "google-calendar" ? "google" : "local";
+        const rightSource = right.extendedProps?.source === "google-calendar" ? "google" : "local";
+        const mixedSource = leftSource !== rightSource;
+
+        bumpConflict(left, leftSource, mixedSource);
+        bumpConflict(right, rightSource, mixedSource);
       }
     }
 
     return base.map((event) => {
-      const existingConflict = event.extendedProps?.conflict === true;
-      const mergedConflict = existingConflict || conflictIds.has(String(event.id));
+      const conflict = conflictById.get(String(event.id));
+      const hasConflict = Boolean(conflict);
+      const conflictSource = conflict?.google ? (conflict.local ? "mix" : "google") : conflict?.local ? "local" : null;
       return {
         ...event,
         extendedProps: {
           ...(event.extendedProps ?? {}),
-          conflict: mergedConflict,
+          conflict: hasConflict,
+          conflictSource,
+          conflictScore: conflict?.score ?? 0,
         },
       } as EventInput;
     });
   }, [calendarData.events, googleCalendarEventInputs]);
+
+  const agendaConflictCount = useMemo(
+    () => agendaEvents.reduce((acc, event) => (event.extendedProps?.conflict === true ? acc + 1 : acc), 0),
+    [agendaEvents],
+  );
 
   const planningSections = useMemo(() => {
     const grouped = new Map<string, EventInput[]>();
@@ -890,7 +932,7 @@ export default function AgendaCalendar({
 
     const output = new Map<string, Array<{ start: Date; end: Date; durationMinutes: number }>>();
     const todayKey = toLocalDateInputValue(new Date());
-    const minSlotMinutes = 30;
+    const minSlotMinutes = planningAvailabilityTargetMinutes;
 
     for (const [dateKey, dayEvents] of dateMap.entries()) {
       if (dateKey < todayKey) continue;
@@ -959,7 +1001,7 @@ export default function AgendaCalendar({
     }
 
     return output;
-  }, [agendaEvents]);
+  }, [agendaEvents, planningAvailabilityTargetMinutes]);
 
   const planningEventMap = useMemo(() => {
     const map = new Map<string, EventInput>();
@@ -981,23 +1023,37 @@ export default function AgendaCalendar({
     );
   };
 
-  const duplicatePlanningSelection = async () => {
+  const duplicatePlanningSelectionByShift = async (buildShiftDays: (eventStart: Date, anchorStart: Date) => number) => {
     if (selectedPlanningIds.length === 0) return;
+
+    const selectedEvents = selectedPlanningIds
+      .map((id) => planningEventMap.get(id))
+      .filter((event): event is EventInput => Boolean(event))
+      .map((event) => {
+        const start = event.start instanceof Date ? event.start : null;
+        const end = event.end instanceof Date ? event.end : null;
+        if (!start || !end) return null;
+        return { event, start, end };
+      })
+      .filter((item): item is { event: EventInput; start: Date; end: Date } => Boolean(item))
+      .sort((a, b) => a.start.getTime() - b.start.getTime());
+
+    if (selectedEvents.length === 0) return;
+
+    const firstSelected = selectedEvents[0];
+    if (!firstSelected) return;
+    const anchorStart = new Date(firstSelected.start.getFullYear(), firstSelected.start.getMonth(), firstSelected.start.getDate());
 
     setDuplicatingPlanning(true);
     setError(null);
     try {
-      for (const id of selectedPlanningIds) {
-        const source = planningEventMap.get(id);
-        if (!source) continue;
-        const start = source.start instanceof Date ? source.start : null;
-        const end = source.end instanceof Date ? source.end : null;
-        if (!start || !end) continue;
+      for (const { event: source, start, end } of selectedEvents) {
+        const shiftDays = buildShiftDays(start, anchorStart);
 
         const nextStart = new Date(start);
-        nextStart.setDate(nextStart.getDate() + 1);
+        nextStart.setDate(nextStart.getDate() + shiftDays);
         const nextEnd = new Date(end);
-        nextEnd.setDate(nextEnd.getDate() + 1);
+        nextEnd.setDate(nextEnd.getDate() + shiftDays);
 
         await onCreateEvent({
           title: source.title ?? "Élément agenda",
@@ -1024,6 +1080,26 @@ export default function AgendaCalendar({
     } finally {
       setDuplicatingPlanning(false);
     }
+  };
+
+  const duplicatePlanningSelectionByDays = async (days: number) => {
+    await duplicatePlanningSelectionByShift(() => days);
+  };
+
+  const duplicatePlanningSelectionToDate = async () => {
+    if (!planningDuplicateDate) return;
+    const target = new Date(`${planningDuplicateDate}T00:00:00`);
+    if (Number.isNaN(target.getTime())) {
+      setError("Date cible invalide.");
+      return;
+    }
+
+    await duplicatePlanningSelectionByShift((eventStart, anchorStart) => {
+      const eventDay = new Date(eventStart.getFullYear(), eventStart.getMonth(), eventStart.getDate());
+      const relativeDays = Math.round((eventDay.getTime() - anchorStart.getTime()) / (24 * 60 * 60 * 1000));
+      const anchorToTargetDays = Math.round((target.getTime() - anchorStart.getTime()) / (24 * 60 * 60 * 1000));
+      return anchorToTargetDays + relativeDays;
+    });
   };
 
   return (
@@ -1172,10 +1248,11 @@ export default function AgendaCalendar({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span className="sn-badge">Affichés: {calendarData.stats.displayed}</span>
-        <span className="sn-badge">Total: {calendarData.stats.total}</span>
+        <span className="sn-badge">Affichés: {agendaEvents.length}</span>
+        <span className="sn-badge">Total local: {calendarData.stats.total}</span>
+        <span className="sn-badge">Google: {googleCalendarEvents.length}</span>
         <span className="sn-badge">Récurrents: {calendarData.stats.recurring}</span>
-        <span className="sn-badge">Conflits: {calendarData.stats.conflicts}</span>
+        <span className="sn-badge">Conflits: {agendaConflictCount}</span>
       </div>
 
       <div className="rounded-md border border-border bg-background px-3 py-2">
@@ -1295,13 +1372,47 @@ export default function AgendaCalendar({
                 >
                   Disponibilités futures
                 </button>
+                <select
+                  value={String(planningAvailabilityTargetMinutes)}
+                  onChange={(e) => setPlanningAvailabilityTargetMinutes(Number(e.target.value))}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                  aria-label="Durée cible des disponibilités"
+                >
+                  <option value="30">Slots ≥ 30 min</option>
+                  <option value="45">Slots ≥ 45 min</option>
+                  <option value="60">Slots ≥ 60 min</option>
+                  <option value="90">Slots ≥ 90 min</option>
+                </select>
                 <button
                   type="button"
                   className="h-8 px-3 rounded-md border border-border bg-background text-xs"
-                  onClick={duplicatePlanningSelection}
+                  onClick={() => void duplicatePlanningSelectionByDays(1)}
                   disabled={selectedPlanningIds.length === 0 || duplicatingPlanning}
                 >
-                  {duplicatingPlanning ? "Duplication…" : "Dupliquer en J+1"}
+                  {duplicatingPlanning ? "Duplication…" : "J+1"}
+                </button>
+                <button
+                  type="button"
+                  className="h-8 px-3 rounded-md border border-border bg-background text-xs"
+                  onClick={() => void duplicatePlanningSelectionByDays(7)}
+                  disabled={selectedPlanningIds.length === 0 || duplicatingPlanning}
+                >
+                  Semaine +1
+                </button>
+                <input
+                  type="date"
+                  value={planningDuplicateDate}
+                  onChange={(e) => setPlanningDuplicateDate(e.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                  aria-label="Date cible de duplication"
+                />
+                <button
+                  type="button"
+                  className="h-8 px-3 rounded-md border border-border bg-background text-xs"
+                  onClick={() => void duplicatePlanningSelectionToDate()}
+                  disabled={selectedPlanningIds.length === 0 || duplicatingPlanning || !planningDuplicateDate}
+                >
+                  Copier à date
                 </button>
                 <button
                   type="button"
@@ -1326,6 +1437,8 @@ export default function AgendaCalendar({
                         const workspaceName = typeof event.extendedProps?.workspaceName === "string" ? event.extendedProps.workspaceName : "Sans dossier";
                         const taskId = typeof event.extendedProps?.taskId === "string" ? event.extendedProps.taskId : "";
                         const conflict = event.extendedProps?.conflict === true;
+                        const conflictSource = (event.extendedProps?.conflictSource as "local" | "google" | "mix" | null) ?? null;
+                        const conflictScore = typeof event.extendedProps?.conflictScore === "number" ? event.extendedProps.conflictScore : 0;
                         const isExternal = !taskId;
 
                         const timeLabel =
@@ -1361,7 +1474,11 @@ export default function AgendaCalendar({
                                   <div className="text-sm font-medium truncate">{event.title}</div>
                                   <div className="inline-flex items-center gap-1">
                                     {isExternal && <span className="text-[10px] text-blue-600">Google</span>}
-                                    {conflict && <span className="text-[10px] text-red-600">Conflit</span>}
+                                    {conflict && (
+                                      <span className="text-[10px] text-red-600">
+                                        Conflit {conflictSource === "google" ? "G" : conflictSource === "mix" ? "M" : "L"} · P{Math.min(9, conflictScore)}
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                                 <div className="text-xs text-muted-foreground">{timeLabel}</div>
@@ -1375,7 +1492,7 @@ export default function AgendaCalendar({
 
                     {showPlanningAvailability && (
                       <div className="rounded-md border border-border bg-muted/30 px-2 py-2">
-                        <div className="text-[11px] font-semibold text-muted-foreground">Créneaux disponibles (08:00-20:00)</div>
+                        <div className="text-[11px] font-semibold text-muted-foreground">Créneaux disponibles (08:00-20:00, ≥ {planningAvailabilityTargetMinutes} min)</div>
                         {(() => {
                           const slots = planningAvailabilityByDate.get(section.dateKey) ?? [];
                           if (slots.length === 0) {
