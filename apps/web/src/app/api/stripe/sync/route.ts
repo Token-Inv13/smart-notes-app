@@ -242,7 +242,6 @@ export async function POST() {
     });
   } catch (e) {
     console.error('Stripe sync error', e);
-    const message = e instanceof Error ? e.message : 'Sync failed';
-    return new NextResponse(message, { status: 500 });
+    return new NextResponse('Sync failed', { status: 500 });
   }
 }

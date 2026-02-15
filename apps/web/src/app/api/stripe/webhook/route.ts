@@ -243,7 +243,6 @@ export async function POST(request: Request) {
       }
     }
     console.error('Stripe webhook error', e);
-    const message = e instanceof Error ? e.message : 'Webhook handler failed';
-    return new NextResponse(message, { status: 500 });
+    return new NextResponse('Webhook handler failed', { status: 500 });
   }
 }
