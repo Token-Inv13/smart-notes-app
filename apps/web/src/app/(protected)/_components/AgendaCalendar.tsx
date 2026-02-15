@@ -16,6 +16,7 @@ import type { TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq } from "@/type
 
 type CalendarViewMode = "dayGridMonth" | "timeGridWeek" | "timeGridDay";
 type CalendarPriorityFilter = "" | Priority;
+type CalendarTimeWindowFilter = "" | "allDay" | "morning" | "afternoon" | "evening";
 
 interface CalendarDraft {
   taskId?: string;
@@ -127,6 +128,7 @@ export default function AgendaCalendar({
   const [showRecurringOnly, setShowRecurringOnly] = useState(false);
   const [showConflictsOnly, setShowConflictsOnly] = useState(false);
   const [priorityFilter, setPriorityFilter] = useState<CalendarPriorityFilter>("");
+  const [timeWindowFilter, setTimeWindowFilter] = useState<CalendarTimeWindowFilter>("");
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [visibleRange, setVisibleRange] = useState<{ start: Date; end: Date } | null>(null);
   const [navDate, setNavDate] = useState(toLocalDateInputValue(new Date()));
@@ -222,16 +224,27 @@ export default function AgendaCalendar({
       const itemPriority = (task.priority ?? "") as Priority | "";
       const itemHasConflict = conflictIds.has(eventId);
       const itemIsRecurring = Boolean(recurrence?.freq);
-
-      if (showRecurringOnly && !itemIsRecurring) continue;
-      if (showConflictsOnly && !itemHasConflict) continue;
-      if (priorityFilter && itemPriority !== priorityFilter) continue;
-
       const looksAllDay =
         start.getHours() === 0 &&
         start.getMinutes() === 0 &&
         end.getHours() === 0 &&
         end.getMinutes() === 0;
+      const startHour = start.getHours();
+
+      const matchesTimeWindow = (() => {
+        if (!timeWindowFilter) return true;
+        if (timeWindowFilter === "allDay") return looksAllDay;
+        if (looksAllDay) return false;
+        if (timeWindowFilter === "morning") return startHour >= 6 && startHour < 12;
+        if (timeWindowFilter === "afternoon") return startHour >= 12 && startHour < 18;
+        if (timeWindowFilter === "evening") return startHour >= 18 || startHour < 6;
+        return true;
+      })();
+
+      if (showRecurringOnly && !itemIsRecurring) continue;
+      if (showConflictsOnly && !itemHasConflict) continue;
+      if (priorityFilter && itemPriority !== priorityFilter) continue;
+      if (!matchesTimeWindow) continue;
 
       output.push({
         id: eventId,
@@ -265,7 +278,7 @@ export default function AgendaCalendar({
         conflicts,
       },
     };
-  }, [priorityFilter, showConflictsOnly, showRecurringOnly, tasks, visibleRange, workspaces]);
+  }, [priorityFilter, showConflictsOnly, showRecurringOnly, tasks, timeWindowFilter, visibleRange, workspaces]);
 
   const openDraftFromSelect = (arg: DateSelectArg) => {
     setEditScope("series");
@@ -647,13 +660,27 @@ export default function AgendaCalendar({
           <option value="low">Priorité basse</option>
         </select>
 
-        {(showRecurringOnly || showConflictsOnly || priorityFilter) && (
+        <select
+          value={timeWindowFilter}
+          onChange={(e) => setTimeWindowFilter(e.target.value as CalendarTimeWindowFilter)}
+          className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+          aria-label="Filtrer par plage horaire"
+        >
+          <option value="">Toutes plages</option>
+          <option value="allDay">Toute la journée</option>
+          <option value="morning">Matin</option>
+          <option value="afternoon">Après-midi</option>
+          <option value="evening">Soir</option>
+        </select>
+
+        {(showRecurringOnly || showConflictsOnly || priorityFilter || timeWindowFilter) && (
           <button
             type="button"
             onClick={() => {
               setShowRecurringOnly(false);
               setShowConflictsOnly(false);
               setPriorityFilter("");
+              setTimeWindowFilter("");
             }}
             className="h-8 px-3 rounded-md border border-border bg-background text-xs"
           >
