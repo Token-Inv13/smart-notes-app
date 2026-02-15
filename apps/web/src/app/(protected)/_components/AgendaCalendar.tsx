@@ -17,6 +17,14 @@ import type { TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq } from "@/type
 type CalendarViewMode = "dayGridMonth" | "timeGridWeek" | "timeGridDay";
 type CalendarPriorityFilter = "" | Priority;
 type CalendarTimeWindowFilter = "" | "allDay" | "morning" | "afternoon" | "evening";
+type CalendarFilterStorage = {
+  showRecurringOnly: boolean;
+  showConflictsOnly: boolean;
+  priorityFilter: CalendarPriorityFilter;
+  timeWindowFilter: CalendarTimeWindowFilter;
+};
+
+const CALENDAR_FILTERS_STORAGE_KEY = "agenda-calendar-filters-v1";
 
 interface CalendarDraft {
   taskId?: string;
@@ -130,6 +138,7 @@ export default function AgendaCalendar({
   const [priorityFilter, setPriorityFilter] = useState<CalendarPriorityFilter>("");
   const [timeWindowFilter, setTimeWindowFilter] = useState<CalendarTimeWindowFilter>("");
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
+  const [filtersHydrated, setFiltersHydrated] = useState(false);
   const [visibleRange, setVisibleRange] = useState<{ start: Date; end: Date } | null>(null);
   const [navDate, setNavDate] = useState(toLocalDateInputValue(new Date()));
   const [label, setLabel] = useState("");
@@ -279,6 +288,58 @@ export default function AgendaCalendar({
       },
     };
   }, [priorityFilter, showConflictsOnly, showRecurringOnly, tasks, timeWindowFilter, visibleRange, workspaces]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(CALENDAR_FILTERS_STORAGE_KEY);
+      if (!raw) return;
+
+      const parsed = JSON.parse(raw) as Partial<CalendarFilterStorage>;
+
+      if (typeof parsed.showRecurringOnly === "boolean") {
+        setShowRecurringOnly(parsed.showRecurringOnly);
+      }
+
+      if (typeof parsed.showConflictsOnly === "boolean") {
+        setShowConflictsOnly(parsed.showConflictsOnly);
+      }
+
+      if (parsed.priorityFilter === "" || parsed.priorityFilter === "low" || parsed.priorityFilter === "medium" || parsed.priorityFilter === "high") {
+        setPriorityFilter(parsed.priorityFilter);
+      }
+
+      if (
+        parsed.timeWindowFilter === "" ||
+        parsed.timeWindowFilter === "allDay" ||
+        parsed.timeWindowFilter === "morning" ||
+        parsed.timeWindowFilter === "afternoon" ||
+        parsed.timeWindowFilter === "evening"
+      ) {
+        setTimeWindowFilter(parsed.timeWindowFilter);
+      }
+    } catch {
+      // ignore invalid persisted payload
+    } finally {
+      setFiltersHydrated(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!filtersHydrated) return;
+
+    const payload: CalendarFilterStorage = {
+      showRecurringOnly,
+      showConflictsOnly,
+      priorityFilter,
+      timeWindowFilter,
+    };
+
+    try {
+      window.localStorage.setItem(CALENDAR_FILTERS_STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      // ignore storage write errors
+    }
+  }, [filtersHydrated, priorityFilter, showConflictsOnly, showRecurringOnly, timeWindowFilter]);
 
   const openDraftFromSelect = (arg: DateSelectArg) => {
     setEditScope("series");
