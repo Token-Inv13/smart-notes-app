@@ -31,6 +31,12 @@ function getCustomerId(value: Stripe.Subscription['customer']): string | null {
   return null;
 }
 
+function normalizeUserId(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 async function resolveUserIdFromStripeIds(params: {
   stripeSubscriptionId?: string | null;
   stripeCustomerId?: string | null;
@@ -60,11 +66,16 @@ async function resolveUserIdFromStripeIds(params: {
   return null;
 }
 
-async function setUserPlan(userId: string, plan: 'free' | 'pro', updates?: Partial<UserDoc>) {
+async function setUserPlan(userId: string, plan: 'free' | 'pro', updates?: Partial<UserDoc>): Promise<boolean> {
   const db = getAdminDb();
-  await db
-    .collection('users')
-    .doc(userId)
+  const userRef = db.collection('users').doc(userId);
+  const userSnap = await userRef.get();
+  if (!userSnap.exists) {
+    console.warn('Stripe webhook: target user does not exist, skipping plan mutation', { userId, plan });
+    return false;
+  }
+
+  await userRef
     .set(
       {
         plan,
@@ -73,6 +84,8 @@ async function setUserPlan(userId: string, plan: 'free' | 'pro', updates?: Parti
       },
       { merge: true },
     );
+
+  return true;
 }
 
 export async function POST(request: Request) {
@@ -139,7 +152,7 @@ export async function POST(request: Request) {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
-        const userId = (session.metadata?.userId || session.client_reference_id) as string | undefined;
+        const userId = normalizeUserId(session.metadata?.userId ?? session.client_reference_id);
         const subscriptionId = session.subscription as string | null;
         const customerId = session.customer as string | null;
 
@@ -157,7 +170,7 @@ export async function POST(request: Request) {
         const subscription = event.data.object as Stripe.Subscription;
         const stripeCustomerId = getCustomerId(subscription.customer);
 
-        const userIdFromMetadata = subscription.metadata?.userId as string | undefined;
+        const userIdFromMetadata = normalizeUserId(subscription.metadata?.userId);
         const userId =
           userIdFromMetadata ??
           (await resolveUserIdFromStripeIds({ stripeSubscriptionId: subscription.id, stripeCustomerId }));
