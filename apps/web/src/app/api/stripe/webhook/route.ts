@@ -37,26 +37,43 @@ function normalizeUserId(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function normalizeStripeId(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (value && typeof value === 'object' && 'id' in value) {
+    const id = (value as { id?: unknown }).id;
+    if (typeof id === 'string') {
+      const trimmed = id.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+  }
+  return null;
+}
+
 async function resolveUserIdFromStripeIds(params: {
   stripeSubscriptionId?: string | null;
   stripeCustomerId?: string | null;
 }): Promise<string | null> {
   const db = getAdminDb();
+  const stripeSubscriptionId = normalizeStripeId(params.stripeSubscriptionId);
+  const stripeCustomerId = normalizeStripeId(params.stripeCustomerId);
 
-  if (params.stripeSubscriptionId) {
+  if (stripeSubscriptionId) {
     const snap = await db
       .collection('users')
-      .where('stripeSubscriptionId', '==', params.stripeSubscriptionId)
+      .where('stripeSubscriptionId', '==', stripeSubscriptionId)
       .limit(1)
       .get();
     const doc = snap.docs[0];
     if (doc) return doc.id;
   }
 
-  if (params.stripeCustomerId) {
+  if (stripeCustomerId) {
     const snap = await db
       .collection('users')
-      .where('stripeCustomerId', '==', params.stripeCustomerId)
+      .where('stripeCustomerId', '==', stripeCustomerId)
       .limit(1)
       .get();
     const doc = snap.docs[0];
@@ -153,8 +170,8 @@ export async function POST(request: Request) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
         const userId = normalizeUserId(session.metadata?.userId ?? session.client_reference_id);
-        const subscriptionId = session.subscription as string | null;
-        const customerId = session.customer as string | null;
+        const subscriptionId = normalizeStripeId(session.subscription);
+        const customerId = normalizeStripeId(session.customer);
 
         if (!userId) break;
 
