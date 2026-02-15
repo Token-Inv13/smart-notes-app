@@ -15,6 +15,7 @@ import type {
 import type { TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq } from "@/types/firestore";
 
 type CalendarViewMode = "dayGridMonth" | "timeGridWeek" | "timeGridDay";
+type CalendarPriorityFilter = "" | Priority;
 
 interface CalendarDraft {
   taskId?: string;
@@ -123,6 +124,9 @@ export default function AgendaCalendar({
   const calendarRef = useRef<FullCalendar | null>(null);
   const [viewMode, setViewMode] = useState<CalendarViewMode>("timeGridWeek");
   const [editScope, setEditScope] = useState<"series" | "occurrence">("series");
+  const [showRecurringOnly, setShowRecurringOnly] = useState(false);
+  const [showConflictsOnly, setShowConflictsOnly] = useState(false);
+  const [priorityFilter, setPriorityFilter] = useState<CalendarPriorityFilter>("");
   const [visibleRange, setVisibleRange] = useState<{ start: Date; end: Date } | null>(null);
   const [navDate, setNavDate] = useState(toLocalDateInputValue(new Date()));
   const [label, setLabel] = useState("");
@@ -214,6 +218,13 @@ export default function AgendaCalendar({
     const output: EventInput[] = [];
     for (const item of withDates) {
       const { task, start, end, recurrence, taskId, eventId, instanceDate } = item;
+      const itemPriority = (task.priority ?? "") as Priority | "";
+      const itemHasConflict = conflictIds.has(eventId);
+      const itemIsRecurring = Boolean(recurrence?.freq);
+
+      if (showRecurringOnly && !itemIsRecurring) continue;
+      if (showConflictsOnly && !itemHasConflict) continue;
+      if (priorityFilter && itemPriority !== priorityFilter) continue;
 
       const looksAllDay =
         start.getHours() === 0 &&
@@ -227,21 +238,21 @@ export default function AgendaCalendar({
         start,
         end,
         allDay: looksAllDay,
-        backgroundColor: priorityColor((task.priority ?? "") as Priority | ""),
-        borderColor: priorityColor((task.priority ?? "") as Priority | ""),
+        backgroundColor: priorityColor(itemPriority),
+        borderColor: priorityColor(itemPriority),
         extendedProps: {
           taskId,
           workspaceId: task.workspaceId ?? "",
           workspaceName: workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "Sans dossier",
-          priority: (task.priority ?? "") as Priority | "",
+          priority: itemPriority,
           recurrence,
           instanceDate,
-          conflict: conflictIds.has(eventId),
+          conflict: itemHasConflict,
         },
       });
     }
     return output;
-  }, [tasks, visibleRange, workspaces]);
+  }, [priorityFilter, showConflictsOnly, showRecurringOnly, tasks, visibleRange, workspaces]);
 
   const openDraftFromSelect = (arg: DateSelectArg) => {
     setEditScope("series");
@@ -581,6 +592,49 @@ export default function AgendaCalendar({
           </button>
           </div>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setShowRecurringOnly((prev) => !prev)}
+          className={`h-8 px-3 rounded-md border text-xs ${showRecurringOnly ? "border-primary bg-accent" : "border-border bg-background"}`}
+        >
+          Récurrents
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowConflictsOnly((prev) => !prev)}
+          className={`h-8 px-3 rounded-md border text-xs ${showConflictsOnly ? "border-primary bg-accent" : "border-border bg-background"}`}
+        >
+          Conflits
+        </button>
+
+        <select
+          value={priorityFilter}
+          onChange={(e) => setPriorityFilter(e.target.value as CalendarPriorityFilter)}
+          className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+          aria-label="Filtrer par priorité"
+        >
+          <option value="">Toutes priorités</option>
+          <option value="high">Priorité haute</option>
+          <option value="medium">Priorité moyenne</option>
+          <option value="low">Priorité basse</option>
+        </select>
+
+        {(showRecurringOnly || showConflictsOnly || priorityFilter) && (
+          <button
+            type="button"
+            onClick={() => {
+              setShowRecurringOnly(false);
+              setShowConflictsOnly(false);
+              setPriorityFilter("");
+            }}
+            className="h-8 px-3 rounded-md border border-border bg-background text-xs"
+          >
+            Réinitialiser
+          </button>
+        )}
       </div>
 
       {error && <div className="sn-alert sn-alert--error">{error}</div>}
