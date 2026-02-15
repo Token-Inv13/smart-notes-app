@@ -37,6 +37,12 @@ const PRO_ALLOWED_MIME = new Set([
   "video/quicktime",
 ]);
 
+const FREE_ACCEPT_ATTR = ".jpg,.jpeg,.png,.webp,.pdf";
+const PRO_ACCEPT_ATTR = ".jpg,.jpeg,.png,.webp,.pdf,.mp4,.mov";
+
+const FREE_ALLOWED_EXTENSIONS_LABEL = "JPG, JPEG, PNG, WEBP, PDF";
+const PRO_ALLOWED_EXTENSIONS_LABEL = "JPG, JPEG, PNG, WEBP, PDF, MP4, MOV";
+
 function formatBytes(size: number) {
   if (!Number.isFinite(size) || size <= 0) return "0 o";
   const units = ["o", "Ko", "Mo", "Go"];
@@ -225,22 +231,25 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
   const maxFiles = userPlan === "pro" ? PRO_MAX_FILES_PER_NOTE : FREE_MAX_FILES_PER_NOTE;
   const maxBytes = userPlan === "pro" ? PRO_MAX_BYTES : FREE_MAX_BYTES;
   const allowedMime = userPlan === "pro" ? PRO_ALLOWED_MIME : FREE_ALLOWED_MIME;
+  const acceptAttr = userPlan === "pro" ? PRO_ACCEPT_ATTR : FREE_ACCEPT_ATTR;
+  const allowedExtensionsLabel = userPlan === "pro" ? PRO_ALLOWED_EXTENSIONS_LABEL : FREE_ALLOWED_EXTENSIONS_LABEL;
 
   const validateFileForPlan = (file: File) => {
     if (attachments.length >= maxFiles) {
-      return `Limite atteinte: ${maxFiles} fichiers max par note.`;
+      return `Limite atteinte: ${attachments.length}/${maxFiles} fichiers max par note.`;
     }
     if (!allowedMime.has(file.type)) {
       if (file.type.startsWith("video/") && userPlan === "free") {
         return "Passe à Pro pour importer des vidéos et des fichiers jusqu’à 350 Mo.";
       }
-      return "Type de fichier non autorisé.";
+      const typeLabel = file.type ? ` (${file.type})` : "";
+      return `Type de fichier non autorisé${typeLabel}. Formats acceptés: ${allowedExtensionsLabel}.`;
     }
     if (file.size > maxBytes) {
       if (userPlan === "free") {
-        return "Fichier trop volumineux (max 20 Mo en Free). Passe à Pro pour importer jusqu’à 350 Mo.";
+        return `Fichier trop volumineux (${formatBytes(file.size)}). Max 20 Mo en Free. Passe à Pro pour importer jusqu’à 350 Mo.`;
       }
-      return `Fichier trop volumineux (max ${formatBytes(maxBytes)}).`;
+      return `Fichier trop volumineux (${formatBytes(file.size)}). Max ${formatBytes(maxBytes)}.`;
     }
     return null;
   };
@@ -1132,7 +1141,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
                             type="file"
                             className="hidden"
                             aria-label="Ajouter un fichier"
-                            accept={userPlan === "pro" ? ".jpg,.jpeg,.png,.webp,.pdf,.mp4,.mov" : ".jpg,.jpeg,.png,.webp,.pdf"}
+                            accept={acceptAttr}
                             onChange={(e) => {
                               const f = e.target.files?.[0];
                               if (!f) return;
@@ -1148,6 +1157,9 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
                             {uploadingAttachment ? "Ajout…" : "Ajouter un fichier"}
                           </button>
                         </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Formats acceptés: {allowedExtensionsLabel} · Limite: {maxFiles} fichiers / note · Max {formatBytes(maxBytes)} / fichier
                       </div>
 
                       {attachments.length === 0 ? (
