@@ -1057,11 +1057,13 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
                     <button
                       type="button"
                       onClick={close}
-                      className="sn-icon-btn"
-                      aria-label="Fermer"
-                      title="Fermer"
+                      className={fullscreen
+                        ? "px-3 py-2 rounded-md border border-input text-sm"
+                        : "sn-icon-btn"}
+                      aria-label={fullscreen ? "Retour à la liste des notes" : "Fermer"}
+                      title={fullscreen ? "Retour" : "Fermer"}
                     >
-                      ×
+                      {fullscreen ? "← Retour" : "×"}
                     </button>
                   </div>
                 </div>
