@@ -145,6 +145,21 @@ export default function TodoCreateForm({
 
   const canAddItem = useMemo(() => !!newItemText.trim(), [newItemText]);
 
+  const dueDateFeedback = useMemo(() => {
+    if (!dueDateDraft) return null;
+    const ts = parseLocalDateToTimestamp(dueDateDraft);
+    if (!ts) {
+      return {
+        tone: "error" as const,
+        text: "Format attendu: AAAA-MM-JJ.",
+      };
+    }
+    return {
+      tone: "muted" as const,
+      text: `Échéance: ${ts.toDate().toLocaleDateString("fr-FR")}`,
+    };
+  }, [dueDateDraft]);
+
   const addDraftItem = () => {
     const text = newItemText.trim();
     if (!text) return;
@@ -403,9 +418,20 @@ export default function TodoCreateForm({
                 type="date"
                 value={dueDateDraft}
                 onChange={(e) => setDueDateDraft(e.target.value)}
-                className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    (e.currentTarget as HTMLInputElement).blur();
+                  }
+                }}
+                className={`w-full px-3 py-2 border rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary ${dueDateFeedback?.tone === "error" ? "border-destructive" : "border-input"}`}
                 disabled={creating}
               />
+              {dueDateFeedback ? (
+                <div className={`text-xs ${dueDateFeedback.tone === "error" ? "text-destructive" : "text-muted-foreground"}`}>
+                  {dueDateFeedback.text}
+                </div>
+              ) : null}
             </div>
 
             <div className="space-y-1">

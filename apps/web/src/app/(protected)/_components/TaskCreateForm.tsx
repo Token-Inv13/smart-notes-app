@@ -141,6 +141,36 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
     return null;
   }, [newStartDate, newDueDate]);
 
+  const dueDateFeedback = useMemo(() => {
+    if (!newDueDate) return null;
+    const ts = parseLocalDateTimeToTimestamp(newDueDate);
+    if (!ts) {
+      return {
+        tone: "error" as const,
+        text: "Format attendu: AAAA-MM-JJTHH:MM.",
+      };
+    }
+    return {
+      tone: "muted" as const,
+      text: `Échéance: ${ts.toDate().toLocaleString("fr-FR")}`,
+    };
+  }, [newDueDate]);
+
+  const startDateFeedback = useMemo(() => {
+    if (!newStartDate) return null;
+    const ts = parseLocalDateToTimestamp(newStartDate);
+    if (!ts) {
+      return {
+        tone: "error" as const,
+        text: "Format attendu: AAAA-MM-JJ.",
+      };
+    }
+    return {
+      tone: "muted" as const,
+      text: `Début: ${ts.toDate().toLocaleDateString("fr-FR")}`,
+    };
+  }, [newStartDate]);
+
   const handleCreateTask = async () => {
     const user = auth.currentUser;
     if (!user) {
@@ -335,8 +365,19 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
             type="datetime-local"
             value={newDueDate}
             onChange={(e) => setNewDueDate(e.target.value)}
-            className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                (e.currentTarget as HTMLInputElement).blur();
+              }
+            }}
+            className={`w-full px-3 py-2 border rounded-md bg-background text-foreground text-sm ${dateWarning ? "border-destructive" : "border-input"}`}
           />
+          {dueDateFeedback ? (
+            <div className={`text-xs ${dueDateFeedback.tone === "error" ? "text-destructive" : "text-muted-foreground"}`}>
+              {dueDateFeedback.text}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -350,8 +391,19 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
             type="date"
             value={newStartDate}
             onChange={(e) => setNewStartDate(e.target.value)}
-            className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                (e.currentTarget as HTMLInputElement).blur();
+              }
+            }}
+            className={`w-full px-3 py-2 border rounded-md bg-background text-foreground text-sm ${dateWarning ? "border-destructive" : "border-input"}`}
           />
+          {startDateFeedback ? (
+            <div className={`text-xs ${startDateFeedback.tone === "error" ? "text-destructive" : "text-muted-foreground"}`}>
+              {startDateFeedback.text}
+            </div>
+          ) : null}
         </div>
 
         <div className="space-y-1">

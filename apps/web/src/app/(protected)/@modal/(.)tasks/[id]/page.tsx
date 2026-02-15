@@ -313,6 +313,36 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     return null;
   }, [editDueDate, editStartDate]);
 
+  const editDueDateFeedback = useMemo(() => {
+    if (!editDueDate) return null;
+    const ts = parseLocalDateTimeToTimestamp(editDueDate);
+    if (!ts) {
+      return {
+        tone: "error" as const,
+        text: "Format attendu: AAAA-MM-JJTHH:MM.",
+      };
+    }
+    return {
+      tone: "muted" as const,
+      text: `Échéance: ${ts.toDate().toLocaleString("fr-FR")}`,
+    };
+  }, [editDueDate]);
+
+  const editStartDateFeedback = useMemo(() => {
+    if (!editStartDate) return null;
+    const ts = parseLocalDateToTimestamp(editStartDate);
+    if (!ts) {
+      return {
+        tone: "error" as const,
+        text: "Format attendu: AAAA-MM-JJ.",
+      };
+    }
+    return {
+      tone: "muted" as const,
+      text: `Début: ${ts.toDate().toLocaleDateString("fr-FR")}`,
+    };
+  }, [editStartDate]);
+
   const handleSnooze = async (preset: '10m' | '1h' | 'tomorrow') => {
     if (!task?.id) return;
     if (!isPro) return;
@@ -914,8 +944,19 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                         });
                         setDirty(snap !== lastSavedSnapshotRef.current);
                       }}
-                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          (e.currentTarget as HTMLInputElement).blur();
+                        }
+                      }}
+                      className={`w-full px-3 py-2 border rounded-md bg-background text-foreground text-sm ${editDateWarning ? "border-destructive" : "border-input"}`}
                     />
+                    {editDueDateFeedback ? (
+                      <div className={`text-xs ${editDueDateFeedback.tone === "error" ? "text-destructive" : "text-muted-foreground"}`}>
+                        {editDueDateFeedback.text}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
@@ -941,8 +982,19 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                         });
                         setDirty(snap !== lastSavedSnapshotRef.current);
                       }}
-                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          (e.currentTarget as HTMLInputElement).blur();
+                        }
+                      }}
+                      className={`w-full px-3 py-2 border rounded-md bg-background text-foreground text-sm ${editDateWarning ? "border-destructive" : "border-input"}`}
                     />
+                    {editStartDateFeedback ? (
+                      <div className={`text-xs ${editStartDateFeedback.tone === "error" ? "text-destructive" : "text-muted-foreground"}`}>
+                        {editStartDateFeedback.text}
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="space-y-1">
