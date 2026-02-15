@@ -18,6 +18,7 @@ type CalendarViewMode = "dayGridMonth" | "timeGridWeek" | "timeGridDay";
 
 interface CalendarDraft {
   taskId?: string;
+  instanceDate?: string;
   title: string;
   startLocal: string;
   endLocal: string;
@@ -57,6 +58,7 @@ interface AgendaCalendarProps {
     priority?: Priority | null;
     recurrence?: CalendarRecurrenceInput;
   }) => Promise<void>;
+  onSkipOccurrence?: (taskId: string, occurrenceDate: string) => Promise<void>;
   onOpenTask: (taskId: string) => void;
   onVisibleRangeChange?: (range: { start: Date; end: Date }) => void;
 }
@@ -114,6 +116,7 @@ export default function AgendaCalendar({
   workspaces,
   onCreateEvent,
   onUpdateEvent,
+  onSkipOccurrence,
   onOpenTask,
   onVisibleRangeChange,
 }: AgendaCalendarProps) {
@@ -260,6 +263,7 @@ export default function AgendaCalendar({
 
     setDraft({
       taskId: ((arg.event.extendedProps.taskId as string) || arg.event.id) as string,
+      instanceDate: (arg.event.extendedProps.instanceDate as string | undefined) ?? undefined,
       title: arg.event.title,
       startLocal: arg.event.allDay ? toLocalDateInputValue(start) : toLocalInputValue(start),
       endLocal: arg.event.allDay ? toLocalDateInputValue(new Date(end.getTime() - 1)) : toLocalInputValue(end),
@@ -409,6 +413,20 @@ export default function AgendaCalendar({
     });
   }, []);
 
+  const skipOccurrence = async () => {
+    if (!draft?.taskId || !draft.instanceDate || !draft.recurrenceFreq || !onSkipOccurrence) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onSkipOccurrence(draft.taskId, draft.instanceDate);
+      setDraft(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Impossible d’ignorer cette occurrence.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -520,43 +538,73 @@ export default function AgendaCalendar({
 
       {error && <div className="sn-alert sn-alert--error">{error}</div>}
 
-      <div className="sn-card p-2">
-        <FullCalendar
-          ref={calendarRef}
-          plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-          initialView={viewMode}
-          headerToolbar={false}
-          locale="fr"
-          firstDay={1}
-          nowIndicator
-          selectable
-          selectMirror
-          editable
-          dayMaxEvents
-          allDayMaintainDuration
-          eventDisplay="block"
-          slotMinTime="06:00:00"
-          slotMaxTime="23:30:00"
-          events={events}
-          datesSet={onDatesSet}
-          select={openDraftFromSelect}
-          dateClick={(arg) =>
-            openDraftFromSelect({
-              allDay: true,
-              end: new Date(arg.date.getFullYear(), arg.date.getMonth(), arg.date.getDate() + 1),
-              endStr: "",
-              jsEvent: arg.jsEvent,
-              start: arg.date,
-              startStr: "",
-              view: arg.view,
-            } as DateSelectArg)
-          }
-          eventClick={openDraftFromEvent}
-          eventDrop={handleMoveOrResize}
-          eventResize={handleMoveOrResize}
-          eventContent={eventContent}
-          timeZone="Europe/Paris"
-        />
+      <div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <aside className="hidden lg:block sn-card p-3 space-y-3 h-fit sticky top-20">
+          <div className="text-xs font-semibold">Mini calendrier</div>
+          <input
+            type="date"
+            value={navDate}
+            onChange={(e) => setNavDate(e.target.value)}
+            className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
+            aria-label="Mini calendrier - date"
+          />
+          <button
+            type="button"
+            className="w-full h-9 rounded-md border border-border bg-background text-sm"
+            onClick={() => {
+              if (!navDate) return;
+              const date = new Date(`${navDate}T12:00:00`);
+              if (Number.isNaN(date.getTime())) return;
+              calendarRef.current?.getApi().gotoDate(date);
+            }}
+          >
+            Aller à la date
+          </button>
+          <div className="grid grid-cols-3 gap-1">
+            <button type="button" className="h-8 rounded-md border border-border text-xs" onClick={() => jump("prev")}>Préc.</button>
+            <button type="button" className="h-8 rounded-md border border-border text-xs" onClick={() => jump("today")}>Ajd</button>
+            <button type="button" className="h-8 rounded-md border border-border text-xs" onClick={() => jump("next")}>Suiv.</button>
+          </div>
+        </aside>
+
+        <div className="sn-card p-2">
+          <FullCalendar
+            ref={calendarRef}
+            plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+            initialView={viewMode}
+            headerToolbar={false}
+            locale="fr"
+            firstDay={1}
+            nowIndicator
+            selectable
+            selectMirror
+            editable
+            dayMaxEvents
+            allDayMaintainDuration
+            eventDisplay="block"
+            slotMinTime="06:00:00"
+            slotMaxTime="23:30:00"
+            events={events}
+            datesSet={onDatesSet}
+            select={openDraftFromSelect}
+            dateClick={(arg) =>
+              openDraftFromSelect({
+                allDay: true,
+                end: new Date(arg.date.getFullYear(), arg.date.getMonth(), arg.date.getDate() + 1),
+                endStr: "",
+                jsEvent: arg.jsEvent,
+                start: arg.date,
+                startStr: "",
+                view: arg.view,
+              } as DateSelectArg)
+            }
+            eventClick={openDraftFromEvent}
+            eventDrop={handleMoveOrResize}
+            eventResize={handleMoveOrResize}
+            eventContent={eventContent}
+            timeZone="Europe/Paris"
+          />
+        </div>
       </div>
 
       <div className="text-xs text-muted-foreground">
@@ -686,16 +734,23 @@ export default function AgendaCalendar({
 
             <div className="flex items-center justify-between gap-3">
               {draft.taskId ? (
-                <button
-                  type="button"
-                  className="sn-text-btn"
-                  onClick={() => {
-                    if (!draft.taskId) return;
-                    onOpenTask(draft.taskId);
-                  }}
-                >
-                  Ouvrir le détail
-                </button>
+                <div className="inline-flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="sn-text-btn"
+                    onClick={() => {
+                      if (!draft.taskId) return;
+                      onOpenTask(draft.taskId);
+                    }}
+                  >
+                    Ouvrir le détail
+                  </button>
+                  {draft.recurrenceFreq && draft.instanceDate && onSkipOccurrence && (
+                    <button type="button" className="sn-text-btn" onClick={skipOccurrence}>
+                      Ignorer cette occurrence
+                    </button>
+                  )}
+                </div>
               ) : (
                 <span />
               )}

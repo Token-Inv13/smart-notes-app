@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addDoc, collection, doc, Timestamp, updateDoc, serverTimestamp } from "firebase/firestore";
+import { addDoc, arrayUnion, collection, doc, Timestamp, updateDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserNotes } from "@/hooks/useUserNotes";
@@ -107,6 +107,28 @@ export default function TasksPage() {
     });
   };
 
+  const handleSkipOccurrence = async (taskId: string, occurrenceDate: string) => {
+    const user = auth.currentUser;
+    const current = allTasks.find((t) => t.id === taskId);
+    if (!user || !current || current.userId !== user.uid) {
+      setEditError("Impossible de modifier cet élément d’agenda.");
+      return;
+    }
+
+    if (!current.recurrence?.freq) {
+      setEditError("Cette occurrence ne peut pas être ignorée.");
+      return;
+    }
+
+    await updateDoc(doc(db, "tasks", taskId), {
+      recurrence: {
+        ...current.recurrence,
+        exceptions: arrayUnion(occurrenceDate),
+      },
+      updatedAt: serverTimestamp(),
+    });
+  };
+
   const handleCalendarUpdate = async (input: {
     taskId: string;
     title?: string;
@@ -118,7 +140,7 @@ export default function TasksPage() {
     recurrence?: CalendarRecurrenceInput;
   }) => {
     const user = auth.currentUser;
-    const current = tasks.find((t) => t.id === input.taskId);
+    const current = allTasks.find((t) => t.id === input.taskId);
     if (!user || !current || current.userId !== user.uid) {
       setEditError("Impossible de modifier cet élément d’agenda.");
       return;
@@ -1153,6 +1175,7 @@ export default function TasksPage() {
           workspaces={workspaces}
           onCreateEvent={handleCalendarCreate}
           onUpdateEvent={handleCalendarUpdate}
+          onSkipOccurrence={handleSkipOccurrence}
           onVisibleRangeChange={(range) => {
             const bufferedStart = new Date(range.start.getTime() - 7 * 24 * 60 * 60 * 1000);
             const bufferedEnd = new Date(range.end.getTime() + 7 * 24 * 60 * 60 * 1000);
