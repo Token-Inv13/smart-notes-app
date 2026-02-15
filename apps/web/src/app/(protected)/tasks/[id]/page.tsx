@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { arrayRemove, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { arrayRemove, arrayUnion, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import type { TaskDoc } from "@/types/firestore";
 
@@ -43,8 +43,10 @@ export default function TaskDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [busyException, setBusyException] = useState<string | null>(null);
+  const [newExceptionDate, setNewExceptionDate] = useState("");
+  const [addingException, setAddingException] = useState(false);
 
-  const loadTask = async () => {
+  const loadTask = useCallback(async () => {
     if (!taskId) {
       setError("ID d’élément d’agenda manquant.");
       setLoading(false);
@@ -71,7 +73,7 @@ export default function TaskDetailPage() {
     }
 
     setTask({ id: snap.id, ...data });
-  };
+  }, [taskId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,7 +93,7 @@ export default function TaskDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [taskId]);
+  }, [loadTask]);
 
   const dueLabel = useMemo(() => formatFrDateTime(task?.dueDate ?? null), [task?.dueDate]);
   const recurrenceUntilLabel = useMemo(() => formatFrDateTime(task?.recurrence?.until ?? null), [task?.recurrence?.until]);
@@ -121,6 +123,40 @@ export default function TaskDetailPage() {
       setError(e instanceof Error ? e.message : "Impossible de restaurer cette occurrence.");
     } finally {
       setBusyException(null);
+    }
+  };
+
+  const addException = async () => {
+    if (!task?.id) return;
+    if (!task.recurrence?.freq) {
+      setError("Ajout impossible: aucune récurrence active sur cet élément.");
+      return;
+    }
+    if (!newExceptionDate) {
+      setError("Choisis une date d’occurrence à ignorer.");
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (!user || task.userId !== user.uid) {
+      setError("Accès refusé.");
+      return;
+    }
+
+    setAddingException(true);
+    setActionMsg(null);
+    try {
+      await updateDoc(doc(db, "tasks", task.id), {
+        "recurrence.exceptions": arrayUnion(newExceptionDate),
+        updatedAt: serverTimestamp(),
+      });
+      await loadTask();
+      setActionMsg("Occurrence ignorée ajoutée.");
+      setNewExceptionDate("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Impossible d’ajouter cette occurrence ignorée.");
+    } finally {
+      setAddingException(false);
     }
   };
 
@@ -184,6 +220,26 @@ export default function TaskDetailPage() {
                 <span className="font-medium">Jusqu’au:</span> {recurrenceUntilLabel || "Sans fin"}
               </div>
             </div>
+
+            {task.recurrence?.freq && (
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="date"
+                  value={newExceptionDate}
+                  onChange={(e) => setNewExceptionDate(e.target.value)}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                  aria-label="Ajouter une occurrence ignorée"
+                />
+                <button
+                  type="button"
+                  onClick={addException}
+                  disabled={addingException || !newExceptionDate}
+                  className="h-9 px-3 rounded-md border border-border bg-background text-sm"
+                >
+                  {addingException ? "Ajout…" : "Ajouter une exception"}
+                </button>
+              </div>
+            )}
 
             {recurrenceExceptions.length === 0 ? (
               <div className="text-xs text-muted-foreground">Aucune occurrence ignorée.</div>
