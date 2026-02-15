@@ -168,7 +168,195 @@ body {
   }
 }
 
+@keyframes sn-agenda-event-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @layer components {
+  .agenda-premium-calendar {
+    --fc-border-color: hsl(var(--border) / 0.52);
+    --fc-page-bg-color: transparent;
+    --fc-neutral-bg-color: hsl(var(--muted) / 0.14);
+    --fc-list-event-hover-bg-color: hsl(var(--muted) / 0.2);
+    --fc-today-bg-color: hsl(var(--primary) / 0.1);
+    --fc-event-text-color: #fff;
+  }
+
+  .agenda-premium-calendar .fc {
+    color: hsl(var(--foreground) / 0.94);
+  }
+
+  .agenda-premium-calendar .fc .fc-scrollgrid,
+  .agenda-premium-calendar .fc .fc-scrollgrid-section > * {
+    border-color: hsl(var(--border) / 0.52);
+  }
+
+  .agenda-premium-calendar .fc .fc-col-header-cell {
+    background: linear-gradient(180deg, hsl(var(--muted) / 0.28), hsl(var(--muted) / 0.14));
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+
+  .agenda-premium-calendar .fc .fc-daygrid-day.fc-day-sat,
+  .agenda-premium-calendar .fc .fc-daygrid-day.fc-day-sun,
+  .agenda-premium-calendar .fc .fc-timegrid-col.fc-day-sat,
+  .agenda-premium-calendar .fc .fc-timegrid-col.fc-day-sun {
+    background: linear-gradient(180deg, rgba(148, 163, 184, 0.1), rgba(148, 163, 184, 0.04));
+  }
+
+  .agenda-premium-calendar .fc .fc-timegrid-slot,
+  .agenda-premium-calendar .fc .fc-timegrid-axis,
+  .agenda-premium-calendar .fc .fc-daygrid-day-number {
+    color: hsl(var(--foreground) / 0.82);
+  }
+
+  .agenda-premium-calendar .fc .fc-now-indicator-line {
+    border-color: #22d3ee;
+    border-width: 2px;
+    opacity: 0.95;
+  }
+
+  .agenda-premium-calendar .fc .fc-now-indicator-arrow {
+    border-top-color: #22d3ee;
+    border-bottom-color: #22d3ee;
+  }
+
+  .agenda-premium-calendar .fc .agenda-event {
+    border: 1px solid rgba(255, 255, 255, 0.18) !important;
+    border-radius: 10px !important;
+    box-shadow: 0 8px 20px rgba(2, 6, 23, 0.35);
+    -webkit-backdrop-filter: saturate(110%);
+    backdrop-filter: saturate(110%);
+  }
+
+  .agenda-premium-calendar .fc .agenda-event-local {
+    background-image: linear-gradient(135deg, rgba(15, 23, 42, 0.2), rgba(255, 255, 255, 0.04));
+  }
+
+  .agenda-premium-calendar .fc .agenda-event-google {
+    background-image: linear-gradient(135deg, rgba(30, 64, 175, 0.18), rgba(191, 219, 254, 0.12));
+  }
+
+  .agenda-premium-calendar .fc .agenda-source-local {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05), 0 8px 20px rgba(2, 6, 23, 0.35);
+  }
+
+  .agenda-premium-calendar .fc .agenda-source-google {
+    box-shadow: inset 0 0 0 1px rgba(147, 197, 253, 0.5), 0 10px 24px rgba(30, 64, 175, 0.28);
+  }
+
+  .agenda-premium-calendar .fc .agenda-priority-high {
+    background-color: #ef4444 !important;
+    background-image: linear-gradient(135deg, rgba(127, 29, 29, 0.25), rgba(254, 202, 202, 0.16));
+  }
+
+  .agenda-premium-calendar .fc .agenda-priority-medium {
+    background-color: #f59e0b !important;
+    background-image: linear-gradient(135deg, rgba(120, 53, 15, 0.24), rgba(253, 230, 138, 0.16));
+  }
+
+  .agenda-premium-calendar .fc .agenda-priority-low {
+    background-color: #10b981 !important;
+    background-image: linear-gradient(135deg, rgba(6, 78, 59, 0.24), rgba(167, 243, 208, 0.14));
+  }
+
+  .agenda-premium-calendar .fc .agenda-priority-none {
+    background-color: #3b82f6 !important;
+    background-image: linear-gradient(135deg, rgba(30, 58, 138, 0.24), rgba(191, 219, 254, 0.14));
+  }
+
+  .agenda-premium-calendar .fc .agenda-event-conflict {
+    box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.5), 0 8px 20px rgba(2, 6, 23, 0.35);
+  }
+
+  .agenda-premium-calendar .fc .fc-daygrid-more-link {
+    border-radius: 9999px;
+    padding: 0.1rem 0.45rem;
+    background: hsl(var(--muted) / 0.45);
+    color: hsl(var(--foreground) / 0.92);
+    font-size: 0.7rem;
+  }
+
+  .agenda-premium-calendar .fc .fc-timegrid-event-harness .fc-timegrid-event {
+    min-height: 22px;
+  }
+
+  .agenda-premium-calendar .fc .fc-event-main {
+    padding-top: 1px;
+    padding-bottom: 1px;
+  }
+
+  .agenda-premium-calendar.agenda-density-comfort .fc .fc-timegrid-slot {
+    height: 2.45rem;
+  }
+
+  .agenda-premium-calendar.agenda-density-comfort .fc .fc-event-main {
+    font-size: 0.72rem;
+  }
+
+  .agenda-premium-calendar.agenda-density-compact .fc .fc-timegrid-slot {
+    height: 1.85rem;
+  }
+
+  .agenda-premium-calendar.agenda-density-compact .fc .fc-event-main {
+    font-size: 0.66rem;
+    line-height: 1.1;
+  }
+
+  .agenda-premium-calendar.agenda-density-compact .fc .fc-daygrid-event {
+    margin-top: 1px;
+    margin-bottom: 1px;
+  }
+
+  .agenda-premium-calendar .fc .fc-event {
+    animation: sn-agenda-event-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    transform-origin: 50% 50%;
+  }
+
+  .agenda-premium-calendar.agenda-view-month .fc .fc-col-header-cell-cushion {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: lowercase;
+    letter-spacing: 0.02em;
+  }
+
+  .agenda-premium-calendar.agenda-view-month .fc .fc-daygrid-day-number {
+    font-size: 0.8rem;
+    font-weight: 600;
+    opacity: 0.9;
+  }
+
+  .agenda-premium-calendar.agenda-view-month .fc .fc-daygrid-event .fc-event-title {
+    font-size: 0.7rem;
+    line-height: 1.15;
+    letter-spacing: 0.005em;
+  }
+
+  .agenda-premium-calendar.agenda-view-month .fc .fc-daygrid-day-frame {
+    padding-top: 2px;
+  }
+
+  .agenda-premium-calendar.agenda-view-timegrid .fc .fc-timegrid-axis-cushion {
+    font-size: 0.74rem;
+    font-weight: 600;
+    opacity: 0.88;
+  }
+
+  @media (max-width: 768px) {
+    .agenda-premium-calendar .fc .fc-toolbar-title,
+    .agenda-premium-calendar .fc .fc-col-header-cell-cushion,
+    .agenda-premium-calendar .fc .fc-daygrid-day-number {
+      font-size: 0.75rem;
+    }
+  }
+
   .bg-card {
     box-shadow: var(--shadow-ambient);
   }

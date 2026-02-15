@@ -125,6 +125,11 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
 
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [dockHiddenOnScroll, setDockHiddenOnScroll] = useState(false);
+
+  const isAgendaRoute = pathname.startsWith("/tasks");
+  const isListOrNotesRoute = pathname.startsWith("/todo") || pathname.startsWith("/notes");
+  const dockMode = isAgendaRoute ? "agenda-sticky" : "floating";
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -143,6 +148,39 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mobileOpen]);
+
+  useEffect(() => {
+    if (mobileOpen) {
+      setDockHiddenOnScroll(false);
+      return;
+    }
+
+    let lastY = window.scrollY;
+    let ticking = false;
+
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(() => {
+        const nextY = window.scrollY;
+        const delta = nextY - lastY;
+
+        if (nextY < 24) {
+          setDockHiddenOnScroll(false);
+        } else if (delta > 10) {
+          setDockHiddenOnScroll(true);
+        } else if (delta < -10) {
+          setDockHiddenOnScroll(false);
+        }
+
+        lastY = nextY;
+        ticking = false;
+      });
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
   }, [mobileOpen]);
 
   useEffect(() => {
@@ -379,7 +417,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
           )}
         </div>
 
-        <main className="flex-1 p-4 pb-24 md:pb-20 min-w-0">
+        <main className={`flex-1 p-4 min-w-0 ${isAgendaRoute ? "pb-36 md:pb-20" : "pb-24 md:pb-20"}`}>
           <PwaInstallCta />
           {proactiveBanner ? (
             <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3">
@@ -410,6 +448,8 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
           {children}
           <SmartActionDock
             mobileHidden={mobileOpen}
+            mode={dockMode}
+            hiddenOnScroll={dockHiddenOnScroll && (isAgendaRoute || isListOrNotesRoute)}
             voiceAction={(
               <VoiceAgentButton
                 mobileHidden={mobileOpen}

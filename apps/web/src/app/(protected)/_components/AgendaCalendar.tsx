@@ -16,6 +16,7 @@ import type { TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq } from "@/type
 
 type CalendarViewMode = "dayGridMonth" | "timeGridWeek" | "timeGridDay";
 type AgendaDisplayMode = "calendar" | "planning";
+type CalendarDensity = "comfort" | "compact";
 type CalendarPriorityFilter = "" | Priority;
 type CalendarTimeWindowFilter = "" | "allDay" | "morning" | "afternoon" | "evening";
 type CalendarFilterStorage = {
@@ -23,6 +24,7 @@ type CalendarFilterStorage = {
   showConflictsOnly: boolean;
   priorityFilter: CalendarPriorityFilter;
   timeWindowFilter: CalendarTimeWindowFilter;
+  density: CalendarDensity;
 };
 
 type GoogleCalendarEvent = {
@@ -157,6 +159,7 @@ export default function AgendaCalendar({
   const [showConflictsOnly, setShowConflictsOnly] = useState(false);
   const [priorityFilter, setPriorityFilter] = useState<CalendarPriorityFilter>("");
   const [timeWindowFilter, setTimeWindowFilter] = useState<CalendarTimeWindowFilter>("");
+  const [calendarDensity, setCalendarDensity] = useState<CalendarDensity>("comfort");
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [filtersHydrated, setFiltersHydrated] = useState(false);
   const [visibleRange, setVisibleRange] = useState<{ start: Date; end: Date } | null>(null);
@@ -430,6 +433,7 @@ export default function AgendaCalendar({
         allDay: looksAllDay,
         backgroundColor: priorityColor(itemPriority),
         borderColor: priorityColor(itemPriority),
+        classNames: ["agenda-event", "agenda-event-local", `agenda-priority-${itemPriority || "none"}`],
         extendedProps: {
           taskId,
           workspaceId: task.workspaceId ?? "",
@@ -471,6 +475,10 @@ export default function AgendaCalendar({
         setShowConflictsOnly(parsed.showConflictsOnly);
       }
 
+      if (parsed.density === "compact" || parsed.density === "comfort") {
+        setCalendarDensity(parsed.density);
+      }
+
       if (parsed.priorityFilter === "" || parsed.priorityFilter === "low" || parsed.priorityFilter === "medium" || parsed.priorityFilter === "high") {
         setPriorityFilter(parsed.priorityFilter);
       }
@@ -499,6 +507,7 @@ export default function AgendaCalendar({
       showConflictsOnly,
       priorityFilter,
       timeWindowFilter,
+      density: calendarDensity,
     };
 
     try {
@@ -506,7 +515,7 @@ export default function AgendaCalendar({
     } catch {
       // ignore storage write errors
     }
-  }, [filtersHydrated, priorityFilter, showConflictsOnly, showRecurringOnly, timeWindowFilter]);
+  }, [calendarDensity, filtersHydrated, priorityFilter, showConflictsOnly, showRecurringOnly, timeWindowFilter]);
 
   const openDraftFromSelect = (arg: DateSelectArg) => {
     setEditScope("series");
@@ -704,12 +713,38 @@ export default function AgendaCalendar({
           ? "Mixte"
           : "Local";
 
+    const sourceLabel = arg.event.extendedProps.source === "google-calendar" ? "Google" : "Local";
+    const start = arg.event.start;
+    const end = arg.event.end;
+    const durationMinutes =
+      start instanceof Date && end instanceof Date ? Math.round((end.getTime() - start.getTime()) / (60 * 1000)) : 60;
+    const isDenseTimeGrid = arg.view.type !== "dayGridMonth" && !arg.event.allDay && durationMinutes <= 45;
+    const compactPresentation = effectiveCalendarDensity === "compact" || isDenseTimeGrid;
+
     return (
-      <div className="px-1 py-0.5 text-[11px] leading-tight">
+      <div className="px-1 py-0.5 text-[11px] leading-tight text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]">
         <div className="font-semibold truncate">{arg.event.title}</div>
-        <div className="opacity-90 truncate">{workspaceName}</div>
-        {priority && <div className="uppercase tracking-wide text-[10px]">{priority}</div>}
-        {hasConflict && <div className="text-[10px] text-red-600">Conflit {conflictLabel} · P{Math.min(9, conflictScore)}</div>}
+        {compactPresentation ? (
+          <div className="mt-0.5 inline-flex items-center gap-1 text-[9px] text-white/90">
+            <span className="rounded-full bg-black/25 px-1.5 py-0.5 font-semibold uppercase tracking-wide">{sourceLabel}</span>
+            {hasConflict && <span className="rounded-full bg-red-500/85 px-1.5 py-0.5 font-semibold">C · P{Math.min(9, conflictScore)}</span>}
+          </div>
+        ) : (
+          <>
+            <div className="truncate text-white/90">{workspaceName}</div>
+            <div className="mt-0.5 inline-flex flex-wrap items-center gap-1">
+              <span className="rounded-full bg-black/25 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white/95">{sourceLabel}</span>
+              {priority && (
+                <span className="rounded-full bg-black/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white/95">{priority}</span>
+              )}
+              {hasConflict && (
+                <span className="rounded-full bg-red-500/85 px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                  Conflit {conflictLabel} · P{Math.min(9, conflictScore)}
+                </span>
+              )}
+            </div>
+          </>
+        )}
       </div>
     );
   };
@@ -828,6 +863,7 @@ export default function AgendaCalendar({
           allDay: event.allDay,
           backgroundColor: "#2563eb",
           borderColor: "#2563eb",
+          classNames: ["agenda-event", "agenda-event-google", "agenda-priority-none"],
           editable: false,
           extendedProps: {
             workspaceName: "Google Calendar",
@@ -880,8 +916,13 @@ export default function AgendaCalendar({
       const conflict = conflictById.get(String(event.id));
       const hasConflict = Boolean(conflict);
       const conflictSource = conflict?.google ? (conflict.local ? "mix" : "google") : conflict?.local ? "local" : null;
+      const classNames = Array.isArray(event.classNames) ? [...event.classNames] : [];
+      if (hasConflict) classNames.push("agenda-event-conflict");
+      if (event.extendedProps?.source === "google-calendar") classNames.push("agenda-source-google");
+      else classNames.push("agenda-source-local");
       return {
         ...event,
+        classNames,
         extendedProps: {
           ...(event.extendedProps ?? {}),
           conflict: hasConflict,
@@ -895,6 +936,11 @@ export default function AgendaCalendar({
   const agendaConflictCount = useMemo(
     () => agendaEvents.reduce((acc, event) => (event.extendedProps?.conflict === true ? acc + 1 : acc), 0),
     [agendaEvents],
+  );
+
+  const effectiveCalendarDensity = useMemo<CalendarDensity>(
+    () => (calendarDensity === "comfort" && agendaConflictCount >= 8 ? "compact" : calendarDensity),
+    [agendaConflictCount, calendarDensity],
   );
 
   const planningSections = useMemo(() => {
@@ -1245,6 +1291,25 @@ export default function AgendaCalendar({
         >
           Aide (?)
         </button>
+
+        <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setCalendarDensity("comfort")}
+            className={`h-8 px-3 text-xs ${calendarDensity === "comfort" ? "bg-accent font-semibold" : ""}`}
+            data-state={calendarDensity === "comfort" ? "active" : "inactive"}
+          >
+            Confort
+          </button>
+          <button
+            type="button"
+            onClick={() => setCalendarDensity("compact")}
+            className={`h-8 px-3 text-xs border-l border-border ${calendarDensity === "compact" ? "bg-accent font-semibold" : ""}`}
+            data-state={calendarDensity === "compact" ? "active" : "inactive"}
+          >
+            Compact
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -1253,6 +1318,9 @@ export default function AgendaCalendar({
         <span className="sn-badge">Google: {googleCalendarEvents.length}</span>
         <span className="sn-badge">Récurrents: {calendarData.stats.recurring}</span>
         <span className="sn-badge">Conflits: {agendaConflictCount}</span>
+        {calendarDensity === "comfort" && effectiveCalendarDensity === "compact" && (
+          <span className="sn-badge">Auto compact (conflits élevés)</span>
+        )}
       </div>
 
       <div className="rounded-md border border-border bg-background px-3 py-2">
@@ -1323,9 +1391,12 @@ export default function AgendaCalendar({
           </div>
         </aside>
 
-        <div className="sn-card p-2">
+        <div className="sn-card p-2 bg-[radial-gradient(1200px_circle_at_100%_-10%,rgba(59,130,246,0.12),transparent_45%),linear-gradient(180deg,rgba(15,23,42,0.26),transparent_35%)]">
           {displayMode === "calendar" ? (
-            <FullCalendar
+            <div
+              className={`agenda-premium-calendar ${effectiveCalendarDensity === "compact" ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"}`}
+            >
+              <FullCalendar
               ref={calendarRef}
               plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
               initialView={viewMode}
@@ -1339,6 +1410,8 @@ export default function AgendaCalendar({
               dayMaxEvents
               allDayMaintainDuration
               eventDisplay="block"
+              eventMinHeight={24}
+              eventShortHeight={22}
               slotMinTime="06:00:00"
               slotMaxTime="23:30:00"
               events={agendaEvents}
@@ -1360,7 +1433,8 @@ export default function AgendaCalendar({
               eventResize={handleMoveOrResize}
               eventContent={eventContent}
               timeZone="Europe/Paris"
-            />
+              />
+            </div>
           ) : (
             <div className="space-y-4 p-2">
               <div className="flex flex-wrap items-center gap-2">

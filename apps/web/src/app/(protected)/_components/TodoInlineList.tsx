@@ -61,6 +61,15 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
     }
   };
 
+  const openTodoDetail = (todoId?: string) => {
+    if (!todoId) return;
+    const qs = new URLSearchParams(searchParams.toString());
+    if (workspaceId) qs.set("workspaceId", workspaceId);
+    else qs.delete("workspaceId");
+    const href = qs.toString();
+    router.push(`/todo/${encodeURIComponent(todoId)}${href ? `?${href}` : ""}`);
+  };
+
   const isSameLocalDay = (a: Date, b: Date) => {
     return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
   };
@@ -428,23 +437,19 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
               {filteredTodos.map((todo) => (
                 <li key={todo.id}>
                   <div
-                    className={`sn-card p-4 relative ${todo.completed ? "opacity-80" : ""} ${todo.id ? "cursor-pointer" : ""}`}
+                    className={`sn-card p-4 relative ${todo.completed ? "opacity-80" : ""} ${todo.id ? "cursor-pointer" : ""} ${todo.id ? "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40" : ""}`}
+                    role={todo.id ? "button" : undefined}
+                    tabIndex={todo.id ? 0 : -1}
+                    aria-label={todo.id ? `Ouvrir la checklist ${todo.title}` : undefined}
+                    onClick={() => openTodoDetail(todo.id)}
+                    onKeyDown={(e) => {
+                      if (!todo.id) return;
+                      if (e.key !== "Enter" && e.key !== " ") return;
+                      e.preventDefault();
+                      openTodoDetail(todo.id);
+                    }}
                   >
-                    <button
-                      type="button"
-                      className="absolute inset-0 rounded-[inherit] z-0"
-                      aria-label="Ouvrir la checklist"
-                      onClick={() => {
-                        if (!todo.id) return;
-                        const qs = new URLSearchParams(searchParams.toString());
-                        if (workspaceId) qs.set("workspaceId", workspaceId);
-                        else qs.delete("workspaceId");
-                        const href = qs.toString();
-                        router.push(`/todo/${encodeURIComponent(todo.id)}${href ? `?${href}` : ""}`);
-                      }}
-                    />
-
-                    <div className="flex items-center justify-between gap-3 relative z-10">
+                    <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
                         <input
                           type="checkbox"
@@ -452,6 +457,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                           onChange={(e) => toggleCompleted(todo, e.target.checked)}
                           aria-label="Marquer comme terminée"
                           onClick={(e) => e.stopPropagation()}
+                          onPointerDown={(e) => e.stopPropagation()}
                           className="pointer-events-auto"
                         />
                         <div className="min-w-0">
@@ -485,6 +491,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                         aria-label={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                         title={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                         onMouseDown={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => e.stopPropagation()}
                       >
                         {todo.favorite ? "★" : "☆"}
                       </button>
@@ -497,6 +504,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                             void toggleCompleted(todo, false);
                           }}
                           onMouseDown={(e) => e.stopPropagation()}
+                          onPointerDown={(e) => e.stopPropagation()}
                           className="sn-text-btn shrink-0"
                           aria-label="Restaurer la checklist"
                           title="Restaurer"

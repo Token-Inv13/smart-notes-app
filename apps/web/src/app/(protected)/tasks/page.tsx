@@ -215,6 +215,8 @@ export default function TasksPage() {
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null);
   const [optimisticStatusById, setOptimisticStatusById] = useState<Record<string, TaskStatus>>({});
+  const [kanbanMobileStatus, setKanbanMobileStatus] = useState<TaskStatus>("todo");
+  const kanbanScrollRef = useRef<HTMLDivElement | null>(null);
 
   const calendarRangeFromTs = useMemo(
     () => (calendarRange ? Timestamp.fromDate(calendarRange.start) : undefined),
@@ -628,6 +630,56 @@ export default function TasksPage() {
 
     return groups;
   }, [filteredTasks, statusForTask]);
+
+  const visibleKanbanStatuses = useMemo<TaskStatus[]>(
+    () =>
+      statusFilter === "all"
+        ? (["todo", "doing", "done"] as TaskStatus[])
+        : ([statusFilter] as TaskStatus[]),
+    [statusFilter],
+  );
+
+  const kanbanSwipeHandlers = useSwipeNavigation<HTMLDivElement>({
+    onSwipeLeft: () => {
+      setKanbanMobileStatus((prev) => {
+        const index = visibleKanbanStatuses.indexOf(prev);
+        if (index < 0 || index >= visibleKanbanStatuses.length - 1) return prev;
+        return visibleKanbanStatuses[index + 1] ?? prev;
+      });
+    },
+    onSwipeRight: () => {
+      setKanbanMobileStatus((prev) => {
+        const index = visibleKanbanStatuses.indexOf(prev);
+        if (index <= 0) return prev;
+        return visibleKanbanStatuses[index - 1] ?? prev;
+      });
+    },
+    disabled: viewMode !== "kanban" || archiveView !== "active" || statusFilter !== "all" || !!draggingTaskId,
+  });
+
+  useEffect(() => {
+    if (statusFilter !== "all") {
+      setKanbanMobileStatus(statusFilter as TaskStatus);
+      return;
+    }
+
+    if (!visibleKanbanStatuses.includes(kanbanMobileStatus)) {
+      setKanbanMobileStatus(visibleKanbanStatuses[0] ?? "todo");
+    }
+  }, [kanbanMobileStatus, statusFilter, visibleKanbanStatuses]);
+
+  useEffect(() => {
+    if (viewMode !== "kanban") return;
+    if (archiveView !== "active") return;
+    if (statusFilter !== "all") return;
+
+    const container = kanbanScrollRef.current;
+    if (!container) return;
+    const lane = container.querySelector<HTMLElement>(`[data-kanban-status="${kanbanMobileStatus}"]`);
+    if (!lane) return;
+
+    lane.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }, [archiveView, kanbanMobileStatus, statusFilter, viewMode]);
 
   const handleKanbanDrop = async (taskId: string, targetStatus: TaskStatus) => {
     const user = auth.currentUser;
@@ -1346,162 +1398,183 @@ export default function TasksPage() {
       )}
 
       {!loading && !error && archiveView === "active" && viewMode === "kanban" && (
-        <section className="grid gap-4 md:grid-cols-3">
-          {(statusFilter === "all"
-            ? (["todo", "doing", "done"] as TaskStatus[])
-            : ([statusFilter] as TaskStatus[])
-          ).map((colStatus) => (
-            <div
-              key={colStatus}
-              className={`sn-card sn-card--task p-3 min-h-[240px] transition-colors ${
-                dragOverStatus === colStatus ? "ring-2 ring-primary/40 bg-accent/30" : ""
-              }`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                if (dragOverStatus !== colStatus) setDragOverStatus(colStatus);
-              }}
-              onDragLeave={() => {
-                setDragOverStatus((prev) => (prev === colStatus ? null : prev));
-              }}
-              onDrop={async (e) => {
-                e.preventDefault();
-                const id = e.dataTransfer.getData("text/plain");
-                if (!id) return;
-                await handleKanbanDrop(id, colStatus);
-                setDraggingTaskId(null);
-                setDragOverStatus(null);
-              }}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="font-semibold">{statusLabel(colStatus)}</h2>
-                <span className="text-xs text-muted-foreground">{groupedTasks[colStatus].length}</span>
-              </div>
-
-              <div className="space-y-2">
-                {groupedTasks[colStatus].map((task) => {
-                  const dueLabel = formatDueDate(task.dueDate ?? null);
-                  const startLabel = formatStartDate(task.startDate ?? null);
-                  const priorityText = task.priority ? priorityLabel(task.priority) : "";
-
-                  const openTaskModal = () => {
-                    if (!task.id) return;
-                    if (suppressNextKanbanClickRef.current) {
-                      suppressNextKanbanClickRef.current = false;
-                      return;
-                    }
-                    const qs = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
-                    router.push(`/tasks/${task.id}${qs}`);
-                  };
-
-                  return (
-                    <div
-                      key={task.id}
-                      id={task.id ? `task-${task.id}` : undefined}
-                      draggable={!!task.id}
-                      onDragStart={(e) => {
-                        if (!task.id) return;
-                        e.dataTransfer.setData("text/plain", task.id);
-                        e.dataTransfer.effectAllowed = "move";
-                        setDraggingTaskId(task.id);
-                        suppressNextKanbanClickRef.current = true;
-                      }}
-                      onDragEnd={() => {
-                        setDraggingTaskId(null);
-                        setDragOverStatus(null);
-                        window.setTimeout(() => {
-                          suppressNextKanbanClickRef.current = false;
-                        }, 0);
-                      }}
-                      className={`border border-border rounded-md bg-background p-2 cursor-move transition-shadow ${
-                        draggingTaskId === task.id
-                          ? "opacity-60 ring-2 ring-primary/40"
-                          : task.id && task.id === highlightedTaskId
-                            ? flashHighlightTaskId === task.id
-                              ? "border-primary ring-2 ring-primary/40"
-                              : "border-primary"
-                            : ""
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <button
-                          type="button"
-                          onClick={openTaskModal}
-                          draggable={!!task.id}
-                          className="min-w-0 flex-1 text-left bg-transparent p-0 border-0 cursor-move"
-                          aria-label={`Ouvrir l’élément d’agenda : ${task.title}`}
-                        >
-                          <div className="text-sm font-medium truncate">{task.title}</div>
-                          {(startLabel || dueLabel || task.priority) && (
-                            <div className="text-xs text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-                              {startLabel && (
-                                <span className="inline-flex items-center gap-1">
-                                  <span aria-hidden>🟢</span>
-                                  <span>{startLabel}</span>
-                                </span>
-                              )}
-                              {dueLabel && (
-                                <span className="inline-flex items-center gap-1">
-                                  <span aria-hidden>📅</span>
-                                  <span>{dueLabel}</span>
-                                </span>
-                              )}
-                              {task.priority && (
-                                <span className="inline-flex items-center gap-1">
-                                  <span className={`h-2 w-2 rounded-full ${priorityDotClass(task.priority)}`} aria-hidden />
-                                  <span>{priorityText}</span>
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </button>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <select
-                            className="md:hidden text-xs border border-input rounded px-2 py-1 bg-background"
-                            value={statusForTask(task)}
-                            disabled={!task.id}
-                            aria-label="Déplacer l’élément d’agenda"
-                            onChange={async (e) => {
-                              if (!task.id) return;
-                              await handleKanbanDrop(task.id, e.target.value as TaskStatus);
-                            }}
-                          >
-                            <option value="todo">À faire</option>
-                            <option value="doing">En cours</option>
-                            <option value="done">Terminée</option>
-                          </select>
-                          <label className="text-xs flex items-center gap-1">
-                            <input
-                              type="checkbox"
-                              checked={statusForTask(task) === "done"}
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => toggleDone(task, e.target.checked)}
-                            />
-                            Terminé
-                          </label>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleFavorite(task);
-                            }}
-                            className="sn-text-btn"
-                            aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                          >
-                            {task.favorite ? "★" : "☆"}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {groupedTasks[colStatus].length === 0 && (
-                  <div className="text-sm text-muted-foreground">Glisse un élément d’agenda ici</div>
-                )}
+        <>
+          {statusFilter === "all" && (
+            <div className="md:hidden">
+              <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
+                {visibleKanbanStatuses.map((colStatus) => (
+                  <button
+                    key={`kanban-tab-${colStatus}`}
+                    type="button"
+                    onClick={() => setKanbanMobileStatus(colStatus)}
+                    className={`px-3 py-1 text-sm ${kanbanMobileStatus === colStatus ? "bg-accent font-semibold" : ""}`}
+                  >
+                    {statusLabel(colStatus)} ({groupedTasks[colStatus].length})
+                  </button>
+                ))}
               </div>
             </div>
-          ))}
-        </section>
+          )}
+
+          <section
+            ref={kanbanScrollRef}
+            className="flex gap-3 overflow-x-auto overscroll-x-contain snap-x snap-mandatory pb-1 md:grid md:gap-4 md:grid-cols-3 md:overflow-visible"
+            {...kanbanSwipeHandlers}
+          >
+            {visibleKanbanStatuses.map((colStatus) => (
+              <div
+                key={colStatus}
+                data-kanban-status={colStatus}
+                className={`sn-card sn-card--task p-3 min-h-[240px] min-w-[90vw] max-w-[90vw] sm:min-w-[82vw] sm:max-w-[82vw] md:min-w-0 md:max-w-none shrink-0 snap-center overflow-hidden transition-colors ${
+                  dragOverStatus === colStatus ? "ring-2 ring-primary/40 bg-accent/30" : ""
+                } ${statusFilter === "all" && kanbanMobileStatus !== colStatus ? "max-md:opacity-80" : ""}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (dragOverStatus !== colStatus) setDragOverStatus(colStatus);
+                }}
+                onDragLeave={() => {
+                  setDragOverStatus((prev) => (prev === colStatus ? null : prev));
+                }}
+                onDrop={async (e) => {
+                  e.preventDefault();
+                  const id = e.dataTransfer.getData("text/plain");
+                  if (!id) return;
+                  await handleKanbanDrop(id, colStatus);
+                  setDraggingTaskId(null);
+                  setDragOverStatus(null);
+                }}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="font-semibold">{statusLabel(colStatus)}</h2>
+                  <span className="text-xs text-muted-foreground">{groupedTasks[colStatus].length}</span>
+                </div>
+
+                <div className="space-y-2 min-w-0">
+                  {groupedTasks[colStatus].map((task) => {
+                    const dueLabel = formatDueDate(task.dueDate ?? null);
+                    const startLabel = formatStartDate(task.startDate ?? null);
+                    const priorityText = task.priority ? priorityLabel(task.priority) : "";
+
+                    const openTaskModal = () => {
+                      if (!task.id) return;
+                      if (suppressNextKanbanClickRef.current) {
+                        suppressNextKanbanClickRef.current = false;
+                        return;
+                      }
+                      const qs = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
+                      router.push(`/tasks/${task.id}${qs}`);
+                    };
+
+                    return (
+                      <div
+                        key={task.id}
+                        id={task.id ? `task-${task.id}` : undefined}
+                        draggable={!!task.id}
+                        onDragStart={(e) => {
+                          if (!task.id) return;
+                          e.dataTransfer.setData("text/plain", task.id);
+                          e.dataTransfer.effectAllowed = "move";
+                          setDraggingTaskId(task.id);
+                          suppressNextKanbanClickRef.current = true;
+                        }}
+                        onDragEnd={() => {
+                          setDraggingTaskId(null);
+                          setDragOverStatus(null);
+                          window.setTimeout(() => {
+                            suppressNextKanbanClickRef.current = false;
+                          }, 0);
+                        }}
+                        className={`border border-border rounded-md bg-background p-2 min-w-0 overflow-hidden cursor-move transition-shadow ${
+                          draggingTaskId === task.id
+                            ? "opacity-60 ring-2 ring-primary/40"
+                            : task.id && task.id === highlightedTaskId
+                              ? flashHighlightTaskId === task.id
+                                ? "border-primary ring-2 ring-primary/40"
+                                : "border-primary"
+                              : ""
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={openTaskModal}
+                            draggable={!!task.id}
+                            className="min-w-0 flex-1 text-left bg-transparent p-0 border-0 cursor-move"
+                            aria-label={`Ouvrir l’élément d’agenda : ${task.title}`}
+                          >
+                            <div className="text-sm font-medium truncate">{task.title}</div>
+                            {(startLabel || dueLabel || task.priority) && (
+                              <div className="text-xs text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                                {startLabel && (
+                                  <span className="inline-flex items-center gap-1">
+                                    <span aria-hidden>🟢</span>
+                                    <span>{startLabel}</span>
+                                  </span>
+                                )}
+                                {dueLabel && (
+                                  <span className="inline-flex items-center gap-1">
+                                    <span aria-hidden>📅</span>
+                                    <span>{dueLabel}</span>
+                                  </span>
+                                )}
+                                {task.priority && (
+                                  <span className="inline-flex items-center gap-1">
+                                    <span className={`h-2 w-2 rounded-full ${priorityDotClass(task.priority)}`} aria-hidden />
+                                    <span>{priorityText}</span>
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </button>
+                          <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                            <select
+                              className="md:hidden text-xs border border-input rounded px-2 py-1 bg-background"
+                              value={statusForTask(task)}
+                              disabled={!task.id}
+                              aria-label="Déplacer l’élément d’agenda"
+                              onChange={async (e) => {
+                                if (!task.id) return;
+                                await handleKanbanDrop(task.id, e.target.value as TaskStatus);
+                              }}
+                            >
+                              <option value="todo">À faire</option>
+                              <option value="doing">En cours</option>
+                              <option value="done">Terminée</option>
+                            </select>
+                            <label className="text-xs flex items-center gap-1">
+                              <input
+                                type="checkbox"
+                                checked={statusForTask(task) === "done"}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => toggleDone(task, e.target.checked)}
+                              />
+                              Terminé
+                            </label>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFavorite(task);
+                              }}
+                              className="sn-text-btn"
+                              aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                            >
+                              {task.favorite ? "★" : "☆"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {groupedTasks[colStatus].length === 0 && (
+                    <div className="text-sm text-muted-foreground">Glisse un élément d’agenda ici</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </section>
+        </>
       )}
 
       {!loading && !error && archiveView === "active" && viewMode !== "kanban" && viewMode !== "calendar" && statusFilter === "all" && completedTasks.length > 0 && (
