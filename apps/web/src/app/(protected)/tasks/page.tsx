@@ -121,12 +121,12 @@ export default function TasksPage() {
     }
 
     await updateDoc(doc(db, "tasks", taskId), {
-      recurrence: {
-        ...current.recurrence,
-        exceptions: arrayUnion(occurrenceDate),
-      },
+      "recurrence.exceptions": arrayUnion(occurrenceDate),
       updatedAt: serverTimestamp(),
     });
+
+    setActionFeedback("Occurrence ignorée.");
+    window.setTimeout(() => setActionFeedback(null), 1800);
   };
 
   const handleCalendarUpdate = async (input: {
