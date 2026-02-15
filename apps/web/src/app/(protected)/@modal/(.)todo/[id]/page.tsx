@@ -15,6 +15,26 @@ function safeItemId() {
   return `it_${Math.random().toString(36).slice(2)}_${Date.now()}`;
 }
 
+type TodoItem = NonNullable<TodoDoc["items"]>[number];
+
+function normalizeTodoItems(items: TodoDoc["items"] | null | undefined): TodoItem[] {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item): TodoItem | null => {
+      if (!item || typeof item !== "object") return null;
+      const rawText = typeof item.text === "string" ? item.text : "";
+      const text = rawText.trim();
+      if (!text) return null;
+      return {
+        id: typeof item.id === "string" && item.id.trim() ? item.id : safeItemId(),
+        text,
+        done: item.done === true,
+        createdAt: typeof item.createdAt === "number" ? item.createdAt : Date.now(),
+      };
+    })
+    .filter((item): item is TodoItem => item !== null);
+}
+
 type AssistantActionId =
   | "summary"
   | "correction"
@@ -159,7 +179,11 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
         }
 
         if (!cancelled) {
-          setTodo({ id: snap.id, ...data });
+          setTodo({
+            id: snap.id,
+            ...data,
+            items: normalizeTodoItems(data.items),
+          });
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Erreur lors du chargement.";
@@ -202,7 +226,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
     setEditError(null);
     try {
       const nextTitle = typeof next.title === "string" ? next.title : todo.title;
-      const nextItems = next.items ?? (todo.items ?? []);
+      const nextItems = normalizeTodoItems(next.items ?? (todo.items ?? []));
       const nextFavorite = typeof next.favorite === "boolean" ? next.favorite : todo.favorite === true;
       const nextCompleted = typeof next.completed === "boolean" ? next.completed : todo.completed === true;
       const nextDueDate = typeof next.dueDate !== "undefined" ? next.dueDate : (todo.dueDate ?? null);

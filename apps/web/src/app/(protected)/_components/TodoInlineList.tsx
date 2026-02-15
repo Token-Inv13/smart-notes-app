@@ -444,7 +444,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                       }}
                     />
 
-                    <div className="flex items-center justify-between gap-3 relative z-10 pointer-events-none">
+                    <div className="flex items-center justify-between gap-3 relative z-10">
                       <div className="flex items-center gap-3 min-w-0">
                         <input
                           type="checkbox"
@@ -488,6 +488,22 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                       >
                         {todo.favorite ? "★" : "☆"}
                       </button>
+
+                      {todo.completed === true && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void toggleCompleted(todo, false);
+                          }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          className="sn-text-btn shrink-0"
+                          aria-label="Restaurer la ToDo"
+                          title="Restaurer"
+                        >
+                          Restaurer
+                        </button>
+                      )}
                     </div>
                   </div>
                 </li>
