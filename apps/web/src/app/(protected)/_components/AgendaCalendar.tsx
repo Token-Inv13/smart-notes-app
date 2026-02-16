@@ -788,9 +788,22 @@ export default function AgendaCalendar({
     keepPageScrollStable();
   };
 
+  const isSwipeBlockedTarget = (target: EventTarget | null) => {
+    if (!(target instanceof Element)) return false;
+    return Boolean(
+      target.closest(
+        "button,a,input,select,textarea,[role='button'],[data-no-calendar-swipe],.fc-event,.fc-more-link",
+      ),
+    );
+  };
+
   const handleCalendarTouchStart = (event: TouchEvent<HTMLDivElement>) => {
     if (displayMode !== "calendar") return;
     if (typeof window !== "undefined" && window.innerWidth >= 768) return;
+    if (isSwipeBlockedTarget(event.target)) {
+      touchStartRef.current = null;
+      return;
+    }
     if (event.touches.length !== 1) {
       touchStartRef.current = null;
       return;
@@ -822,9 +835,9 @@ export default function AgendaCalendar({
     const absY = Math.abs(dy);
     const elapsed = Date.now() - start.at;
 
-    if (elapsed > 700) return;
-    if (absX < 56) return;
-    if (absX < absY * 1.3) return;
+    if (elapsed > 650) return;
+    if (absX < 64) return;
+    if (absX < absY * 1.45) return;
 
     if (dx < 0) jump("next");
     else jump("prev");
@@ -1509,6 +1522,9 @@ export default function AgendaCalendar({
               eventContent={eventContent}
               timeZone="Europe/Paris"
               />
+              <p className="mt-2 px-1 text-[11px] text-muted-foreground md:hidden">
+                Astuce: glissez gauche/droite pour changer de période.
+              </p>
             </div>
           ) : (
             <div className="space-y-4 p-2">
