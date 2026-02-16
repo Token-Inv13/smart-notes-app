@@ -1046,6 +1046,98 @@ export const adminResetUserFlags = functions.https.onCall(async (data, context) 
   }
 });
 
+export const adminSendUserMessage = functions.https.onCall(async (data, context) => {
+  const action = 'send_user_message';
+  const payload = isObject(data) ? data : {};
+  const adminUid = context.auth?.uid ?? null;
+
+  try {
+    const actorUid = assertAdmin(context);
+    const targetUserUid = toNonEmptyString(payload.targetUserUid);
+    const title = toNonEmptyString(payload.title);
+    const body = toNonEmptyString(payload.body);
+    const severityRaw = toOptionalString(payload.severity);
+    const severity =
+      severityRaw === 'warn' || severityRaw === 'critical' || severityRaw === 'info' ? severityRaw : 'info';
+
+    if (!targetUserUid) {
+      throw new functions.https.HttpsError('invalid-argument', 'targetUserUid is required.');
+    }
+    if (!title || title.length > 120) {
+      throw new functions.https.HttpsError('invalid-argument', 'title is required and must be <= 120 chars.');
+    }
+    if (!body || body.length > 4000) {
+      throw new functions.https.HttpsError('invalid-argument', 'body is required and must be <= 4000 chars.');
+    }
+
+    const db = admin.firestore();
+    await db
+      .collection('users')
+      .doc(targetUserUid)
+      .collection('inbox')
+      .add({
+        title,
+        body,
+        severity,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        readAt: null,
+        createdBy: actorUid,
+      });
+
+    await writeAdminAuditLog({
+      adminUid: actorUid,
+      targetUserUid,
+      action,
+      payload: {
+        title,
+        severity,
+        bodyLength: body.length,
+      },
+      status: 'success',
+      message: 'Inbox message sent to user.',
+    });
+
+    await writeUserActivityEvent({
+      uid: targetUserUid,
+      type: 'notification_sent',
+      metadata: {
+        action,
+        severity,
+        title,
+        adminUid: actorUid,
+      },
+    });
+
+    return {
+      ok: true,
+      message: 'Message envoyé.',
+    };
+  } catch (error) {
+    const mapped = toHttpsError(error);
+    const targetUserUid = toOptionalString(payload.targetUserUid);
+    try {
+      await writeAdminAuditLog({
+        adminUid,
+        targetUserUid,
+        action,
+        payload,
+        status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
+        message: mapped.message,
+      });
+      await writeAppErrorLog({
+        category: 'functions',
+        scope: action,
+        code: mapped.code,
+        message: mapped.message,
+        context: { adminUid, targetUserUid },
+      });
+    } catch {
+      // Ignore logging failures.
+    }
+    throw mapped;
+  }
+});
+
 export const adminListUsersIndex = functions.https.onCall(async (data, context) => {
   const action = 'list_users_index';
   const payload = isObject(data) ? data : {};

@@ -94,6 +94,20 @@ export async function listUserActivityEvents(params: {
   return res.data;
 }
 
+export async function sendUserMessage(params: {
+  targetUserUid: string;
+  title: string;
+  body: string;
+  severity?: 'info' | 'warn' | 'critical';
+}): Promise<AdminActionResponse> {
+  const fn = httpsCallable<
+    { targetUserUid: string; title: string; body: string; severity?: 'info' | 'warn' | 'critical' },
+    AdminActionResponse
+  >(fbFunctions, 'adminSendUserMessage');
+  const res = await fn(params);
+  return res.data;
+}
+
 export async function listErrorLogs(params?: {
   limit?: number;
   cursor?: AdminCursor | null;

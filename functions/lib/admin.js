@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.adminListErrorLogs = exports.adminListAuditLogs = exports.adminListUserActivityEvents = exports.rebuildAdminUsersIndex = exports.adminListUsersIndex = exports.adminResetUserFlags = exports.adminDisablePremium = exports.adminEnablePremium = exports.adminRevokeUserSessions = exports.adminUsersIndexOnErrorLogCreate = exports.adminUsersIndexOnAuthDelete = exports.adminUsersIndexOnAuthCreate = exports.adminUsersIndexOnUserWrite = exports.adminLookupUser = void 0;
+exports.adminListErrorLogs = exports.adminListAuditLogs = exports.adminListUserActivityEvents = exports.rebuildAdminUsersIndex = exports.adminListUsersIndex = exports.adminSendUserMessage = exports.adminResetUserFlags = exports.adminDisablePremium = exports.adminEnablePremium = exports.adminRevokeUserSessions = exports.adminUsersIndexOnErrorLogCreate = exports.adminUsersIndexOnAuthDelete = exports.adminUsersIndexOnAuthCreate = exports.adminUsersIndexOnUserWrite = exports.adminLookupUser = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 if (!admin.apps.length) {
@@ -813,6 +813,93 @@ exports.adminResetUserFlags = functions.https.onCall(async (data, context) => {
         return {
             ok: true,
             message: 'Onboarding / flags réinitialisés.',
+        };
+    }
+    catch (error) {
+        const mapped = toHttpsError(error);
+        const targetUserUid = toOptionalString(payload.targetUserUid);
+        try {
+            await writeAdminAuditLog({
+                adminUid,
+                targetUserUid,
+                action,
+                payload,
+                status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
+                message: mapped.message,
+            });
+            await writeAppErrorLog({
+                category: 'functions',
+                scope: action,
+                code: mapped.code,
+                message: mapped.message,
+                context: { adminUid, targetUserUid },
+            });
+        }
+        catch (_c) {
+            // Ignore logging failures.
+        }
+        throw mapped;
+    }
+});
+exports.adminSendUserMessage = functions.https.onCall(async (data, context) => {
+    var _a, _b;
+    const action = 'send_user_message';
+    const payload = isObject(data) ? data : {};
+    const adminUid = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid) !== null && _b !== void 0 ? _b : null;
+    try {
+        const actorUid = assertAdmin(context);
+        const targetUserUid = toNonEmptyString(payload.targetUserUid);
+        const title = toNonEmptyString(payload.title);
+        const body = toNonEmptyString(payload.body);
+        const severityRaw = toOptionalString(payload.severity);
+        const severity = severityRaw === 'warn' || severityRaw === 'critical' || severityRaw === 'info' ? severityRaw : 'info';
+        if (!targetUserUid) {
+            throw new functions.https.HttpsError('invalid-argument', 'targetUserUid is required.');
+        }
+        if (!title || title.length > 120) {
+            throw new functions.https.HttpsError('invalid-argument', 'title is required and must be <= 120 chars.');
+        }
+        if (!body || body.length > 4000) {
+            throw new functions.https.HttpsError('invalid-argument', 'body is required and must be <= 4000 chars.');
+        }
+        const db = admin.firestore();
+        await db
+            .collection('users')
+            .doc(targetUserUid)
+            .collection('inbox')
+            .add({
+            title,
+            body,
+            severity,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            readAt: null,
+            createdBy: actorUid,
+        });
+        await writeAdminAuditLog({
+            adminUid: actorUid,
+            targetUserUid,
+            action,
+            payload: {
+                title,
+                severity,
+                bodyLength: body.length,
+            },
+            status: 'success',
+            message: 'Inbox message sent to user.',
+        });
+        await writeUserActivityEvent({
+            uid: targetUserUid,
+            type: 'notification_sent',
+            metadata: {
+                action,
+                severity,
+                title,
+                adminUid: actorUid,
+            },
+        });
+        return {
+            ok: true,
+            message: 'Message envoyé.',
         };
     }
     catch (error) {

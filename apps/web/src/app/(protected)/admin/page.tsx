@@ -10,6 +10,7 @@ import {
   listUsersIndex,
   lookupUser,
   rebuildUsersIndex,
+  sendUserMessage,
   resetUserFlags,
   revokeUserSessions,
 } from '@/lib/adminClient';
@@ -104,6 +105,13 @@ export default function AdminPage() {
   const [activityCursor, setActivityCursor] = useState<AdminCursor | null>(null);
   const [activityTypeFilter, setActivityTypeFilter] = useState('');
 
+  const [messageTitle, setMessageTitle] = useState('');
+  const [messageBody, setMessageBody] = useState('');
+  const [messageSeverity, setMessageSeverity] = useState<'info' | 'warn' | 'critical'>('info');
+  const [messageSending, setMessageSending] = useState(false);
+  const [messageInfo, setMessageInfo] = useState<string | null>(null);
+  const [messageError, setMessageError] = useState<string | null>(null);
+
   const [users, setUsers] = useState<AdminUserIndexItem[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersError, setUsersError] = useState<string | null>(null);
@@ -177,6 +185,34 @@ export default function AdminPage() {
       setUsersError(e instanceof Error ? e.message : 'Impossible de charger la liste utilisateurs.');
     } finally {
       setUsersLoading(false);
+    }
+  };
+
+  const handleSendMessage = async () => {
+    if (!lookupResult) return;
+    const title = messageTitle.trim();
+    const body = messageBody.trim();
+    if (!title || !body) {
+      setMessageError('Titre et contenu requis.');
+      return;
+    }
+
+    setMessageSending(true);
+    setMessageError(null);
+    setMessageInfo(null);
+    try {
+      const res = await sendUserMessage({
+        targetUserUid: lookupResult.uid,
+        title,
+        body,
+        severity: messageSeverity,
+      });
+      setMessageInfo(res.message);
+      setMessageBody('');
+    } catch (e) {
+      setMessageError(e instanceof Error ? e.message : 'Envoi impossible.');
+    } finally {
+      setMessageSending(false);
     }
   };
 
@@ -628,6 +664,47 @@ export default function AdminPage() {
                 Charger plus
               </button>
             </div>
+          </div>
+
+          <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
+            <h3 className="text-sm font-semibold text-slate-900">Message in-app (support)</h3>
+            <div className="mt-2 grid gap-2 md:grid-cols-3">
+              <input
+                value={messageTitle}
+                onChange={(e) => setMessageTitle(e.target.value)}
+                placeholder="Titre"
+                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 md:col-span-2"
+              />
+              <select
+                value={messageSeverity}
+                onChange={(e) => setMessageSeverity(e.target.value as 'info' | 'warn' | 'critical')}
+                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                aria-label="Sévérité message"
+              >
+                <option value="info">info</option>
+                <option value="warn">warn</option>
+                <option value="critical">critical</option>
+              </select>
+            </div>
+            <textarea
+              value={messageBody}
+              onChange={(e) => setMessageBody(e.target.value)}
+              placeholder="Contenu du message"
+              rows={3}
+              className="mt-2 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+            />
+            <div className="mt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={handleSendMessage}
+                disabled={messageSending}
+                className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {messageSending ? 'Envoi…' : 'Envoyer message'}
+              </button>
+            </div>
+            {messageInfo && <p className="mt-2 text-xs text-emerald-600">{messageInfo}</p>}
+            {messageError && <p className="mt-2 text-xs text-destructive">{messageError}</p>}
           </div>
 
           <div className="mt-6 border-t border-slate-200 pt-4">
