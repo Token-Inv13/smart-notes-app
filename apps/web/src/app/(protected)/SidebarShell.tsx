@@ -128,6 +128,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   const [dockHiddenOnScroll, setDockHiddenOnScroll] = useState(false);
   const [dockDesktopTopClass, setDockDesktopTopClass] = useState("md:top-32");
   const isSettingsRoute = pathname.startsWith("/settings");
+  const isAgendaRoute = pathname.startsWith("/tasks");
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -520,6 +521,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
             mobileHidden={mobileOpen}
             hiddenOnScroll={dockHiddenOnScroll}
             desktopTopClass={dockDesktopTopClass}
+            subtleIdle={isAgendaRoute}
             voiceAction={
               isSettingsRoute
                 ? undefined

@@ -16,7 +16,6 @@ import type { TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq } from "@/type
 
 type CalendarViewMode = "dayGridMonth" | "timeGridWeek" | "timeGridDay";
 type AgendaDisplayMode = "calendar" | "planning";
-type CalendarDensity = "comfort" | "compact";
 type CalendarPriorityFilter = "" | Priority;
 type CalendarTimeWindowFilter = "" | "allDay" | "morning" | "afternoon" | "evening";
 type CalendarFilterStorage = {
@@ -24,7 +23,6 @@ type CalendarFilterStorage = {
   showConflictsOnly: boolean;
   priorityFilter: CalendarPriorityFilter;
   timeWindowFilter: CalendarTimeWindowFilter;
-  density: CalendarDensity;
 };
 
 type GoogleCalendarEvent = {
@@ -160,11 +158,8 @@ export default function AgendaCalendar({
   const [showConflictsOnly, setShowConflictsOnly] = useState(false);
   const [priorityFilter, setPriorityFilter] = useState<CalendarPriorityFilter>("");
   const [timeWindowFilter, setTimeWindowFilter] = useState<CalendarTimeWindowFilter>("");
-  const [calendarDensity, setCalendarDensity] = useState<CalendarDensity>("comfort");
-  const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [filtersHydrated, setFiltersHydrated] = useState(false);
   const [visibleRange, setVisibleRange] = useState<{ start: Date; end: Date } | null>(null);
-  const [navDate, setNavDate] = useState(toLocalDateInputValue(new Date()));
   const [label, setLabel] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -394,10 +389,6 @@ export default function AgendaCalendar({
         setShowConflictsOnly(parsed.showConflictsOnly);
       }
 
-      if (parsed.density === "compact" || parsed.density === "comfort") {
-        setCalendarDensity(parsed.density);
-      }
-
       if (parsed.priorityFilter === "" || parsed.priorityFilter === "low" || parsed.priorityFilter === "medium" || parsed.priorityFilter === "high") {
         setPriorityFilter(parsed.priorityFilter);
       }
@@ -426,7 +417,6 @@ export default function AgendaCalendar({
       showConflictsOnly,
       priorityFilter,
       timeWindowFilter,
-      density: calendarDensity,
     };
 
     try {
@@ -434,15 +424,19 @@ export default function AgendaCalendar({
     } catch {
       // ignore storage write errors
     }
-  }, [calendarDensity, filtersHydrated, priorityFilter, showConflictsOnly, showRecurringOnly, timeWindowFilter]);
+  }, [filtersHydrated, priorityFilter, showConflictsOnly, showRecurringOnly, timeWindowFilter]);
 
   const openDraftFromSelect = (arg: DateSelectArg) => {
+    const isTimeGridSelection = arg.view.type === "timeGridWeek" || arg.view.type === "timeGridDay";
+    const allDaySelection = isTimeGridSelection ? false : arg.allDay;
+    const normalizedEnd = arg.end.getTime() > arg.start.getTime() ? arg.end : new Date(arg.start.getTime() + 60 * 60 * 1000);
+
     setEditScope("series");
     setDraft({
       title: "",
-      startLocal: arg.allDay ? toLocalDateInputValue(arg.start) : toLocalInputValue(arg.start),
-      endLocal: arg.allDay ? toLocalDateInputValue(new Date(arg.end.getTime() - 1)) : toLocalInputValue(arg.end),
-      allDay: arg.allDay,
+      startLocal: allDaySelection ? toLocalDateInputValue(arg.start) : toLocalInputValue(arg.start),
+      endLocal: allDaySelection ? toLocalDateInputValue(new Date(normalizedEnd.getTime() - 1)) : toLocalInputValue(normalizedEnd),
+      allDay: allDaySelection,
       workspaceId: "",
       priority: "",
       recurrenceFreq: "",
@@ -639,7 +633,7 @@ export default function AgendaCalendar({
       start instanceof Date && end instanceof Date ? Math.round((end.getTime() - start.getTime()) / (60 * 1000)) : 60;
     const isMonthView = arg.view.type === "dayGridMonth";
     const isDenseTimeGrid = arg.view.type !== "dayGridMonth" && !arg.event.allDay && durationMinutes <= 45;
-    const compactPresentation = effectiveCalendarDensity === "compact" || isDenseTimeGrid;
+    const compactPresentation = isCompactDensity || isDenseTimeGrid;
 
     if (isMonthView) {
       return (
@@ -696,13 +690,6 @@ export default function AgendaCalendar({
     if (action === "prev") api.prev();
     if (action === "next") api.next();
     if (action === "today") api.today();
-    keepPageScrollStable();
-  };
-
-  const goToDate = (date: Date) => {
-    const api = calendarRef.current?.getApi();
-    if (!api) return;
-    api.gotoDate(date);
     keepPageScrollStable();
   };
 
@@ -793,22 +780,10 @@ export default function AgendaCalendar({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && showShortcutHelp) {
-        e.preventDefault();
-        setShowShortcutHelp(false);
-        return;
-      }
-
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName?.toLowerCase();
       const isEditing = tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable;
       if (isEditing) return;
-
-      if (e.key === "?") {
-        e.preventDefault();
-        setShowShortcutHelp((prev) => !prev);
-        return;
-      }
 
       if (e.key.toLowerCase() === "n") {
         e.preventDefault();
@@ -838,7 +813,7 @@ export default function AgendaCalendar({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openQuickDraft, showShortcutHelp]);
+  }, [openQuickDraft]);
 
   const changeView = (next: CalendarViewMode) => {
     setViewMode(next);
@@ -848,7 +823,6 @@ export default function AgendaCalendar({
   const onDatesSet = (arg: DatesSetArg) => {
     setLabel(arg.view.title);
     setVisibleRange({ start: arg.start, end: arg.end });
-    setNavDate(toLocalDateInputValue(arg.start));
     onVisibleRangeChange?.({ start: arg.start, end: arg.end });
   };
 
@@ -942,10 +916,7 @@ export default function AgendaCalendar({
     [agendaEvents],
   );
 
-  const effectiveCalendarDensity = useMemo<CalendarDensity>(
-    () => (calendarDensity === "comfort" && agendaConflictCount >= 8 ? "compact" : calendarDensity),
-    [agendaConflictCount, calendarDensity],
-  );
+  const isCompactDensity = agendaConflictCount >= 8;
 
   const planningSections = useMemo(() => {
     const grouped = new Map<string, EventInput[]>();
@@ -1164,28 +1135,6 @@ export default function AgendaCalendar({
         <div className="text-sm font-semibold">{label}</div>
 
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          <div className="inline-flex items-center gap-2">
-            <input
-              type="date"
-              value={navDate}
-              onChange={(e) => setNavDate(e.target.value)}
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-              aria-label="Aller à la date"
-            />
-            <button
-              type="button"
-              className="px-2 py-1.5 text-xs rounded-md border border-border bg-background"
-              onClick={() => {
-                if (!navDate) return;
-                const date = new Date(`${navDate}T12:00:00`);
-                if (Number.isNaN(date.getTime())) return;
-                goToDate(date);
-              }}
-            >
-              Aller
-            </button>
-          </div>
-
           <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit">
           <button
             type="button"
@@ -1296,32 +1245,6 @@ export default function AgendaCalendar({
           </button>
         )}
 
-        <button
-          type="button"
-          onClick={() => setShowShortcutHelp(true)}
-          className="h-8 px-3 rounded-md border border-border bg-background text-xs"
-        >
-          Aide (?)
-        </button>
-
-        <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setCalendarDensity("comfort")}
-            className={`h-8 px-3 text-xs ${calendarDensity === "comfort" ? "bg-accent font-semibold" : ""}`}
-            data-state={calendarDensity === "comfort" ? "active" : "inactive"}
-          >
-            Confort
-          </button>
-          <button
-            type="button"
-            onClick={() => setCalendarDensity("compact")}
-            className={`h-8 px-3 text-xs border-l border-border ${calendarDensity === "compact" ? "bg-accent font-semibold" : ""}`}
-            data-state={calendarDensity === "compact" ? "active" : "inactive"}
-          >
-            Compact
-          </button>
-        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -1330,46 +1253,18 @@ export default function AgendaCalendar({
         <span className="sn-badge hidden sm:inline-flex">Total local: {calendarData.stats.total}</span>
         <span className="sn-badge hidden sm:inline-flex">Google: {googleCalendarEvents.length}</span>
         <span className="sn-badge hidden sm:inline-flex">Récurrents: {calendarData.stats.recurring}</span>
-        {calendarDensity === "comfort" && effectiveCalendarDensity === "compact" && (
+        {isCompactDensity && (
           <span className="sn-badge">Auto compact (conflits élevés)</span>
         )}
       </div>
 
       {error && <div className="sn-alert sn-alert--error">{error}</div>}
 
-      <div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <aside className="hidden lg:block sn-card p-3 space-y-3 h-fit sticky top-20">
-          <div className="text-xs font-semibold">Mini calendrier</div>
-          <input
-            type="date"
-            value={navDate}
-            onChange={(e) => setNavDate(e.target.value)}
-            className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
-            aria-label="Mini calendrier - date"
-          />
-          <button
-            type="button"
-            className="w-full h-9 rounded-md border border-border bg-background text-sm"
-            onClick={() => {
-              if (!navDate) return;
-              const date = new Date(`${navDate}T12:00:00`);
-              if (Number.isNaN(date.getTime())) return;
-              goToDate(date);
-            }}
-          >
-            Aller à la date
-          </button>
-          <div className="grid grid-cols-3 gap-1">
-            <button type="button" className="h-8 rounded-md border border-border text-xs" onClick={() => jump("prev")}>Préc.</button>
-            <button type="button" className="h-8 rounded-md border border-border text-xs" onClick={() => jump("today")}>Ajd</button>
-            <button type="button" className="h-8 rounded-md border border-border text-xs" onClick={() => jump("next")}>Suiv.</button>
-          </div>
-        </aside>
-
+      <div className="space-y-0">
         <div className="sn-card p-2 bg-[radial-gradient(900px_circle_at_100%_-10%,rgba(59,130,246,0.08),transparent_50%),linear-gradient(180deg,rgba(15,23,42,0.14),transparent_42%)]">
           {displayMode === "calendar" ? (
             <div
-              className={`agenda-premium-calendar ${effectiveCalendarDensity === "compact" ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"}`}
+              className={`agenda-premium-calendar ${isCompactDensity ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"}`}
               onTouchStart={handleCalendarTouchStart}
               onTouchEnd={handleCalendarTouchEnd}
             >
@@ -1396,8 +1291,10 @@ export default function AgendaCalendar({
               select={openDraftFromSelect}
               dateClick={(arg) =>
                 openDraftFromSelect({
-                  allDay: true,
-                  end: new Date(arg.date.getFullYear(), arg.date.getMonth(), arg.date.getDate() + 1),
+                  allDay: arg.allDay,
+                  end: arg.allDay
+                    ? new Date(arg.date.getFullYear(), arg.date.getMonth(), arg.date.getDate() + 1)
+                    : new Date(arg.date.getTime() + 60 * 60 * 1000),
                   endStr: "",
                   jsEvent: arg.jsEvent,
                   start: arg.date,
@@ -1574,35 +1471,8 @@ export default function AgendaCalendar({
       </div>
 
       <div className="text-xs text-muted-foreground">
-        Raccourcis: ? (aide), N (nouvel élément), / (recherche), ←/→ (navigation), Échap (fermer aide).
+        Raccourcis: N (nouvel élément), / (recherche), ←/→ (navigation).
       </div>
-
-      {showShortcutHelp && (
-        <div className="fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-label="Aide raccourcis clavier">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/45"
-            onClick={() => setShowShortcutHelp(false)}
-            aria-label="Fermer l’aide"
-          />
-          <div className="absolute top-1/2 left-1/2 w-[min(92vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-card shadow-lg p-4 space-y-3">
-            <div className="text-sm font-semibold">Aide des raccourcis</div>
-            <ul className="space-y-2 text-sm">
-              <li className="flex items-center justify-between gap-3"><span>Ouvrir/fermer cette aide</span><span className="sn-badge">?</span></li>
-              <li className="flex items-center justify-between gap-3"><span>Créer un élément agenda</span><span className="sn-badge">N</span></li>
-              <li className="flex items-center justify-between gap-3"><span>Focus recherche globale</span><span className="sn-badge">/</span></li>
-              <li className="flex items-center justify-between gap-3"><span>Période précédente</span><span className="sn-badge">←</span></li>
-              <li className="flex items-center justify-between gap-3"><span>Période suivante</span><span className="sn-badge">→</span></li>
-              <li className="flex items-center justify-between gap-3"><span>Fermer l’aide</span><span className="sn-badge">Échap</span></li>
-            </ul>
-            <div className="flex justify-end">
-              <button type="button" className="sn-text-btn" onClick={() => setShowShortcutHelp(false)}>
-                Fermer
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {draft && (
         <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Éditeur agenda">
