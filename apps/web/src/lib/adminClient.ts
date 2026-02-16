@@ -9,6 +9,7 @@ import type {
   AdminListUsersIndexResponse,
   AdminLookupUserResult,
   AdminRebuildUsersIndexResponse,
+  AdminUserActivityEvent,
 } from '@/types/admin';
 
 export async function lookupUser(query: string): Promise<AdminLookupUserResult> {
@@ -76,6 +77,20 @@ export async function rebuildUsersIndex(params?: {
     'rebuildAdminUsersIndex',
   );
   const res = await fn(params ?? {});
+  return res.data;
+}
+
+export async function listUserActivityEvents(params: {
+  targetUserUid: string;
+  limit?: number;
+  cursor?: AdminCursor | null;
+  type?: string;
+}): Promise<{ events: AdminUserActivityEvent[]; nextCursor: AdminCursor | null }> {
+  const fn = httpsCallable<
+    { targetUserUid: string; limit?: number; cursor?: AdminCursor | null; type?: string },
+    { events: AdminUserActivityEvent[]; nextCursor: AdminCursor | null }
+  >(fbFunctions, 'adminListUserActivityEvents');
+  const res = await fn(params);
   return res.data;
 }
 

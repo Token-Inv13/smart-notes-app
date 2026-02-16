@@ -5,6 +5,44 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 
+function normalizeActivityType(raw: unknown): ActivityEventRecord['type'] | null {
+  const value = toOptionalString(raw);
+  if (!value) return null;
+  if (
+    value === 'login' ||
+    value === 'note_created' ||
+    value === 'task_created' ||
+    value === 'todo_created' ||
+    value === 'ai_job_started' ||
+    value === 'ai_job_failed' ||
+    value === 'ai_job_done' ||
+    value === 'premium_changed' ||
+    value === 'notification_sent' ||
+    value === 'error_logged' ||
+    value === 'admin_action'
+  ) {
+    return value;
+  }
+  return null;
+}
+
+function mapActivityEvent(doc: FirebaseFirestore.QueryDocumentSnapshot): {
+  id: string;
+  uid: string;
+  type: string;
+  createdAtMs: number | null;
+  metadata: Record<string, unknown>;
+} {
+  const data = doc.data();
+  return {
+    id: doc.id,
+    uid: toOptionalString(data.uid) ?? '',
+    type: toOptionalString(data.type) ?? 'unknown',
+    createdAtMs: readTimestampMs(data.createdAt),
+    metadata: isObject(data.metadata) ? data.metadata : {},
+  };
+}
+
 function parseUsersCursor(value: unknown): AdminUsersCursor | null {
   if (!isObject(value)) return null;
   const id = toNonEmptyString(value.id);
@@ -34,6 +72,24 @@ type ErrorLogRecord = {
   code: string;
   message: string;
   context: Record<string, unknown>;
+  createdAt: FirebaseFirestore.FieldValue;
+};
+
+type ActivityEventRecord = {
+  uid: string;
+  type:
+    | 'login'
+    | 'note_created'
+    | 'task_created'
+    | 'todo_created'
+    | 'ai_job_started'
+    | 'ai_job_failed'
+    | 'ai_job_done'
+    | 'premium_changed'
+    | 'notification_sent'
+    | 'error_logged'
+    | 'admin_action';
+  metadata: Record<string, unknown>;
   createdAt: FirebaseFirestore.FieldValue;
 };
 
@@ -214,6 +270,23 @@ async function writeAppErrorLog(params: {
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   };
   await db.collection('appErrorLogs').add(record);
+}
+
+async function writeUserActivityEvent(params: {
+  uid: string;
+  type: ActivityEventRecord['type'];
+  metadata?: Record<string, unknown>;
+}) {
+  const uid = params.uid.trim();
+  if (!uid) return;
+  const db = admin.firestore();
+  const record: ActivityEventRecord = {
+    uid,
+    type: params.type,
+    metadata: params.metadata ?? {},
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+  await db.collection('userActivityEvents').add(record);
 }
 
 function assertAdmin(context: functions.https.CallableContext): string {
@@ -530,6 +603,18 @@ async function maybeUpdateLastErrorOnUsersIndex(errorDoc: FirebaseFirestore.Docu
       },
       { merge: true },
     );
+
+  await writeUserActivityEvent({
+    uid,
+    type: 'error_logged',
+    metadata: {
+      source: toOptionalString(data.source) ?? 'unknown',
+      category: toOptionalString(data.category) ?? 'functions',
+      code: toOptionalString(data.code) ?? 'unknown',
+      scope: toOptionalString(data.scope) ?? 'unknown',
+      errorLogId: errorDoc.id,
+    },
+  });
 }
 
 export const adminLookupUser = functions.https.onCall(async (data, context) => {
@@ -688,6 +773,15 @@ export const adminRevokeUserSessions = functions.https.onCall(async (data, conte
       message: 'User sessions revoked.',
     });
 
+    await writeUserActivityEvent({
+      uid: targetUserUid,
+      type: 'admin_action',
+      metadata: {
+        action,
+        adminUid: actorUid,
+      },
+    });
+
     return { ok: true, message: 'Sessions révoquées.' };
   } catch (error) {
     const mapped = toHttpsError(error);
@@ -754,6 +848,17 @@ export const adminEnablePremium = functions.https.onCall(async (data, context) =
       payload: { durationDays, expiresAtMs },
       status: 'success',
       message: 'Premium enabled.',
+    });
+
+    await writeUserActivityEvent({
+      uid: targetUserUid,
+      type: 'premium_changed',
+      metadata: {
+        action,
+        adminUid: actorUid,
+        plan: 'premium',
+        expiresAtMs,
+      },
     });
 
     return {
@@ -824,6 +929,16 @@ export const adminDisablePremium = functions.https.onCall(async (data, context) 
       message: 'Premium disabled.',
     });
 
+    await writeUserActivityEvent({
+      uid: targetUserUid,
+      type: 'premium_changed',
+      metadata: {
+        action,
+        adminUid: actorUid,
+        plan: 'free',
+      },
+    });
+
     return { ok: true, message: 'Premium désactivé.' };
   } catch (error) {
     const mapped = toHttpsError(error);
@@ -890,6 +1005,15 @@ export const adminResetUserFlags = functions.https.onCall(async (data, context) 
       },
       status: 'success',
       message: 'User flags reset.',
+    });
+
+    await writeUserActivityEvent({
+      uid: targetUserUid,
+      type: 'admin_action',
+      metadata: {
+        action,
+        adminUid: actorUid,
+      },
     });
 
     return {
@@ -1108,6 +1232,90 @@ export const rebuildAdminUsersIndex = functions.https.onCall(async (data, contex
       await writeAdminAuditLog({
         adminUid,
         targetUserUid: null,
+        action,
+        payload,
+        status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
+        message: mapped.message,
+      });
+      await writeAppErrorLog({
+        category: 'functions',
+        scope: action,
+        code: mapped.code,
+        message: mapped.message,
+        context: { adminUid, payload },
+      });
+    } catch {
+      // Ignore logging failures.
+    }
+    throw mapped;
+  }
+});
+
+export const adminListUserActivityEvents = functions.https.onCall(async (data, context) => {
+  const action = 'list_user_activity_events';
+  const payload = isObject(data) ? data : {};
+  const adminUid = context.auth?.uid ?? null;
+
+  try {
+    const actorUid = assertAdmin(context);
+    const targetUserUid = toNonEmptyString(payload.targetUserUid);
+    if (!targetUserUid) {
+      throw new functions.https.HttpsError('invalid-argument', 'targetUserUid is required.');
+    }
+
+    const limit = toPositiveInteger(payload.limit, 20, 50);
+    const cursor = parseCursor(payload.cursor);
+    const typeFilter = normalizeActivityType(payload.type);
+
+    const db = admin.firestore();
+    let query = db.collection('userActivityEvents').where('uid', '==', targetUserUid).orderBy('createdAt', 'desc');
+    if (typeFilter) {
+      query = query.where('type', '==', typeFilter);
+    }
+    if (cursor) {
+      query = query.startAfter(admin.firestore.Timestamp.fromMillis(cursor.createdAtMs));
+    }
+
+    const scanLimit = Math.min(limit * MAX_SCAN_FACTOR, MAX_PAGE_SIZE * MAX_SCAN_FACTOR);
+    const snap = await query.limit(scanLimit).get();
+
+    const events: ReturnType<typeof mapActivityEvent>[] = [];
+    for (const doc of snap.docs) {
+      events.push(mapActivityEvent(doc));
+      if (events.length >= limit) break;
+    }
+
+    const lastScanned = snap.docs[snap.docs.length - 1] ?? null;
+    const nextCursor =
+      lastScanned && snap.size >= scanLimit
+        ? {
+            createdAtMs: readTimestampMs(lastScanned.get('createdAt')),
+            id: lastScanned.id,
+          }
+        : null;
+
+    await writeAdminAuditLog({
+      adminUid: actorUid,
+      targetUserUid,
+      action,
+      payload: {
+        limit,
+        typeFilter,
+      },
+      status: 'success',
+      message: `Listed ${events.length} user activity events.`,
+    });
+
+    return {
+      events,
+      nextCursor: nextCursor?.createdAtMs ? nextCursor : null,
+    };
+  } catch (error) {
+    const mapped = toHttpsError(error);
+    try {
+      await writeAdminAuditLog({
+        adminUid,
+        targetUserUid: toOptionalString(payload.targetUserUid),
         action,
         payload,
         status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',

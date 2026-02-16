@@ -6,6 +6,7 @@ import {
   disableUserPremium,
   enableUserPremium,
   listAuditLogs,
+  listUserActivityEvents,
   listUsersIndex,
   lookupUser,
   rebuildUsersIndex,
@@ -16,6 +17,7 @@ import type {
   AdminAuditLogItem,
   AdminCursor,
   AdminLookupUserResult,
+  AdminUserActivityEvent,
   AdminUserIndexItem,
   AdminUsersCursor,
   AdminUsersSortBy,
@@ -96,6 +98,12 @@ export default function AdminPage() {
   const [auditFilterUserUid, setAuditFilterUserUid] = useState('');
   const [auditFilterAction, setAuditFilterAction] = useState('');
 
+  const [activityEvents, setActivityEvents] = useState<AdminUserActivityEvent[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityError, setActivityError] = useState<string | null>(null);
+  const [activityCursor, setActivityCursor] = useState<AdminCursor | null>(null);
+  const [activityTypeFilter, setActivityTypeFilter] = useState('');
+
   const [users, setUsers] = useState<AdminUserIndexItem[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersError, setUsersError] = useState<string | null>(null);
@@ -172,6 +180,27 @@ export default function AdminPage() {
     }
   };
 
+  const loadActivityEvents = async (targetUserUid: string, options?: { reset?: boolean }) => {
+    const reset = options?.reset === true;
+    setActivityLoading(true);
+    setActivityError(null);
+
+    try {
+      const res = await listUserActivityEvents({
+        targetUserUid,
+        limit: 20,
+        cursor: reset ? null : activityCursor,
+        type: activityTypeFilter.trim() || undefined,
+      });
+      setActivityEvents((prev) => (reset ? res.events : [...prev, ...res.events]));
+      setActivityCursor(res.nextCursor);
+    } catch (e) {
+      setActivityError(e instanceof Error ? e.message : 'Impossible de charger la timeline utilisateur.');
+    } finally {
+      setActivityLoading(false);
+    }
+  };
+
   useEffect(() => {
     void loadUsers({ reset: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -211,6 +240,8 @@ export default function AdminPage() {
       const user = await lookupUser(uid);
       setLookupResult(user);
       setAuditFilterUserUid(user.uid);
+      setActivityCursor(null);
+      await loadActivityEvents(user.uid, { reset: true });
     } catch (e) {
       setLookupResult(null);
       setLookupError(e instanceof Error ? e.message : 'Lookup impossible.');
@@ -261,6 +292,8 @@ export default function AdminPage() {
       const user = await lookupUser(trimmed);
       setLookupResult(user);
       setAuditFilterUserUid(user.uid);
+      setActivityCursor(null);
+      await loadActivityEvents(user.uid, { reset: true });
     } catch (e) {
       setLookupResult(null);
       setLookupError(e instanceof Error ? e.message : 'Lookup impossible.');
@@ -531,6 +564,70 @@ export default function AdminPage() {
 
           <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
             Notes / Tâches / Checklist: <span className="font-semibold text-slate-900">{lookupResult.counts.notes} / {lookupResult.counts.tasks} / {lookupResult.counts.todos}</span>
+          </div>
+
+          <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-slate-900">Activité récente</h3>
+              <div className="flex items-center gap-2">
+                <select
+                  value={activityTypeFilter}
+                  onChange={(e) => setActivityTypeFilter(e.target.value)}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800"
+                  aria-label="Filtrer les événements activité"
+                >
+                  <option value="">Tous types</option>
+                  <option value="admin_action">admin_action</option>
+                  <option value="premium_changed">premium_changed</option>
+                  <option value="error_logged">error_logged</option>
+                  <option value="login">login</option>
+                  <option value="note_created">note_created</option>
+                  <option value="task_created">task_created</option>
+                  <option value="todo_created">todo_created</option>
+                  <option value="ai_job_started">ai_job_started</option>
+                  <option value="ai_job_failed">ai_job_failed</option>
+                  <option value="ai_job_done">ai_job_done</option>
+                  <option value="notification_sent">notification_sent</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => loadActivityEvents(lookupResult.uid, { reset: true })}
+                  disabled={activityLoading}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  {activityLoading ? 'Chargement…' : 'Rafraîchir'}
+                </button>
+              </div>
+            </div>
+
+            {activityError && <p className="mt-2 text-xs text-destructive">{activityError}</p>}
+
+            <div className="mt-2 space-y-2">
+              {activityEvents.map((event) => (
+                <div key={event.id} className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="rounded bg-slate-200 px-2 py-0.5 font-medium text-slate-800">{event.type}</span>
+                    <span className="text-slate-500">{formatDateTime(event.createdAtMs)}</span>
+                  </div>
+                  <pre className="mt-2 overflow-auto text-[11px] text-slate-600">{JSON.stringify(event.metadata, null, 2)}</pre>
+                </div>
+              ))}
+
+              {activityEvents.length === 0 && (
+                <p className="text-xs text-slate-500">Aucun événement sur cette période/filtre.</p>
+              )}
+            </div>
+
+            <div className="mt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => loadActivityEvents(lookupResult.uid, { reset: false })}
+                disabled={activityLoading || !activityCursor}
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Charger plus
+              </button>
+            </div>
           </div>
 
           <div className="mt-6 border-t border-slate-200 pt-4">

@@ -97,3 +97,11 @@ export type AdminRebuildUsersIndexResponse = {
   done: boolean;
   message: string;
 };
+
+export type AdminUserActivityEvent = {
+  id: string;
+  uid: string;
+  type: string;
+  createdAtMs: number | null;
+  metadata: Record<string, unknown>;
+};
