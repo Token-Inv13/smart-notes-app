@@ -126,6 +126,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dockHiddenOnScroll, setDockHiddenOnScroll] = useState(false);
+  const [dockDesktopTopClass, setDockDesktopTopClass] = useState("md:top-32");
 
   const isAgendaRoute = pathname.startsWith("/tasks");
   const isListOrNotesRoute = pathname.startsWith("/todo") || pathname.startsWith("/notes");
@@ -182,6 +183,78 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, [mobileOpen]);
+
+  useEffect(() => {
+    let rafId: number | null = null;
+
+    const toTopClass = (px: number) => {
+      if (px <= 96) return "md:top-24";
+      if (px <= 112) return "md:top-28";
+      if (px <= 128) return "md:top-32";
+      if (px <= 144) return "md:top-36";
+      if (px <= 160) return "md:top-40";
+      return "md:top-44";
+    };
+
+    const recomputeDockTopOffset = () => {
+      if (typeof window === "undefined") return;
+      if (window.innerWidth < 768) {
+        setDockDesktopTopClass("md:top-32");
+        return;
+      }
+
+      const mainEl = document.querySelector("main");
+      if (!mainEl) {
+        setDockDesktopTopClass("md:top-32");
+        return;
+      }
+
+      const candidates = Array.from(mainEl.querySelectorAll<HTMLElement>(".sticky, [data-dock-avoid]"));
+      let maxBottom = 112;
+
+      for (const el of candidates) {
+        const style = window.getComputedStyle(el);
+        const position = style.position;
+        if (position !== "sticky" && position !== "fixed") continue;
+
+        const rect = el.getBoundingClientRect();
+        if (rect.height <= 0 || rect.bottom <= 0 || rect.top >= window.innerHeight) continue;
+
+        if (position === "sticky") {
+          const topPx = Number.parseFloat(style.top || "0");
+          const stickyTop = Number.isFinite(topPx) ? topPx : 0;
+          if (rect.top <= stickyTop + 2) {
+            maxBottom = Math.max(maxBottom, rect.bottom);
+          }
+          continue;
+        }
+
+        if (position === "fixed" && rect.top < 220) {
+          maxBottom = Math.max(maxBottom, rect.bottom);
+        }
+      }
+
+      setDockDesktopTopClass(toTopClass(Math.round(maxBottom + 12)));
+    };
+
+    const scheduleRecompute = () => {
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        recomputeDockTopOffset();
+      });
+    };
+
+    recomputeDockTopOffset();
+    window.addEventListener("resize", scheduleRecompute, { passive: true });
+    window.addEventListener("scroll", scheduleRecompute, { passive: true });
+
+    return () => {
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+      window.removeEventListener("resize", scheduleRecompute);
+      window.removeEventListener("scroll", scheduleRecompute);
+    };
+  }, [pathname]);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -450,6 +523,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
             mobileHidden={mobileOpen}
             mode={dockMode}
             hiddenOnScroll={dockHiddenOnScroll && (isAgendaRoute || isListOrNotesRoute)}
+            desktopTopClass={dockDesktopTopClass}
             voiceAction={(
               <VoiceAgentButton
                 mobileHidden={mobileOpen}
