@@ -50,6 +50,25 @@ export async function resetUserFlags(targetUserUid: string): Promise<AdminAction
   return res.data;
 }
 
+export async function softDeleteUser(targetUserUid: string): Promise<AdminActionResponse> {
+  const fn = httpsCallable<{ targetUserUid: string }, AdminActionResponse>(fbFunctions, 'adminSoftDeleteUser');
+  const res = await fn({ targetUserUid });
+  return res.data;
+}
+
+export async function hardDeleteUser(params: {
+  targetUserUid: string;
+  confirmationText: string;
+  hardDeleteConfirmed: boolean;
+}): Promise<AdminActionResponse> {
+  const fn = httpsCallable<
+    { targetUserUid: string; confirmationText: string; hardDeleteConfirmed: boolean },
+    AdminActionResponse
+  >(fbFunctions, 'adminHardDeleteUser');
+  const res = await fn(params);
+  return res.data;
+}
+
 export async function listAuditLogs(params?: {
   limit?: number;
   cursor?: AdminCursor | null;

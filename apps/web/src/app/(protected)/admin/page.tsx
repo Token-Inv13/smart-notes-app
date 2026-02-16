@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -13,6 +13,8 @@ import {
   lookupUser,
   rebuildUsersIndex,
   sendUserMessage,
+  softDeleteUser,
+  hardDeleteUser,
   resetUserFlags,
   revokeUserSessions,
 } from '@/lib/adminClient';
@@ -38,7 +40,7 @@ function prettyPlan(plan: 'free' | 'pro') {
 }
 
 function computeAccountHealth(user: AdminLookupUserResult): {
-  label: 'Sain' | 'Inactif' | 'Erreurs' | 'Bloqué' | 'Premium';
+  label: 'Sain' | 'Inactif' | 'Erreurs' | 'Bloqué' | 'Supprimé' | 'Premium';
   toneClass: string;
   description: string;
 } {
@@ -49,6 +51,13 @@ function computeAccountHealth(user: AdminLookupUserResult): {
   const isInactive = user.lastSeenAtMs == null || user.lastSeenAtMs < inactiveThreshold;
   const hasRecentErrors = user.lastErrorAtMs != null && user.lastErrorAtMs >= errorsThreshold;
 
+  if (user.status === 'deleted') {
+    return {
+      label: 'Supprimé',
+      toneClass: 'bg-slate-900 text-white',
+      description: 'Compte supprimé logiquement (soft delete).',
+    };
+  }
   if (user.status === 'blocked') {
     return {
       label: 'Bloqué',
@@ -137,6 +146,15 @@ export default function AdminPage() {
   const [rebuildLoading, setRebuildLoading] = useState(false);
   const [rebuildInfo, setRebuildInfo] = useState<string | null>(null);
   const [rebuildError, setRebuildError] = useState<string | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{ open: boolean; title: string; message: string }>({
+    open: false,
+    title: '',
+    message: '',
+  });
+  const confirmResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
+  const [hardDeleteModalOpen, setHardDeleteModalOpen] = useState(false);
+  const [hardDeleteText, setHardDeleteText] = useState('');
+  const [hardDeleteChecked, setHardDeleteChecked] = useState(false);
 
   const canActOnUid = lookupResult?.uid ?? null;
   const accountHealth = lookupResult ? computeAccountHealth(lookupResult) : null;
@@ -418,8 +436,15 @@ export default function AdminPage() {
   }) => {
     if (!canActOnUid) return;
 
-    if (params.confirmText && typeof window !== 'undefined') {
-      const confirmed = window.confirm(params.confirmText);
+    if (params.confirmText) {
+      const confirmed = await new Promise<boolean>((resolve) => {
+        confirmResolverRef.current = resolve;
+        setConfirmModal({
+          open: true,
+          title: 'Confirmation requise',
+          message: params.confirmText ?? '',
+        });
+      });
       if (!confirmed) return;
     }
 
@@ -433,6 +458,56 @@ export default function AdminPage() {
       await loadAuditLogs({ reset: true });
     } catch (e) {
       setActionError(e instanceof Error ? e.message : 'Action impossible.');
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  const closeConfirmModal = (confirmed: boolean) => {
+    setConfirmModal((prev) => ({ ...prev, open: false }));
+    const resolver = confirmResolverRef.current;
+    confirmResolverRef.current = null;
+    resolver?.(confirmed);
+  };
+
+  const openHardDeleteFlow = async () => {
+    if (!lookupResult) return;
+    const confirmed = await new Promise<boolean>((resolve) => {
+      confirmResolverRef.current = resolve;
+      setConfirmModal({
+        open: true,
+        title: 'Suppression définitive',
+        message: `Cette action est irréversible pour ${lookupResult.uid}. Continuer ?`,
+      });
+    });
+    if (!confirmed) return;
+    setHardDeleteText('');
+    setHardDeleteChecked(false);
+    setHardDeleteModalOpen(true);
+  };
+
+  const submitHardDelete = async () => {
+    if (!lookupResult) return;
+    if (hardDeleteText.trim() !== 'SUPPRIMER' || !hardDeleteChecked) {
+      setActionError('Confirme avec la case et la saisie exacte "SUPPRIMER".');
+      return;
+    }
+
+    setActionBusy('hard-delete');
+    setActionError(null);
+    setActionInfo(null);
+    try {
+      const res = await hardDeleteUser({
+        targetUserUid: lookupResult.uid,
+        confirmationText: hardDeleteText.trim(),
+        hardDeleteConfirmed: hardDeleteChecked,
+      });
+      setActionInfo(res.message);
+      setHardDeleteModalOpen(false);
+      setLookupResult(null);
+      await Promise.all([loadUsers({ reset: true }), loadAuditLogs({ reset: true })]);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Suppression définitive impossible.');
     } finally {
       setActionBusy(null);
     }
@@ -917,6 +992,30 @@ export default function AdminPage() {
               >
                 {actionBusy === 'reset-flags' ? 'Reset…' : 'Reset onboarding/flags'}
               </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  runAction({
+                    label: 'soft-delete',
+                    callback: () => softDeleteUser(lookupResult.uid),
+                    confirmText: `Soft delete de ${lookupResult.uid} (blocage login + revoke sessions + plan free) ?`,
+                  })
+                }
+                disabled={actionBusy !== null}
+                className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-100 disabled:opacity-60"
+              >
+                {actionBusy === 'soft-delete' ? 'Suppression soft…' : 'Soft delete utilisateur'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void openHardDeleteFlow()}
+                disabled={actionBusy !== null}
+                className="rounded-md border border-rose-400 bg-rose-100 px-3 py-2 text-sm font-semibold text-rose-900 transition hover:bg-rose-200 disabled:opacity-60"
+              >
+                {actionBusy === 'hard-delete' ? 'Suppression hard…' : 'Hard delete (avancé)'}
+              </button>
                 </div>
               </div>
             </div>
@@ -1004,6 +1103,75 @@ export default function AdminPage() {
           </button>
         </div>
       </section>
+
+      {confirmModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+            <h3 className="text-base font-semibold text-slate-900">{confirmModal.title}</h3>
+            <p className="mt-2 text-sm text-slate-700">{confirmModal.message}</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => closeConfirmModal(false)}
+                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={() => closeConfirmModal(true)}
+                className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white"
+              >
+                Confirmer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {hardDeleteModalOpen && lookupResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-rose-950/70 p-4">
+          <div className="w-full max-w-lg rounded-xl border border-rose-300 bg-white p-5 shadow-2xl">
+            <h3 className="text-base font-semibold text-rose-900">Hard delete utilisateur</h3>
+            <p className="mt-2 text-sm text-slate-700">
+              Suppression définitive de <span className="font-mono">{lookupResult.uid}</span> (Auth + Firestore + index).
+            </p>
+            <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={hardDeleteChecked}
+                onChange={(e) => setHardDeleteChecked(e.target.checked)}
+              />
+              Je confirme que cette action est irréversible.
+            </label>
+            <label className="mt-3 block text-sm text-slate-700">
+              Tape <span className="font-semibold">SUPPRIMER</span> pour confirmer
+              <input
+                value={hardDeleteText}
+                onChange={(e) => setHardDeleteText(e.target.value)}
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+              />
+            </label>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setHardDeleteModalOpen(false)}
+                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitHardDelete()}
+                disabled={actionBusy === 'hard-delete'}
+                className="rounded-md bg-rose-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {actionBusy === 'hard-delete' ? 'Suppression…' : 'Supprimer définitivement'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

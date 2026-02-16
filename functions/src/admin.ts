@@ -102,7 +102,7 @@ type AdminUserIndexRecord = {
   lastSeenAt: FirebaseFirestore.Timestamp | null;
   plan: 'free' | 'premium';
   premiumUntil: FirebaseFirestore.Timestamp | null;
-  status: 'active' | 'blocked';
+  status: 'active' | 'blocked' | 'deleted';
   tags: string[];
   notesCount?: number;
   tasksCount?: number;
@@ -403,9 +403,10 @@ function resolvePremiumUntil(userDoc: Record<string, unknown>): FirebaseFirestor
   return stripe;
 }
 
-function resolveUserStatus(userDoc: Record<string, unknown>, authDisabled?: boolean): 'active' | 'blocked' {
-  if (authDisabled === true) return 'blocked';
+function resolveUserStatus(userDoc: Record<string, unknown>, authDisabled?: boolean): 'active' | 'blocked' | 'deleted' {
   const raw = toOptionalString(userDoc.status);
+  if (raw === 'deleted') return 'deleted';
+  if (authDisabled === true) return 'blocked';
   return raw === 'blocked' ? 'blocked' : 'active';
 }
 
@@ -417,7 +418,7 @@ function mapAdminUserIndex(doc: FirebaseFirestore.QueryDocumentSnapshot): {
   lastSeenAtMs: number | null;
   plan: 'free' | 'premium';
   premiumUntilMs: number | null;
-  status: 'active' | 'blocked';
+  status: 'active' | 'blocked' | 'deleted';
   tags: string[];
   notesCount?: number;
   tasksCount?: number;
@@ -434,7 +435,7 @@ function mapAdminUserIndex(doc: FirebaseFirestore.QueryDocumentSnapshot): {
     lastSeenAtMs: readTimestampMs(data.lastSeenAt),
     plan: normalizeUserPlan(data.plan),
     premiumUntilMs: readTimestampMs(data.premiumUntil),
-    status: statusRaw === 'blocked' ? 'blocked' : 'active',
+    status: statusRaw === 'deleted' ? 'deleted' : statusRaw === 'blocked' ? 'blocked' : 'active',
     tags: toStringArray(data.tags),
     notesCount: typeof data.notesCount === 'number' ? toNonNegativeInteger(data.notesCount) : undefined,
     tasksCount: typeof data.tasksCount === 'number' ? toNonNegativeInteger(data.tasksCount) : undefined,
@@ -636,6 +637,176 @@ async function maybeUpdateLastErrorOnUsersIndex(errorDoc: FirebaseFirestore.Docu
     },
   });
 }
+
+export const adminSoftDeleteUser = functions.https.onCall(async (data, context) => {
+  const action = 'soft_delete_user';
+  const payload = isObject(data) ? data : {};
+  const adminUid = context.auth?.uid ?? null;
+
+  try {
+    const actorUid = assertAdmin(context);
+    const targetUserUid = toNonEmptyString(payload.targetUserUid);
+    if (!targetUserUid) {
+      throw new functions.https.HttpsError('invalid-argument', 'targetUserUid is required.');
+    }
+
+    const db = admin.firestore();
+    const nowTs = admin.firestore.FieldValue.serverTimestamp();
+
+    await Promise.all([
+      admin.auth().revokeRefreshTokens(targetUserUid),
+      admin.auth().updateUser(targetUserUid, { disabled: true }),
+      db
+        .collection('users')
+        .doc(targetUserUid)
+        .set(
+          {
+            status: 'deleted',
+            plan: 'free',
+            premiumManualUntil: admin.firestore.FieldValue.delete(),
+            stripeSubscriptionStatus: 'canceled_by_admin',
+            stripeSubscriptionCancelAtPeriodEnd: true,
+            stripeSubscriptionCurrentPeriodEnd: admin.firestore.FieldValue.delete(),
+            updatedAt: nowTs,
+          },
+          { merge: true },
+        ),
+      db
+        .collection('adminUsersIndex')
+        .doc(targetUserUid)
+        .set(
+          {
+            uid: targetUserUid,
+            status: 'deleted',
+            plan: 'free',
+            premiumUntil: null,
+            updatedAt: nowTs,
+          },
+          { merge: true },
+        ),
+    ]);
+
+    await writeAdminAuditLog({
+      adminUid: actorUid,
+      targetUserUid,
+      action,
+      payload: {
+        revokeTokens: true,
+        authDisabled: true,
+        premiumRemoved: true,
+      },
+      status: 'success',
+      message: 'User soft deleted (status=deleted, login blocked, premium removed).',
+    });
+
+    await writeUserActivityEvent({
+      uid: targetUserUid,
+      type: 'admin_action',
+      metadata: {
+        action,
+        adminUid: actorUid,
+      },
+    });
+
+    return { ok: true, message: 'Utilisateur supprimé (soft delete).' };
+  } catch (error) {
+    const mapped = toHttpsError(error);
+    const targetUserUid = toOptionalString(payload.targetUserUid);
+    try {
+      await writeAdminAuditLog({
+        adminUid,
+        targetUserUid,
+        action,
+        payload,
+        status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
+        message: mapped.message,
+      });
+      await writeAppErrorLog({
+        category: 'auth',
+        scope: action,
+        code: mapped.code,
+        message: mapped.message,
+        context: { adminUid, targetUserUid },
+      });
+    } catch {
+      // Ignore logging failures.
+    }
+    throw mapped;
+  }
+});
+
+export const adminHardDeleteUser = functions.https.onCall(async (data, context) => {
+  const action = 'hard_delete_user';
+  const payload = isObject(data) ? data : {};
+  const adminUid = context.auth?.uid ?? null;
+
+  try {
+    const actorUid = assertAdmin(context);
+    const targetUserUid = toNonEmptyString(payload.targetUserUid);
+    const confirmationText = toOptionalString(payload.confirmationText);
+    const hardDeleteConfirmed = payload.hardDeleteConfirmed === true;
+    if (!targetUserUid) {
+      throw new functions.https.HttpsError('invalid-argument', 'targetUserUid is required.');
+    }
+    if (!hardDeleteConfirmed || confirmationText !== 'SUPPRIMER') {
+      throw new functions.https.HttpsError('failed-precondition', 'Hard delete confirmation is required.');
+    }
+
+    const db = admin.firestore();
+    const userRef = db.collection('users').doc(targetUserUid);
+    const indexRef = db.collection('adminUsersIndex').doc(targetUserUid);
+
+    await db.recursiveDelete(userRef);
+    await indexRef.delete().catch(() => undefined);
+
+    try {
+      await admin.auth().deleteUser(targetUserUid);
+    } catch (err) {
+      const code = isObject(err) ? toOptionalString(err.code) : null;
+      if (code !== 'auth/user-not-found') {
+        throw err;
+      }
+    }
+
+    await writeAdminAuditLog({
+      adminUid: actorUid,
+      targetUserUid,
+      action,
+      payload: {
+        recursiveDeleteUserDoc: true,
+        deleteAuthUser: true,
+        deleteAdminIndex: true,
+      },
+      status: 'success',
+      message: 'User hard deleted (auth + firestore data removed).',
+    });
+
+    return { ok: true, message: 'Utilisateur supprimé définitivement (hard delete).' };
+  } catch (error) {
+    const mapped = toHttpsError(error);
+    const targetUserUid = toOptionalString(payload.targetUserUid);
+    try {
+      await writeAdminAuditLog({
+        adminUid,
+        targetUserUid,
+        action,
+        payload,
+        status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
+        message: mapped.message,
+      });
+      await writeAppErrorLog({
+        category: 'functions',
+        scope: action,
+        code: mapped.code,
+        message: mapped.message,
+        context: { adminUid, targetUserUid },
+      });
+    } catch {
+      // Ignore logging failures.
+    }
+    throw mapped;
+  }
+});
 
 export const adminLookupUser = functions.https.onCall(async (data, context) => {
   const action = 'user_lookup';

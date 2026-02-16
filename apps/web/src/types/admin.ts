@@ -6,7 +6,7 @@ export type AdminLookupUserResult = {
   lastLoginAtMs: number | null;
   lastSeenAtMs: number | null;
   plan: 'free' | 'pro';
-  status: 'active' | 'blocked';
+  status: 'active' | 'blocked' | 'deleted';
   premiumUntilMs: number | null;
   lastErrorAtMs: number | null;
   stripeSubscriptionStatus: string | null;
@@ -62,7 +62,7 @@ export type AdminUserIndexItem = {
   lastSeenAtMs: number | null;
   plan: 'free' | 'premium';
   premiumUntilMs: number | null;
-  status: 'active' | 'blocked';
+  status: 'active' | 'blocked' | 'deleted';
   tags: string[];
   notesCount?: number;
   tasksCount?: number;
