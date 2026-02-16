@@ -71,6 +71,7 @@ export default function DashboardPage() {
   const { data: inboxMessages, loading: inboxLoading, error: inboxError } = useUserInboxMessages({ limit: 8 });
   const isPro = userSettings?.plan === 'pro';
   const freeLimitMessage = 'Limite Free atteinte. Passe en Pro pour épingler plus de favoris.';
+  const [optimisticReadIds, setOptimisticReadIds] = useState<string[]>([]);
 
   const { data: favoriteNotesForLimit } = useUserNotes({ favoriteOnly: true, limit: 11 });
   const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
@@ -189,9 +190,21 @@ export default function DashboardPage() {
   const [noteActionError, setNoteActionError] = useState<string | null>(null);
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
 
+  const unreadInboxMessages = useMemo(
+    () =>
+      inboxMessages.filter((m) => {
+        if (m.readAt) return false;
+        if (!m.id) return false;
+        return !optimisticReadIds.includes(m.id);
+      }),
+    [inboxMessages, optimisticReadIds],
+  );
+  const activeInboxMessage = unreadInboxMessages[0] ?? null;
+
   const markInboxMessageRead = async (messageId: string) => {
     const uid = auth.currentUser?.uid;
     if (!uid || !messageId) return;
+    setOptimisticReadIds((prev) => (prev.includes(messageId) ? prev : [...prev, messageId]));
     try {
       await updateDoc(doc(db, 'users', uid, 'inbox', messageId), {
         readAt: serverTimestamp(),
@@ -200,6 +213,7 @@ export default function DashboardPage() {
         message_id_hint: messageId.slice(0, 6),
       });
     } catch (e) {
+      setOptimisticReadIds((prev) => prev.filter((id) => id !== messageId));
       console.error('Error marking inbox message as read', e);
     }
   };
@@ -326,57 +340,44 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <section className="rounded-xl border border-border/70 bg-card p-4 shadow-sm space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-base font-semibold">Messages Smart Notes</h2>
-          <span className="text-xs text-muted-foreground">
-            {inboxMessages.filter((m) => !m.readAt).length} non lu(x)
-          </span>
-        </div>
+      {!inboxLoading && !inboxError && activeInboxMessage && activeInboxMessage.id && (
+        <section className="fixed bottom-5 right-5 z-40 w-[min(92vw,360px)] rounded-2xl border border-border/70 bg-card/95 backdrop-blur shadow-2xl p-4 space-y-3 sn-animate-in">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1 min-w-0">
+              <p className="text-xs text-muted-foreground">Message Smart Notes</p>
+              <p className="text-sm font-semibold text-foreground truncate">{activeInboxMessage.title}</p>
+            </div>
+            <span
+              className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-medium ${inboxSeverityClass(
+                typeof activeInboxMessage.severity === 'string' ? activeInboxMessage.severity : 'info',
+              )}`}
+            >
+              {typeof activeInboxMessage.severity === 'string' ? activeInboxMessage.severity : 'info'}
+            </span>
+          </div>
 
-        {inboxLoading && <p className="text-sm text-muted-foreground">Chargement des messages…</p>}
-        {inboxError && <p className="text-sm text-destructive">Impossible de charger les messages.</p>}
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap">{activeInboxMessage.body}</p>
 
-        {!inboxLoading && !inboxError && inboxMessages.length === 0 && (
-          <p className="text-sm text-muted-foreground">Aucun message interne pour le moment.</p>
-        )}
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[11px] text-muted-foreground">{formatFrDateTime(activeInboxMessage.createdAt)}</p>
+            <button
+              type="button"
+              onClick={() => markInboxMessageRead(activeInboxMessage.id!)}
+              className="rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-xs font-medium hover:opacity-95"
+            >
+              Marquer comme lu
+            </button>
+          </div>
 
-        {!inboxLoading && !inboxError && inboxMessages.length > 0 && (
-          <ul className="space-y-2">
-            {inboxMessages.map((msg) => {
-              const isRead = !!msg.readAt;
-              const severity = typeof msg.severity === 'string' ? msg.severity : 'info';
-              return (
-                <li key={msg.id} className="rounded-lg border border-border bg-background p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-medium ${inboxSeverityClass(severity)}`}>
-                          {severity}
-                        </span>
-                        {!isRead && <span className="text-[11px] text-emerald-700">Nouveau</span>}
-                      </div>
-                      <p className="text-sm font-medium text-foreground">{msg.title}</p>
-                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">{msg.body}</p>
-                      <p className="text-xs text-muted-foreground">{formatFrDateTime(msg.createdAt)}</p>
-                    </div>
+          {unreadInboxMessages.length > 1 && (
+            <p className="text-[11px] text-muted-foreground">+ {unreadInboxMessages.length - 1} autre(s) message(s)</p>
+          )}
+        </section>
+      )}
 
-                    {!isRead && msg.id ? (
-                      <button
-                        type="button"
-                        onClick={() => markInboxMessageRead(msg.id!)}
-                        className="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent"
-                      >
-                        Marquer lu
-                      </button>
-                    ) : null}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+      {!inboxLoading && inboxError && (
+        <div className="sn-alert sn-alert--error">Impossible de charger les messages Smart Notes.</div>
+      )}
 
       <div
         ref={slidesContainerRef}
