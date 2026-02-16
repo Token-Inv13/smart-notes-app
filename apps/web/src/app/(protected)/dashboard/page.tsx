@@ -15,6 +15,28 @@ import type { NoteDoc, TaskDoc, TodoDoc } from '@/types/firestore';
 import Link from 'next/link';
 import { trackEvent } from '@/lib/analytics';
 
+const INBOX_FALLBACK_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function readTimestampMs(value: unknown): number | null {
+  if (!value || typeof value !== 'object') return null;
+  const ts = value as { toMillis?: unknown; toDate?: unknown };
+  if (typeof ts.toMillis === 'function') {
+    try {
+      return (ts.toMillis as () => number)();
+    } catch {
+      return null;
+    }
+  }
+  if (typeof ts.toDate === 'function') {
+    try {
+      return (ts.toDate as () => Date)().getTime();
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 function formatFrDateTime(ts?: unknown | null) {
   if (!ts) return '';
   const maybeTs = ts as { toDate?: () => Date };
@@ -191,12 +213,33 @@ export default function DashboardPage() {
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
 
   const unreadInboxMessages = useMemo(
-    () =>
-      inboxMessages.filter((m) => {
+    () => {
+      const nowMs = Date.now();
+      const seenFingerprints = new Set<string>();
+      return inboxMessages.filter((m) => {
         if (m.readAt) return false;
         if (!m.id) return false;
-        return !optimisticReadIds.includes(m.id);
-      }),
+        if (optimisticReadIds.includes(m.id)) return false;
+
+        const expiresAtMs = readTimestampMs(m.expiresAt);
+        if (expiresAtMs != null && expiresAtMs <= nowMs) return false;
+
+        const createdAtMs = readTimestampMs(m.createdAt);
+        if (expiresAtMs == null && createdAtMs != null && createdAtMs <= nowMs - INBOX_FALLBACK_TTL_MS) {
+          return false;
+        }
+
+        const fingerprint = [
+          m.title.trim().replace(/\s+/g, ' ').toLowerCase(),
+          m.body.trim().replace(/\s+/g, ' ').toLowerCase(),
+          typeof m.severity === 'string' ? m.severity : 'info',
+        ].join('::');
+
+        if (seenFingerprints.has(fingerprint)) return false;
+        seenFingerprints.add(fingerprint);
+        return true;
+      });
+    },
     [inboxMessages, optimisticReadIds],
   );
   const activeInboxMessage = unreadInboxMessages[0] ?? null;

@@ -129,6 +129,12 @@ const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 50;
 const MAX_SCAN_FACTOR = 5;
 const MAX_REBUILD_BATCH_SIZE = 200;
+const INBOX_MESSAGE_TTL_DAYS = 30;
+const INBOX_DUPLICATE_WINDOW_MS = 2 * 60 * 1000;
+
+function normalizeInboxText(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+}
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -1205,18 +1211,42 @@ export const adminSendUserMessage = functions.https.onCall(async (data, context)
     }
 
     const db = admin.firestore();
-    await db
-      .collection('users')
-      .doc(targetUserUid)
-      .collection('inbox')
-      .add({
-        title,
-        body,
-        severity,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        readAt: null,
-        createdBy: actorUid,
-      });
+    const inboxRef = db.collection('users').doc(targetUserUid).collection('inbox');
+    const recentMessagesSnap = await inboxRef.orderBy('createdAt', 'desc').limit(10).get();
+
+    const normalizedTitle = normalizeInboxText(title);
+    const normalizedBody = normalizeInboxText(body);
+    const nowMs = Date.now();
+
+    const hasRecentDuplicate = recentMessagesSnap.docs.some((doc) => {
+      const createdAtMs = readTimestampMs(doc.get('createdAt'));
+      if (createdAtMs == null || nowMs - createdAtMs > INBOX_DUPLICATE_WINDOW_MS) return false;
+      if (readTimestampMs(doc.get('readAt')) != null) return false;
+      if (toOptionalString(doc.get('createdBy')) !== actorUid) return false;
+
+      const existingTitle = toOptionalString(doc.get('title'));
+      const existingBody = toOptionalString(doc.get('body'));
+      if (!existingTitle || !existingBody) return false;
+
+      return normalizeInboxText(existingTitle) === normalizedTitle && normalizeInboxText(existingBody) === normalizedBody;
+    });
+
+    if (hasRecentDuplicate) {
+      return {
+        ok: true,
+        message: 'Message déjà envoyé (doublon détecté, envoi ignoré).',
+      };
+    }
+
+    await inboxRef.add({
+      title,
+      body,
+      severity,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromMillis(nowMs + INBOX_MESSAGE_TTL_DAYS * 24 * 60 * 60 * 1000),
+      readAt: null,
+      createdBy: actorUid,
+    });
 
     await writeAdminAuditLog({
       adminUid: actorUid,

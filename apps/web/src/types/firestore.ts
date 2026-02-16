@@ -45,6 +45,7 @@ export interface UserInboxMessageDoc {
   body: string;
   severity?: 'info' | 'warn' | 'critical';
   createdAt?: Timestamp | FieldValue;
+  expiresAt?: Timestamp | FieldValue | null;
   createdBy?: string | null;
   readAt?: Timestamp | null;
   [key: string]: unknown;
