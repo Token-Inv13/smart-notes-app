@@ -57,6 +57,30 @@ function assistantSimpleModeDefaults(mode: AssistantSimpleMode): {
   };
 }
 
+function sanitizeUiText(value: string | null): string | null {
+  if (typeof value !== "string") return null;
+
+  const withBreaks = value
+    .replace(/<\s*br\s*\/?\s*>/gi, "\n")
+    .replace(/<\s*\/\s*(p|div|li|h[1-6])\s*>/gi, "\n");
+
+  const withoutDangerousBlocks = withBreaks
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ");
+
+  const withoutTags = withoutDangerousBlocks.replace(/<[^>]*>/g, " ");
+  const decoded = withoutTags
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, '"');
+
+  const compact = decoded.replace(/\s+/g, " ").trim();
+  return compact || null;
+}
+
 export default function SettingsPage() {
   const { data: user, loading, error } = useUserSettings();
   const { data: assistantSettings } = useAssistantSettings();
@@ -93,6 +117,8 @@ export default function SettingsPage() {
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarBusy, setCalendarBusy] = useState(false);
   const [calendarMessage, setCalendarMessage] = useState<string | null>(null);
+  const safeCalendarMessage = sanitizeUiText(calendarMessage);
+  const safeAssistantMessage = sanitizeUiText(assistantMessage);
 
   const applyCalendarStateMessage = useCallback((calendarState: string) => {
     if (calendarState === "connected") {
@@ -291,7 +317,7 @@ export default function SettingsPage() {
       const res = await fetch("/api/google/calendar/disconnect", { method: "POST" });
       const data = (await res.json()) as { ok?: unknown; error?: unknown };
       if (!res.ok || data?.ok !== true) {
-        setCalendarMessage(typeof data?.error === "string" ? data.error : "Impossible de déconnecter Google Calendar.");
+        setCalendarMessage("Impossible de déconnecter Google Calendar.");
         return;
       }
       setCalendarConnected(false);
@@ -728,7 +754,7 @@ export default function SettingsPage() {
                 <div className="text-xs text-muted-foreground break-all">Calendrier principal: {calendarPrimaryId}</div>
               ) : null}
 
-              {calendarMessage ? <div className="text-xs">{calendarMessage}</div> : null}
+              {safeCalendarMessage ? <div className="text-xs">{safeCalendarMessage}</div> : null}
             </div>
           </section>
 
@@ -838,7 +864,7 @@ export default function SettingsPage() {
               <h2 className="text-base font-semibold">Assistant</h2>
               <div className="text-xs text-muted-foreground">Réglages</div>
             </div>
-            <p className="text-xs text-muted-foreground">Configuration compacte: mode, objectif et options avancées.</p>
+            <p className="text-xs text-muted-foreground">Régle l’essentiel, puis ajuste les options avancées si besoin.</p>
 
             <div className="rounded-lg border border-border/50 bg-background/60 px-3 py-2 flex items-center justify-between gap-4">
               <div className="min-w-0">
@@ -1007,10 +1033,10 @@ export default function SettingsPage() {
                 {savingAssistant ? "Enregistrement…" : "Enregistrer"}
               </button>
               <Link href="/assistant" className="text-xs text-muted-foreground hover:underline">
-                Ouvrir l’assistant (optionnel)
+                Ouvrir l’espace Assistant
               </Link>
             </div>
-            {assistantMessage && <p className="text-sm">{assistantMessage}</p>}
+            {safeAssistantMessage && <p className="text-sm">{safeAssistantMessage}</p>}
           </section>
 
           <section className="border border-border/70 rounded-xl p-5 bg-card shadow-sm space-y-4">

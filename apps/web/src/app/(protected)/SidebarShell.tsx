@@ -27,6 +27,30 @@ type ProactiveSuggestionBanner = {
   explanation: string;
 };
 
+function sanitizeDynamicText(value: unknown, fallback: string): string {
+  if (typeof value !== "string") return fallback;
+
+  const withBreaks = value
+    .replace(/<\s*br\s*\/?\s*>/gi, "\n")
+    .replace(/<\s*\/\s*(p|div|li|h[1-6])\s*>/gi, "\n");
+
+  const withoutDangerousBlocks = withBreaks
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ");
+
+  const withoutTags = withoutDangerousBlocks.replace(/<[^>]*>/g, " ");
+  const decoded = withoutTags
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, '"');
+
+  const compact = decoded.replace(/\s+/g, " ").trim();
+  return compact || fallback;
+}
+
 function localDayKey(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -365,8 +389,8 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
     const payload = candidate.payload && typeof candidate.payload === "object" ? (candidate.payload as { title?: unknown; explanation?: unknown }) : null;
     setProactiveBanner({
       suggestionId,
-      title: typeof payload?.title === "string" ? payload.title : "Suggestion",
-      explanation: typeof payload?.explanation === "string" ? payload.explanation : "Tu as une nouvelle action prioritaire.",
+      title: sanitizeDynamicText(payload?.title, "Suggestion"),
+      explanation: sanitizeDynamicText(payload?.explanation, "Une action prioritaire est prête."),
     });
   }, [assistantSettings, topActionableSuggestion]);
 

@@ -32,6 +32,30 @@ type SuggestionPayload = {
   [key: string]: unknown;
 };
 
+function sanitizeDynamicText(value: unknown, fallback = ""): string {
+  if (typeof value !== "string") return fallback;
+
+  const withBreaks = value
+    .replace(/<\s*br\s*\/?\s*>/gi, "\n")
+    .replace(/<\s*\/\s*(p|div|li|h[1-6])\s*>/gi, "\n");
+
+  const withoutDangerousBlocks = withBreaks
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ");
+
+  const withoutTags = withoutDangerousBlocks.replace(/<[^>]*>/g, " ");
+  const decoded = withoutTags
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, '"');
+
+  const compact = decoded.replace(/\s+/g, " ").trim();
+  return compact || fallback;
+}
+
 export default function AssistantPage() {
   const { data: assistantSettings, loading: assistantLoading, error: assistantError } = useAssistantSettings();
   const {
@@ -355,9 +379,9 @@ export default function AssistantPage() {
             const dueLabel = s.kind === "create_task" && payload?.dueDate ? formatTs(payload.dueDate) : "";
             const remindLabel = s.kind === "create_reminder" && payload?.remindAt ? formatTs(payload.remindAt) : "";
 
-            const title = typeof payload?.title === "string" ? String(payload.title) : "Suggestion";
-            const explanation = typeof payload?.explanation === "string" ? String(payload.explanation) : "";
-            const excerpt = typeof payload?.origin?.fromText === "string" ? String(payload.origin.fromText) : "";
+            const title = sanitizeDynamicText(payload?.title, "Suggestion");
+            const explanation = sanitizeDynamicText(payload?.explanation);
+            const excerpt = sanitizeDynamicText(payload?.origin?.fromText);
 
             return (
               <div key={suggestionId ?? s.dedupeKey} className="border border-border rounded-md p-3 space-y-2">
@@ -388,7 +412,7 @@ export default function AssistantPage() {
                             <ol className="list-decimal pl-5 space-y-1">
                               {bundleTasks.slice(0, 6).map((t: { title?: unknown }, idx: number) => (
                                 <li key={`${suggestionId ?? "bundle"}_${idx}`}>
-                                  {typeof t?.title === "string" ? t.title : "Élément d’agenda"}
+                                  {sanitizeDynamicText(t?.title, "Élément d’agenda")}
                                 </li>
                               ))}
                             </ol>
