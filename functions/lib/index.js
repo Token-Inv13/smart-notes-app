@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.assistantRunAIJobQueue = exports.assistantPurgeExpiredVoiceData = exports.assistantExecuteIntent = exports.assistantRequestVoiceTranscription = exports.assistantCreateVoiceJob = exports.assistantRewriteText = exports.assistantRequestAIAnalysis = exports.assistantRequestReanalysis = exports.assistantRateSuggestionFeedback = exports.assistantRejectSuggestion = exports.assistantApplySuggestion = exports.assistantRunJobQueue = exports.assistantEnqueueTodoJob = exports.assistantEnqueueNoteJob = exports.testSendReminderEmail = exports.cleanupOldReminders = exports.assistantPurgeExpiredSuggestions = exports.assistantExpireSuggestions = exports.checkAndSendReminders = void 0;
-const functions = require("firebase-functions");
+const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
 const crypto_1 = require("crypto");
