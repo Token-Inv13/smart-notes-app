@@ -5,6 +5,16 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 
+function parseUsersCursor(value: unknown): AdminUsersCursor | null {
+  if (!isObject(value)) return null;
+  const id = toNonEmptyString(value.id);
+  const sortValueMsRaw = value.sortValueMs;
+  if (!id || typeof sortValueMsRaw !== 'number' || !Number.isFinite(sortValueMsRaw) || sortValueMsRaw < 0) {
+    return null;
+  }
+  return { id, sortValueMs: Math.trunc(sortValueMsRaw) };
+}
+
 type AuditStatus = 'success' | 'error' | 'denied';
 
 type AuditLogRecord = {
@@ -27,6 +37,29 @@ type ErrorLogRecord = {
   createdAt: FirebaseFirestore.FieldValue;
 };
 
+type AdminUserIndexRecord = {
+  uid: string;
+  email: string | null;
+  createdAt: FirebaseFirestore.Timestamp | FirebaseFirestore.FieldValue;
+  lastSeenAt: FirebaseFirestore.Timestamp | null;
+  plan: 'free' | 'premium';
+  premiumUntil: FirebaseFirestore.Timestamp | null;
+  status: 'active' | 'blocked';
+  tags: string[];
+  notesCount?: number;
+  tasksCount?: number;
+  favoritesCount?: number;
+  lastErrorAt?: FirebaseFirestore.Timestamp | null;
+  updatedAt: FirebaseFirestore.FieldValue;
+};
+
+type AdminUsersCursor = {
+  sortValueMs: number;
+  id: string;
+};
+
+type AdminUsersSortBy = 'createdAt' | 'lastSeenAt' | 'premiumUntil';
+
 type PaginationCursor = {
   createdAtMs: number;
   id: string;
@@ -37,6 +70,7 @@ const DEFAULT_PREMIUM_DURATION_DAYS = 30;
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 50;
 const MAX_SCAN_FACTOR = 5;
+const MAX_REBUILD_BATCH_SIZE = 200;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -219,6 +253,199 @@ function normalizeCategory(raw: unknown): ErrorLogRecord['category'] | null {
   return null;
 }
 
+function toStringArray(raw: unknown, maxItems = 20): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'string') continue;
+    const value = item.trim();
+    if (!value) continue;
+    out.push(value.slice(0, 64));
+    if (out.length >= maxItems) break;
+  }
+  return out;
+}
+
+function toNonNegativeInteger(value: unknown, fallback = 0): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  const int = Math.trunc(value);
+  return int >= 0 ? int : fallback;
+}
+
+function normalizeAdminUsersSortBy(raw: unknown): AdminUsersSortBy {
+  const value = toOptionalString(raw);
+  if (value === 'lastSeenAt' || value === 'premiumUntil') return value;
+  return 'createdAt';
+}
+
+function normalizeSearchMode(raw: unknown): 'auto' | 'uid' | 'email_exact' | 'email_prefix' {
+  const value = toOptionalString(raw);
+  if (value === 'uid' || value === 'email_exact' || value === 'email_prefix') return value;
+  return 'auto';
+}
+
+function toOptionalTimestamp(value: unknown): FirebaseFirestore.Timestamp | null {
+  if (!value || typeof value !== 'object') return null;
+  const ts = value as { toMillis?: unknown };
+  if (typeof ts.toMillis !== 'function') return null;
+  return value as FirebaseFirestore.Timestamp;
+}
+
+function parseAuthCreationTime(value: string | undefined): FirebaseFirestore.Timestamp | null {
+  if (!value) return null;
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  return admin.firestore.Timestamp.fromMillis(ms);
+}
+
+function normalizeUserPlan(raw: unknown): 'free' | 'premium' {
+  const value = toOptionalString(raw);
+  return value === 'pro' || value === 'premium' ? 'premium' : 'free';
+}
+
+function resolvePremiumUntil(userDoc: Record<string, unknown>): FirebaseFirestore.Timestamp | null {
+  const manual = toOptionalTimestamp(userDoc.premiumManualUntil);
+  if (manual) return manual;
+  const stripe = toOptionalTimestamp(userDoc.stripeSubscriptionCurrentPeriodEnd);
+  return stripe;
+}
+
+function resolveUserStatus(userDoc: Record<string, unknown>, authDisabled?: boolean): 'active' | 'blocked' {
+  if (authDisabled === true) return 'blocked';
+  const raw = toOptionalString(userDoc.status);
+  return raw === 'blocked' ? 'blocked' : 'active';
+}
+
+function mapAdminUserIndex(doc: FirebaseFirestore.QueryDocumentSnapshot): {
+  id: string;
+  uid: string;
+  email: string | null;
+  createdAtMs: number | null;
+  lastSeenAtMs: number | null;
+  plan: 'free' | 'premium';
+  premiumUntilMs: number | null;
+  status: 'active' | 'blocked';
+  tags: string[];
+  notesCount?: number;
+  tasksCount?: number;
+  favoritesCount?: number;
+  lastErrorAtMs?: number | null;
+} {
+  const data = doc.data();
+  const statusRaw = toOptionalString(data.status);
+  return {
+    id: doc.id,
+    uid: toOptionalString(data.uid) ?? doc.id,
+    email: toOptionalString(data.email),
+    createdAtMs: readTimestampMs(data.createdAt),
+    lastSeenAtMs: readTimestampMs(data.lastSeenAt),
+    plan: normalizeUserPlan(data.plan),
+    premiumUntilMs: readTimestampMs(data.premiumUntil),
+    status: statusRaw === 'blocked' ? 'blocked' : 'active',
+    tags: toStringArray(data.tags),
+    notesCount: typeof data.notesCount === 'number' ? toNonNegativeInteger(data.notesCount) : undefined,
+    tasksCount: typeof data.tasksCount === 'number' ? toNonNegativeInteger(data.tasksCount) : undefined,
+    favoritesCount: typeof data.favoritesCount === 'number' ? toNonNegativeInteger(data.favoritesCount) : undefined,
+    lastErrorAtMs: readTimestampMs(data.lastErrorAt),
+  };
+}
+
+function extractAdminUserIndexFromUserDoc(params: {
+  uid: string;
+  userDoc: Record<string, unknown>;
+  email: string | null;
+  authCreatedAt: FirebaseFirestore.Timestamp | null;
+  authDisabled?: boolean;
+}): AdminUserIndexRecord {
+  const createdAtFromUser = toOptionalTimestamp(params.userDoc.createdAt);
+  const lastSeenAt = toOptionalTimestamp(params.userDoc.updatedAt);
+  const plan = normalizeUserPlan(params.userDoc.plan);
+  const premiumUntil = resolvePremiumUntil(params.userDoc);
+  const status = resolveUserStatus(params.userDoc, params.authDisabled);
+  const tags = toStringArray(params.userDoc.tags ?? params.userDoc.adminTags);
+  const notesCount = typeof params.userDoc.notesCount === 'number' ? toNonNegativeInteger(params.userDoc.notesCount) : undefined;
+  const tasksCount = typeof params.userDoc.tasksCount === 'number' ? toNonNegativeInteger(params.userDoc.tasksCount) : undefined;
+  const favoritesCount =
+    typeof params.userDoc.favoritesCount === 'number' ? toNonNegativeInteger(params.userDoc.favoritesCount) : undefined;
+  const lastErrorAt = toOptionalTimestamp(params.userDoc.lastErrorAt);
+
+  return {
+    uid: params.uid,
+    email: params.email,
+    createdAt: createdAtFromUser ?? params.authCreatedAt ?? admin.firestore.FieldValue.serverTimestamp(),
+    lastSeenAt,
+    plan,
+    premiumUntil,
+    status,
+    tags,
+    ...(typeof notesCount === 'number' ? { notesCount } : {}),
+    ...(typeof tasksCount === 'number' ? { tasksCount } : {}),
+    ...(typeof favoritesCount === 'number' ? { favoritesCount } : {}),
+    ...(lastErrorAt ? { lastErrorAt } : {}),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+}
+
+function matchesUsersSearch(params: {
+  item: ReturnType<typeof mapAdminUserIndex>;
+  query: string | null;
+  mode: 'auto' | 'uid' | 'email_exact' | 'email_prefix';
+}): boolean {
+  const query = params.query?.trim();
+  if (!query) return true;
+  const q = query.toLowerCase();
+  const uid = params.item.uid.toLowerCase();
+  const email = (params.item.email ?? '').toLowerCase();
+
+  if (params.mode === 'uid') return uid === q;
+  if (params.mode === 'email_exact') return email === q;
+  if (params.mode === 'email_prefix') return email.startsWith(q);
+
+  if (q.includes('@')) {
+    return email.startsWith(q) || email === q;
+  }
+  return uid === q || uid.startsWith(q);
+}
+
+function matchesUsersFilters(params: {
+  item: ReturnType<typeof mapAdminUserIndex>;
+  nowMs: number;
+  premiumOnly: boolean;
+  blockedOnly: boolean;
+  newWithinHours: number | null;
+  inactiveDays: number | null;
+  tags: string[];
+}): boolean {
+  const item = params.item;
+  const nowMs = params.nowMs;
+
+  if (params.premiumOnly) {
+    const premiumActive = item.plan === 'premium' || (item.premiumUntilMs != null && item.premiumUntilMs > nowMs);
+    if (!premiumActive) return false;
+  }
+
+  if (params.blockedOnly && item.status !== 'blocked') return false;
+
+  if (params.newWithinHours != null) {
+    if (item.createdAtMs == null) return false;
+    const threshold = nowMs - params.newWithinHours * 60 * 60 * 1000;
+    if (item.createdAtMs < threshold) return false;
+  }
+
+  if (params.inactiveDays != null) {
+    const threshold = nowMs - params.inactiveDays * 24 * 60 * 60 * 1000;
+    if (item.lastSeenAtMs != null && item.lastSeenAtMs >= threshold) return false;
+  }
+
+  if (params.tags.length > 0) {
+    const tagsSet = new Set(item.tags.map((tag) => tag.toLowerCase()));
+    const hasAny = params.tags.some((tag) => tagsSet.has(tag.toLowerCase()));
+    if (!hasAny) return false;
+  }
+
+  return true;
+}
+
 function getUserDocDisplay(data: Record<string, unknown>): {
   plan: 'free' | 'pro';
   stripeSubscriptionStatus: string | null;
@@ -241,6 +468,68 @@ async function countQuery(query: FirebaseFirestore.Query): Promise<number> {
     const snap = await query.get();
     return snap.size;
   }
+}
+
+async function upsertAdminUsersIndexForUid(params: {
+  uid: string;
+  emailHint?: string | null;
+  authRecord?: admin.auth.UserRecord | null;
+}): Promise<void> {
+  const uid = params.uid.trim();
+  if (!uid) return;
+
+  const db = admin.firestore();
+  const userSnap = await db.collection('users').doc(uid).get();
+  const userDoc = userSnap.exists && isObject(userSnap.data()) ? (userSnap.data() as Record<string, unknown>) : {};
+
+  let authRecord = params.authRecord ?? null;
+  if (!authRecord) {
+    try {
+      authRecord = await admin.auth().getUser(uid);
+    } catch {
+      authRecord = null;
+    }
+  }
+
+  const email = toOptionalString(userDoc.email) ?? params.emailHint ?? authRecord?.email ?? null;
+  const record = extractAdminUserIndexFromUserDoc({
+    uid,
+    userDoc,
+    email,
+    authCreatedAt: parseAuthCreationTime(authRecord?.metadata.creationTime),
+    authDisabled: authRecord?.disabled,
+  });
+
+  await db.collection('adminUsersIndex').doc(uid).set(record, { merge: true });
+}
+
+async function maybeUpdateLastErrorOnUsersIndex(errorDoc: FirebaseFirestore.DocumentSnapshot): Promise<void> {
+  const data = errorDoc.data();
+  if (!isObject(data)) return;
+
+  const createdAt = toOptionalTimestamp(data.createdAt);
+  if (!createdAt) return;
+
+  const context = isObject(data.context) ? data.context : {};
+  const uid =
+    toOptionalString(data.uid) ??
+    toOptionalString(context.uid) ??
+    toOptionalString(context.targetUserUid) ??
+    null;
+  if (!uid) return;
+
+  await admin
+    .firestore()
+    .collection('adminUsersIndex')
+    .doc(uid)
+    .set(
+      {
+        uid,
+        lastErrorAt: createdAt,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
 }
 
 export const adminLookupUser = functions.https.onCall(async (data, context) => {
@@ -333,6 +622,40 @@ export const adminLookupUser = functions.https.onCall(async (data, context) => {
     throw mapped;
   }
 });
+
+export const adminUsersIndexOnUserWrite = functions.firestore
+  .document('users/{uid}')
+  .onWrite(async (change, context) => {
+    const uid = toNonEmptyString(context.params.uid);
+    if (!uid) return;
+
+    if (!change.after.exists) {
+      await admin.firestore().collection('adminUsersIndex').doc(uid).delete().catch(() => undefined);
+      return;
+    }
+
+    const afterData = change.after.data();
+    const emailHint = isObject(afterData) ? toOptionalString(afterData.email) : null;
+    await upsertAdminUsersIndexForUid({ uid, emailHint });
+  });
+
+export const adminUsersIndexOnAuthCreate = functions.auth.user().onCreate(async (user) => {
+  await upsertAdminUsersIndexForUid({
+    uid: user.uid,
+    emailHint: user.email ?? null,
+    authRecord: user,
+  });
+});
+
+export const adminUsersIndexOnAuthDelete = functions.auth.user().onDelete(async (user) => {
+  await admin.firestore().collection('adminUsersIndex').doc(user.uid).delete().catch(() => undefined);
+});
+
+export const adminUsersIndexOnErrorLogCreate = functions.firestore
+  .document('appErrorLogs/{logId}')
+  .onCreate(async (snap) => {
+    await maybeUpdateLastErrorOnUsersIndex(snap);
+  });
 
 export const adminRevokeUserSessions = functions.https.onCall(async (data, context) => {
   const action = 'revoke_sessions';
@@ -583,6 +906,211 @@ export const adminResetUserFlags = functions.https.onCall(async (data, context) 
         code: mapped.code,
         message: mapped.message,
         context: { adminUid, targetUserUid },
+      });
+    } catch {
+      // Ignore logging failures.
+    }
+    throw mapped;
+  }
+});
+
+export const adminListUsersIndex = functions.https.onCall(async (data, context) => {
+  const action = 'list_users_index';
+  const payload = isObject(data) ? data : {};
+  const adminUid = context.auth?.uid ?? null;
+
+  try {
+    const actorUid = assertAdmin(context);
+
+    const limit = toPositiveInteger(payload.limit, 20, 50);
+    const sortBy = normalizeAdminUsersSortBy(payload.sortBy);
+    const cursor = parseUsersCursor(payload.cursor);
+    const queryRaw = toOptionalString(payload.query);
+    const searchMode = normalizeSearchMode(payload.searchMode);
+    const premiumOnly = payload.premiumOnly === true;
+    const blockedOnly = payload.blockedOnly === true;
+    const newWithinHours = payload.newWithinHours == null ? null : toPositiveInteger(payload.newWithinHours, 24, 24 * 365);
+    const inactiveDays = payload.inactiveDays == null ? null : toPositiveInteger(payload.inactiveDays, 7, 3650);
+    const tags = toStringArray(payload.tags, 10);
+
+    const db = admin.firestore();
+    let query = db.collection('adminUsersIndex').orderBy(sortBy, 'desc');
+    if (cursor) {
+      query = query.startAfter(admin.firestore.Timestamp.fromMillis(cursor.sortValueMs));
+    }
+
+    const scanLimit = Math.min(limit * MAX_SCAN_FACTOR, MAX_PAGE_SIZE * MAX_SCAN_FACTOR);
+    const snap = await query.limit(scanLimit).get();
+    const nowMs = Date.now();
+
+    const users: ReturnType<typeof mapAdminUserIndex>[] = [];
+    for (const doc of snap.docs) {
+      const item = mapAdminUserIndex(doc);
+      const passesSearch = matchesUsersSearch({ item, query: queryRaw, mode: searchMode });
+      if (!passesSearch) continue;
+      const passesFilters = matchesUsersFilters({
+        item,
+        nowMs,
+        premiumOnly,
+        blockedOnly,
+        newWithinHours,
+        inactiveDays,
+        tags,
+      });
+      if (!passesFilters) continue;
+      users.push(item);
+      if (users.length >= limit) break;
+    }
+
+    const lastScanned = snap.docs[snap.docs.length - 1] ?? null;
+    const lastSortValueMs = lastScanned ? readTimestampMs(lastScanned.get(sortBy)) : null;
+    const nextCursor =
+      lastScanned && snap.size >= scanLimit && typeof lastSortValueMs === 'number'
+        ? {
+            sortValueMs: lastSortValueMs,
+            id: lastScanned.id,
+          }
+        : null;
+
+    await writeAdminAuditLog({
+      adminUid: actorUid,
+      targetUserUid: null,
+      action,
+      payload: {
+        limit,
+        sortBy,
+        query: queryRaw,
+        searchMode,
+        premiumOnly,
+        blockedOnly,
+        newWithinHours,
+        inactiveDays,
+        tags,
+      },
+      status: 'success',
+      message: `Listed ${users.length} user index entries.`,
+    });
+
+    return {
+      users,
+      nextCursor,
+    };
+  } catch (error) {
+    const mapped = toHttpsError(error);
+    try {
+      await writeAdminAuditLog({
+        adminUid,
+        targetUserUid: null,
+        action,
+        payload,
+        status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
+        message: mapped.message,
+      });
+      await writeAppErrorLog({
+        category: 'functions',
+        scope: action,
+        code: mapped.code,
+        message: mapped.message,
+        context: { adminUid, payload },
+      });
+    } catch {
+      // Ignore logging failures.
+    }
+    throw mapped;
+  }
+});
+
+export const rebuildAdminUsersIndex = functions.https.onCall(async (data, context) => {
+  const action = 'rebuild_users_index';
+  const payload = isObject(data) ? data : {};
+  const adminUid = context.auth?.uid ?? null;
+
+  try {
+    const actorUid = assertAdmin(context);
+    const batchSize = toPositiveInteger(payload.batchSize, 100, MAX_REBUILD_BATCH_SIZE);
+    const cursorUid = toOptionalString(payload.cursorUid);
+
+    const db = admin.firestore();
+    let usersQuery = db.collection('users').orderBy(admin.firestore.FieldPath.documentId()).limit(batchSize);
+    if (cursorUid) {
+      usersQuery = usersQuery.startAfter(cursorUid);
+    }
+
+    const usersSnap = await usersQuery.get();
+    const userDocs = usersSnap.docs;
+
+    const authMap = new Map<string, admin.auth.UserRecord>();
+    if (userDocs.length > 0) {
+      const chunkSize = 100;
+      for (let i = 0; i < userDocs.length; i += chunkSize) {
+        const chunk = userDocs.slice(i, i + chunkSize).map((doc) => ({ uid: doc.id }));
+        const authBatch = await admin.auth().getUsers(chunk);
+        for (const rec of authBatch.users) {
+          authMap.set(rec.uid, rec);
+        }
+      }
+    }
+
+    const batch = db.batch();
+    for (const userDocSnap of userDocs) {
+      const uid = userDocSnap.id;
+      const userDoc = isObject(userDocSnap.data()) ? (userDocSnap.data() as Record<string, unknown>) : {};
+      const authRecord = authMap.get(uid);
+      const record = extractAdminUserIndexFromUserDoc({
+        uid,
+        userDoc,
+        email: toOptionalString(userDoc.email) ?? authRecord?.email ?? null,
+        authCreatedAt: parseAuthCreationTime(authRecord?.metadata.creationTime),
+        authDisabled: authRecord?.disabled,
+      });
+
+      batch.set(db.collection('adminUsersIndex').doc(uid), record, { merge: true });
+    }
+
+    await batch.commit();
+
+    const lastDoc = userDocs[userDocs.length - 1] ?? null;
+    const nextCursorUid = lastDoc && userDocs.length >= batchSize ? lastDoc.id : null;
+    const done = nextCursorUid == null;
+
+    await writeAdminAuditLog({
+      adminUid: actorUid,
+      targetUserUid: null,
+      action,
+      payload: {
+        batchSize,
+        cursorUid,
+        processed: userDocs.length,
+        nextCursorUid,
+      },
+      status: 'success',
+      message: `Rebuilt ${userDocs.length} admin users index entries.`,
+    });
+
+    return {
+      ok: true,
+      processed: userDocs.length,
+      nextCursorUid,
+      done,
+      message: done ? 'Rebuild terminé.' : 'Rebuild partiel terminé. Relancer avec nextCursorUid.',
+    };
+  } catch (error) {
+    const mapped = toHttpsError(error);
+    try {
+      await writeAdminAuditLog({
+        adminUid,
+        targetUserUid: null,
+        action,
+        payload,
+        status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
+        message: mapped.message,
+      });
+      await writeAppErrorLog({
+        category: 'functions',
+        scope: action,
+        code: mapped.code,
+        message: mapped.message,
+        context: { adminUid, payload },
       });
     } catch {
       // Ignore logging failures.

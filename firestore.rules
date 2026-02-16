@@ -250,6 +250,11 @@ service cloud.firestore {
     }
 
     // Admin observability collections (read-only from admin UI)
+    match /adminUsersIndex/{uid} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     match /adminAuditLogs/{logId} {
       allow read: if isAdmin();
       allow write: if false;

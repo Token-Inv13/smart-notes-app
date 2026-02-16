@@ -46,3 +46,51 @@ export type AdminErrorLogItem = {
   createdAtMs: number | null;
   context: Record<string, unknown>;
 };
+
+export type AdminUsersSortBy = 'createdAt' | 'lastSeenAt' | 'premiumUntil';
+
+export type AdminUserIndexItem = {
+  uid: string;
+  email: string | null;
+  createdAtMs: number | null;
+  lastSeenAtMs: number | null;
+  plan: 'free' | 'premium';
+  premiumUntilMs: number | null;
+  status: 'active' | 'blocked';
+  tags: string[];
+  notesCount?: number;
+  tasksCount?: number;
+  favoritesCount?: number;
+  lastErrorAtMs?: number | null;
+};
+
+export type AdminUsersCursor = {
+  sortValueMs: number;
+  id: string;
+};
+
+export type AdminListUsersIndexParams = {
+  limit?: number;
+  cursor?: AdminUsersCursor | null;
+  sortBy?: AdminUsersSortBy;
+  query?: string;
+  searchMode?: 'auto' | 'uid' | 'email_exact' | 'email_prefix';
+  premiumOnly?: boolean;
+  blockedOnly?: boolean;
+  newWithinHours?: number;
+  inactiveDays?: number;
+  tags?: string[];
+};
+
+export type AdminListUsersIndexResponse = {
+  users: AdminUserIndexItem[];
+  nextCursor: AdminUsersCursor | null;
+};
+
+export type AdminRebuildUsersIndexResponse = {
+  ok: boolean;
+  processed: number;
+  nextCursorUid: string | null;
+  done: boolean;
+  message: string;
+};

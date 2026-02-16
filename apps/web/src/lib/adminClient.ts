@@ -5,7 +5,10 @@ import type {
   AdminAuditLogItem,
   AdminCursor,
   AdminErrorLogItem,
+  AdminListUsersIndexParams,
+  AdminListUsersIndexResponse,
   AdminLookupUserResult,
+  AdminRebuildUsersIndexResponse,
 } from '@/types/admin';
 
 export async function lookupUser(query: string): Promise<AdminLookupUserResult> {
@@ -54,6 +57,24 @@ export async function listAuditLogs(params?: {
     { limit?: number; cursor?: AdminCursor | null; targetUserUid?: string; action?: string },
     { logs: AdminAuditLogItem[]; nextCursor: AdminCursor | null }
   >(fbFunctions, 'adminListAuditLogs');
+  const res = await fn(params ?? {});
+  return res.data;
+}
+
+export async function listUsersIndex(params?: AdminListUsersIndexParams): Promise<AdminListUsersIndexResponse> {
+  const fn = httpsCallable<AdminListUsersIndexParams, AdminListUsersIndexResponse>(fbFunctions, 'adminListUsersIndex');
+  const res = await fn(params ?? {});
+  return res.data;
+}
+
+export async function rebuildUsersIndex(params?: {
+  batchSize?: number;
+  cursorUid?: string | null;
+}): Promise<AdminRebuildUsersIndexResponse> {
+  const fn = httpsCallable<{ batchSize?: number; cursorUid?: string | null }, AdminRebuildUsersIndexResponse>(
+    fbFunctions,
+    'rebuildAdminUsersIndex',
+  );
   const res = await fn(params ?? {});
   return res.data;
 }

@@ -1,16 +1,25 @@
 "use client";
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   disableUserPremium,
   enableUserPremium,
   listAuditLogs,
+  listUsersIndex,
   lookupUser,
+  rebuildUsersIndex,
   resetUserFlags,
   revokeUserSessions,
 } from '@/lib/adminClient';
-import type { AdminAuditLogItem, AdminCursor, AdminLookupUserResult } from '@/types/admin';
+import type {
+  AdminAuditLogItem,
+  AdminCursor,
+  AdminLookupUserResult,
+  AdminUserIndexItem,
+  AdminUsersCursor,
+  AdminUsersSortBy,
+} from '@/types/admin';
 
 function formatDateTime(ms: number | null | undefined) {
   if (!ms || !Number.isFinite(ms)) return '—';
@@ -39,6 +48,22 @@ export default function AdminPage() {
   const [auditFilterUserUid, setAuditFilterUserUid] = useState('');
   const [auditFilterAction, setAuditFilterAction] = useState('');
 
+  const [users, setUsers] = useState<AdminUserIndexItem[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState<string | null>(null);
+  const [usersCursor, setUsersCursor] = useState<AdminUsersCursor | null>(null);
+  const [usersSortBy, setUsersSortBy] = useState<AdminUsersSortBy>('createdAt');
+  const [usersPageSize, setUsersPageSize] = useState<20 | 50>(20);
+  const [usersQuery, setUsersQuery] = useState('');
+  const [usersPremiumOnly, setUsersPremiumOnly] = useState(false);
+  const [usersBlockedOnly, setUsersBlockedOnly] = useState(false);
+  const [usersNewWithinHours, setUsersNewWithinHours] = useState('');
+  const [usersInactiveDays, setUsersInactiveDays] = useState('');
+  const [usersTagsInput, setUsersTagsInput] = useState('');
+  const [rebuildLoading, setRebuildLoading] = useState(false);
+  const [rebuildInfo, setRebuildInfo] = useState<string | null>(null);
+  const [rebuildError, setRebuildError] = useState<string | null>(null);
+
   const canActOnUid = lookupResult?.uid ?? null;
 
   const effectiveUidFilter = useMemo(() => {
@@ -50,6 +75,58 @@ export default function AdminPage() {
     const trimmed = auditFilterAction.trim();
     return trimmed.length > 0 ? trimmed : undefined;
   }, [auditFilterAction]);
+
+  const effectiveUsersQuery = useMemo(() => {
+    const trimmed = usersQuery.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }, [usersQuery]);
+
+  const effectiveUsersTags = useMemo(
+    () => usersTagsInput.split(',').map((s) => s.trim()).filter((s) => s.length > 0),
+    [usersTagsInput],
+  );
+
+  const effectiveUsersNewWithinHours = useMemo(() => {
+    const value = Number.parseInt(usersNewWithinHours, 10);
+    return Number.isFinite(value) && value > 0 ? value : undefined;
+  }, [usersNewWithinHours]);
+
+  const effectiveUsersInactiveDays = useMemo(() => {
+    const value = Number.parseInt(usersInactiveDays, 10);
+    return Number.isFinite(value) && value > 0 ? value : undefined;
+  }, [usersInactiveDays]);
+
+  const loadUsers = async (options?: { reset?: boolean }) => {
+    const reset = options?.reset === true;
+    setUsersLoading(true);
+    setUsersError(null);
+
+    try {
+      const res = await listUsersIndex({
+        limit: usersPageSize,
+        cursor: reset ? null : usersCursor,
+        sortBy: usersSortBy,
+        query: effectiveUsersQuery,
+        premiumOnly: usersPremiumOnly,
+        blockedOnly: usersBlockedOnly,
+        newWithinHours: effectiveUsersNewWithinHours,
+        inactiveDays: effectiveUsersInactiveDays,
+        tags: effectiveUsersTags.length > 0 ? effectiveUsersTags : undefined,
+      });
+
+      setUsers((prev) => (reset ? res.users : [...prev, ...res.users]));
+      setUsersCursor(res.nextCursor);
+    } catch (e) {
+      setUsersError(e instanceof Error ? e.message : 'Impossible de charger la liste utilisateurs.');
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadUsers({ reset: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usersSortBy, usersPageSize]);
 
   const loadAuditLogs = async (options?: { reset?: boolean }) => {
     const reset = options?.reset === true;
@@ -71,6 +148,50 @@ export default function AdminPage() {
       setAuditError(message);
     } finally {
       setAuditLoading(false);
+    }
+  };
+
+  const openUserFromIndex = async (uid: string) => {
+    setQuery(uid);
+    setLookupLoading(true);
+    setLookupError(null);
+    setActionInfo(null);
+    setActionError(null);
+
+    try {
+      const user = await lookupUser(uid);
+      setLookupResult(user);
+      setAuditFilterUserUid(user.uid);
+    } catch (e) {
+      setLookupResult(null);
+      setLookupError(e instanceof Error ? e.message : 'Lookup impossible.');
+    } finally {
+      setLookupLoading(false);
+    }
+  };
+
+  const copyToClipboard = async (value: string) => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      // ignore clipboard failures
+    }
+  };
+
+  const runRebuildUsersIndex = async () => {
+    setRebuildLoading(true);
+    setRebuildError(null);
+    setRebuildInfo(null);
+
+    try {
+      const res = await rebuildUsersIndex({ batchSize: 200 });
+      setRebuildInfo(res.message);
+      await loadUsers({ reset: true });
+    } catch (e) {
+      setRebuildError(e instanceof Error ? e.message : 'Rebuild impossible.');
+    } finally {
+      setRebuildLoading(false);
     }
   };
 
@@ -139,6 +260,174 @@ export default function AdminPage() {
           </div>
         </div>
       </header>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">Users index</h2>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={runRebuildUsersIndex}
+              disabled={rebuildLoading}
+              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+            >
+              {rebuildLoading ? 'Rebuild…' : 'Rebuild index'}
+            </button>
+            <button
+              type="button"
+              onClick={() => loadUsers({ reset: true })}
+              disabled={usersLoading}
+              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+            >
+              {usersLoading ? 'Chargement…' : 'Rafraîchir'}
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 grid gap-2 md:grid-cols-3 xl:grid-cols-4">
+          <input
+            value={usersQuery}
+            onChange={(e) => setUsersQuery(e.target.value)}
+            placeholder="UID ou email (prefix)"
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+          />
+          <input
+            value={usersTagsInput}
+            onChange={(e) => setUsersTagsInput(e.target.value)}
+            placeholder="Tags (csv)"
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+          />
+          <select
+            value={usersSortBy}
+            onChange={(e) => setUsersSortBy(e.target.value as AdminUsersSortBy)}
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+            aria-label="Tri users index"
+          >
+            <option value="createdAt">Tri: inscription</option>
+            <option value="lastSeenAt">Tri: dernière activité</option>
+            <option value="premiumUntil">Tri: premium jusqu'au</option>
+          </select>
+          <select
+            value={String(usersPageSize)}
+            onChange={(e) => setUsersPageSize(e.target.value === '50' ? 50 : 20)}
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+            aria-label="Taille de page users index"
+          >
+            <option value="20">20 / page</option>
+            <option value="50">50 / page</option>
+          </select>
+        </div>
+
+        <div className="mt-2 grid gap-2 md:grid-cols-4">
+          <input
+            value={usersNewWithinHours}
+            onChange={(e) => setUsersNewWithinHours(e.target.value)}
+            placeholder="Nouveaux (heures)"
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+          />
+          <input
+            value={usersInactiveDays}
+            onChange={(e) => setUsersInactiveDays(e.target.value)}
+            placeholder="Inactifs (jours)"
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+          />
+          <label className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={usersPremiumOnly}
+              onChange={(e) => setUsersPremiumOnly(e.target.checked)}
+            />
+            Premium only
+          </label>
+          <label className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={usersBlockedOnly}
+              onChange={(e) => setUsersBlockedOnly(e.target.checked)}
+            />
+            Blocked only
+          </label>
+        </div>
+
+        <div className="mt-2 flex justify-end">
+          <button
+            type="button"
+            onClick={() => loadUsers({ reset: true })}
+            disabled={usersLoading}
+            className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+          >
+            Appliquer filtres
+          </button>
+        </div>
+
+        {rebuildInfo && <p className="mt-3 text-sm text-emerald-600">{rebuildInfo}</p>}
+        {rebuildError && <p className="mt-3 text-sm text-destructive">{rebuildError}</p>}
+        {usersError && <p className="mt-3 text-sm text-destructive">{usersError}</p>}
+
+        <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50">
+              <tr className="border-b border-slate-200 text-left text-slate-600">
+                <th className="px-2 py-2">UID</th>
+                <th className="px-2 py-2">Email</th>
+                <th className="px-2 py-2">Plan</th>
+                <th className="px-2 py-2">Status</th>
+                <th className="px-2 py-2">Créé le</th>
+                <th className="px-2 py-2">Last seen</th>
+                <th className="px-2 py-2">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((user) => (
+                <tr key={user.uid} className="border-b border-slate-100 text-slate-800">
+                  <td className="px-2 py-2 font-mono text-xs">{user.uid}</td>
+                  <td className="px-2 py-2">{user.email ?? '—'}</td>
+                  <td className="px-2 py-2">{user.plan}</td>
+                  <td className="px-2 py-2">{user.status}</td>
+                  <td className="px-2 py-2">{formatDateTime(user.createdAtMs)}</td>
+                  <td className="px-2 py-2">{formatDateTime(user.lastSeenAtMs)}</td>
+                  <td className="px-2 py-2">
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        onClick={() => void openUserFromIndex(user.uid)}
+                        className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                      >
+                        Ouvrir fiche
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyToClipboard(user.uid)}
+                        className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                      >
+                        Copier UID
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {users.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-2 py-4 text-center text-slate-500">
+                    Aucun utilisateur indexé avec ces filtres.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="mt-3 flex justify-end">
+          <button
+            type="button"
+            onClick={() => loadUsers({ reset: false })}
+            disabled={usersLoading || !usersCursor}
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+          >
+            Charger plus
+          </button>
+        </div>
+      </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">User Lookup</h2>
