@@ -151,6 +151,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dockHiddenOnScroll, setDockHiddenOnScroll] = useState(false);
   const [dockDesktopTopClass, setDockDesktopTopClass] = useState("md:top-32");
+  const isAdminBackofficeRoute = pathname.startsWith("/admin");
   const isSettingsRoute = pathname.startsWith("/settings");
   const isAgendaRoute = pathname.startsWith("/tasks");
 
@@ -398,6 +399,16 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
     return (
       <div className="min-h-[100dvh] flex items-center justify-center bg-background text-foreground">
         <div className="h-5 w-5 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground animate-spin" />
+      </div>
+    );
+  }
+
+  if (isAdminBackofficeRoute) {
+    return (
+      <div className="min-h-[100dvh] bg-slate-100 text-slate-900">
+        <main className="mx-auto w-full max-w-[1400px] p-4 md:p-8">
+          {children}
+        </main>
       </div>
     );
   }
