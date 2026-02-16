@@ -1,6 +1,6 @@
-# SmartNote Admin Back-office (V1)
+# SmartNote Admin Back-office (V2)
 
-Ce document décrit l’admin interne V1 (P0) pour SmartNote.
+Ce document décrit l’admin interne SmartNote (V2), orienté exploitation SaaS.
 
 ## 1) Accès au back-office
 
@@ -54,6 +54,11 @@ Fonctions disponibles:
 - `adminEnablePremium`
 - `adminDisablePremium`
 - `adminResetUserFlags`
+- `adminSendUserMessage`
+- `adminListUsersIndex`
+- `rebuildAdminUsersIndex`
+- `adminListUserActivityEvents`
+- `adminGetHealthSummary`
 - `adminListAuditLogs`
 - `adminListErrorLogs`
 
@@ -77,7 +82,16 @@ Chaque action admin écrit:
 - `message`
 - `createdAt`
 
-## 5) Journal d’erreurs backend minimal
+## 5) Collections admin (V2)
+
+- `adminUsersIndex/{uid}`
+  - `uid`, `email`, `createdAt`, `lastSeenAt`, `plan`, `premiumUntil`, `status`, `tags`
+  - optionnels: `notesCount`, `tasksCount`, `favoritesCount`, `lastErrorAt`
+- `adminAuditLogs/{id}`
+- `appErrorLogs/{id}`
+- `userActivityEvents/{id}`
+
+## 6) Journal d’erreurs backend
 
 Collection Firestore:
 - `appErrorLogs`
@@ -95,19 +109,29 @@ Page admin:
 - `/admin/errors`
 - filtre type + détails d’un événement
 
-## 6) Firestore Rules (sécurité)
+## 7) Modules back-office V2
+
+- Users Index: table paginée/filtrable/triable + ouverture fiche
+- Diagnostic compte: badge santé (`Sain`, `Inactif`, `Erreurs`, `Bloqué`, `Premium`)
+- Timeline utilisateur: événements récents + filtre type
+- Messages in-app: envoi d’un message support vers `users/{uid}/inbox`
+- Santé opérateur: KPI 24h + liste erreurs + lien rapide vers fiche user
+- UX anti-erreur: confirmations actions sensibles, historique users récents, actions groupées
+
+## 8) Firestore Rules (sécurité)
 
 Les collections user restent user-scoped.
 
 Ajouts:
 - helper `isAdmin()` basé sur custom claim
+- `adminUsersIndex`: lecture admin uniquement, write client interdit
 - `adminAuditLogs`: lecture admin uniquement, write client interdit
 - `appErrorLogs`: lecture admin uniquement, write client interdit
 
 Fichier:
 - `firestore.rules`
 
-## 7) Variables d’environnement (Vercel + Functions)
+## 9) Variables d’environnement (Vercel + Functions)
 
 ### Web (Vercel: `apps/web`)
 
@@ -122,7 +146,7 @@ Dans l’environnement Functions:
 - `OPENAI_API_KEY` etc. (déjà existant selon votre setup)
 - pas de variable spéciale supplémentaire pour admin V1 (hors credentials Firebase par défaut runtime)
 
-## 8) Déploiement
+## 10) Déploiement
 
 ### 8.1 Vérifications locales
 
@@ -145,12 +169,14 @@ pnpm functions:test
 
 Déployer `apps/web` avec variables server/admin correctement définies.
 
-## 9) Checklist sécurité rapide
+## 11) Checklist sécurité rapide
 
 - [ ] seul votre compte a `admin: true`
 - [ ] `/admin` inaccessible sans claim
 - [ ] aucune action sensible depuis front (tout passe par callable)
 - [ ] `adminAuditLogs` alimenté à chaque action
 - [ ] `appErrorLogs` alimenté sur erreurs backend admin
+- [ ] `adminUsersIndex` alimenté (triggers + rebuild callable)
+- [ ] actions sensibles confirmées côté UI admin
 - [ ] `firestore.rules` en prod autorise lecture admin seulement sur collections admin
 
