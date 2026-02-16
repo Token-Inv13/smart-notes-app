@@ -39,9 +39,7 @@ function loadServiceAccount() {
   const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY;
 
   if (!projectId || !clientEmail || !privateKey) {
-    throw new Error(
-      'Missing admin credentials env vars. Set FIREBASE_ADMIN_JSON (recommended) or FIREBASE_ADMIN_PROJECT_ID/FIREBASE_ADMIN_CLIENT_EMAIL/FIREBASE_ADMIN_PRIVATE_KEY.',
-    );
+    return null;
   }
 
   return {
@@ -63,9 +61,14 @@ async function main() {
   const creds = loadServiceAccount();
 
   if (!admin.apps.length) {
-    admin.initializeApp({
-      credential: admin.credential.cert(creds),
-    });
+    if (creds) {
+      admin.initializeApp({
+        credential: admin.credential.cert(creds),
+      });
+    } else {
+      // Fallback for local environments already authenticated via firebase/gcloud CLI.
+      admin.initializeApp();
+    }
   }
 
   const auth = admin.auth();
