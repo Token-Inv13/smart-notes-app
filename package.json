@@ -49,7 +49,7 @@
     "eslint-plugin-react-hooks": "^5.0.0",
     "eslint-plugin-react-refresh": "^0.4.16",
     "firebase-admin": "^13.0.2",
-    "firebase-tools": "^11.30.0",
+    "firebase-tools": "^15.6.0",
     "globals": "^15.14.0",
     "typescript": "~5.6.2",
     "typescript-eslint": "^8.18.2",
