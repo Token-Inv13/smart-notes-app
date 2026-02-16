@@ -5,17 +5,22 @@ import { getStorage, connectStorageEmulator, FirebaseStorage } from 'firebase/st
 import { getAnalytics, isSupported } from 'firebase/analytics';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+const readEnv = (viteKey: string, nextPublicKey: string): string | undefined => {
+  const env = import.meta.env as Record<string, string | undefined>;
+  return env[viteKey] ?? env[nextPublicKey];
 };
 
-const fcmVapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+const firebaseConfig = {
+  apiKey: readEnv('VITE_FIREBASE_API_KEY', 'NEXT_PUBLIC_FIREBASE_API_KEY'),
+  authDomain: readEnv('VITE_FIREBASE_AUTH_DOMAIN', 'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN'),
+  projectId: readEnv('VITE_FIREBASE_PROJECT_ID', 'NEXT_PUBLIC_FIREBASE_PROJECT_ID'),
+  storageBucket: readEnv('VITE_FIREBASE_STORAGE_BUCKET', 'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET'),
+  messagingSenderId: readEnv('VITE_FIREBASE_MESSAGING_SENDER_ID', 'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID'),
+  appId: readEnv('VITE_FIREBASE_APP_ID', 'NEXT_PUBLIC_FIREBASE_APP_ID'),
+  measurementId: readEnv('VITE_FIREBASE_MEASUREMENT_ID', 'NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID'),
+};
+
+const fcmVapidKey = readEnv('VITE_FIREBASE_VAPID_KEY', 'NEXT_PUBLIC_FCM_VAPID_KEY');
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
@@ -32,6 +37,7 @@ export const analytics = isSupported().then(yes => yes ? getAnalytics(app) : nul
 // FCM token management
 export const getFCMToken = async (): Promise<string | null> => {
   if (!messaging) return null;
+  if (!fcmVapidKey) return null;
   
   try {
     const currentToken = await getToken(messaging, {
