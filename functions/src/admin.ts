@@ -752,14 +752,16 @@ export const adminGetUserMessagingStats = functions.https.onCall(async (data, co
           .collection('userActivityEvents')
           .where('uid', '==', targetUserUid)
           .where('type', '==', 'notification_sent')
-          .where('createdAt', '>=', thresholdTs),
+          .where('createdAt', '>=', thresholdTs)
+          .orderBy('createdAt', 'desc'),
       ),
       countQuery(
         db
           .collection('userActivityEvents')
           .where('uid', '==', targetUserUid)
           .where('type', '==', 'notification_read')
-          .where('createdAt', '>=', thresholdTs),
+          .where('createdAt', '>=', thresholdTs)
+          .orderBy('createdAt', 'desc'),
       ),
       db.collection('users').doc(targetUserUid).collection('inbox').where('readAt', '==', null).get(),
       db
