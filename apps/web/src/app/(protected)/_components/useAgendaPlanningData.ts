@@ -2,12 +2,12 @@ import { useMemo } from "react";
 import type { EventInput } from "@fullcalendar/core";
 import { toLocalDateInputValue } from "./agendaCalendarUtils";
 
-type PlanningSection = {
+export type PlanningSection = {
   dateKey: string;
   events: EventInput[];
 };
 
-type PlanningAvailabilitySlot = {
+export type PlanningAvailabilitySlot = {
   start: Date;
   end: Date;
   durationMinutes: number;
