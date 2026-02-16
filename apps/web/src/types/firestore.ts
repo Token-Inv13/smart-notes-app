@@ -39,6 +39,17 @@ export interface UserDoc {
   [key: string]: unknown;
 }
 
+export interface UserInboxMessageDoc {
+  id?: string;
+  title: string;
+  body: string;
+  severity?: 'info' | 'warn' | 'critical';
+  createdAt?: Timestamp | FieldValue;
+  createdBy?: string | null;
+  readAt?: Timestamp | null;
+  [key: string]: unknown;
+}
+
 export interface AssistantSettingsDoc {
   enabled?: boolean;
   plan?: string;

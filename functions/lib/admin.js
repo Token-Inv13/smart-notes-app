@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.adminListErrorLogs = exports.adminListAuditLogs = exports.adminListUserActivityEvents = exports.rebuildAdminUsersIndex = exports.adminListUsersIndex = exports.adminGetHealthSummary = exports.adminSendUserMessage = exports.adminResetUserFlags = exports.adminDisablePremium = exports.adminEnablePremium = exports.adminRevokeUserSessions = exports.adminUsersIndexOnErrorLogCreate = exports.adminUsersIndexOnAuthDelete = exports.adminUsersIndexOnAuthCreate = exports.adminUsersIndexOnUserWrite = exports.adminLookupUser = void 0;
+exports.adminListErrorLogs = exports.adminListAuditLogs = exports.adminListUserActivityEvents = exports.rebuildAdminUsersIndex = exports.adminListUsersIndex = exports.adminGetHealthSummary = exports.adminSendUserMessage = exports.adminResetUserFlags = exports.adminDisablePremium = exports.adminEnablePremium = exports.adminRevokeUserSessions = exports.adminUserInboxOnRead = exports.adminUsersIndexOnErrorLogCreate = exports.adminUsersIndexOnAuthDelete = exports.adminUsersIndexOnAuthCreate = exports.adminUsersIndexOnUserWrite = exports.adminGetUserMessagingStats = exports.adminLookupUser = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 if (!admin.apps.length) {
@@ -19,6 +19,7 @@ function normalizeActivityType(raw) {
         value === 'ai_job_done' ||
         value === 'premium_changed' ||
         value === 'notification_sent' ||
+        value === 'notification_read' ||
         value === 'error_logged' ||
         value === 'admin_action') {
         return value;
@@ -544,6 +545,93 @@ exports.adminLookupUser = functions.https.onCall(async (data, context) => {
         throw mapped;
     }
 });
+exports.adminGetUserMessagingStats = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d;
+    const action = 'get_user_messaging_stats';
+    const payload = isObject(data) ? data : {};
+    const adminUid = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid) !== null && _b !== void 0 ? _b : null;
+    try {
+        const actorUid = assertAdmin(context);
+        const targetUserUid = toNonEmptyString(payload.targetUserUid);
+        if (!targetUserUid) {
+            throw new functions.https.HttpsError('invalid-argument', 'targetUserUid is required.');
+        }
+        const windowHours = toPositiveInteger(payload.windowHours, 24 * 7, 24 * 90);
+        const thresholdTs = admin.firestore.Timestamp.fromMillis(Date.now() - windowHours * 60 * 60 * 1000);
+        const db = admin.firestore();
+        const [sentCount, readCount, unreadSnap, lastSentSnap, lastReadSnap] = await Promise.all([
+            countQuery(db
+                .collection('userActivityEvents')
+                .where('uid', '==', targetUserUid)
+                .where('type', '==', 'notification_sent')
+                .where('createdAt', '>=', thresholdTs)),
+            countQuery(db
+                .collection('userActivityEvents')
+                .where('uid', '==', targetUserUid)
+                .where('type', '==', 'notification_read')
+                .where('createdAt', '>=', thresholdTs)),
+            db.collection('users').doc(targetUserUid).collection('inbox').where('readAt', '==', null).get(),
+            db
+                .collection('userActivityEvents')
+                .where('uid', '==', targetUserUid)
+                .where('type', '==', 'notification_sent')
+                .orderBy('createdAt', 'desc')
+                .limit(1)
+                .get(),
+            db
+                .collection('userActivityEvents')
+                .where('uid', '==', targetUserUid)
+                .where('type', '==', 'notification_read')
+                .orderBy('createdAt', 'desc')
+                .limit(1)
+                .get(),
+        ]);
+        const lastSentAtMs = lastSentSnap.empty ? null : readTimestampMs((_c = lastSentSnap.docs[0]) === null || _c === void 0 ? void 0 : _c.get('createdAt'));
+        const lastReadAtMs = lastReadSnap.empty ? null : readTimestampMs((_d = lastReadSnap.docs[0]) === null || _d === void 0 ? void 0 : _d.get('createdAt'));
+        const readRatePercent = sentCount > 0 ? Math.min(100, Math.round((readCount / sentCount) * 100)) : 0;
+        await writeAdminAuditLog({
+            adminUid: actorUid,
+            targetUserUid,
+            action,
+            payload: { windowHours },
+            status: 'success',
+            message: 'Computed user messaging stats.',
+        });
+        return {
+            windowHours,
+            sentCount,
+            readCount,
+            unreadCount: unreadSnap.size,
+            readRatePercent,
+            lastSentAtMs,
+            lastReadAtMs,
+        };
+    }
+    catch (error) {
+        const mapped = toHttpsError(error);
+        try {
+            await writeAdminAuditLog({
+                adminUid,
+                targetUserUid: toOptionalString(payload.targetUserUid),
+                action,
+                payload,
+                status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
+                message: mapped.message,
+            });
+            await writeAppErrorLog({
+                category: 'functions',
+                scope: action,
+                code: mapped.code,
+                message: mapped.message,
+                context: { adminUid, payload },
+            });
+        }
+        catch (_e) {
+            // Ignore logging failures.
+        }
+        throw mapped;
+    }
+});
 exports.adminUsersIndexOnUserWrite = functions.firestore
     .document('users/{uid}')
     .onWrite(async (change, context) => {
@@ -573,6 +661,29 @@ exports.adminUsersIndexOnErrorLogCreate = functions.firestore
     .document('appErrorLogs/{logId}')
     .onCreate(async (snap) => {
     await maybeUpdateLastErrorOnUsersIndex(snap);
+});
+exports.adminUserInboxOnRead = functions.firestore
+    .document('users/{uid}/inbox/{messageId}')
+    .onUpdate(async (change, context) => {
+    var _a;
+    const uid = toNonEmptyString(context.params.uid);
+    const messageId = toNonEmptyString(context.params.messageId);
+    if (!uid || !messageId)
+        return;
+    const beforeReadAtMs = readTimestampMs(change.before.get('readAt'));
+    const afterReadAtMs = readTimestampMs(change.after.get('readAt'));
+    if (beforeReadAtMs != null || afterReadAtMs == null)
+        return;
+    await writeUserActivityEvent({
+        uid,
+        type: 'notification_read',
+        metadata: {
+            messageId,
+            severity: (_a = toOptionalString(change.after.get('severity'))) !== null && _a !== void 0 ? _a : 'info',
+            createdBy: toOptionalString(change.after.get('createdBy')),
+            readAtMs: afterReadAtMs,
+        },
+    });
 });
 exports.adminRevokeUserSessions = functions.https.onCall(async (data, context) => {
     var _a, _b;

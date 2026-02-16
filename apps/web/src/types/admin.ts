@@ -120,3 +120,13 @@ export type AdminHealthSummary = {
   };
   aiJobFailedCount: number;
 };
+
+export type AdminUserMessagingStats = {
+  windowHours: number;
+  sentCount: number;
+  readCount: number;
+  unreadCount: number;
+  readRatePercent: number;
+  lastSentAtMs: number | null;
+  lastReadAtMs: number | null;
+};

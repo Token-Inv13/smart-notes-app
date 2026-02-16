@@ -70,6 +70,16 @@ service cloud.firestore {
           'updatedAt'
         ]);
 
+      // Admin in-app support messages (written server-side). Users can read and mark as read.
+      match /inbox/{messageId} {
+        allow read: if isAuthenticated() && isOwner(userId);
+        allow update: if isAuthenticated()
+          && isOwner(userId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt'])
+          && isNullOrTimestamp(request.resource.data.readAt);
+        allow create, delete: if false;
+      }
+
       // Assistant namespace (user-scoped)
       match /assistantSettings/{docId} {
         allow read, write: if isAuthenticated() && isOwner(userId);

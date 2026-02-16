@@ -18,6 +18,7 @@ function normalizeActivityType(raw: unknown): ActivityEventRecord['type'] | null
     value === 'ai_job_done' ||
     value === 'premium_changed' ||
     value === 'notification_sent' ||
+    value === 'notification_read' ||
     value === 'error_logged' ||
     value === 'admin_action'
   ) {
@@ -87,6 +88,7 @@ type ActivityEventRecord = {
     | 'ai_job_done'
     | 'premium_changed'
     | 'notification_sent'
+    | 'notification_read'
     | 'error_logged'
     | 'admin_action';
   metadata: Record<string, unknown>;
@@ -728,6 +730,101 @@ export const adminLookupUser = functions.https.onCall(async (data, context) => {
   }
 });
 
+export const adminGetUserMessagingStats = functions.https.onCall(async (data, context) => {
+  const action = 'get_user_messaging_stats';
+  const payload = isObject(data) ? data : {};
+  const adminUid = context.auth?.uid ?? null;
+
+  try {
+    const actorUid = assertAdmin(context);
+    const targetUserUid = toNonEmptyString(payload.targetUserUid);
+    if (!targetUserUid) {
+      throw new functions.https.HttpsError('invalid-argument', 'targetUserUid is required.');
+    }
+
+    const windowHours = toPositiveInteger(payload.windowHours, 24 * 7, 24 * 90);
+    const thresholdTs = admin.firestore.Timestamp.fromMillis(Date.now() - windowHours * 60 * 60 * 1000);
+    const db = admin.firestore();
+
+    const [sentCount, readCount, unreadSnap, lastSentSnap, lastReadSnap] = await Promise.all([
+      countQuery(
+        db
+          .collection('userActivityEvents')
+          .where('uid', '==', targetUserUid)
+          .where('type', '==', 'notification_sent')
+          .where('createdAt', '>=', thresholdTs),
+      ),
+      countQuery(
+        db
+          .collection('userActivityEvents')
+          .where('uid', '==', targetUserUid)
+          .where('type', '==', 'notification_read')
+          .where('createdAt', '>=', thresholdTs),
+      ),
+      db.collection('users').doc(targetUserUid).collection('inbox').where('readAt', '==', null).get(),
+      db
+        .collection('userActivityEvents')
+        .where('uid', '==', targetUserUid)
+        .where('type', '==', 'notification_sent')
+        .orderBy('createdAt', 'desc')
+        .limit(1)
+        .get(),
+      db
+        .collection('userActivityEvents')
+        .where('uid', '==', targetUserUid)
+        .where('type', '==', 'notification_read')
+        .orderBy('createdAt', 'desc')
+        .limit(1)
+        .get(),
+    ]);
+
+    const lastSentAtMs = lastSentSnap.empty ? null : readTimestampMs(lastSentSnap.docs[0]?.get('createdAt'));
+    const lastReadAtMs = lastReadSnap.empty ? null : readTimestampMs(lastReadSnap.docs[0]?.get('createdAt'));
+    const readRatePercent = sentCount > 0 ? Math.min(100, Math.round((readCount / sentCount) * 100)) : 0;
+
+    await writeAdminAuditLog({
+      adminUid: actorUid,
+      targetUserUid,
+      action,
+      payload: { windowHours },
+      status: 'success',
+      message: 'Computed user messaging stats.',
+    });
+
+    return {
+      windowHours,
+      sentCount,
+      readCount,
+      unreadCount: unreadSnap.size,
+      readRatePercent,
+      lastSentAtMs,
+      lastReadAtMs,
+    };
+  } catch (error) {
+    const mapped = toHttpsError(error);
+    try {
+      await writeAdminAuditLog({
+        adminUid,
+        targetUserUid: toOptionalString(payload.targetUserUid),
+        action,
+        payload,
+        status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
+        message: mapped.message,
+      });
+      await writeAppErrorLog({
+        category: 'functions',
+        scope: action,
+        code: mapped.code,
+        message: mapped.message,
+        context: { adminUid, payload },
+      });
+    } catch {
+      // Ignore logging failures.
+    }
+    throw mapped;
+  }
+});
+
 export const adminUsersIndexOnUserWrite = functions.firestore
   .document('users/{uid}')
   .onWrite(async (change, context) => {
@@ -760,6 +857,29 @@ export const adminUsersIndexOnErrorLogCreate = functions.firestore
   .document('appErrorLogs/{logId}')
   .onCreate(async (snap) => {
     await maybeUpdateLastErrorOnUsersIndex(snap);
+  });
+
+export const adminUserInboxOnRead = functions.firestore
+  .document('users/{uid}/inbox/{messageId}')
+  .onUpdate(async (change, context) => {
+    const uid = toNonEmptyString(context.params.uid);
+    const messageId = toNonEmptyString(context.params.messageId);
+    if (!uid || !messageId) return;
+
+    const beforeReadAtMs = readTimestampMs(change.before.get('readAt'));
+    const afterReadAtMs = readTimestampMs(change.after.get('readAt'));
+    if (beforeReadAtMs != null || afterReadAtMs == null) return;
+
+    await writeUserActivityEvent({
+      uid,
+      type: 'notification_read',
+      metadata: {
+        messageId,
+        severity: toOptionalString(change.after.get('severity')) ?? 'info',
+        createdBy: toOptionalString(change.after.get('createdBy')),
+        readAtMs: afterReadAtMs,
+      },
+    });
   });
 
 export const adminRevokeUserSessions = functions.https.onCall(async (data, context) => {

@@ -10,8 +10,10 @@ import { useUserTasks } from '@/hooks/useUserTasks';
 import { useUserTodos } from '@/hooks/useUserTodos';
 import { useUserWorkspaces } from '@/hooks/useUserWorkspaces';
 import { useUserSettings } from '@/hooks/useUserSettings';
+import { useUserInboxMessages } from '@/hooks/useUserInboxMessages';
 import type { NoteDoc, TaskDoc, TodoDoc } from '@/types/firestore';
 import Link from 'next/link';
+import { trackEvent } from '@/lib/analytics';
 
 function formatFrDateTime(ts?: unknown | null) {
   if (!ts) return '';
@@ -47,6 +49,12 @@ function priorityDotClass(p?: TaskDoc['priority'] | TodoDoc['priority'] | null) 
   return 'bg-muted-foreground/40';
 }
 
+function inboxSeverityClass(severity?: string | null) {
+  if (severity === 'critical') return 'bg-rose-100 text-rose-700 border-rose-200';
+  if (severity === 'warn') return 'bg-amber-100 text-amber-700 border-amber-200';
+  return 'bg-sky-100 text-sky-700 border-sky-200';
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -60,6 +68,7 @@ export default function DashboardPage() {
   } = useUserNotes({ workspaceId, favoriteOnly: true, limit: 20 });
 
   const { data: userSettings } = useUserSettings();
+  const { data: inboxMessages, loading: inboxLoading, error: inboxError } = useUserInboxMessages({ limit: 8 });
   const isPro = userSettings?.plan === 'pro';
   const freeLimitMessage = 'Limite Free atteinte. Passe en Pro pour épingler plus de favoris.';
 
@@ -179,6 +188,21 @@ export default function DashboardPage() {
 
   const [noteActionError, setNoteActionError] = useState<string | null>(null);
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
+
+  const markInboxMessageRead = async (messageId: string) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid || !messageId) return;
+    try {
+      await updateDoc(doc(db, 'users', uid, 'inbox', messageId), {
+        readAt: serverTimestamp(),
+      });
+      void trackEvent('user_inbox_message_read', {
+        message_id_hint: messageId.slice(0, 6),
+      });
+    } catch (e) {
+      console.error('Error marking inbox message as read', e);
+    }
+  };
 
   const toggleNoteFavorite = async (note: NoteDoc) => {
     if (!note.id) return;
@@ -301,6 +325,58 @@ export default function DashboardPage() {
           {flashMessage}
         </div>
       )}
+
+      <section className="rounded-xl border border-border/70 bg-card p-4 shadow-sm space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-base font-semibold">Messages Smart Notes</h2>
+          <span className="text-xs text-muted-foreground">
+            {inboxMessages.filter((m) => !m.readAt).length} non lu(x)
+          </span>
+        </div>
+
+        {inboxLoading && <p className="text-sm text-muted-foreground">Chargement des messages…</p>}
+        {inboxError && <p className="text-sm text-destructive">Impossible de charger les messages.</p>}
+
+        {!inboxLoading && !inboxError && inboxMessages.length === 0 && (
+          <p className="text-sm text-muted-foreground">Aucun message interne pour le moment.</p>
+        )}
+
+        {!inboxLoading && !inboxError && inboxMessages.length > 0 && (
+          <ul className="space-y-2">
+            {inboxMessages.map((msg) => {
+              const isRead = !!msg.readAt;
+              const severity = typeof msg.severity === 'string' ? msg.severity : 'info';
+              return (
+                <li key={msg.id} className="rounded-lg border border-border bg-background p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-medium ${inboxSeverityClass(severity)}`}>
+                          {severity}
+                        </span>
+                        {!isRead && <span className="text-[11px] text-emerald-700">Nouveau</span>}
+                      </div>
+                      <p className="text-sm font-medium text-foreground">{msg.title}</p>
+                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">{msg.body}</p>
+                      <p className="text-xs text-muted-foreground">{formatFrDateTime(msg.createdAt)}</p>
+                    </div>
+
+                    {!isRead && msg.id ? (
+                      <button
+                        type="button"
+                        onClick={() => markInboxMessageRead(msg.id!)}
+                        className="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent"
+                      >
+                        Marquer lu
+                      </button>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
 
       <div
         ref={slidesContainerRef}

@@ -10,6 +10,7 @@ import type {
   AdminHealthSummary,
   AdminLookupUserResult,
   AdminRebuildUsersIndexResponse,
+  AdminUserMessagingStats,
   AdminUserActivityEvent,
 } from '@/types/admin';
 
@@ -105,6 +106,18 @@ export async function sendUserMessage(params: {
     { targetUserUid: string; title: string; body: string; severity?: 'info' | 'warn' | 'critical' },
     AdminActionResponse
   >(fbFunctions, 'adminSendUserMessage');
+  const res = await fn(params);
+  return res.data;
+}
+
+export async function getUserMessagingStats(params: {
+  targetUserUid: string;
+  windowHours?: number;
+}): Promise<AdminUserMessagingStats> {
+  const fn = httpsCallable<{ targetUserUid: string; windowHours?: number }, AdminUserMessagingStats>(
+    fbFunctions,
+    'adminGetUserMessagingStats',
+  );
   const res = await fn(params);
   return res.data;
 }

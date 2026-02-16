@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import {
   disableUserPremium,
   enableUserPremium,
+  getUserMessagingStats,
   listAuditLogs,
   listUserActivityEvents,
   listUsersIndex,
@@ -19,11 +20,13 @@ import type {
   AdminAuditLogItem,
   AdminCursor,
   AdminLookupUserResult,
+  AdminUserMessagingStats,
   AdminUserActivityEvent,
   AdminUserIndexItem,
   AdminUsersCursor,
   AdminUsersSortBy,
 } from '@/types/admin';
+import { trackEvent } from '@/lib/analytics';
 
 function formatDateTime(ms: number | null | undefined) {
   if (!ms || !Number.isFinite(ms)) return '—';
@@ -113,6 +116,9 @@ export default function AdminPage() {
   const [messageSending, setMessageSending] = useState(false);
   const [messageInfo, setMessageInfo] = useState<string | null>(null);
   const [messageError, setMessageError] = useState<string | null>(null);
+  const [messageStats, setMessageStats] = useState<AdminUserMessagingStats | null>(null);
+  const [messageStatsLoading, setMessageStatsLoading] = useState(false);
+  const [messageStatsError, setMessageStatsError] = useState<string | null>(null);
 
   const [recentUsers, setRecentUsers] = useState<string[]>([]);
 
@@ -232,10 +238,32 @@ export default function AdminPage() {
       });
       setMessageInfo(res.message);
       setMessageBody('');
+      void loadMessagingStats(lookupResult.uid);
+      void trackEvent('admin_send_user_message_success', {
+        severity: messageSeverity,
+        target_uid_hash_hint: lookupResult.uid.slice(0, 6),
+      });
     } catch (e) {
       setMessageError(e instanceof Error ? e.message : 'Envoi impossible.');
+      void trackEvent('admin_send_user_message_error', {
+        severity: messageSeverity,
+      });
     } finally {
       setMessageSending(false);
+    }
+  };
+
+  const loadMessagingStats = async (targetUserUid: string) => {
+    setMessageStatsLoading(true);
+    setMessageStatsError(null);
+    try {
+      const stats = await getUserMessagingStats({ targetUserUid, windowHours: 24 * 7 });
+      setMessageStats(stats);
+    } catch (e) {
+      setMessageStatsError(e instanceof Error ? e.message : 'Impossible de charger les métriques de messagerie.');
+      setMessageStats(null);
+    } finally {
+      setMessageStatsLoading(false);
     }
   };
 
@@ -321,7 +349,7 @@ export default function AdminPage() {
       setAuditFilterUserUid(user.uid);
       rememberRecentUser(user.uid);
       setActivityCursor(null);
-      await loadActivityEvents(user.uid, { reset: true });
+      await Promise.all([loadActivityEvents(user.uid, { reset: true }), loadMessagingStats(user.uid)]);
     } catch (e) {
       setLookupResult(null);
       setLookupError(e instanceof Error ? e.message : 'Lookup impossible.');
@@ -692,6 +720,7 @@ export default function AdminPage() {
                   <option value="ai_job_failed">ai_job_failed</option>
                   <option value="ai_job_done">ai_job_done</option>
                   <option value="notification_sent">notification_sent</option>
+                  <option value="notification_read">notification_read</option>
                 </select>
                 <button
                   type="button"
@@ -736,6 +765,23 @@ export default function AdminPage() {
 
           <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
             <h3 className="text-sm font-semibold text-slate-900">Message in-app (support)</h3>
+            <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
+              {messageStatsLoading && <p>Analyse messagerie…</p>}
+              {!messageStatsLoading && messageStats && (
+                <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+                  <p>Envoyés (7j): <strong>{messageStats.sentCount}</strong></p>
+                  <p>Lus (7j): <strong>{messageStats.readCount}</strong></p>
+                  <p>Non lus: <strong>{messageStats.unreadCount}</strong></p>
+                  <p>Taux de lecture: <strong>{messageStats.readRatePercent}%</strong></p>
+                  <p>Dernier envoi: <strong>{formatDateTime(messageStats.lastSentAtMs)}</strong></p>
+                  <p>Dernière lecture: <strong>{formatDateTime(messageStats.lastReadAtMs)}</strong></p>
+                </div>
+              )}
+              {!messageStatsLoading && !messageStats && !messageStatsError && (
+                <p>Aucune métrique disponible pour le moment.</p>
+              )}
+              {messageStatsError && <p className="text-destructive">{messageStatsError}</p>}
+            </div>
             <div className="mt-2 grid gap-2 md:grid-cols-3">
               <input
                 value={messageTitle}
