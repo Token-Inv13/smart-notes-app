@@ -128,10 +128,6 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   const [dockHiddenOnScroll, setDockHiddenOnScroll] = useState(false);
   const [dockDesktopTopClass, setDockDesktopTopClass] = useState("md:top-32");
 
-  const isAgendaRoute = pathname.startsWith("/tasks");
-  const isListOrNotesRoute = pathname.startsWith("/todo") || pathname.startsWith("/notes");
-  const dockMode = isAgendaRoute ? "agenda-sticky" : "floating";
-
   useEffect(() => {
     if (!mobileOpen) return;
     // Close the drawer on navigation to avoid stale overlay states.
@@ -490,7 +486,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
           )}
         </div>
 
-        <main className={`flex-1 p-4 min-w-0 ${isAgendaRoute ? "pb-36 md:pb-20" : "pb-24 md:pb-20"}`}>
+        <main className="flex-1 p-4 min-w-0 pb-[calc(6.5rem+env(safe-area-inset-bottom))] md:pb-20">
           <PwaInstallCta />
           {proactiveBanner ? (
             <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3">
@@ -521,8 +517,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
           {children}
           <SmartActionDock
             mobileHidden={mobileOpen}
-            mode={dockMode}
-            hiddenOnScroll={dockHiddenOnScroll && (isAgendaRoute || isListOrNotesRoute)}
+            hiddenOnScroll={dockHiddenOnScroll}
             desktopTopClass={dockDesktopTopClass}
             voiceAction={(
               <VoiceAgentButton

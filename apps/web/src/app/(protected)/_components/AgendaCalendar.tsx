@@ -1636,15 +1636,6 @@ export default function AgendaCalendar({
         </div>
       )}
 
-      <button
-        type="button"
-        className="fixed bottom-24 right-4 z-40 sm:hidden h-12 w-12 rounded-full bg-primary text-primary-foreground text-xl shadow-lg"
-        onClick={openQuickDraft}
-        aria-label="Créer un élément d’agenda"
-      >
-        +
-      </button>
-
       {draft && (
         <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Éditeur agenda">
           <button
