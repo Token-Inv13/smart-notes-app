@@ -395,7 +395,7 @@ async function maybeUpdateLastErrorOnUsersIndex(errorDoc) {
     }, { merge: true });
 }
 exports.adminLookupUser = functions.https.onCall(async (data, context) => {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e;
     const action = 'user_lookup';
     const adminUid = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid) !== null && _b !== void 0 ? _b : null;
     const payload = isObject(data) ? data : {};
@@ -414,6 +414,8 @@ exports.adminLookupUser = functions.https.onCall(async (data, context) => {
         const userRef = db.collection('users').doc(target.uid);
         const userSnap = await userRef.get();
         const userDoc = userSnap.exists && isObject(userSnap.data()) ? userSnap.data() : {};
+        const indexSnap = await db.collection('adminUsersIndex').doc(target.uid).get();
+        const indexDoc = indexSnap.exists && isObject(indexSnap.data()) ? indexSnap.data() : {};
         const [notesCount, tasksCount, todosCount, favoriteNotesCount, favoriteTasksCount, favoriteTodosCount] = await Promise.all([
             countQuery(db.collection('notes').where('userId', '==', target.uid)),
             countQuery(db.collection('tasks').where('userId', '==', target.uid)),
@@ -426,6 +428,9 @@ exports.adminLookupUser = functions.https.onCall(async (data, context) => {
         const createdAtMs = meta.creationTime ? Date.parse(meta.creationTime) : null;
         const lastLoginAtMs = meta.lastSignInTime ? Date.parse(meta.lastSignInTime) : null;
         const userDocInfo = getUserDocDisplay(userDoc);
+        const premiumUntilMs = readTimestampMs(resolvePremiumUntil(userDoc));
+        const status = resolveUserStatus(userDoc, target.disabled);
+        const lastErrorAtMs = readTimestampMs((_c = indexDoc.lastErrorAt) !== null && _c !== void 0 ? _c : userDoc.lastErrorAt);
         await writeAdminAuditLog({
             adminUid: actorUid,
             targetUserUid: target.uid,
@@ -436,11 +441,14 @@ exports.adminLookupUser = functions.https.onCall(async (data, context) => {
         });
         return {
             uid: target.uid,
-            email: (_c = target.email) !== null && _c !== void 0 ? _c : null,
+            email: (_d = target.email) !== null && _d !== void 0 ? _d : null,
             authCreatedAtMs: Number.isFinite(createdAtMs) ? createdAtMs : null,
             lastLoginAtMs: Number.isFinite(lastLoginAtMs) ? lastLoginAtMs : null,
             lastSeenAtMs: userDocInfo.updatedAtMs,
             plan: userDocInfo.plan,
+            status,
+            premiumUntilMs,
+            lastErrorAtMs,
             stripeSubscriptionStatus: userDocInfo.stripeSubscriptionStatus,
             userDocCreatedAtMs: userDocInfo.createdAtMs,
             counts: {
@@ -456,7 +464,7 @@ exports.adminLookupUser = functions.https.onCall(async (data, context) => {
         try {
             await writeAdminAuditLog({
                 adminUid,
-                targetUserUid: toOptionalString((_d = (isObject(payload) ? payload.targetUserUid : null)) !== null && _d !== void 0 ? _d : null),
+                targetUserUid: toOptionalString((_e = (isObject(payload) ? payload.targetUserUid : null)) !== null && _e !== void 0 ? _e : null),
                 action,
                 payload,
                 status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
@@ -470,7 +478,7 @@ exports.adminLookupUser = functions.https.onCall(async (data, context) => {
                 context: { adminUid, payload },
             });
         }
-        catch (_e) {
+        catch (_f) {
             // Ignore logging failures.
         }
         throw mapped;

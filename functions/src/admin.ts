@@ -556,6 +556,8 @@ export const adminLookupUser = functions.https.onCall(async (data, context) => {
     const userRef = db.collection('users').doc(target.uid);
     const userSnap = await userRef.get();
     const userDoc = userSnap.exists && isObject(userSnap.data()) ? (userSnap.data() as Record<string, unknown>) : {};
+    const indexSnap = await db.collection('adminUsersIndex').doc(target.uid).get();
+    const indexDoc = indexSnap.exists && isObject(indexSnap.data()) ? (indexSnap.data() as Record<string, unknown>) : {};
 
     const [notesCount, tasksCount, todosCount, favoriteNotesCount, favoriteTasksCount, favoriteTodosCount] =
       await Promise.all([
@@ -572,6 +574,9 @@ export const adminLookupUser = functions.https.onCall(async (data, context) => {
     const lastLoginAtMs = meta.lastSignInTime ? Date.parse(meta.lastSignInTime) : null;
 
     const userDocInfo = getUserDocDisplay(userDoc);
+    const premiumUntilMs = readTimestampMs(resolvePremiumUntil(userDoc));
+    const status = resolveUserStatus(userDoc, target.disabled);
+    const lastErrorAtMs = readTimestampMs(indexDoc.lastErrorAt ?? userDoc.lastErrorAt);
 
     await writeAdminAuditLog({
       adminUid: actorUid,
@@ -589,6 +594,9 @@ export const adminLookupUser = functions.https.onCall(async (data, context) => {
       lastLoginAtMs: Number.isFinite(lastLoginAtMs) ? lastLoginAtMs : null,
       lastSeenAtMs: userDocInfo.updatedAtMs,
       plan: userDocInfo.plan,
+      status,
+      premiumUntilMs,
+      lastErrorAtMs,
       stripeSubscriptionStatus: userDocInfo.stripeSubscriptionStatus,
       userDocCreatedAtMs: userDocInfo.createdAtMs,
       counts: {

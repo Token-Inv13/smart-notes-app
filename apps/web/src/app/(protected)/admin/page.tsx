@@ -30,6 +30,54 @@ function prettyPlan(plan: 'free' | 'pro') {
   return plan === 'pro' ? 'Premium' : 'Free';
 }
 
+function computeAccountHealth(user: AdminLookupUserResult): {
+  label: 'Sain' | 'Inactif' | 'Erreurs' | 'Bloqué' | 'Premium';
+  toneClass: string;
+  description: string;
+} {
+  const nowMs = Date.now();
+  const premiumActive = user.premiumUntilMs != null && user.premiumUntilMs > nowMs;
+  const inactiveThreshold = nowMs - 7 * 24 * 60 * 60 * 1000;
+  const errorsThreshold = nowMs - 24 * 60 * 60 * 1000;
+  const isInactive = user.lastSeenAtMs == null || user.lastSeenAtMs < inactiveThreshold;
+  const hasRecentErrors = user.lastErrorAtMs != null && user.lastErrorAtMs >= errorsThreshold;
+
+  if (user.status === 'blocked') {
+    return {
+      label: 'Bloqué',
+      toneClass: 'bg-rose-100 text-rose-800',
+      description: 'Compte bloqué: accès utilisateur restreint.',
+    };
+  }
+  if (hasRecentErrors) {
+    return {
+      label: 'Erreurs',
+      toneClass: 'bg-amber-100 text-amber-800',
+      description: 'Erreurs récentes détectées (< 24h).',
+    };
+  }
+  if (isInactive) {
+    return {
+      label: 'Inactif',
+      toneClass: 'bg-slate-200 text-slate-700',
+      description: 'Aucune activité récente (> 7 jours).',
+    };
+  }
+  if (premiumActive || user.plan === 'pro') {
+    return {
+      label: 'Premium',
+      toneClass: 'bg-violet-100 text-violet-800',
+      description: 'Compte premium actif.',
+    };
+  }
+
+  return {
+    label: 'Sain',
+    toneClass: 'bg-emerald-100 text-emerald-800',
+    description: 'Compte actif sans anomalie récente.',
+  };
+}
+
 export default function AdminPage() {
   const [query, setQuery] = useState('');
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -65,6 +113,7 @@ export default function AdminPage() {
   const [rebuildError, setRebuildError] = useState<string | null>(null);
 
   const canActOnUid = lookupResult?.uid ?? null;
+  const accountHealth = lookupResult ? computeAccountHealth(lookupResult) : null;
 
   const effectiveUidFilter = useMemo(() => {
     const trimmed = auditFilterUserUid.trim();
@@ -453,8 +502,21 @@ export default function AdminPage() {
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-base font-semibold text-slate-900">Fiche utilisateur</h2>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">UID: {lookupResult.uid}</span>
+            <div className="flex items-center gap-2">
+              {accountHealth && (
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${accountHealth.toneClass}`}>
+                  {accountHealth.label}
+                </span>
+              )}
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">UID: {lookupResult.uid}</span>
+            </div>
           </div>
+
+          {accountHealth && (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+              <span className="font-semibold">Diagnostic compte:</span> {accountHealth.description}
+            </div>
+          )}
 
           <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><p className="text-xs text-slate-500">Email</p><p className="mt-1 font-medium text-slate-900">{lookupResult.email ?? '—'}</p></div>

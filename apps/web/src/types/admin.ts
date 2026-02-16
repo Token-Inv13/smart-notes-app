@@ -6,6 +6,9 @@ export type AdminLookupUserResult = {
   lastLoginAtMs: number | null;
   lastSeenAtMs: number | null;
   plan: 'free' | 'pro';
+  status: 'active' | 'blocked';
+  premiumUntilMs: number | null;
+  lastErrorAtMs: number | null;
   stripeSubscriptionStatus: string | null;
   counts: {
     notes: number;
