@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -152,6 +152,7 @@ export default function AgendaCalendar({
   onVisibleRangeChange,
 }: AgendaCalendarProps) {
   const calendarRef = useRef<FullCalendar | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number; at: number } | null>(null);
   const [viewMode, setViewMode] = useState<CalendarViewMode>("timeGridWeek");
   const [displayMode, setDisplayMode] = useState<AgendaDisplayMode>("calendar");
   const [editScope, setEditScope] = useState<"series" | "occurrence">("series");
@@ -761,12 +762,72 @@ export default function AgendaCalendar({
     );
   };
 
+  const keepPageScrollStable = () => {
+    if (typeof window === "undefined") return;
+    const lockedY = window.scrollY;
+    window.requestAnimationFrame(() => {
+      if (Math.abs(window.scrollY - lockedY) > 1) {
+        window.scrollTo({ top: lockedY });
+      }
+    });
+  };
+
   const jump = (action: "prev" | "next" | "today") => {
     const api = calendarRef.current?.getApi();
     if (!api) return;
     if (action === "prev") api.prev();
     if (action === "next") api.next();
     if (action === "today") api.today();
+    keepPageScrollStable();
+  };
+
+  const goToDate = (date: Date) => {
+    const api = calendarRef.current?.getApi();
+    if (!api) return;
+    api.gotoDate(date);
+    keepPageScrollStable();
+  };
+
+  const handleCalendarTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    if (displayMode !== "calendar") return;
+    if (typeof window !== "undefined" && window.innerWidth >= 768) return;
+    if (event.touches.length !== 1) {
+      touchStartRef.current = null;
+      return;
+    }
+
+    const touch = event.touches[0];
+    if (!touch) return;
+    touchStartRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      at: Date.now(),
+    };
+  };
+
+  const handleCalendarTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
+    if (displayMode !== "calendar") return;
+    if (typeof window !== "undefined" && window.innerWidth >= 768) return;
+
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!start) return;
+
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    const elapsed = Date.now() - start.at;
+
+    if (elapsed > 700) return;
+    if (absX < 56) return;
+    if (absX < absY * 1.3) return;
+
+    if (dx < 0) jump("next");
+    else jump("prev");
   };
 
   const openQuickDraft = useCallback(() => {
@@ -1187,7 +1248,7 @@ export default function AgendaCalendar({
                 if (!navDate) return;
                 const date = new Date(`${navDate}T12:00:00`);
                 if (Number.isNaN(date.getTime())) return;
-                calendarRef.current?.getApi().gotoDate(date);
+                goToDate(date);
               }}
             >
               Aller
@@ -1391,7 +1452,7 @@ export default function AgendaCalendar({
               if (!navDate) return;
               const date = new Date(`${navDate}T12:00:00`);
               if (Number.isNaN(date.getTime())) return;
-              calendarRef.current?.getApi().gotoDate(date);
+              goToDate(date);
             }}
           >
             Aller à la date
@@ -1407,6 +1468,8 @@ export default function AgendaCalendar({
           {displayMode === "calendar" ? (
             <div
               className={`agenda-premium-calendar ${effectiveCalendarDensity === "compact" ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"}`}
+              onTouchStart={handleCalendarTouchStart}
+              onTouchEnd={handleCalendarTouchEnd}
             >
               <FullCalendar
               ref={calendarRef}
