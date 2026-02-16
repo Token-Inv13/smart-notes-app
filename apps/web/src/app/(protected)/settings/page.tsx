@@ -829,21 +829,17 @@ export default function SettingsPage() {
             )}
           </section>
 
-          <section className="border border-border/70 rounded-xl p-5 bg-card shadow-sm space-y-4">
+          <section className="border border-border/60 rounded-xl p-4 bg-card shadow-sm space-y-3">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-base font-semibold">Assistant</h2>
-              <div className="text-xs text-muted-foreground">JTBD</div>
+              <div className="text-xs text-muted-foreground">Réglages</div>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Configure l’assistant personnel: objectif principal, proactivité et politique IA.
-            </p>
+            <p className="text-xs text-muted-foreground">Configuration compacte: mode, objectif et options avancées.</p>
 
-            <div className="flex items-center justify-between gap-4">
+            <div className="rounded-lg border border-border/50 bg-background/60 px-3 py-2 flex items-center justify-between gap-4">
               <div className="min-w-0">
                 <div className="text-sm font-medium">Assistant activé</div>
-                <div className="text-sm text-muted-foreground">
-                  {assistantEnabledDraft ? "Activé" : "Désactivé"}
-                </div>
+                <div className="text-xs text-muted-foreground">{assistantEnabledDraft ? "Activé" : "Désactivé"}</div>
               </div>
 
               <button
@@ -852,70 +848,69 @@ export default function SettingsPage() {
                 disabled={savingAssistant}
                 aria-label="Assistant activé"
                 title="Assistant activé"
-                className={`relative inline-flex h-9 w-14 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background disabled:opacity-50 ${
+                className={`relative inline-flex h-8 w-14 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background disabled:opacity-50 ${
                   assistantEnabledDraft ? "bg-primary/30 border-primary/30" : "bg-muted border-border"
                 }`}
               >
                 <span
-                  className={`inline-block h-7 w-7 rounded-full bg-background shadow-sm transition-transform ${
-                    assistantEnabledDraft ? "translate-x-6" : "translate-x-1"
+                  className={`inline-block h-6 w-6 rounded-full bg-background shadow-sm transition-transform ${
+                    assistantEnabledDraft ? "translate-x-7" : "translate-x-1"
                   }`}
                 />
               </button>
             </div>
 
-            <div className="space-y-1">
-              <div className="text-sm font-medium">Mode assistant (simple)</div>
-              <select
-                value={assistantSimpleModeDraft}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v === "calm" || v === "balanced" || v === "auto") {
-                    applyAssistantSimpleMode(v);
-                  }
-                }}
-                className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
-                aria-label="Mode assistant simple"
-              >
-                <option value="calm">Calme (minimal, non intrusif)</option>
-                <option value="balanced">Équilibré (recommandé)</option>
-                <option value="auto">Auto (proactif, plus d’automatisation)</option>
-              </select>
-              <p className="text-xs text-muted-foreground">Ce mode applique automatiquement les réglages recommandés.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <div className="text-sm font-medium">Mode assistant</div>
+                <select
+                  value={assistantSimpleModeDraft}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "calm" || v === "balanced" || v === "auto") {
+                      applyAssistantSimpleMode(v);
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                  aria-label="Mode assistant simple"
+                >
+                  <option value="calm">Calme</option>
+                  <option value="balanced">Équilibré (recommandé)</option>
+                  <option value="auto">Auto</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <div className="text-sm font-medium">JTBD principal</div>
+                <select
+                  value={assistantJtbdDraft}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "daily_planning" || v === "dont_forget" || v === "meetings" || v === "projects") {
+                      setAssistantJtbdDraft(v);
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                  aria-label="JTBD principal"
+                >
+                  <option value="daily_planning">Planifier ma journée</option>
+                  <option value="dont_forget">Ne rien oublier / suivi</option>
+                  <option value="meetings">Réunions & décisions</option>
+                  <option value="projects">Projets (pilotage)</option>
+                </select>
+              </div>
             </div>
 
-            <div className="space-y-1">
-              <button
-                type="button"
-                onClick={() => setAssistantAdvancedOpen((v) => !v)}
-                className="text-xs text-muted-foreground hover:underline"
-              >
-                {assistantAdvancedOpen ? "Masquer les options avancées" : "Afficher les options avancées"}
-              </button>
-            </div>
-
-            <div className="space-y-1">
-              <div className="text-sm font-medium">JTBD principal</div>
-              <select
-                value={assistantJtbdDraft}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v === "daily_planning" || v === "dont_forget" || v === "meetings" || v === "projects") {
-                    setAssistantJtbdDraft(v);
-                  }
-                }}
-                className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
-                aria-label="JTBD principal"
-              >
-                <option value="daily_planning">Planifier ma journée</option>
-                <option value="dont_forget">Ne rien oublier / suivi</option>
-                <option value="meetings">Réunions & décisions</option>
-                <option value="projects">Projets (pilotage)</option>
-              </select>
-            </div>
+            <button
+              type="button"
+              onClick={() => setAssistantAdvancedOpen((v) => !v)}
+              className="text-xs text-muted-foreground hover:underline w-fit"
+            >
+              {assistantAdvancedOpen ? "Masquer les options avancées" : "Afficher les options avancées"}
+            </button>
 
             {assistantAdvancedOpen ? (
-              <>
+              <div className="rounded-md border border-border/50 bg-muted/20 p-3 space-y-3">
                 <div className="space-y-1">
                   <div className="text-sm font-medium">Proactivité</div>
                   <select
@@ -926,53 +921,52 @@ export default function SettingsPage() {
                         setAssistantProactivityDraft(v);
                       }
                     }}
-                    className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
+                    className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                     aria-label="Proactivité"
                   >
                     <option value="off">Off</option>
-                    <option value="suggestions">Suggestions (B)</option>
-                    <option value="proactive">Proactif (C)</option>
+                    <option value="suggestions">Suggestions</option>
+                    <option value="proactive">Proactif</option>
                   </select>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="space-y-1">
-                    <div className="text-sm font-medium">Silence — début</div>
+                    <div className="text-sm font-medium">Silence début</div>
                     <input
                       type="time"
                       value={assistantQuietStartDraft}
                       onChange={(e) => setAssistantQuietStartDraft(e.target.value)}
-                      className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
+                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                       aria-label="Silence début"
                     />
                   </div>
                   <div className="space-y-1">
-                    <div className="text-sm font-medium">Silence — fin</div>
+                    <div className="text-sm font-medium">Silence fin</div>
                     <input
                       type="time"
                       value={assistantQuietEndDraft}
                       onChange={(e) => setAssistantQuietEndDraft(e.target.value)}
-                      className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
+                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                       aria-label="Silence fin"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">Notif/jour max</div>
+                    <input
+                      type="number"
+                      min={0}
+                      max={50}
+                      value={assistantMaxPerDayDraft}
+                      onChange={(e) => setAssistantMaxPerDayDraft(Number(e.target.value))}
+                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                      aria-label="Budget notifications"
                     />
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <div className="text-sm font-medium">Budget notifications (max / jour)</div>
-                  <input
-                    type="number"
-                    min={0}
-                    max={50}
-                    value={assistantMaxPerDayDraft}
-                    onChange={(e) => setAssistantMaxPerDayDraft(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
-                    aria-label="Budget notifications"
-                  />
-                </div>
-
                 <div className="space-y-2">
-                  <div className="text-sm font-medium">IA</div>
+                  <div className="text-sm font-medium">Politique IA</div>
                   <label className="flex items-center gap-2 text-sm">
                     <input type="checkbox" checked={assistantAIEnabledDraft} onChange={(e) => setAssistantAIEnabledDraft(e.target.checked)} />
                     Activer l’IA
@@ -996,10 +990,10 @@ export default function SettingsPage() {
                     Autoriser le contenu complet
                   </label>
                 </div>
-              </>
+              </div>
             ) : null}
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={handleSaveAssistantSettings}
@@ -1008,11 +1002,8 @@ export default function SettingsPage() {
               >
                 {savingAssistant ? "Enregistrement…" : "Enregistrer"}
               </button>
-              <Link
-                href="/assistant"
-                className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-border bg-background text-sm font-medium hover:bg-accent/60"
-              >
-                Ouvrir l’assistant
+              <Link href="/assistant" className="text-xs text-muted-foreground hover:underline">
+                Ouvrir l’assistant (optionnel)
               </Link>
             </div>
             {assistantMessage && <p className="text-sm">{assistantMessage}</p>}

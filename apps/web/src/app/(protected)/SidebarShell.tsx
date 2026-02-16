@@ -127,6 +127,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dockHiddenOnScroll, setDockHiddenOnScroll] = useState(false);
   const [dockDesktopTopClass, setDockDesktopTopClass] = useState("md:top-32");
+  const isSettingsRoute = pathname.startsWith("/settings");
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -519,22 +520,26 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
             mobileHidden={mobileOpen}
             hiddenOnScroll={dockHiddenOnScroll}
             desktopTopClass={dockDesktopTopClass}
-            voiceAction={(
-              <VoiceAgentButton
-                mobileHidden={mobileOpen}
-                renderCustomTrigger={({ onClick, ariaLabel, title }) => (
-                  <button
-                    type="button"
-                    onClick={onClick}
-                    aria-label={ariaLabel}
-                    title={title}
-                    className="h-10 w-10 rounded-full border border-white/10 bg-white/5 text-white/85 text-lg transition-transform duration-150 hover:scale-[1.04] hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 active:scale-95"
-                  >
-                    🎤
-                  </button>
-                )}
-              />
-            )}
+            voiceAction={
+              isSettingsRoute
+                ? undefined
+                : (
+                    <VoiceAgentButton
+                      mobileHidden={mobileOpen}
+                      renderCustomTrigger={({ onClick, ariaLabel, title }) => (
+                        <button
+                          type="button"
+                          onClick={onClick}
+                          aria-label={ariaLabel}
+                          title={title}
+                          className="h-10 w-10 rounded-full border border-white/10 bg-white/5 text-white/85 text-lg transition-transform duration-150 hover:scale-[1.04] hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 active:scale-95"
+                        >
+                          🎤
+                        </button>
+                      )}
+                    />
+                  )
+            }
             createAction={(
               <CreateButton
                 mobileHidden={mobileOpen}

@@ -6,7 +6,7 @@ type Props = {
   mobileHidden?: boolean;
   hiddenOnScroll?: boolean;
   desktopTopClass?: string;
-  voiceAction: ReactNode;
+  voiceAction?: ReactNode;
   createAction: ReactNode;
 };
 
@@ -17,6 +17,7 @@ export default function SmartActionDock({
   voiceAction,
   createAction,
 }: Props) {
+  const hasVoiceAction = Boolean(voiceAction);
   const visibilityClass = mobileHidden ? "hidden md:flex" : "flex";
   const mobileLayoutClass = "max-md:right-[calc(0.75rem+env(safe-area-inset-right))] max-md:rounded-full";
   const hiddenClass = hiddenOnScroll
@@ -29,11 +30,14 @@ export default function SmartActionDock({
       role="group"
       aria-label="Actions rapides"
     >
-      <div className="flex items-center justify-center px-1.5 py-1">
-        {voiceAction}
-      </div>
-
-      <div className="h-7 w-px bg-white/15" aria-hidden="true" />
+      {hasVoiceAction ? (
+        <>
+          <div className="flex items-center justify-center px-1.5 py-1">
+            {voiceAction}
+          </div>
+          <div className="h-7 w-px bg-white/15" aria-hidden="true" />
+        </>
+      ) : null}
 
       <div className="flex items-center justify-center px-1.5 py-1">
         {createAction}
