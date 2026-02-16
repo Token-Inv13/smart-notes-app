@@ -303,7 +303,7 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
       onCreated?.();
     } catch (e) {
       console.error("Error creating note", e);
-      setCreateError(toUserErrorMessage(e, "Erreur lors de la création de la note."));
+      setCreateError(toUserErrorMessage(e, "Impossible de créer la note."));
     } finally {
       setCreating(false);
     }

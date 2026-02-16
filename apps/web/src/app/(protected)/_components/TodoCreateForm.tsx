@@ -214,7 +214,7 @@ export default function TodoCreateForm({
   const submit = async () => {
     const user = auth.currentUser;
     if (!user) {
-      setCreateError("Tu dois être connecté.");
+      setCreateError("Session expirée ou accès refusé. Recharge la page et reconnecte-toi.");
       return;
     }
 
@@ -224,7 +224,7 @@ export default function TodoCreateForm({
         onCancel?.();
         return;
       }
-      setCreateError("Le titre est requis.");
+      setCreateError("Le titre est obligatoire.");
       return;
     }
 
@@ -255,7 +255,7 @@ export default function TodoCreateForm({
       onCreated?.(ref.id);
     } catch (e) {
       console.error("Error creating todo", e);
-      setCreateError(toUserErrorMessage(e, "Erreur lors de la création de la checklist."));
+      setCreateError(toUserErrorMessage(e, "Impossible de créer la checklist."));
     } finally {
       setCreating(false);
     }

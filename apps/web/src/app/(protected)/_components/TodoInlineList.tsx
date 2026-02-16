@@ -247,7 +247,6 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
       {error && (
         <div className="sn-alert sn-alert--error">
           Impossible de charger la checklist pour le moment.
-          {error.message ? ` (${error.message})` : ""}
         </div>
       )}
 

@@ -281,7 +281,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
       onCreated?.();
     } catch (e) {
       console.error("Error creating task", e);
-      setCreateError(toUserErrorMessage(e, "Erreur lors de la création de l’élément d’agenda."));
+      setCreateError(toUserErrorMessage(e, "Impossible de créer l’élément d’agenda."));
     } finally {
       setCreating(false);
     }
@@ -464,7 +464,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
           disabled={creating || !canCreate}
           className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50"
         >
-          {creating ? "Création…" : "Ajouter à l’Agenda"}
+          {creating ? "Création…" : "Créer dans l’agenda"}
         </button>
       </div>
 
