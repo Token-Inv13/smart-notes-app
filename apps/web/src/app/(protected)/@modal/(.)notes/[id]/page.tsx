@@ -9,6 +9,7 @@ import { auth, db, storage } from "@/lib/firebase";
 import { exportNotePdf } from "@/lib/pdf/exportPdf";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import { sanitizeNoteHtml } from "@/lib/richText";
+import { toUserErrorMessage } from "@/lib/userError";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import type { NoteAttachment, NoteDoc } from "@/types/firestore";
@@ -312,21 +313,6 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
             ? err.customData.serverResponse
             : undefined;
 
-      let serverResponseSummary: string | undefined;
-      if (serverResponse) {
-        try {
-          const parsed = JSON.parse(serverResponse);
-          serverResponseSummary =
-            typeof parsed?.error?.message === "string"
-              ? parsed.error.message
-              : typeof parsed?.error === "string"
-                ? parsed.error
-                : serverResponse.slice(0, 200);
-        } catch {
-          serverResponseSummary = serverResponse.slice(0, 200);
-        }
-      }
-
       console.error("Error uploading attachment", {
         code,
         message,
@@ -342,15 +328,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
         return;
       }
 
-      const uiMsg = [
-        code ? `[${code}]` : null,
-        message ?? null,
-        serverResponseSummary ? `serverResponse: ${serverResponseSummary}` : null,
-      ]
-        .filter(Boolean)
-        .join(" ");
-
-      setAttachmentError(uiMsg || "Erreur lors de l’ajout du fichier.");
+      setAttachmentError(toUserErrorMessage(e, "Erreur lors de l’ajout du fichier."));
     } finally {
       setUploadingAttachment(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -394,7 +372,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
       }
     } catch (e) {
       console.error("Error downloading attachment", e);
-      setAttachmentError(e instanceof Error ? e.message : "Erreur lors du téléchargement.");
+      setAttachmentError(toUserErrorMessage(e, "Erreur lors du téléchargement."));
     } finally {
       setBusyAttachmentId(null);
     }
@@ -432,7 +410,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
       setNote((prev) => (prev ? { ...prev, attachments: next } : prev));
     } catch (e) {
       console.error("Error deleting attachment", e);
-      setAttachmentError(e instanceof Error ? e.message : "Erreur lors de la suppression du fichier.");
+      setAttachmentError(toUserErrorMessage(e, "Erreur lors de la suppression du fichier."));
     } finally {
       setUploadingAttachment(false);
       setBusyAttachmentId(null);
@@ -522,7 +500,9 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
           void invalidateAuthSession();
           return;
         }
-        const msg = e instanceof Error ? e.message : "Erreur lors du chargement.";
+        const msg = toUserErrorMessage(e, "Erreur lors du chargement.", {
+          allowMessages: ["Note introuvable.", "Accès refusé.", "Tu dois être connecté.", "ID de note manquant."],
+        });
         if (!cancelled) setError(msg);
       } finally {
         if (!cancelled) setLoading(false);
@@ -546,7 +526,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
       await exportNotePdf(note, workspaceName);
       setExportFeedback("PDF téléchargé.");
     } catch (e) {
-      setEditError(e instanceof Error ? e.message : "Erreur lors de l’export PDF.");
+      setEditError(toUserErrorMessage(e, "Erreur lors de l’export PDF."));
     }
   };
 
@@ -584,7 +564,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
 
       setExportFeedback("Export téléchargé.");
     } catch (e) {
-      setEditError(e instanceof Error ? e.message : "Erreur lors de l’export.");
+      setEditError(toUserErrorMessage(e, "Erreur lors de l’export."));
     }
   };
 
@@ -617,7 +597,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
 
       throw new Error("Partage non supporté sur cet appareil.");
     } catch (e) {
-      setEditError(e instanceof Error ? e.message : "Erreur lors du partage.");
+      setEditError(toUserErrorMessage(e, "Erreur lors du partage.", { allowMessages: ["Partage non supporté sur cet appareil."] }));
     }
   };
 
@@ -758,7 +738,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
       return true;
     } catch (e) {
       console.error("Error updating note (modal)", e);
-      setEditError(e instanceof Error ? e.message : "Erreur lors de la modification de la note.");
+      setEditError(toUserErrorMessage(e, "Erreur lors de la modification de la note."));
       return false;
     } finally {
       setSaving(false);
@@ -841,7 +821,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
       router.back();
     } catch (e) {
       console.error("Error archiving note (modal)", e);
-      setEditError(e instanceof Error ? e.message : "Erreur lors de l’archivage de la note.");
+      setEditError(toUserErrorMessage(e, "Erreur lors de l’archivage de la note."));
     } finally {
       setSaving(false);
     }
@@ -866,7 +846,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
       router.back();
     } catch (e) {
       console.error("Error deleting note (modal)", e);
-      setEditError(e instanceof Error ? e.message : "Erreur lors de la suppression de la note.");
+      setEditError(toUserErrorMessage(e, "Erreur lors de la suppression de la note."));
     } finally {
       setDeleting(false);
     }

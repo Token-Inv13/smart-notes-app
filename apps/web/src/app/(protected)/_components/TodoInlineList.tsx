@@ -7,6 +7,7 @@ import { auth, db } from "@/lib/firebase";
 import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
+import { toUserErrorMessage } from "@/lib/userError";
 import type { TodoDoc } from "@/types/firestore";
 
 interface TodoInlineListProps {
@@ -213,7 +214,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
       window.setTimeout(() => setActionFeedback(null), 1800);
     } catch (e) {
       console.error("Error toggling todo completed", e);
-      setEditError(e instanceof Error ? e.message : "Erreur lors de la mise à jour.");
+      setEditError(toUserErrorMessage(e, "Erreur lors de la mise à jour."));
     }
   };
 
@@ -235,7 +236,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
       });
     } catch (e) {
       console.error("Error toggling todo favorite", e);
-      setEditError(e instanceof Error ? e.message : "Erreur lors de la mise à jour.");
+      setEditError(toUserErrorMessage(e, "Erreur lors de la mise à jour."));
     }
   };
 
@@ -438,16 +439,8 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                 <li key={todo.id}>
                   <div
                     className={`sn-card p-4 relative ${todo.completed ? "opacity-80" : ""} ${todo.id ? "cursor-pointer" : ""} ${todo.id ? "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40" : ""}`}
-                    role={todo.id ? "button" : undefined}
-                    tabIndex={todo.id ? 0 : -1}
                     aria-label={todo.id ? `Ouvrir la checklist ${todo.title}` : undefined}
                     onClick={() => openTodoDetail(todo.id)}
-                    onKeyDown={(e) => {
-                      if (!todo.id) return;
-                      if (e.key !== "Enter" && e.key !== " ") return;
-                      e.preventDefault();
-                      openTodoDetail(todo.id);
-                    }}
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">

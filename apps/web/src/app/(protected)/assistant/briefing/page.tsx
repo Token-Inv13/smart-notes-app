@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { FirebaseError } from "firebase/app";
 import { doc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { auth, db, functions as fbFunctions } from "@/lib/firebase";
@@ -9,6 +8,7 @@ import { useAssistantSettings } from "@/hooks/useAssistantSettings";
 import { useUserAssistantSuggestions } from "@/hooks/useUserAssistantSuggestions";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
+import { toUserErrorMessage } from "@/lib/userError";
 import type { AssistantSuggestionDoc } from "@/types/firestore";
 
 const CONSENT_VERSION = 1;
@@ -219,13 +219,7 @@ export default function AssistantBriefingPage() {
         void invalidateAuthSession();
         return;
       }
-      if (e instanceof FirebaseError) {
-        setActionError(`${e.code}: ${e.message}`);
-      } else if (e instanceof Error) {
-        setActionError(e.message);
-      } else {
-        setActionError("Impossible d’enregistrer le feedback.");
-      }
+      setActionError(toUserErrorMessage(e, "Impossible d’enregistrer le feedback."));
     } finally {
       setFeedbackBusySuggestionId(null);
     }
@@ -256,13 +250,7 @@ export default function AssistantBriefingPage() {
         void invalidateAuthSession();
         return;
       }
-      if (e instanceof FirebaseError) {
-        setActionError(`${e.code}: ${e.message}`);
-      } else if (e instanceof Error) {
-        setActionError(e.message);
-      } else {
-        setActionError("Impossible d’accepter la suggestion.");
-      }
+      setActionError(toUserErrorMessage(e, "Impossible d’accepter la suggestion."));
     } finally {
       setBusySuggestionId(null);
     }
@@ -287,13 +275,7 @@ export default function AssistantBriefingPage() {
         void invalidateAuthSession();
         return;
       }
-      if (e instanceof FirebaseError) {
-        setActionError(`${e.code}: ${e.message}`);
-      } else if (e instanceof Error) {
-        setActionError(e.message);
-      } else {
-        setActionError("Impossible de refuser la suggestion.");
-      }
+      setActionError(toUserErrorMessage(e, "Impossible de refuser la suggestion."));
     } finally {
       setBusySuggestionId(null);
     }

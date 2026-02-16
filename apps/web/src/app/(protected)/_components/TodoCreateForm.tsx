@@ -6,6 +6,7 @@ import { httpsCallable } from "firebase/functions";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { auth, db, functions as fbFunctions } from "@/lib/firebase";
 import { parseLocalDateToTimestamp } from "@/lib/datetime";
+import { toUserErrorMessage } from "@/lib/userError";
 import type { TodoDoc } from "@/types/firestore";
 import DictationMicButton from "./DictationMicButton";
 import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
@@ -201,9 +202,7 @@ export default function TodoCreateForm({
       if (e instanceof FirebaseError) {
         const code = String(e.code || "");
         if (code.includes("internal")) setAssistantError("Aide à la rédaction indisponible pour le moment. Réessaie dans quelques secondes.");
-        else setAssistantError(`${e.code}: ${e.message}`);
-      } else if (e instanceof Error) {
-        setAssistantError(e.message);
+        else setAssistantError(toUserErrorMessage(e, "Impossible d’appliquer l’action assistant."));
       } else {
         setAssistantError("Impossible d’appliquer l’action assistant.");
       }
@@ -256,13 +255,7 @@ export default function TodoCreateForm({
       onCreated?.(ref.id);
     } catch (e) {
       console.error("Error creating todo", e);
-      if (e instanceof FirebaseError) {
-        setCreateError(`${e.code}: ${e.message}`);
-      } else if (e instanceof Error) {
-        setCreateError(e.message);
-      } else {
-        setCreateError("Erreur lors de la création de la checklist.");
-      }
+      setCreateError(toUserErrorMessage(e, "Erreur lors de la création de la checklist."));
     } finally {
       setCreating(false);
     }

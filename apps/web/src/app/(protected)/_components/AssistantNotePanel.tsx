@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FirebaseError } from "firebase/app";
 import { httpsCallable } from "firebase/functions";
 import { doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
 import { db, functions as fbFunctions } from "@/lib/firebase";
@@ -11,6 +10,7 @@ import { useNoteAssistantSuggestions } from "@/hooks/useNoteAssistantSuggestions
 import { useAuth } from "@/hooks/useAuth";
 import { formatTimestampForInput, parseLocalDateTimeToTimestamp } from "@/lib/datetime";
 import { htmlToReadableText, sanitizeNoteHtml } from "@/lib/richText";
+import { toUserErrorMessage } from "@/lib/userError";
 import type { AssistantAIResultDoc, AssistantSuggestionDoc, Priority } from "@/types/firestore";
 import Modal from "../Modal";
 import BundleCustomizeModal from "./assistant/BundleCustomizeModal";
@@ -336,9 +336,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
         void invalidateAuthSession();
         return;
       }
-      if (e instanceof FirebaseError) setActionError(`${e.code}: ${e.message}`);
-      else if (e instanceof Error) setActionError(e.message);
-      else setActionError("Impossible de lancer l’analyse IA.");
+      setActionError(toUserErrorMessage(e, "Impossible de lancer l’analyse IA."));
     } finally {
       setBusyAIAnalysis(false);
     }
@@ -396,9 +394,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
       setTextModal(null);
     } catch (e) {
       console.error("[assistant] replace note content failed", { noteId, suggestionId, error: e });
-      if (e instanceof FirebaseError) setActionError(`${e.code}: ${e.message}`);
-      else if (e instanceof Error) setActionError(e.message);
-      else setActionError("Impossible de remplacer le contenu.");
+      setActionError(toUserErrorMessage(e, "Impossible de remplacer le contenu."));
     }
   };
 
@@ -431,9 +427,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
         void invalidateAuthSession();
         return;
       }
-      if (e instanceof FirebaseError) setActionError(`${e.code}: ${e.message}`);
-      else if (e instanceof Error) setActionError(e.message);
-      else setActionError("Impossible de lancer la réanalyse.");
+      setActionError(toUserErrorMessage(e, "Impossible de lancer la réanalyse."));
     } finally {
       setBusyReanalysis(false);
     }
@@ -558,9 +552,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
         void invalidateAuthSession();
         return;
       }
-      if (e instanceof FirebaseError) setActionError(`${e.code}: ${e.message}`);
-      else if (e instanceof Error) setActionError(e.message);
-      else setActionError("Impossible d’accepter la suggestion.");
+      setActionError(toUserErrorMessage(e, "Impossible d’accepter la suggestion."));
     } finally {
       setBusySuggestionId(null);
     }
@@ -624,8 +616,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
         void invalidateAuthSession();
         return;
       }
-      if (e instanceof FirebaseError) throw new Error(`${e.code}: ${e.message}`);
-      if (e instanceof Error) throw e;
+      if (e instanceof Error) throw new Error(toUserErrorMessage(e, "Impossible de créer le plan."));
       throw new Error("Impossible de créer le plan.");
     } finally {
       setBusySuggestionId(null);
@@ -687,9 +678,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
         void invalidateAuthSession();
         return;
       }
-      if (e instanceof FirebaseError) setEditError(`${e.code}: ${e.message}`);
-      else if (e instanceof Error) setEditError(e.message);
-      else setEditError("Impossible d’accepter la suggestion.");
+      setEditError(toUserErrorMessage(e, "Impossible d’accepter la suggestion."));
     } finally {
       setBusySuggestionId(null);
     }
@@ -734,12 +723,6 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
   }
 
   if (assistantError) {
-    const assistantErrorLabel = (() => {
-      if (assistantError instanceof FirebaseError) return `${assistantError.code}: ${assistantError.message}`;
-      if (assistantError instanceof Error) return assistantError.message;
-      return "";
-    })();
-
     return (
       <div className="sn-card p-4 space-y-2">
         <div className="flex items-center justify-between gap-3">
@@ -754,7 +737,6 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
         </div>
         <div className="sn-alert sn-alert--error">
           Erreur lors du chargement de l’assistant.
-          {assistantErrorLabel ? <div className="mt-1 text-xs opacity-80">{assistantErrorLabel}</div> : null}
         </div>
       </div>
     );

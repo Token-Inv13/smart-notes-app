@@ -27,6 +27,7 @@ import {
   parseLocalDateTimeToTimestamp,
   parseLocalDateToTimestamp,
 } from "@/lib/datetime";
+import { toUserErrorMessage } from "@/lib/userError";
 import DictationMicButton from "@/app/(protected)/_components/DictationMicButton";
 import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
 import Modal from "../../../Modal";
@@ -209,7 +210,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       }
     } catch (e) {
       console.error("Error loading task reminders", e);
-      setEditError(e instanceof Error ? e.message : "Erreur lors du chargement des rappels.");
+      setEditError(toUserErrorMessage(e, "Erreur lors du chargement des rappels."));
       setTaskReminders([]);
     } finally {
       setRemindersLoading(false);
@@ -255,7 +256,9 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
           void invalidateAuthSession();
           return;
         }
-        const msg = e instanceof Error ? e.message : "Erreur lors du chargement.";
+        const msg = toUserErrorMessage(e, "Erreur lors du chargement.", {
+          allowMessages: ["Élément d’agenda introuvable.", "Accès refusé.", "Tu dois être connecté.", "ID d’élément d’agenda manquant."],
+        });
         if (!cancelled) setError(msg);
       } finally {
         if (!cancelled) setLoading(false);
@@ -279,7 +282,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       await exportTaskPdf(task, workspaceName);
       setExportFeedback("PDF téléchargé.");
     } catch (e) {
-      setEditError(e instanceof Error ? e.message : "Erreur lors de l’export PDF.");
+      setEditError(toUserErrorMessage(e, "Erreur lors de l’export PDF."));
     }
   };
 
@@ -322,7 +325,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
       setExportFeedback("Export téléchargé.");
     } catch (e) {
-      setEditError(e instanceof Error ? e.message : "Erreur lors de l’export.");
+      setEditError(toUserErrorMessage(e, "Erreur lors de l’export."));
     }
   };
 
@@ -355,7 +358,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
       throw new Error("Partage non supporté sur cet appareil.");
     } catch (e) {
-      setEditError(e instanceof Error ? e.message : "Erreur lors du partage.");
+      setEditError(toUserErrorMessage(e, "Erreur lors du partage.", { allowMessages: ["Partage non supporté sur cet appareil."] }));
     }
   };
 
@@ -493,7 +496,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       await loadTaskReminders({ keepDraft: true });
     } catch (e) {
       console.error('Error snoozing reminder', e);
-      setEditError(e instanceof Error ? e.message : 'Erreur lors du snooze du rappel.');
+      setEditError(toUserErrorMessage(e, 'Erreur lors du snooze du rappel.'));
     } finally {
       setSnoozing(false);
     }
@@ -538,7 +541,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       await loadTaskReminders({ keepDraft: true });
     } catch (e) {
       console.error("Error adding task reminder", e);
-      setEditError(e instanceof Error ? e.message : "Erreur lors de l’ajout du rappel.");
+      setEditError(toUserErrorMessage(e, "Erreur lors de l’ajout du rappel."));
     } finally {
       setAddingReminder(false);
     }
@@ -565,7 +568,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       await loadTaskReminders({ keepDraft: true });
     } catch (e) {
       console.error("Error deleting task reminder", e);
-      setEditError(e instanceof Error ? e.message : "Erreur lors de la suppression du rappel.");
+      setEditError(toUserErrorMessage(e, "Erreur lors de la suppression du rappel."));
     } finally {
       setBusyReminderId(null);
     }
@@ -738,7 +741,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       return true;
     } catch (e) {
       console.error("Error updating task (modal)", e);
-      setEditError(e instanceof Error ? e.message : "Erreur lors de la modification de l’élément d’agenda.");
+      setEditError(toUserErrorMessage(e, "Erreur lors de la modification de l’élément d’agenda."));
       return false;
     } finally {
       setSaving(false);
@@ -792,7 +795,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       router.back();
     } catch (e) {
       console.error("Error archiving task (modal)", e);
-      setEditError(e instanceof Error ? e.message : "Erreur lors de l’archivage de l’élément d’agenda.");
+      setEditError(toUserErrorMessage(e, "Erreur lors de l’archivage de l’élément d’agenda."));
     } finally {
       setSaving(false);
     }
@@ -817,7 +820,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       router.back();
     } catch (e) {
       console.error("Error deleting task (modal)", e);
-      setEditError(e instanceof Error ? e.message : "Erreur lors de la suppression de l’élément d’agenda.");
+      setEditError(toUserErrorMessage(e, "Erreur lors de la suppression de l’élément d’agenda."));
     } finally {
       setDeleting(false);
     }

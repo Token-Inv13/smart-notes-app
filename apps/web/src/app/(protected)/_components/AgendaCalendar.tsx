@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -8,22 +8,29 @@ import interactionPlugin from "@fullcalendar/interaction";
 import type {
   DateSelectArg,
   DatesSetArg,
-  EventClickArg,
-  EventContentArg,
   EventInput,
 } from "@fullcalendar/core";
+import {
+  addRecurrenceStep,
+  overlapsRange,
+  priorityColor,
+  toHourMinuteLabel,
+  toLocalDateInputValue,
+} from "./agendaCalendarUtils";
+import { useAgendaCalendarFilters } from "./useAgendaCalendarFilters";
+import { useAgendaPlanningData } from "./useAgendaPlanningData";
+import { useAgendaPlanningSelection } from "./useAgendaPlanningSelection";
+import { useAgendaDraftManager } from "./useAgendaDraftManager";
+import { useAgendaEventMutation } from "./useAgendaEventMutation";
+import { useAgendaCalendarNavigation } from "./useAgendaCalendarNavigation";
+import { useAgendaMergedEvents } from "./useAgendaMergedEvents";
+import { renderAgendaCalendarEventContent } from "./AgendaCalendarEventContent";
+import AgendaCalendarFiltersBar from "./AgendaCalendarFiltersBar";
+import AgendaCalendarDraftModal from "./AgendaCalendarDraftModal";
 import type { TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq } from "@/types/firestore";
 
 type CalendarViewMode = "dayGridMonth" | "timeGridWeek" | "timeGridDay";
 type AgendaDisplayMode = "calendar" | "planning";
-type CalendarPriorityFilter = "" | Priority;
-type CalendarTimeWindowFilter = "" | "allDay" | "morning" | "afternoon" | "evening";
-type CalendarFilterStorage = {
-  showRecurringOnly: boolean;
-  showConflictsOnly: boolean;
-  priorityFilter: CalendarPriorityFilter;
-  timeWindowFilter: CalendarTimeWindowFilter;
-};
 
 type GoogleCalendarEvent = {
   id: string;
@@ -32,21 +39,6 @@ type GoogleCalendarEvent = {
   end: string;
   allDay: boolean;
 };
-
-const CALENDAR_FILTERS_STORAGE_KEY = "agenda-calendar-filters-v1";
-
-interface CalendarDraft {
-  taskId?: string;
-  instanceDate?: string;
-  title: string;
-  startLocal: string;
-  endLocal: string;
-  allDay: boolean;
-  workspaceId: string;
-  priority: "" | Priority;
-  recurrenceFreq: "" | TaskRecurrenceFreq;
-  recurrenceUntil: string;
-}
 
 type CalendarRecurrenceInput = {
   freq: TaskRecurrenceFreq;
@@ -82,64 +74,6 @@ interface AgendaCalendarProps {
   onVisibleRangeChange?: (range: { start: Date; end: Date }) => void;
 }
 
-interface CalendarMutationArg {
-  event: {
-    id: string;
-    start: Date | null;
-    end: Date | null;
-    allDay: boolean;
-    extendedProps: Record<string, unknown>;
-  };
-  revert: () => void;
-}
-
-function toLocalInputValue(date: Date) {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function toLocalDateInputValue(date: Date) {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
-function toHourMinuteLabel(date: Date) {
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-}
-
-function parseDateFromDraft(raw: string, allDay: boolean) {
-  if (!raw) return null;
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) return null;
-  if (!allDay) return date;
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
-}
-
-function priorityColor(priority: Priority | "") {
-  if (priority === "high") return "#ef4444";
-  if (priority === "medium") return "#f59e0b";
-  if (priority === "low") return "#10b981";
-  return "#3b82f6";
-}
-
-function addRecurrenceStep(base: Date, freq: TaskRecurrenceFreq, interval: number) {
-  const next = new Date(base);
-  if (freq === "daily") next.setDate(next.getDate() + interval);
-  else if (freq === "weekly") next.setDate(next.getDate() + interval * 7);
-  else next.setMonth(next.getMonth() + interval);
-  return next;
-}
-
-function overlapsRange(start: Date, end: Date, rangeStart: Date, rangeEnd: Date) {
-  return end.getTime() > rangeStart.getTime() && start.getTime() < rangeEnd.getTime();
-}
-
-function priorityConflictWeight(priority: unknown) {
-  if (priority === "high") return 3;
-  if (priority === "medium") return 2;
-  return 1;
-}
-
 export default function AgendaCalendar({
   tasks,
   workspaces,
@@ -150,23 +84,22 @@ export default function AgendaCalendar({
   onVisibleRangeChange,
 }: AgendaCalendarProps) {
   const calendarRef = useRef<FullCalendar | null>(null);
-  const touchStartRef = useRef<{ x: number; y: number; at: number } | null>(null);
   const [viewMode, setViewMode] = useState<CalendarViewMode>("timeGridWeek");
   const [displayMode, setDisplayMode] = useState<AgendaDisplayMode>("calendar");
-  const [editScope, setEditScope] = useState<"series" | "occurrence">("series");
-  const [showRecurringOnly, setShowRecurringOnly] = useState(false);
-  const [showConflictsOnly, setShowConflictsOnly] = useState(false);
-  const [priorityFilter, setPriorityFilter] = useState<CalendarPriorityFilter>("");
-  const [timeWindowFilter, setTimeWindowFilter] = useState<CalendarTimeWindowFilter>("");
-  const [filtersHydrated, setFiltersHydrated] = useState(false);
+  const {
+    showRecurringOnly,
+    setShowRecurringOnly,
+    showConflictsOnly,
+    setShowConflictsOnly,
+    priorityFilter,
+    setPriorityFilter,
+    timeWindowFilter,
+    setTimeWindowFilter,
+    clearFilters,
+  } = useAgendaCalendarFilters();
   const [visibleRange, setVisibleRange] = useState<{ start: Date; end: Date } | null>(null);
   const [label, setLabel] = useState("");
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [draft, setDraft] = useState<CalendarDraft | null>(null);
-  const [selectedPlanningIds, setSelectedPlanningIds] = useState<string[]>([]);
-  const [duplicatingPlanning, setDuplicatingPlanning] = useState(false);
-  const [planningDuplicateDate, setPlanningDuplicateDate] = useState("");
   const [showPlanningAvailability, setShowPlanningAvailability] = useState(true);
   const [planningAvailabilityTargetMinutes, setPlanningAvailabilityTargetMinutes] = useState(45);
   const [calendarConnected, setCalendarConnected] = useState(false);
@@ -374,446 +307,40 @@ export default function AgendaCalendar({
     };
   }, [priorityFilter, showConflictsOnly, showRecurringOnly, tasks, timeWindowFilter, visibleRange, workspaces]);
 
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(CALENDAR_FILTERS_STORAGE_KEY);
-      if (!raw) return;
+  const { handleMoveOrResize } = useAgendaEventMutation({
+    onCreateEvent,
+    onUpdateEvent,
+    onSkipOccurrence,
+    setError,
+  });
 
-      const parsed = JSON.parse(raw) as Partial<CalendarFilterStorage>;
+  const {
+    draft,
+    setDraft,
+    editScope,
+    setEditScope,
+    saving,
+    openDraftFromSelect,
+    openDraftFromEvent,
+    saveDraft,
+    openQuickDraft,
+    skipOccurrence,
+  } = useAgendaDraftManager({
+    onCreateEvent,
+    onUpdateEvent,
+    onSkipOccurrence,
+    setError,
+  });
 
-      if (typeof parsed.showRecurringOnly === "boolean") {
-        setShowRecurringOnly(parsed.showRecurringOnly);
-      }
-
-      if (typeof parsed.showConflictsOnly === "boolean") {
-        setShowConflictsOnly(parsed.showConflictsOnly);
-      }
-
-      if (parsed.priorityFilter === "" || parsed.priorityFilter === "low" || parsed.priorityFilter === "medium" || parsed.priorityFilter === "high") {
-        setPriorityFilter(parsed.priorityFilter);
-      }
-
-      if (
-        parsed.timeWindowFilter === "" ||
-        parsed.timeWindowFilter === "allDay" ||
-        parsed.timeWindowFilter === "morning" ||
-        parsed.timeWindowFilter === "afternoon" ||
-        parsed.timeWindowFilter === "evening"
-      ) {
-        setTimeWindowFilter(parsed.timeWindowFilter);
-      }
-    } catch {
-      // ignore invalid persisted payload
-    } finally {
-      setFiltersHydrated(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!filtersHydrated) return;
-
-    const payload: CalendarFilterStorage = {
-      showRecurringOnly,
-      showConflictsOnly,
-      priorityFilter,
-      timeWindowFilter,
-    };
-
-    try {
-      window.localStorage.setItem(CALENDAR_FILTERS_STORAGE_KEY, JSON.stringify(payload));
-    } catch {
-      // ignore storage write errors
-    }
-  }, [filtersHydrated, priorityFilter, showConflictsOnly, showRecurringOnly, timeWindowFilter]);
-
-  const openDraftFromSelect = (arg: DateSelectArg) => {
-    const isTimeGridSelection = arg.view.type === "timeGridWeek" || arg.view.type === "timeGridDay";
-    const allDaySelection = isTimeGridSelection ? false : arg.allDay;
-    const normalizedEnd = arg.end.getTime() > arg.start.getTime() ? arg.end : new Date(arg.start.getTime() + 60 * 60 * 1000);
-
-    setEditScope("series");
-    setDraft({
-      title: "",
-      startLocal: allDaySelection ? toLocalDateInputValue(arg.start) : toLocalInputValue(arg.start),
-      endLocal: allDaySelection ? toLocalDateInputValue(new Date(normalizedEnd.getTime() - 1)) : toLocalInputValue(normalizedEnd),
-      allDay: allDaySelection,
-      workspaceId: "",
-      priority: "",
-      recurrenceFreq: "",
-      recurrenceUntil: "",
-    });
-  };
-
-  const openDraftFromEvent = (arg: EventClickArg) => {
-    if (arg.event.extendedProps.source === "google-calendar") {
-      return;
-    }
-
-    const start = arg.event.start;
-    const end = arg.event.end;
-    if (!start || !end) return;
-    const recurrence = (arg.event.extendedProps.recurrence as TaskDoc["recurrence"] | null) ?? null;
-    const instanceDate = (arg.event.extendedProps.instanceDate as string | undefined) ?? undefined;
-    setEditScope(recurrence?.freq && instanceDate ? "occurrence" : "series");
-
-    setDraft({
-      taskId: ((arg.event.extendedProps.taskId as string) || arg.event.id) as string,
-      instanceDate,
-      title: arg.event.title,
-      startLocal: arg.event.allDay ? toLocalDateInputValue(start) : toLocalInputValue(start),
-      endLocal: arg.event.allDay ? toLocalDateInputValue(new Date(end.getTime() - 1)) : toLocalInputValue(end),
-      allDay: arg.event.allDay,
-      workspaceId: (arg.event.extendedProps.workspaceId as string) ?? "",
-      priority: ((arg.event.extendedProps.priority as Priority | "") ?? "") as "" | Priority,
-      recurrenceFreq: recurrence?.freq ?? "",
-      recurrenceUntil: recurrence?.until?.toDate ? toLocalDateInputValue(recurrence.until.toDate()) : "",
-    });
-  };
-
-  const saveDraft = async () => {
-    if (!draft) return;
-
-    const start = parseDateFromDraft(draft.startLocal, draft.allDay);
-    const end = parseDateFromDraft(draft.endLocal, draft.allDay);
-    if (!start || !end) {
-      setError("Date/heure invalide.");
-      return;
-    }
-
-    const allDayEnd = draft.allDay
-      ? new Date(end.getFullYear(), end.getMonth(), end.getDate() + 1, 0, 0, 0, 0)
-      : end;
-
-    if (allDayEnd.getTime() <= start.getTime()) {
-      setError("La fin doit être après le début.");
-      return;
-    }
-
-    if (!draft.title.trim()) {
-      setError("Le titre est obligatoire.");
-      return;
-    }
-
-    const recurrence = draft.recurrenceFreq
-      ? {
-          freq: draft.recurrenceFreq,
-          interval: 1,
-          until: draft.recurrenceUntil ? new Date(`${draft.recurrenceUntil}T23:59:59`) : null,
-          exceptions: [],
-        }
-      : null;
-
-    setSaving(true);
-    setError(null);
-    try {
-      if (draft.taskId && draft.instanceDate && draft.recurrenceFreq && editScope === "occurrence") {
-        if (!onSkipOccurrence) {
-          setError("Impossible d’éditer cette occurrence pour le moment.");
-          return;
-        }
-
-        await onSkipOccurrence(draft.taskId, draft.instanceDate);
-        await onCreateEvent({
-          title: draft.title.trim(),
-          start,
-          end: allDayEnd,
-          allDay: draft.allDay,
-          workspaceId: draft.workspaceId || null,
-          priority: draft.priority || null,
-          recurrence: null,
-        });
-        setDraft(null);
-        return;
-      }
-
-      if (draft.taskId) {
-        await onUpdateEvent({
-          taskId: draft.taskId,
-          title: draft.title.trim(),
-          start,
-          end: allDayEnd,
-          allDay: draft.allDay,
-          workspaceId: draft.workspaceId || null,
-          priority: draft.priority || null,
-          recurrence,
-        });
-      } else {
-        await onCreateEvent({
-          title: draft.title.trim(),
-          start,
-          end: allDayEnd,
-          allDay: draft.allDay,
-          workspaceId: draft.workspaceId || null,
-          priority: draft.priority || null,
-          recurrence,
-        });
-      }
-      setDraft(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erreur de sauvegarde.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleMoveOrResize = async (arg: CalendarMutationArg) => {
-    try {
-      const start = arg.event.start;
-      const end = arg.event.end;
-      const taskId = ((arg.event.extendedProps.taskId as string) || arg.event.id) as string;
-      const instanceDate = (arg.event.extendedProps.instanceDate as string | undefined) ?? undefined;
-      const recurrence = (arg.event.extendedProps.recurrence as TaskDoc["recurrence"] | null) ?? null;
-      if (!taskId || !start || !end) {
-        arg.revert();
-        return;
-      }
-
-      if (instanceDate && recurrence?.freq) {
-        if (!onSkipOccurrence) {
-          arg.revert();
-          setError("Impossible de modifier cette occurrence pour le moment.");
-          return;
-        }
-
-        await onSkipOccurrence(taskId, instanceDate);
-        await onCreateEvent({
-          title: typeof arg.event.extendedProps.title === "string" ? (arg.event.extendedProps.title as string) : "Occurrence",
-          start,
-          end,
-          allDay: arg.event.allDay,
-          workspaceId: ((arg.event.extendedProps.workspaceId as string) || null),
-          priority: ((arg.event.extendedProps.priority as Priority | "") || null),
-          recurrence: null,
-        });
-        return;
-      }
-
-      await onUpdateEvent({
-        taskId,
-        start,
-        end,
-        allDay: arg.event.allDay,
-        workspaceId: ((arg.event.extendedProps.workspaceId as string) || null),
-        priority: ((arg.event.extendedProps.priority as Priority | "") || null),
-        recurrence: (() => {
-          const rec = (arg.event.extendedProps.recurrence as TaskDoc["recurrence"] | null) ?? null;
-          if (!rec?.freq) return null;
-          return {
-            freq: rec.freq,
-            interval: rec.interval ?? 1,
-            until: rec.until?.toDate ? rec.until.toDate() : null,
-            exceptions: Array.isArray(rec.exceptions) ? rec.exceptions : [],
-          };
-        })(),
-      });
-    } catch {
-      arg.revert();
-      setError("Impossible de déplacer/redimensionner cet élément d’agenda.");
-    }
-  };
-
-  const eventContent = (arg: EventContentArg) => {
-    const workspaceName = (arg.event.extendedProps.workspaceName as string) ?? "";
-    const priority = ((arg.event.extendedProps.priority as Priority | "") ?? "") as "" | Priority;
-    const hasConflict = arg.event.extendedProps.conflict === true;
-    const conflictSource = (arg.event.extendedProps.conflictSource as "local" | "google" | "mix" | null) ?? null;
-    const conflictScore = typeof arg.event.extendedProps.conflictScore === "number" ? arg.event.extendedProps.conflictScore : 0;
-
-    const conflictLabel =
-      conflictSource === "google"
-        ? "Local ↔ Google"
-        : conflictSource === "mix"
-          ? "Mixte"
-          : "Local";
-
-    const sourceLabel = arg.event.extendedProps.source === "google-calendar" ? "Google" : "Local";
-    const start = arg.event.start;
-    const end = arg.event.end;
-    const durationMinutes =
-      start instanceof Date && end instanceof Date ? Math.round((end.getTime() - start.getTime()) / (60 * 1000)) : 60;
-    const isMonthView = arg.view.type === "dayGridMonth";
-    const isDenseTimeGrid = arg.view.type !== "dayGridMonth" && !arg.event.allDay && durationMinutes <= 45;
-    const compactPresentation = isCompactDensity || isDenseTimeGrid;
-
-    if (isMonthView) {
-      return (
-        <div className="px-1 py-0.5 text-[11px] leading-tight text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]">
-          <div className="flex items-center gap-1.5">
-            <span className="truncate font-semibold">{arg.event.title}</span>
-            {hasConflict && <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-red-200" aria-hidden />}
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="px-1 py-0.5 text-[11px] leading-tight text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]">
-        <div className="font-semibold truncate">{arg.event.title}</div>
-        {compactPresentation ? (
-          <div className="mt-0.5 inline-flex items-center gap-1 text-[9px] text-white/90">
-            <span className="rounded-full bg-black/25 px-1.5 py-0.5 font-semibold uppercase tracking-wide">{sourceLabel === "Google" ? "G" : "L"}</span>
-            {hasConflict && <span className="rounded-full bg-red-500/85 px-1.5 py-0.5 font-semibold">C · P{Math.min(9, conflictScore)}</span>}
-          </div>
-        ) : (
-          <>
-            <div className="truncate text-white/90">{workspaceName}</div>
-            <div className="mt-0.5 inline-flex flex-wrap items-center gap-1">
-              <span className="rounded-full bg-black/25 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white/95">{sourceLabel}</span>
-              {priority && (
-                <span className="rounded-full bg-black/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white/95">{priority}</span>
-              )}
-              {hasConflict && (
-                <span className="rounded-full bg-red-500/85 px-1.5 py-0.5 text-[9px] font-semibold text-white">
-                  Conflit {conflictLabel} · P{Math.min(9, conflictScore)}
-                </span>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-    );
-  };
-
-  const keepPageScrollStable = () => {
-    if (typeof window === "undefined") return;
-    const lockedY = window.scrollY;
-    window.requestAnimationFrame(() => {
-      if (Math.abs(window.scrollY - lockedY) > 1) {
-        window.scrollTo({ top: lockedY });
-      }
-    });
-  };
-
-  const jump = (action: "prev" | "next" | "today") => {
-    const api = calendarRef.current?.getApi();
-    if (!api) return;
-    if (action === "prev") api.prev();
-    if (action === "next") api.next();
-    if (action === "today") api.today();
-    keepPageScrollStable();
-  };
-
-  const isSwipeBlockedTarget = (target: EventTarget | null) => {
-    if (!(target instanceof Element)) return false;
-    return Boolean(
-      target.closest(
-        "button,a,input,select,textarea,[role='button'],[data-no-calendar-swipe],.fc-event,.fc-more-link",
-      ),
-    );
-  };
-
-  const handleCalendarTouchStart = (event: TouchEvent<HTMLDivElement>) => {
-    if (displayMode !== "calendar") return;
-    if (typeof window !== "undefined" && window.innerWidth >= 768) return;
-    if (isSwipeBlockedTarget(event.target)) {
-      touchStartRef.current = null;
-      return;
-    }
-    if (event.touches.length !== 1) {
-      touchStartRef.current = null;
-      return;
-    }
-
-    const touch = event.touches[0];
-    if (!touch) return;
-    touchStartRef.current = {
-      x: touch.clientX,
-      y: touch.clientY,
-      at: Date.now(),
-    };
-  };
-
-  const handleCalendarTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
-    if (displayMode !== "calendar") return;
-    if (typeof window !== "undefined" && window.innerWidth >= 768) return;
-
-    const start = touchStartRef.current;
-    touchStartRef.current = null;
-    if (!start) return;
-
-    const touch = event.changedTouches[0];
-    if (!touch) return;
-
-    const dx = touch.clientX - start.x;
-    const dy = touch.clientY - start.y;
-    const absX = Math.abs(dx);
-    const absY = Math.abs(dy);
-    const elapsed = Date.now() - start.at;
-
-    if (elapsed > 650) return;
-    if (absX < 64) return;
-    if (absX < absY * 1.45) return;
-
-    if (dx < 0) jump("next");
-    else jump("prev");
-  };
-
-  const openQuickDraft = useCallback(() => {
-    setEditScope("series");
-    const start = new Date();
-    const end = new Date(start.getTime() + 60 * 60 * 1000);
-    setDraft({
-      title: "",
-      startLocal: toLocalInputValue(start),
-      endLocal: toLocalInputValue(end),
-      allDay: false,
-      workspaceId: "",
-      priority: "",
-      recurrenceFreq: "",
-      recurrenceUntil: "",
-    });
-  }, []);
-
-  const skipOccurrence = async () => {
-    if (!draft?.taskId || !draft.instanceDate || !draft.recurrenceFreq || !onSkipOccurrence) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await onSkipOccurrence(draft.taskId, draft.instanceDate);
-      setDraft(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Impossible d’ignorer cette occurrence.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      const tag = target?.tagName?.toLowerCase();
-      const isEditing = tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable;
-      if (isEditing) return;
-
-      if (e.key.toLowerCase() === "n") {
-        e.preventDefault();
-        openQuickDraft();
-        return;
-      }
-
-      if (e.key === "/") {
-        e.preventDefault();
-        const searchInput = document.getElementById("tasks-search-input") as HTMLInputElement | null;
-        searchInput?.focus();
-        searchInput?.select();
-        return;
-      }
-
-      if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        jump("prev");
-        return;
-      }
-
-      if (e.key === "ArrowRight") {
-        e.preventDefault();
-        jump("next");
-      }
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openQuickDraft]);
+  const {
+    jump,
+    handleCalendarTouchStart,
+    handleCalendarTouchEnd,
+  } = useAgendaCalendarNavigation({
+    calendarRef,
+    displayMode,
+    openQuickDraft,
+  });
 
   const changeView = (next: CalendarViewMode) => {
     setViewMode(next);
@@ -826,203 +353,21 @@ export default function AgendaCalendar({
     onVisibleRangeChange?.({ start: arg.start, end: arg.end });
   };
 
-  const googleCalendarEventInputs = useMemo(() => {
-    return googleCalendarEvents
-      .map((event) => {
-        const start = new Date(event.start);
-        const end = new Date(event.end);
-        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  const { agendaEvents, agendaConflictCount, isCompactDensity } = useAgendaMergedEvents({
+    calendarData,
+    googleCalendarEvents,
+  });
 
-        return {
-          id: `gcal__${event.id}`,
-          title: event.title || "Événement Google",
-          start,
-          end,
-          allDay: event.allDay,
-          backgroundColor: "#2563eb",
-          borderColor: "#2563eb",
-          classNames: ["agenda-event", "agenda-event-google", "agenda-priority-none"],
-          editable: false,
-          extendedProps: {
-            workspaceName: "Google Calendar",
-            source: "google-calendar",
-            conflict: false,
-          },
-        } as EventInput;
-      })
-      .filter((event): event is EventInput => Boolean(event));
-  }, [googleCalendarEvents]);
-
-  const agendaEvents = useMemo(() => {
-    const base = [...calendarData.events, ...googleCalendarEventInputs].sort((a, b) => {
-      const aStart = a.start instanceof Date ? a.start.getTime() : 0;
-      const bStart = b.start instanceof Date ? b.start.getTime() : 0;
-      return aStart - bStart;
-    });
-
-    const conflictById = new Map<string, { local: boolean; google: boolean; score: number }>();
-
-    const bumpConflict = (event: EventInput, source: "local" | "google", withGoogle: boolean) => {
-      const key = String(event.id);
-      const current = conflictById.get(key) ?? { local: false, google: false, score: 0 };
-      if (withGoogle) current.google = true;
-      else current.local = true;
-
-      const priorityWeight = source === "local" ? priorityConflictWeight(event.extendedProps?.priority) : 1;
-      current.score += priorityWeight + (withGoogle ? 2 : 1);
-      conflictById.set(key, current);
-    };
-
-    for (let i = 0; i < base.length; i += 1) {
-      const left = base[i];
-      if (!(left?.start instanceof Date) || !(left?.end instanceof Date)) continue;
-      for (let j = i + 1; j < base.length; j += 1) {
-        const right = base[j];
-        if (!(right?.start instanceof Date) || !(right?.end instanceof Date)) continue;
-        if (right.start.getTime() >= left.end.getTime()) break;
-
-        const leftSource = left.extendedProps?.source === "google-calendar" ? "google" : "local";
-        const rightSource = right.extendedProps?.source === "google-calendar" ? "google" : "local";
-        const mixedSource = leftSource !== rightSource;
-
-        bumpConflict(left, leftSource, mixedSource);
-        bumpConflict(right, rightSource, mixedSource);
-      }
-    }
-
-    return base.map((event) => {
-      const conflict = conflictById.get(String(event.id));
-      const hasConflict = Boolean(conflict);
-      const conflictSource = conflict?.google ? (conflict.local ? "mix" : "google") : conflict?.local ? "local" : null;
-      const classNames = Array.isArray(event.classNames) ? [...event.classNames] : [];
-      if (hasConflict) classNames.push("agenda-event-conflict");
-      if (event.extendedProps?.source === "google-calendar") classNames.push("agenda-source-google");
-      else classNames.push("agenda-source-local");
-      return {
-        ...event,
-        classNames,
-        extendedProps: {
-          ...(event.extendedProps ?? {}),
-          conflict: hasConflict,
-          conflictSource,
-          conflictScore: conflict?.score ?? 0,
-        },
-      } as EventInput;
-    });
-  }, [calendarData.events, googleCalendarEventInputs]);
-
-  const agendaConflictCount = useMemo(
-    () => agendaEvents.reduce((acc, event) => (event.extendedProps?.conflict === true ? acc + 1 : acc), 0),
-    [agendaEvents],
+  const eventContent = useCallback(
+    (arg: Parameters<typeof renderAgendaCalendarEventContent>[0]) =>
+      renderAgendaCalendarEventContent(arg, isCompactDensity),
+    [isCompactDensity],
   );
 
-  const isCompactDensity = agendaConflictCount >= 8;
-
-  const planningSections = useMemo(() => {
-    const grouped = new Map<string, EventInput[]>();
-
-    for (const event of agendaEvents) {
-      if (!(event.start instanceof Date)) continue;
-      const key = toLocalDateInputValue(event.start);
-      const existing = grouped.get(key) ?? [];
-      existing.push(event);
-      grouped.set(key, existing);
-    }
-
-    return Array.from(grouped.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([dateKey, events]) => ({
-        dateKey,
-        events: [...events].sort((a, b) => {
-          const aStart = a.start instanceof Date ? a.start.getTime() : 0;
-          const bStart = b.start instanceof Date ? b.start.getTime() : 0;
-          return aStart - bStart;
-        }),
-      }));
-  }, [agendaEvents]);
-
-  const planningAvailabilityByDate = useMemo(() => {
-    const dateMap = new Map<string, EventInput[]>();
-    for (const event of agendaEvents) {
-      if (!(event.start instanceof Date)) continue;
-      const key = toLocalDateInputValue(event.start);
-      const existing = dateMap.get(key) ?? [];
-      existing.push(event);
-      dateMap.set(key, existing);
-    }
-
-    const output = new Map<string, Array<{ start: Date; end: Date; durationMinutes: number }>>();
-    const todayKey = toLocalDateInputValue(new Date());
-    const minSlotMinutes = planningAvailabilityTargetMinutes;
-
-    for (const [dateKey, dayEvents] of dateMap.entries()) {
-      if (dateKey < todayKey) continue;
-      const [year, month, day] = dateKey.split("-").map(Number);
-      if (!year || !month || !day) continue;
-
-      const dayStart = new Date(year, month - 1, day, 8, 0, 0, 0);
-      const dayEnd = new Date(year, month - 1, day, 20, 0, 0, 0);
-
-      const busyIntervals = dayEvents
-        .map((event) => {
-          const start = event.start instanceof Date ? event.start : null;
-          const end = event.end instanceof Date ? event.end : null;
-          if (!start || !end) return null;
-
-          if (event.allDay) {
-            return { start: dayStart, end: dayEnd };
-          }
-
-          const boundedStart = start.getTime() > dayStart.getTime() ? start : dayStart;
-          const boundedEnd = end.getTime() < dayEnd.getTime() ? end : dayEnd;
-          if (boundedEnd.getTime() <= boundedStart.getTime()) return null;
-          return { start: boundedStart, end: boundedEnd };
-        })
-        .filter((slot): slot is { start: Date; end: Date } => Boolean(slot))
-        .sort((a, b) => a.start.getTime() - b.start.getTime());
-
-      const merged: Array<{ start: Date; end: Date }> = [];
-      for (const interval of busyIntervals) {
-        const last = merged[merged.length - 1];
-        if (!last || interval.start.getTime() > last.end.getTime()) {
-          merged.push({ start: new Date(interval.start), end: new Date(interval.end) });
-          continue;
-        }
-        if (interval.end.getTime() > last.end.getTime()) {
-          last.end = new Date(interval.end);
-        }
-      }
-
-      const free: Array<{ start: Date; end: Date; durationMinutes: number }> = [];
-      let cursor = new Date(dayStart);
-      for (const interval of merged) {
-        const gapMs = interval.start.getTime() - cursor.getTime();
-        if (gapMs >= minSlotMinutes * 60 * 1000) {
-          free.push({
-            start: new Date(cursor),
-            end: new Date(interval.start),
-            durationMinutes: Math.round(gapMs / (60 * 1000)),
-          });
-        }
-        if (interval.end.getTime() > cursor.getTime()) {
-          cursor = new Date(interval.end);
-        }
-      }
-
-      const tailMs = dayEnd.getTime() - cursor.getTime();
-      if (tailMs >= minSlotMinutes * 60 * 1000) {
-        free.push({
-          start: new Date(cursor),
-          end: new Date(dayEnd),
-          durationMinutes: Math.round(tailMs / (60 * 1000)),
-        });
-      }
-
-      output.set(dateKey, free.slice(0, 3));
-    }
-
-    return output;
-  }, [agendaEvents, planningAvailabilityTargetMinutes]);
+  const { planningSections, planningAvailabilityByDate } = useAgendaPlanningData({
+    agendaEvents,
+    planningAvailabilityTargetMinutes,
+  });
 
   const planningEventMap = useMemo(() => {
     const map = new Map<string, EventInput>();
@@ -1032,96 +377,21 @@ export default function AgendaCalendar({
     return map;
   }, [calendarData.events]);
 
-  useEffect(() => {
-    if (displayMode === "calendar" && selectedPlanningIds.length > 0) {
-      setSelectedPlanningIds([]);
-    }
-  }, [displayMode, selectedPlanningIds.length]);
-
-  const togglePlanningSelection = (eventId: string) => {
-    setSelectedPlanningIds((prev) =>
-      prev.includes(eventId) ? prev.filter((id) => id !== eventId) : [...prev, eventId],
-    );
-  };
-
-  const duplicatePlanningSelectionByShift = async (buildShiftDays: (eventStart: Date, anchorStart: Date) => number) => {
-    if (selectedPlanningIds.length === 0) return;
-
-    const selectedEvents = selectedPlanningIds
-      .map((id) => planningEventMap.get(id))
-      .filter((event): event is EventInput => Boolean(event))
-      .map((event) => {
-        const start = event.start instanceof Date ? event.start : null;
-        const end = event.end instanceof Date ? event.end : null;
-        if (!start || !end) return null;
-        return { event, start, end };
-      })
-      .filter((item): item is { event: EventInput; start: Date; end: Date } => Boolean(item))
-      .sort((a, b) => a.start.getTime() - b.start.getTime());
-
-    if (selectedEvents.length === 0) return;
-
-    const firstSelected = selectedEvents[0];
-    if (!firstSelected) return;
-    const anchorStart = new Date(firstSelected.start.getFullYear(), firstSelected.start.getMonth(), firstSelected.start.getDate());
-
-    setDuplicatingPlanning(true);
-    setError(null);
-    try {
-      for (const { event: source, start, end } of selectedEvents) {
-        const shiftDays = buildShiftDays(start, anchorStart);
-
-        const nextStart = new Date(start);
-        nextStart.setDate(nextStart.getDate() + shiftDays);
-        const nextEnd = new Date(end);
-        nextEnd.setDate(nextEnd.getDate() + shiftDays);
-
-        await onCreateEvent({
-          title: source.title ?? "Élément agenda",
-          start: nextStart,
-          end: nextEnd,
-          allDay: source.allDay === true,
-          workspaceId:
-            typeof source.extendedProps?.workspaceId === "string" && source.extendedProps.workspaceId
-              ? source.extendedProps.workspaceId
-              : null,
-          priority:
-            source.extendedProps?.priority === "low" ||
-            source.extendedProps?.priority === "medium" ||
-            source.extendedProps?.priority === "high"
-              ? (source.extendedProps.priority as Priority)
-              : null,
-          recurrence: null,
-        });
-      }
-
-      setSelectedPlanningIds([]);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Impossible de dupliquer la sélection.");
-    } finally {
-      setDuplicatingPlanning(false);
-    }
-  };
-
-  const duplicatePlanningSelectionByDays = async (days: number) => {
-    await duplicatePlanningSelectionByShift(() => days);
-  };
-
-  const duplicatePlanningSelectionToDate = async () => {
-    if (!planningDuplicateDate) return;
-    const target = new Date(`${planningDuplicateDate}T00:00:00`);
-    if (Number.isNaN(target.getTime())) {
-      setError("Date cible invalide.");
-      return;
-    }
-
-    await duplicatePlanningSelectionByShift((eventStart, anchorStart) => {
-      const eventDay = new Date(eventStart.getFullYear(), eventStart.getMonth(), eventStart.getDate());
-      const relativeDays = Math.round((eventDay.getTime() - anchorStart.getTime()) / (24 * 60 * 60 * 1000));
-      const anchorToTargetDays = Math.round((target.getTime() - anchorStart.getTime()) / (24 * 60 * 60 * 1000));
-      return anchorToTargetDays + relativeDays;
-    });
-  };
+  const {
+    selectedPlanningIds,
+    setSelectedPlanningIds,
+    duplicatingPlanning,
+    planningDuplicateDate,
+    setPlanningDuplicateDate,
+    togglePlanningSelection,
+    duplicatePlanningSelectionByDays,
+    duplicatePlanningSelectionToDate,
+  } = useAgendaPlanningSelection({
+    displayMode,
+    planningEventMap,
+    onCreateEvent,
+    setError,
+  });
 
   return (
     <section className="space-y-3">
@@ -1181,71 +451,17 @@ export default function AgendaCalendar({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setShowRecurringOnly((prev) => !prev)}
-          className={`h-8 px-3 rounded-md border text-xs ${showRecurringOnly ? "border-primary bg-accent" : "border-border bg-background"}`}
-          title="Cet événement se répète automatiquement (chaque jour/semaine/mois)."
-          aria-label="Filtre Répéter — Cet événement se répète automatiquement"
-        >
-          ↻ Répéter
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowConflictsOnly((prev) => !prev)}
-          className={`h-8 px-3 rounded-md border text-xs ${showConflictsOnly ? "border-primary bg-accent" : "border-border bg-background"}`}
-          title="Cet horaire entre en conflit avec un autre événement."
-          aria-label="Filtre Chevauchement d’horaire — Cet horaire entre en conflit avec un autre événement"
-        >
-          ⚠️ Chevauchement d’horaire
-        </button>
-
-        <div className="w-full md:hidden text-[11px] text-muted-foreground leading-relaxed">
-          ↻ Répéter: événement automatique (jour/semaine/mois) · ⚠️ Chevauchement: horaire en conflit.
-        </div>
-
-        <select
-          value={priorityFilter}
-          onChange={(e) => setPriorityFilter(e.target.value as CalendarPriorityFilter)}
-          className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-          aria-label="Filtrer par priorité"
-        >
-          <option value="">Toutes priorités</option>
-          <option value="high">Priorité haute</option>
-          <option value="medium">Priorité moyenne</option>
-          <option value="low">Priorité basse</option>
-        </select>
-
-        <select
-          value={timeWindowFilter}
-          onChange={(e) => setTimeWindowFilter(e.target.value as CalendarTimeWindowFilter)}
-          className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-          aria-label="Filtrer par plage horaire"
-        >
-          <option value="">Toutes plages</option>
-          <option value="allDay">Toute la journée</option>
-          <option value="morning">Matin</option>
-          <option value="afternoon">Après-midi</option>
-          <option value="evening">Soir</option>
-        </select>
-
-        {(showRecurringOnly || showConflictsOnly || priorityFilter || timeWindowFilter) && (
-          <button
-            type="button"
-            onClick={() => {
-              setShowRecurringOnly(false);
-              setShowConflictsOnly(false);
-              setPriorityFilter("");
-              setTimeWindowFilter("");
-            }}
-            className="h-8 px-3 rounded-md border border-border bg-background text-xs"
-          >
-            Réinitialiser
-          </button>
-        )}
-
-      </div>
+      <AgendaCalendarFiltersBar
+        showRecurringOnly={showRecurringOnly}
+        showConflictsOnly={showConflictsOnly}
+        priorityFilter={priorityFilter}
+        timeWindowFilter={timeWindowFilter}
+        onToggleRecurringOnly={() => setShowRecurringOnly((prev) => !prev)}
+        onToggleConflictsOnly={() => setShowConflictsOnly((prev) => !prev)}
+        onPriorityFilterChange={setPriorityFilter}
+        onTimeWindowFilterChange={setTimeWindowFilter}
+        onReset={clearFilters}
+      />
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span className="sn-badge">Affichés: {agendaEvents.length}</span>
@@ -1474,177 +690,18 @@ export default function AgendaCalendar({
         Raccourcis: N (nouvel élément), / (recherche), ←/→ (navigation).
       </div>
 
-      {draft && (
-        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Éditeur agenda">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setDraft(null)}
-            aria-label="Fermer"
-          />
-          <div className="absolute bottom-0 left-0 right-0 sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:right-auto sm:w-[min(92vw,560px)] sm:-translate-x-1/2 sm:-translate-y-1/2 rounded-t-lg sm:rounded-lg border border-border bg-card shadow-lg p-4 space-y-3">
-            <div className="text-sm font-semibold">{draft.taskId ? "Modifier l’élément d’agenda" : "Nouvel élément d’agenda"}</div>
-
-            {draft.taskId && draft.instanceDate && draft.recurrenceFreq && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEditScope("occurrence")}
-                  className={`h-9 rounded-md border text-sm ${editScope === "occurrence" ? "border-primary bg-accent" : "border-border bg-background"}`}
-                >
-                  Cette occurrence
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEditScope("series")}
-                  className={`h-9 rounded-md border text-sm ${editScope === "series" ? "border-primary bg-accent" : "border-border bg-background"}`}
-                >
-                  Toute la série
-                </button>
-              </div>
-            )}
-
-            <input
-              value={draft.title}
-              onChange={(e) => setDraft((prev) => (prev ? { ...prev, title: e.target.value } : prev))}
-              placeholder="Titre"
-              className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-              aria-label="Titre"
-            />
-
-            <label className="text-xs flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={draft.allDay}
-                onChange={(e) =>
-                  setDraft((prev) => {
-                    if (!prev) return prev;
-                    const start = parseDateFromDraft(prev.startLocal, prev.allDay) ?? new Date();
-                    const end = parseDateFromDraft(prev.endLocal, prev.allDay) ?? new Date(start.getTime() + 60 * 60 * 1000);
-                    return {
-                      ...prev,
-                      allDay: e.target.checked,
-                      startLocal: e.target.checked ? toLocalDateInputValue(start) : toLocalInputValue(start),
-                      endLocal: e.target.checked ? toLocalDateInputValue(end) : toLocalInputValue(end),
-                    };
-                  })
-                }
-              />
-              Toute la journée
-            </label>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <input
-                type={draft.allDay ? "date" : "datetime-local"}
-                value={draft.startLocal}
-                onChange={(e) => setDraft((prev) => (prev ? { ...prev, startLocal: e.target.value } : prev))}
-                className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-                aria-label="Début"
-              />
-              <input
-                type={draft.allDay ? "date" : "datetime-local"}
-                value={draft.endLocal}
-                onChange={(e) => setDraft((prev) => (prev ? { ...prev, endLocal: e.target.value } : prev))}
-                className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-                aria-label="Fin"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <select
-                value={draft.workspaceId}
-                onChange={(e) => setDraft((prev) => (prev ? { ...prev, workspaceId: e.target.value } : prev))}
-                className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-                aria-label="Dossier"
-              >
-                <option value="">Sans dossier</option>
-                {workspaces.map((ws) => (
-                  <option key={ws.id ?? ws.name} value={ws.id ?? ""} disabled={!ws.id}>
-                    {ws.name}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={draft.priority}
-                onChange={(e) => setDraft((prev) => (prev ? { ...prev, priority: e.target.value as "" | Priority } : prev))}
-                className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-                aria-label="Priorité"
-              >
-                <option value="">Priorité</option>
-                <option value="low">Basse</option>
-                <option value="medium">Moyenne</option>
-                <option value="high">Haute</option>
-              </select>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <select
-                value={draft.recurrenceFreq}
-                onChange={(e) =>
-                  setDraft((prev) =>
-                    prev ? { ...prev, recurrenceFreq: e.target.value as "" | TaskRecurrenceFreq } : prev,
-                  )
-                }
-                className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-                aria-label="Récurrence"
-              >
-                <option value="">Sans récurrence</option>
-                <option value="daily">Chaque jour</option>
-                <option value="weekly">Chaque semaine</option>
-                <option value="monthly">Chaque mois</option>
-              </select>
-
-              <input
-                type="date"
-                value={draft.recurrenceUntil}
-                onChange={(e) => setDraft((prev) => (prev ? { ...prev, recurrenceUntil: e.target.value } : prev))}
-                className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-                aria-label="Récurrence jusqu’au"
-                disabled={!draft.recurrenceFreq}
-              />
-            </div>
-
-            <div className="flex items-center justify-between gap-3">
-              {draft.taskId ? (
-                <div className="inline-flex items-center gap-3">
-                  <button
-                    type="button"
-                    className="sn-text-btn"
-                    onClick={() => {
-                      if (!draft.taskId) return;
-                      onOpenTask(draft.taskId);
-                    }}
-                  >
-                    Ouvrir le détail
-                  </button>
-                  {draft.recurrenceFreq && draft.instanceDate && onSkipOccurrence && (
-                    <button type="button" className="sn-text-btn" onClick={skipOccurrence}>
-                      Ignorer cette occurrence
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <span />
-              )}
-
-              <div className="inline-flex items-center gap-2">
-                <button type="button" className="sn-text-btn" onClick={() => setDraft(null)}>
-                  Annuler
-                </button>
-                <button
-                  type="button"
-                  onClick={saveDraft}
-                  disabled={saving}
-                  className="inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium"
-                >
-                  {saving ? "Enregistrement…" : "Enregistrer"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <AgendaCalendarDraftModal
+        draft={draft}
+        setDraft={setDraft}
+        editScope={editScope}
+        setEditScope={setEditScope}
+        workspaces={workspaces}
+        onOpenTask={onOpenTask}
+        onSkipOccurrence={onSkipOccurrence}
+        skipOccurrence={skipOccurrence}
+        saveDraft={saveDraft}
+        saving={saving}
+      />
     </section>
   );
 }

@@ -38,6 +38,12 @@ Les alias explicites existent aussi :
 - `apps/web` : application Next.js (source of truth)
 - `functions` : Cloud Functions Firebase
 - `landing` : pages statiques marketing (déploiement indépendant)
+- `src` (racine) : **legacy Vite**, conservé temporairement pour historique/migration. Ne pas importer ce code depuis `apps/web`.
+
+## Garde-fou migration legacy
+
+- Vérification anti-import legacy : `pnpm audit:legacy-src`
+- Cette commande est exécutée en CI pour empêcher toute dépendance accidentelle vers `root/src` depuis `apps/web/src`.
 
 ## Déploiement Vercel (`apps/web`)
 

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { getAdminDb } from '@/lib/firebaseAdmin';
+import { logServerError, logServerWarn } from '@/lib/observability';
 import { getStripeModeFromSecret, normalizeStripeId } from '@/lib/stripeUtils';
 import admin from 'firebase-admin';
 import type { UserDoc } from '@/types/firestore';
@@ -63,7 +64,7 @@ async function setUserPlan(userId: string, plan: 'free' | 'pro', updates?: Parti
   const userRef = db.collection('users').doc(userId);
   const userSnap = await userRef.get();
   if (!userSnap.exists) {
-    console.warn('Stripe webhook: target user does not exist, skipping plan mutation', { userId, plan });
+    logServerWarn('stripe.webhook.user_missing', { userId, plan });
     return false;
   }
 
@@ -81,6 +82,7 @@ async function setUserPlan(userId: string, plan: 'free' | 'pro', updates?: Parti
 }
 
 export async function POST(request: Request) {
+  const requestId = request.headers.get('x-request-id') ?? crypto.randomUUID();
   let lockAcquired = false;
   let lockedEventRef: FirebaseFirestore.DocumentReference | null = null;
   try {
@@ -98,7 +100,7 @@ export async function POST(request: Request) {
     try {
       event = stripe.webhooks.constructEvent(payload, sig, webhookSecret);
     } catch (err) {
-      console.error('Stripe webhook signature verification failed', err);
+      logServerError('stripe.webhook.invalid_signature', { requestId, error: err });
       return new NextResponse('Invalid signature', { status: 400 });
     }
 
@@ -106,7 +108,8 @@ export async function POST(request: Request) {
     if (stripeMode !== 'unknown') {
       const eventMode = event.livemode ? 'live' : 'test';
       if (eventMode !== stripeMode) {
-        console.warn('Stripe webhook ignored due to mode mismatch', {
+        logServerWarn('stripe.webhook.mode_mismatch', {
+          requestId,
           eventId: event.id,
           eventType: event.type,
           eventMode,
@@ -168,7 +171,8 @@ export async function POST(request: Request) {
           (await resolveUserIdFromStripeIds({ stripeSubscriptionId: subscription.id, stripeCustomerId }));
 
         if (!userId) {
-          console.error('Stripe webhook: unable to resolve userId for subscription event', {
+          logServerError('stripe.webhook.user_unresolved', {
+            requestId,
             type: event.type,
             subscriptionId: subscription.id,
             stripeCustomerId,
@@ -217,7 +221,7 @@ export async function POST(request: Request) {
         // ignore cleanup failure
       }
     }
-    console.error('Stripe webhook error', e);
+    logServerError('stripe.webhook.failure', { requestId, error: e });
     return new NextResponse('Webhook handler failed', { status: 500 });
   }
 }

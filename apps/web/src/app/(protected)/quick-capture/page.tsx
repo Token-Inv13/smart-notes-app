@@ -1,13 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { FirebaseError } from "firebase/app";
 import { httpsCallable } from "firebase/functions";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { db, functions as fbFunctions } from "@/lib/firebase";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import { sanitizeNoteHtml } from "@/lib/richText";
 import { useAuth } from "@/hooks/useAuth";
+import { toUserErrorMessage } from "@/lib/userError";
 import type { NoteDoc, TodoDoc } from "@/types/firestore";
 import VoiceRecorderButton from "../_components/assistant/VoiceRecorderButton";
 
@@ -109,9 +109,7 @@ export default function QuickCapturePage() {
       const id = await createNote(text);
       window.location.href = `/notes/${encodeURIComponent(id)}`;
     } catch (e) {
-      if (e instanceof FirebaseError) setError(`${e.code}: ${e.message}`);
-      else if (e instanceof Error) setError(e.message);
-      else setError("Création de note impossible.");
+      setError(toUserErrorMessage(e, "Création de note impossible.", { allowMessages: ["Tu dois être connecté."] }));
     } finally {
       setBusy(null);
     }
@@ -130,9 +128,7 @@ export default function QuickCapturePage() {
       const id = await createTodo(text);
       window.location.href = `/todo/${encodeURIComponent(id)}`;
     } catch (e) {
-      if (e instanceof FirebaseError) setError(`${e.code}: ${e.message}`);
-      else if (e instanceof Error) setError(e.message);
-      else setError("Création de checklist impossible.");
+      setError(toUserErrorMessage(e, "Création de checklist impossible.", { allowMessages: ["Tu dois être connecté."] }));
     } finally {
       setBusy(null);
     }
@@ -158,9 +154,7 @@ export default function QuickCapturePage() {
         void invalidateAuthSession();
         return;
       }
-      if (e instanceof FirebaseError) setError(`${e.code}: ${e.message}`);
-      else if (e instanceof Error) setError(e.message);
-      else setError("Impossible de lancer l’analyse IA.");
+      setError(toUserErrorMessage(e, "Impossible de lancer l’analyse IA.", { allowMessages: ["Tu dois être connecté."] }));
     } finally {
       setBusy(null);
     }

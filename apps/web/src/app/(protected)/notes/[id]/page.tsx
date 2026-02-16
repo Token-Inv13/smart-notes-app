@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { toUserErrorMessage } from "@/lib/userError";
 import type { NoteDoc } from "@/types/firestore";
 import { sanitizeNoteHtml } from "@/lib/richText";
 import AssistantNotePanel from "@/app/(protected)/_components/AssistantNotePanel";
@@ -70,7 +71,9 @@ export default function NoteDetailPage() {
           setNote({ id: snap.id, ...data });
         }
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Erreur lors du chargement.";
+        const msg = toUserErrorMessage(e, "Erreur lors du chargement.", {
+          allowMessages: ["Note introuvable.", "Accès refusé.", "Tu dois être connecté.", "ID de note manquant."],
+        });
         if (!cancelled) setError(msg);
       } finally {
         if (!cancelled) setLoading(false);

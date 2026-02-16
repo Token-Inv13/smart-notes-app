@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Failed to disconnect";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("Google Calendar disconnect route failed", e);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

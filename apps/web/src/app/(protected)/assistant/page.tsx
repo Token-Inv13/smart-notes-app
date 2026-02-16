@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { FirebaseError } from "firebase/app";
 import { doc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { auth, db, functions as fbFunctions } from "@/lib/firebase";
@@ -9,6 +8,7 @@ import { useAssistantSettings } from "@/hooks/useAssistantSettings";
 import { useUserAssistantSuggestions } from "@/hooks/useUserAssistantSuggestions";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
+import { toUserErrorMessage } from "@/lib/userError";
 import type { AssistantSuggestionDoc } from "@/types/firestore";
 import BundleCustomizeModal from "../_components/assistant/BundleCustomizeModal";
 
@@ -184,13 +184,7 @@ export default function AssistantPage() {
         void invalidateAuthSession();
         return;
       }
-      if (e instanceof FirebaseError) {
-        setActionError(`${e.code}: ${e.message}`);
-      } else if (e instanceof Error) {
-        setActionError(e.message);
-      } else {
-        setActionError("Impossible d’accepter la suggestion.");
-      }
+      setActionError(toUserErrorMessage(e, "Impossible d’accepter la suggestion."));
     } finally {
       setBusySuggestionId(null);
     }
@@ -214,13 +208,7 @@ export default function AssistantPage() {
         void invalidateAuthSession();
         return;
       }
-      if (e instanceof FirebaseError) {
-        setActionError(`${e.code}: ${e.message}`);
-      } else if (e instanceof Error) {
-        setActionError(e.message);
-      } else {
-        setActionError("Impossible de refuser la suggestion.");
-      }
+      setActionError(toUserErrorMessage(e, "Impossible de refuser la suggestion."));
     } finally {
       setBusySuggestionId(null);
     }
@@ -275,8 +263,7 @@ export default function AssistantPage() {
         void invalidateAuthSession();
         return;
       }
-      if (e instanceof FirebaseError) throw new Error(`${e.code}: ${e.message}`);
-      if (e instanceof Error) throw e;
+      if (e instanceof Error) throw new Error(toUserErrorMessage(e, "Impossible de créer le plan."));
       throw new Error("Impossible de créer le plan.");
     } finally {
       setBusySuggestionId(null);

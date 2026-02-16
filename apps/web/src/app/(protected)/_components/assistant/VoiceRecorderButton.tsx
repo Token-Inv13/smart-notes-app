@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FirebaseError } from "firebase/app";
 import { httpsCallable } from "firebase/functions";
 import { addDoc, collection, doc, getDoc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
 import { ref as storageRef, uploadBytes } from "firebase/storage";
 import { db, functions as fbFunctions, storage } from "@/lib/firebase";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import { useAuth } from "@/hooks/useAuth";
+import { toUserErrorMessage } from "@/lib/userError";
 import type { AssistantVoiceJobDoc, AssistantVoiceResultDoc, NoteDoc } from "@/types/firestore";
 
 type Props = {
@@ -216,9 +216,7 @@ export default function VoiceRecorderButton({
         void invalidateAuthSession();
         return;
       }
-      if (e instanceof FirebaseError) setError(`${e.code}: ${e.message}`);
-      else if (e instanceof Error) setError(e.message);
-      else setError("Impossible de créer le job voix.");
+      setError(toUserErrorMessage(e, "Impossible de créer le job voix."));
       setStatus("error");
       return;
     }
@@ -232,9 +230,7 @@ export default function VoiceRecorderButton({
       });
     } catch (e) {
       console.error("voice.upload_failed", e);
-      if (e instanceof FirebaseError) setError(`${e.code}: ${e.message}`);
-      else if (e instanceof Error) setError(e.message);
-      else setError("Upload audio impossible.");
+      setError(toUserErrorMessage(e, "Upload audio impossible."));
       setStatus("error");
       return;
     }
@@ -249,9 +245,7 @@ export default function VoiceRecorderButton({
         void invalidateAuthSession();
         return;
       }
-      if (e instanceof FirebaseError) setError(`${e.code}: ${e.message}`);
-      else if (e instanceof Error) setError(e.message);
-      else setError("Transcription impossible.");
+      setError(toUserErrorMessage(e, "Transcription impossible."));
       setStatus("error");
     }
   };
@@ -341,9 +335,7 @@ export default function VoiceRecorderButton({
         updatedAt: serverTimestamp(),
       });
     } catch (e) {
-      if (e instanceof FirebaseError) setError(`${e.code}: ${e.message}`);
-      else if (e instanceof Error) setError(e.message);
-      else setError("Insertion impossible.");
+      setError(toUserErrorMessage(e, "Insertion impossible."));
       setStatus("error");
     }
   };
@@ -371,9 +363,7 @@ export default function VoiceRecorderButton({
       const ref = await addDoc(collection(db, "notes"), payload);
       window.location.href = `/notes/${encodeURIComponent(ref.id)}`;
     } catch (e) {
-      if (e instanceof FirebaseError) setError(`${e.code}: ${e.message}`);
-      else if (e instanceof Error) setError(e.message);
-      else setError("Création de note impossible.");
+      setError(toUserErrorMessage(e, "Création de note impossible."));
       setStatus("error");
     }
   };

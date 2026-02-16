@@ -9,6 +9,7 @@ import { auth, db, functions as fbFunctions } from "@/lib/firebase";
 import { useUserNotes } from "@/hooks/useUserNotes";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
+import { toUserErrorMessage } from "@/lib/userError";
 import type { NoteDoc } from "@/types/firestore";
 import RichTextEditor from "./RichTextEditor";
 import { sanitizeNoteHtml } from "@/lib/richText";
@@ -227,9 +228,7 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
       if (e instanceof FirebaseError) {
         const code = String(e.code || "");
         if (code.includes("internal")) setAssistantError("Aide à la rédaction indisponible pour le moment. Réessaie dans quelques secondes.");
-        else setAssistantError(`${e.code}: ${e.message}`);
-      } else if (e instanceof Error) {
-        setAssistantError(e.message);
+        else setAssistantError(toUserErrorMessage(e, "Impossible d’appliquer l’action assistant."));
       } else {
         setAssistantError("Impossible d’appliquer l’action assistant.");
       }
@@ -304,13 +303,7 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
       onCreated?.();
     } catch (e) {
       console.error("Error creating note", e);
-      if (e instanceof FirebaseError) {
-        setCreateError(`${e.code}: ${e.message}`);
-      } else if (e instanceof Error) {
-        setCreateError(e.message);
-      } else {
-        setCreateError("Erreur lors de la création de la note.");
-      }
+      setCreateError(toUserErrorMessage(e, "Erreur lors de la création de la note."));
     } finally {
       setCreating(false);
     }

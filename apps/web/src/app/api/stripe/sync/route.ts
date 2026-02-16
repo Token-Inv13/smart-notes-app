@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import Stripe from 'stripe';
 import admin from 'firebase-admin';
 import { getAdminDb, getAdminProjectId, verifySessionCookie } from '@/lib/firebaseAdmin';
+import { logServerError, logServerWarn } from '@/lib/observability';
 import { getStripeModeFromSecret, normalizeEmail, normalizeStripeId, type StripeMode } from '@/lib/stripeUtils';
 import type { UserDoc } from '@/types/firestore';
 
@@ -52,9 +53,8 @@ async function getSubscriptionForUser(params: {
       const sub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
       attempts.push({ step: 'retrieve_by_subscription_id', ok: true });
       return { subscription: sub, attempts };
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'retrieve_failed';
-      attempts.push({ step: 'retrieve_by_subscription_id', ok: false, detail: message });
+    } catch {
+      attempts.push({ step: 'retrieve_by_subscription_id', ok: false, detail: 'retrieve_failed' });
     }
   }
 
@@ -69,9 +69,8 @@ async function getSubscriptionForUser(params: {
         return { subscription: sub, attempts };
       }
       attempts.push({ step: 'list_by_customer_id', ok: false, detail: 'no_subscription_for_customer' });
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'list_failed';
-      attempts.push({ step: 'list_by_customer_id', ok: false, detail: message });
+    } catch {
+      attempts.push({ step: 'list_by_customer_id', ok: false, detail: 'list_failed' });
     }
   } else {
     attempts.push({ step: 'list_by_customer_id', ok: false, detail: 'missing_customer_id' });
@@ -85,9 +84,8 @@ async function getSubscriptionForUser(params: {
       return { subscription: sub, attempts };
     }
     attempts.push({ step: 'search_by_metadata_user_id', ok: false, detail: 'no_match' });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : 'search_failed';
-    attempts.push({ step: 'search_by_metadata_user_id', ok: false, detail: message });
+  } catch {
+    attempts.push({ step: 'search_by_metadata_user_id', ok: false, detail: 'search_failed' });
   }
 
   if (normalizedEmail) {
@@ -105,9 +103,8 @@ async function getSubscriptionForUser(params: {
       } else {
         attempts.push({ step: 'lookup_by_email_then_list', ok: false, detail: 'no_customer_for_email' });
       }
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'email_lookup_failed';
-      attempts.push({ step: 'lookup_by_email_then_list', ok: false, detail: message });
+    } catch {
+      attempts.push({ step: 'lookup_by_email_then_list', ok: false, detail: 'email_lookup_failed' });
     }
   } else {
     attempts.push({ step: 'lookup_by_email_then_list', ok: false, detail: 'missing_email' });
@@ -117,6 +114,7 @@ async function getSubscriptionForUser(params: {
 }
 
 export async function POST() {
+  const requestId = crypto.randomUUID();
   try {
     const sessionCookie = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
     if (!sessionCookie) return new NextResponse('Unauthorized', { status: 401 });
@@ -165,7 +163,8 @@ export async function POST() {
 
     if (isSubscriptionModeMismatch(sub, stripeMode)) {
       const subscriptionMode = sub.livemode ? 'live' : 'test';
-      console.warn('Stripe sync ignored due to mode mismatch', {
+      logServerWarn('stripe.sync.mode_mismatch', {
+        requestId,
         uid: decoded.uid,
         stripeMode,
         subscriptionMode,
@@ -214,7 +213,7 @@ export async function POST() {
       plan: isActive ? 'pro' : 'free',
     });
   } catch (e) {
-    console.error('Stripe sync error', e);
+    logServerError('stripe.sync.failure', { requestId, error: e });
     return new NextResponse('Sync failed', { status: 500 });
   }
 }

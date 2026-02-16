@@ -220,7 +220,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ events });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Failed to load calendar events";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("Google Calendar events route failed", e);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

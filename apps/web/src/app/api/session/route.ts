@@ -29,7 +29,6 @@ export async function POST(request: Request) {
     return res;
   } catch (e) {
     console.error('Error creating session cookie', e);
-    const message = e instanceof Error ? e.message : 'Failed to create session';
-    return new NextResponse(message, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

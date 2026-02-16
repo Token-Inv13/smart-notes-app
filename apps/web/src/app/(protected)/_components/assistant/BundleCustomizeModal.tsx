@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Timestamp } from "firebase/firestore";
 import { formatTimestampForInput, parseLocalDateTimeToTimestamp } from "@/lib/datetime";
+import { toUserErrorMessage } from "@/lib/userError";
 import type { AssistantSuggestionDoc, Priority } from "@/types/firestore";
 import Modal from "../../Modal";
 
@@ -159,8 +160,7 @@ export default function BundleCustomizeModal({ open, onClose, suggestion, onConf
       });
       onClose();
     } catch (e) {
-      if (e instanceof Error) setError(e.message);
-      else setError("Impossible de créer le plan.");
+      setError(toUserErrorMessage(e, "Impossible de créer le plan."));
       return;
     } finally {
       setInternalLoading(false);

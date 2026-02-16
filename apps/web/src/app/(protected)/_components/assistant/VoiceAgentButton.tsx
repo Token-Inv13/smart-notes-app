@@ -3,13 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { FirebaseError } from "firebase/app";
 import { httpsCallable } from "firebase/functions";
 import { doc, onSnapshot } from "firebase/firestore";
 import { ref as storageRef, uploadBytes } from "firebase/storage";
 import { db, functions as fbFunctions, storage } from "@/lib/firebase";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import { useAuth } from "@/hooks/useAuth";
+import { toUserErrorMessage } from "@/lib/userError";
 
 type Props = {
   mobileHidden?: boolean;
@@ -261,9 +261,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
         void invalidateAuthSession();
         return;
       }
-      if (e instanceof FirebaseError) setError(`${e.code}: ${e.message}`);
-      else if (e instanceof Error) setError(e.message);
-      else setError("Impossible d’exécuter la commande vocale.");
+      setError(toUserErrorMessage(e, "Impossible d’exécuter la commande vocale."));
       setFlowStep("error");
     }
   };
@@ -300,9 +298,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
         void invalidateAuthSession();
         return;
       }
-      if (e instanceof FirebaseError) setError(`${e.code}: ${e.message}`);
-      else if (e instanceof Error) setError(e.message);
-      else setError("Impossible de traiter l’audio.");
+      setError(toUserErrorMessage(e, "Impossible de traiter l’audio."));
       setFlowStep("error");
     }
   };

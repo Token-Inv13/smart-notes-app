@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { FirebaseError } from "firebase/app";
 import {
   doc,
   serverTimestamp,
@@ -17,6 +16,7 @@ import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import type { NoteDoc } from "@/types/firestore";
 import { htmlToPlainText } from "@/lib/richText";
+import { toUserErrorMessage } from "@/lib/userError";
 import Link from "next/link";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
 
@@ -280,9 +280,7 @@ export default function NotesPage() {
       });
     } catch (e) {
       console.error("Error toggling favorite", e);
-      if (e instanceof FirebaseError) {
-        setEditError(`${e.code}: ${e.message}`);
-      }
+      setEditError(toUserErrorMessage(e, "Erreur lors de la mise à jour des favoris."));
     }
   };
 

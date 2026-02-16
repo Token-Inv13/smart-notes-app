@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { arrayRemove, arrayUnion, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { toUserErrorMessage } from "@/lib/userError";
 import type { TaskDoc } from "@/types/firestore";
 
 function formatFrDateTime(ts?: TaskDoc["dueDate"] | null) {
@@ -82,7 +83,9 @@ export default function TaskDetailPage() {
       try {
         await loadTask();
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Erreur lors du chargement.";
+        const msg = toUserErrorMessage(e, "Erreur lors du chargement.", {
+          allowMessages: ["Élément d’agenda introuvable.", "Accès refusé.", "Tu dois être connecté.", "ID d’élément d’agenda manquant."],
+        });
         if (!cancelled) setError(msg);
       } finally {
         if (!cancelled) setLoading(false);
@@ -120,7 +123,7 @@ export default function TaskDetailPage() {
       await loadTask();
       setActionMsg("Occurrence restaurée.");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Impossible de restaurer cette occurrence.");
+      setError(toUserErrorMessage(e, "Impossible de restaurer cette occurrence."));
     } finally {
       setBusyException(null);
     }
@@ -154,7 +157,7 @@ export default function TaskDetailPage() {
       setActionMsg("Occurrence ignorée ajoutée.");
       setNewExceptionDate("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Impossible d’ajouter cette occurrence ignorée.");
+      setError(toUserErrorMessage(e, "Impossible d’ajouter cette occurrence ignorée."));
     } finally {
       setAddingException(false);
     }

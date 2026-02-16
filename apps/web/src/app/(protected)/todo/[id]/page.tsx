@@ -4,6 +4,7 @@ import { use, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { toUserErrorMessage } from "@/lib/userError";
 import type { TodoDoc } from "@/types/firestore";
 
 export default function TodoDetailPage(props: { params: Promise<{ id: string }> }) {
@@ -53,7 +54,9 @@ export default function TodoDetailPage(props: { params: Promise<{ id: string }> 
           setTodo({ id: snap.id, ...data });
         }
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Erreur lors du chargement.";
+        const msg = toUserErrorMessage(e, "Erreur lors du chargement.", {
+          allowMessages: ["Checklist introuvable.", "Accès refusé.", "Tu dois être connecté.", "ID de checklist manquant."],
+        });
         if (!cancelled) setError(msg);
       } finally {
         if (!cancelled) setLoading(false);

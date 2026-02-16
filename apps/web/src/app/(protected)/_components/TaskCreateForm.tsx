@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
-import { FirebaseError } from "firebase/app";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { parseLocalDateTimeToTimestamp, parseLocalDateToTimestamp } from "@/lib/datetime";
+import { toUserErrorMessage } from "@/lib/userError";
 import type { TaskDoc } from "@/types/firestore";
 import DictationMicButton from "./DictationMicButton";
 import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
@@ -281,13 +281,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
       onCreated?.();
     } catch (e) {
       console.error("Error creating task", e);
-      if (e instanceof FirebaseError) {
-        setCreateError(`${e.code}: ${e.message}`);
-      } else if (e instanceof Error) {
-        setCreateError(e.message);
-      } else {
-        setCreateError("Erreur lors de la création de l’élément d’agenda.");
-      }
+      setCreateError(toUserErrorMessage(e, "Erreur lors de la création de l’élément d’agenda."));
     } finally {
       setCreating(false);
     }

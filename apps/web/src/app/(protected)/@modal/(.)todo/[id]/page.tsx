@@ -6,6 +6,7 @@ import { deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/fir
 import { httpsCallable } from "firebase/functions";
 import { auth, db, functions as fbFunctions } from "@/lib/firebase";
 import { formatTimestampForDateInput, parseLocalDateToTimestamp } from "@/lib/datetime";
+import { toUserErrorMessage } from "@/lib/userError";
 import type { TodoDoc } from "@/types/firestore";
 import DictationMicButton from "@/app/(protected)/_components/DictationMicButton";
 import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
@@ -186,7 +187,9 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
           });
         }
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Erreur lors du chargement.";
+        const msg = toUserErrorMessage(e, "Erreur lors du chargement.", {
+          allowMessages: ["Checklist introuvable.", "Accès refusé.", "Tu dois être connecté.", "ID de checklist manquant."],
+        });
         if (!cancelled) setError(msg);
       } finally {
         if (!cancelled) setLoading(false);
@@ -258,7 +261,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
       );
     } catch (e) {
       console.error("Error updating todo items (modal)", e);
-      setEditError(e instanceof Error ? e.message : "Erreur lors de la mise à jour.");
+      setEditError(toUserErrorMessage(e, "Erreur lors de la mise à jour."));
     } finally {
       setSaving(false);
     }
@@ -334,9 +337,8 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
       if (e instanceof FirebaseError) {
         const code = String(e.code || "");
         if (code.includes("internal")) setAssistantError("Aide à la rédaction indisponible pour le moment. Réessaie dans quelques secondes.");
-        else setAssistantError(`${e.code}: ${e.message}`);
+        else setAssistantError(toUserErrorMessage(e, "Impossible d’appliquer l’action assistant."));
       }
-      else if (e instanceof Error) setAssistantError(e.message);
       else setAssistantError("Impossible d’appliquer l’action assistant.");
     } finally {
       setAssistantBusyAction(null);
@@ -365,7 +367,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
       close();
     } catch (e) {
       console.error("Error deleting todo (modal)", e);
-      setEditError(e instanceof Error ? e.message : "Erreur lors de la suppression.");
+      setEditError(toUserErrorMessage(e, "Erreur lors de la suppression."));
     } finally {
       setDeleting(false);
       setConfirmingDelete(false);
