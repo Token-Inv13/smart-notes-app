@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.adminListErrorLogs = exports.adminListAuditLogs = exports.adminListUserActivityEvents = exports.rebuildAdminUsersIndex = exports.adminListUsersIndex = exports.adminSendUserMessage = exports.adminResetUserFlags = exports.adminDisablePremium = exports.adminEnablePremium = exports.adminRevokeUserSessions = exports.adminUsersIndexOnErrorLogCreate = exports.adminUsersIndexOnAuthDelete = exports.adminUsersIndexOnAuthCreate = exports.adminUsersIndexOnUserWrite = exports.adminLookupUser = void 0;
+exports.adminListErrorLogs = exports.adminListAuditLogs = exports.adminListUserActivityEvents = exports.rebuildAdminUsersIndex = exports.adminListUsersIndex = exports.adminGetHealthSummary = exports.adminSendUserMessage = exports.adminResetUserFlags = exports.adminDisablePremium = exports.adminEnablePremium = exports.adminRevokeUserSessions = exports.adminUsersIndexOnErrorLogCreate = exports.adminUsersIndexOnAuthDelete = exports.adminUsersIndexOnAuthCreate = exports.adminUsersIndexOnUserWrite = exports.adminLookupUser = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 if (!admin.apps.length) {
@@ -113,16 +113,21 @@ function mapAuditLog(doc) {
     };
 }
 function mapErrorLog(doc) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
     const data = doc.data();
+    const context = isObject(data.context) ? data.context : {};
+    const uid = (_c = (_b = (_a = toOptionalString(data.uid)) !== null && _a !== void 0 ? _a : toOptionalString(context.uid)) !== null && _b !== void 0 ? _b : toOptionalString(context.targetUserUid)) !== null && _c !== void 0 ? _c : null;
     return {
         id: doc.id,
-        category: (_a = toOptionalString(data.category)) !== null && _a !== void 0 ? _a : 'functions',
-        scope: (_b = toOptionalString(data.scope)) !== null && _b !== void 0 ? _b : 'admin',
-        code: (_c = toOptionalString(data.code)) !== null && _c !== void 0 ? _c : 'internal',
-        message: (_d = toOptionalString(data.message)) !== null && _d !== void 0 ? _d : 'Unknown error',
+        source: (_d = toOptionalString(data.source)) !== null && _d !== void 0 ? _d : 'functions',
+        severity: (_e = toOptionalString(data.severity)) !== null && _e !== void 0 ? _e : 'error',
+        category: (_f = toOptionalString(data.category)) !== null && _f !== void 0 ? _f : 'functions',
+        scope: (_g = toOptionalString(data.scope)) !== null && _g !== void 0 ? _g : 'admin',
+        code: (_h = toOptionalString(data.code)) !== null && _h !== void 0 ? _h : 'internal',
+        message: (_j = toOptionalString(data.message)) !== null && _j !== void 0 ? _j : 'Unknown error',
+        uid,
         createdAtMs: readTimestampMs(data.createdAt),
-        context: isObject(data.context) ? data.context : {},
+        context,
     };
 }
 function toHttpsError(err) {
@@ -920,6 +925,74 @@ exports.adminSendUserMessage = functions.https.onCall(async (data, context) => {
                 code: mapped.code,
                 message: mapped.message,
                 context: { adminUid, targetUserUid },
+            });
+        }
+        catch (_c) {
+            // Ignore logging failures.
+        }
+        throw mapped;
+    }
+});
+exports.adminGetHealthSummary = functions.https.onCall(async (data, context) => {
+    var _a, _b;
+    const action = 'get_health_summary';
+    const payload = isObject(data) ? data : {};
+    const adminUid = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid) !== null && _b !== void 0 ? _b : null;
+    try {
+        const actorUid = assertAdmin(context);
+        const windowHours = toPositiveInteger(payload.windowHours, 24, 24 * 30);
+        const nowMs = Date.now();
+        const thresholdMs = nowMs - windowHours * 60 * 60 * 1000;
+        const thresholdTs = admin.firestore.Timestamp.fromMillis(thresholdMs);
+        const db = admin.firestore();
+        const [totalErrors, functionsErrors, authErrors, paymentErrors, aiErrors, aiJobFailedCount] = await Promise.all([
+            countQuery(db.collection('appErrorLogs').where('createdAt', '>=', thresholdTs)),
+            countQuery(db.collection('appErrorLogs').where('createdAt', '>=', thresholdTs).where('category', '==', 'functions')),
+            countQuery(db.collection('appErrorLogs').where('createdAt', '>=', thresholdTs).where('category', '==', 'auth')),
+            countQuery(db.collection('appErrorLogs').where('createdAt', '>=', thresholdTs).where('category', '==', 'payments')),
+            countQuery(db.collection('appErrorLogs').where('createdAt', '>=', thresholdTs).where('category', '==', 'ai')),
+            countQuery(db
+                .collection('userActivityEvents')
+                .where('createdAt', '>=', thresholdTs)
+                .where('type', '==', 'ai_job_failed')),
+        ]);
+        await writeAdminAuditLog({
+            adminUid: actorUid,
+            targetUserUid: null,
+            action,
+            payload: { windowHours },
+            status: 'success',
+            message: 'Computed admin health summary.',
+        });
+        return {
+            windowHours,
+            totalErrors,
+            categoryCounts: {
+                functions: functionsErrors,
+                auth: authErrors,
+                payments: paymentErrors,
+                ai: aiErrors,
+            },
+            aiJobFailedCount,
+        };
+    }
+    catch (error) {
+        const mapped = toHttpsError(error);
+        try {
+            await writeAdminAuditLog({
+                adminUid,
+                targetUserUid: null,
+                action,
+                payload,
+                status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
+                message: mapped.message,
+            });
+            await writeAppErrorLog({
+                category: 'functions',
+                scope: action,
+                code: mapped.code,
+                message: mapped.message,
+                context: { adminUid, payload },
             });
         }
         catch (_c) {

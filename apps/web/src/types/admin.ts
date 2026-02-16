@@ -42,10 +42,13 @@ export type AdminAuditLogItem = {
 
 export type AdminErrorLogItem = {
   id: string;
+  source: string;
+  severity: string;
   category: string;
   scope: string;
   code: string;
   message: string;
+  uid: string | null;
   createdAtMs: number | null;
   context: Record<string, unknown>;
 };
@@ -104,4 +107,16 @@ export type AdminUserActivityEvent = {
   type: string;
   createdAtMs: number | null;
   metadata: Record<string, unknown>;
+};
+
+export type AdminHealthSummary = {
+  windowHours: number;
+  totalErrors: number;
+  categoryCounts: {
+    functions: number;
+    auth: number;
+    payments: number;
+    ai: number;
+  };
+  aiJobFailedCount: number;
 };

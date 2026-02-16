@@ -7,6 +7,7 @@ import type {
   AdminErrorLogItem,
   AdminListUsersIndexParams,
   AdminListUsersIndexResponse,
+  AdminHealthSummary,
   AdminLookupUserResult,
   AdminRebuildUsersIndexResponse,
   AdminUserActivityEvent,
@@ -105,6 +106,14 @@ export async function sendUserMessage(params: {
     AdminActionResponse
   >(fbFunctions, 'adminSendUserMessage');
   const res = await fn(params);
+  return res.data;
+}
+
+export async function getAdminHealthSummary(params?: {
+  windowHours?: number;
+}): Promise<AdminHealthSummary> {
+  const fn = httpsCallable<{ windowHours?: number }, AdminHealthSummary>(fbFunctions, 'adminGetHealthSummary');
+  const res = await fn(params ?? {});
   return res.data;
 }
 

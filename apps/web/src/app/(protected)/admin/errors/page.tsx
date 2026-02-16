@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { listErrorLogs } from '@/lib/adminClient';
-import type { AdminCursor, AdminErrorLogItem } from '@/types/admin';
+import { getAdminHealthSummary, listErrorLogs } from '@/lib/adminClient';
+import type { AdminCursor, AdminErrorLogItem, AdminHealthSummary } from '@/types/admin';
 
 function formatDateTime(ms: number | null | undefined) {
   if (!ms || !Number.isFinite(ms)) return '—';
@@ -25,6 +25,22 @@ export default function AdminErrorsPage() {
   const [cursor, setCursor] = useState<AdminCursor | null>(null);
   const [category, setCategory] = useState('');
   const [selected, setSelected] = useState<AdminErrorLogItem | null>(null);
+  const [health, setHealth] = useState<AdminHealthSummary | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthError, setHealthError] = useState<string | null>(null);
+
+  const loadHealthSummary = async () => {
+    setHealthLoading(true);
+    setHealthError(null);
+    try {
+      const summary = await getAdminHealthSummary({ windowHours: 24 });
+      setHealth(summary);
+    } catch (e) {
+      setHealthError(e instanceof Error ? e.message : 'Impossible de charger les KPI santé.');
+    } finally {
+      setHealthLoading(false);
+    }
+  };
 
   const loadLogs = async (reset: boolean) => {
     setLoading(true);
@@ -63,6 +79,28 @@ export default function AdminErrorsPage() {
       </header>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">KPI Santé (24h)</h2>
+          <button
+            type="button"
+            onClick={loadHealthSummary}
+            disabled={healthLoading}
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+          >
+            {healthLoading ? 'Calcul…' : 'Calculer KPI'}
+          </button>
+        </div>
+
+        {healthError && <p className="mb-3 text-sm text-destructive">{healthError}</p>}
+
+        <div className="mb-4 grid gap-2 md:grid-cols-5">
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-3"><p className="text-xs text-slate-500">Erreurs total</p><p className="text-lg font-semibold text-slate-900">{health?.totalErrors ?? '—'}</p></div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-3"><p className="text-xs text-slate-500">Functions</p><p className="text-lg font-semibold text-slate-900">{health?.categoryCounts.functions ?? '—'}</p></div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-3"><p className="text-xs text-slate-500">Auth</p><p className="text-lg font-semibold text-slate-900">{health?.categoryCounts.auth ?? '—'}</p></div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-3"><p className="text-xs text-slate-500">Paiement</p><p className="text-lg font-semibold text-slate-900">{health?.categoryCounts.payments ?? '—'}</p></div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-3"><p className="text-xs text-slate-500">AI jobs failed</p><p className="text-lg font-semibold text-slate-900">{health?.aiJobFailedCount ?? '—'}</p></div>
+        </div>
+
         <div className="flex flex-wrap items-center gap-2">
           <label htmlFor="error-category-filter" className="sr-only">
             Filtrer les erreurs par type
@@ -105,10 +143,13 @@ export default function AdminErrorsPage() {
             <thead className="bg-slate-50">
               <tr className="border-b border-slate-200 text-left text-slate-600">
                 <th className="px-2 py-2">Date</th>
+                <th className="px-2 py-2">Source</th>
+                <th className="px-2 py-2">Sévérité</th>
                 <th className="px-2 py-2">Type</th>
                 <th className="px-2 py-2">Scope</th>
                 <th className="px-2 py-2">Code</th>
                 <th className="px-2 py-2">Message</th>
+                <th className="px-2 py-2">UID</th>
               </tr>
             </thead>
             <tbody>
@@ -119,15 +160,28 @@ export default function AdminErrorsPage() {
                   onClick={() => setSelected(log)}
                 >
                   <td className="px-2 py-2">{formatDateTime(log.createdAtMs)}</td>
+                  <td className="px-2 py-2">{log.source}</td>
+                  <td className="px-2 py-2">{log.severity}</td>
                   <td className="px-2 py-2">{log.category}</td>
                   <td className="px-2 py-2">{log.scope}</td>
                   <td className="px-2 py-2">{log.code}</td>
                   <td className="px-2 py-2">{log.message}</td>
+                  <td className="px-2 py-2">
+                    {log.uid ? (
+                      <Link
+                        href={`/admin?lookup=${encodeURIComponent(log.uid)}`}
+                        className="text-xs font-medium text-blue-700 underline"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        Ouvrir fiche
+                      </Link>
+                    ) : '—'}
+                  </td>
                 </tr>
               ))}
               {logs.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-2 py-4 text-center text-slate-500">
+                  <td colSpan={8} className="px-2 py-4 text-center text-slate-500">
                     Aucun événement chargé.
                   </td>
                 </tr>

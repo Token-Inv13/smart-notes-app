@@ -197,22 +197,34 @@ function mapAuditLog(doc: FirebaseFirestore.QueryDocumentSnapshot): {
 
 function mapErrorLog(doc: FirebaseFirestore.QueryDocumentSnapshot): {
   id: string;
+  source: string;
+  severity: string;
   category: string;
   scope: string;
   code: string;
   message: string;
+  uid: string | null;
   createdAtMs: number | null;
   context: Record<string, unknown>;
 } {
   const data = doc.data();
+  const context = isObject(data.context) ? data.context : {};
+  const uid =
+    toOptionalString(data.uid) ??
+    toOptionalString(context.uid) ??
+    toOptionalString(context.targetUserUid) ??
+    null;
   return {
     id: doc.id,
+    source: toOptionalString(data.source) ?? 'functions',
+    severity: toOptionalString(data.severity) ?? 'error',
     category: toOptionalString(data.category) ?? 'functions',
     scope: toOptionalString(data.scope) ?? 'admin',
     code: toOptionalString(data.code) ?? 'internal',
     message: toOptionalString(data.message) ?? 'Unknown error',
+    uid,
     createdAtMs: readTimestampMs(data.createdAt),
-    context: isObject(data.context) ? data.context : {},
+    context,
   };
 }
 
@@ -1130,6 +1142,79 @@ export const adminSendUserMessage = functions.https.onCall(async (data, context)
         code: mapped.code,
         message: mapped.message,
         context: { adminUid, targetUserUid },
+      });
+    } catch {
+      // Ignore logging failures.
+    }
+    throw mapped;
+  }
+});
+
+export const adminGetHealthSummary = functions.https.onCall(async (data, context) => {
+  const action = 'get_health_summary';
+  const payload = isObject(data) ? data : {};
+  const adminUid = context.auth?.uid ?? null;
+
+  try {
+    const actorUid = assertAdmin(context);
+    const windowHours = toPositiveInteger(payload.windowHours, 24, 24 * 30);
+    const nowMs = Date.now();
+    const thresholdMs = nowMs - windowHours * 60 * 60 * 1000;
+    const thresholdTs = admin.firestore.Timestamp.fromMillis(thresholdMs);
+
+    const db = admin.firestore();
+
+    const [totalErrors, functionsErrors, authErrors, paymentErrors, aiErrors, aiJobFailedCount] = await Promise.all([
+      countQuery(db.collection('appErrorLogs').where('createdAt', '>=', thresholdTs)),
+      countQuery(db.collection('appErrorLogs').where('createdAt', '>=', thresholdTs).where('category', '==', 'functions')),
+      countQuery(db.collection('appErrorLogs').where('createdAt', '>=', thresholdTs).where('category', '==', 'auth')),
+      countQuery(db.collection('appErrorLogs').where('createdAt', '>=', thresholdTs).where('category', '==', 'payments')),
+      countQuery(db.collection('appErrorLogs').where('createdAt', '>=', thresholdTs).where('category', '==', 'ai')),
+      countQuery(
+        db
+          .collection('userActivityEvents')
+          .where('createdAt', '>=', thresholdTs)
+          .where('type', '==', 'ai_job_failed'),
+      ),
+    ]);
+
+    await writeAdminAuditLog({
+      adminUid: actorUid,
+      targetUserUid: null,
+      action,
+      payload: { windowHours },
+      status: 'success',
+      message: 'Computed admin health summary.',
+    });
+
+    return {
+      windowHours,
+      totalErrors,
+      categoryCounts: {
+        functions: functionsErrors,
+        auth: authErrors,
+        payments: paymentErrors,
+        ai: aiErrors,
+      },
+      aiJobFailedCount,
+    };
+  } catch (error) {
+    const mapped = toHttpsError(error);
+    try {
+      await writeAdminAuditLog({
+        adminUid,
+        targetUserUid: null,
+        action,
+        payload,
+        status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
+        message: mapped.message,
+      });
+      await writeAppErrorLog({
+        category: 'functions',
+        scope: action,
+        code: mapped.code,
+        message: mapped.message,
+        context: { adminUid, payload },
       });
     } catch {
       // Ignore logging failures.

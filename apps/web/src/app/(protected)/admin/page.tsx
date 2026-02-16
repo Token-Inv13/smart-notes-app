@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   disableUserPremium,
   enableUserPremium,
@@ -82,6 +83,7 @@ function computeAccountHealth(user: AdminLookupUserResult): {
 }
 
 export default function AdminPage() {
+  const searchParams = useSearchParams();
   const [query, setQuery] = useState('');
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
@@ -111,6 +113,8 @@ export default function AdminPage() {
   const [messageSending, setMessageSending] = useState(false);
   const [messageInfo, setMessageInfo] = useState<string | null>(null);
   const [messageError, setMessageError] = useState<string | null>(null);
+
+  const [recentUsers, setRecentUsers] = useState<string[]>([]);
 
   const [users, setUsers] = useState<AdminUserIndexItem[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
@@ -161,6 +165,12 @@ export default function AdminPage() {
     return Number.isFinite(value) && value > 0 ? value : undefined;
   }, [usersInactiveDays]);
 
+  const lookupFromUrl = useMemo(() => {
+    const raw = searchParams.get('lookup');
+    const trimmed = raw?.trim() ?? '';
+    return trimmed.length > 0 ? trimmed : null;
+  }, [searchParams]);
+
   const loadUsers = async (options?: { reset?: boolean }) => {
     const reset = options?.reset === true;
     setUsersLoading(true);
@@ -186,6 +196,19 @@ export default function AdminPage() {
     } finally {
       setUsersLoading(false);
     }
+  };
+
+  const rememberRecentUser = (uid: string) => {
+    if (!uid) return;
+    setRecentUsers((prev) => {
+      const next = [uid, ...prev.filter((item) => item !== uid)].slice(0, 8);
+      try {
+        window.localStorage.setItem('admin_recent_users', JSON.stringify(next));
+      } catch {
+        // ignore localStorage failures
+      }
+      return next;
+    });
   };
 
   const handleSendMessage = async () => {
@@ -242,6 +265,26 @@ export default function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usersSortBy, usersPageSize]);
 
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem('admin_recent_users');
+      if (!raw) return;
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        setRecentUsers(arr.filter((v): v is string => typeof v === 'string').slice(0, 8));
+      }
+    } catch {
+      // ignore localStorage parse errors
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!lookupFromUrl) return;
+    setQuery(lookupFromUrl);
+    void openUserFromIndex(lookupFromUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lookupFromUrl]);
+
   const loadAuditLogs = async (options?: { reset?: boolean }) => {
     const reset = options?.reset === true;
     setAuditLoading(true);
@@ -276,6 +319,7 @@ export default function AdminPage() {
       const user = await lookupUser(uid);
       setLookupResult(user);
       setAuditFilterUserUid(user.uid);
+      rememberRecentUser(user.uid);
       setActivityCursor(null);
       await loadActivityEvents(user.uid, { reset: true });
     } catch (e) {
@@ -328,6 +372,7 @@ export default function AdminPage() {
       const user = await lookupUser(trimmed);
       setLookupResult(user);
       setAuditFilterUserUid(user.uid);
+      rememberRecentUser(user.uid);
       setActivityCursor(null);
       await loadActivityEvents(user.uid, { reset: true });
     } catch (e) {
@@ -338,15 +383,24 @@ export default function AdminPage() {
     }
   };
 
-  const runAction = async (label: string, callback: () => Promise<{ message: string }>) => {
+  const runAction = async (params: {
+    label: string;
+    callback: () => Promise<{ message: string }>;
+    confirmText?: string;
+  }) => {
     if (!canActOnUid) return;
 
-    setActionBusy(label);
+    if (params.confirmText && typeof window !== 'undefined') {
+      const confirmed = window.confirm(params.confirmText);
+      if (!confirmed) return;
+    }
+
+    setActionBusy(params.label);
     setActionError(null);
     setActionInfo(null);
 
     try {
-      const res = await callback();
+      const res = await params.callback();
       setActionInfo(res.message);
       await loadAuditLogs({ reset: true });
     } catch (e) {
@@ -549,6 +603,20 @@ export default function AdminPage() {
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">User Lookup</h2>
+        {recentUsers.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {recentUsers.map((uid) => (
+              <button
+                key={uid}
+                type="button"
+                onClick={() => void openUserFromIndex(uid)}
+                className="rounded-md border border-slate-300 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+              >
+                {uid.slice(0, 10)}…
+              </button>
+            ))}
+          </div>
+        )}
         <form className="mt-4 flex flex-col gap-3 md:flex-row" onSubmit={handleLookup}>
           <input
             value={query}
@@ -709,15 +777,30 @@ export default function AdminPage() {
 
           <div className="mt-6 border-t border-slate-200 pt-4">
             <h3 className="text-sm font-semibold text-slate-900">Actions administrateur</h3>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 space-y-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Accès</p>
+                <div className="mt-2 flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => runAction('revoke', () => revokeUserSessions(lookupResult.uid))}
+                onClick={() =>
+                  runAction({
+                    label: 'revoke',
+                    callback: () => revokeUserSessions(lookupResult.uid),
+                    confirmText: `Confirmer la révocation des sessions pour ${lookupResult.uid} ?`,
+                  })
+                }
                 disabled={actionBusy !== null}
                 className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 transition hover:bg-slate-50 disabled:opacity-60"
               >
                 {actionBusy === 'revoke' ? 'Révocation…' : 'Révoquer sessions'}
               </button>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Abonnement</p>
+                <div className="mt-2 flex flex-wrap gap-2">
 
               <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-1">
                 <label htmlFor="premium-days" className="sr-only">
@@ -736,12 +819,15 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() =>
-                    runAction('enable-premium', () =>
-                      enableUserPremium({
-                        targetUserUid: lookupResult.uid,
-                        durationDays: premiumDays,
-                      }),
-                    )
+                    runAction({
+                      label: 'enable-premium',
+                      callback: () =>
+                        enableUserPremium({
+                          targetUserUid: lookupResult.uid,
+                          durationDays: premiumDays,
+                        }),
+                      confirmText: `Activer premium ${premiumDays} jours pour ${lookupResult.uid} ?`,
+                    })
                   }
                   disabled={actionBusy !== null}
                   className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:opacity-60"
@@ -752,21 +838,41 @@ export default function AdminPage() {
 
               <button
                 type="button"
-                onClick={() => runAction('disable-premium', () => disableUserPremium(lookupResult.uid))}
+                onClick={() =>
+                  runAction({
+                    label: 'disable-premium',
+                    callback: () => disableUserPremium(lookupResult.uid),
+                    confirmText: `Désactiver premium pour ${lookupResult.uid} ?`,
+                  })
+                }
                 disabled={actionBusy !== null}
                 className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-100 disabled:opacity-60"
               >
                 {actionBusy === 'disable-premium' ? 'Désactivation…' : 'Désactiver premium'}
               </button>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Maintenance</p>
+                <div className="mt-2 flex flex-wrap gap-2">
 
               <button
                 type="button"
-                onClick={() => runAction('reset-flags', () => resetUserFlags(lookupResult.uid))}
+                onClick={() =>
+                  runAction({
+                    label: 'reset-flags',
+                    callback: () => resetUserFlags(lookupResult.uid),
+                    confirmText: `Confirmer le reset onboarding/flags pour ${lookupResult.uid} ?`,
+                  })
+                }
                 disabled={actionBusy !== null}
                 className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100 disabled:opacity-60"
               >
                 {actionBusy === 'reset-flags' ? 'Reset…' : 'Reset onboarding/flags'}
               </button>
+                </div>
+              </div>
             </div>
 
             {actionInfo && <p className="mt-3 text-sm text-emerald-600">{actionInfo}</p>}
