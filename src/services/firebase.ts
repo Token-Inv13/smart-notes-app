@@ -6,14 +6,16 @@ import { getAnalytics, isSupported } from 'firebase/analytics';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBowWu2iQ6dKSfDLafA0KlnPB6q-z-gJdI",
-  authDomain: "noandta-28cc8.firebaseapp.com",
-  projectId: "noandta-28cc8",
-  storageBucket: "noandta-28cc8.appspot.com",
-  messagingSenderId: "515095303787",
-  appId: "1:515095303787:web:dfa3498698d95ce32d032e",
-  measurementId: "G-DDQK66WJ08"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
+
+const fcmVapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
@@ -33,7 +35,7 @@ export const getFCMToken = async (): Promise<string | null> => {
   
   try {
     const currentToken = await getToken(messaging, {
-      vapidKey: 'BJO_U00ZTBpBAdagrdexqiWwu37SHt-0gHy_GkwHXJwpRPz6b1nQBy2g9TE0ICz2qNQKF-YJuGuuOLqcRSNphLQ'
+      vapidKey: fcmVapidKey,
     });
     
     if (currentToken) {
