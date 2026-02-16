@@ -1237,16 +1237,24 @@ export default function AgendaCalendar({
           type="button"
           onClick={() => setShowRecurringOnly((prev) => !prev)}
           className={`h-8 px-3 rounded-md border text-xs ${showRecurringOnly ? "border-primary bg-accent" : "border-border bg-background"}`}
+          title="Cet événement se répète automatiquement (chaque jour/semaine/mois)."
+          aria-label="Filtre Répéter — Cet événement se répète automatiquement"
         >
-          Récurrents
+          ↻ Répéter
         </button>
         <button
           type="button"
           onClick={() => setShowConflictsOnly((prev) => !prev)}
           className={`h-8 px-3 rounded-md border text-xs ${showConflictsOnly ? "border-primary bg-accent" : "border-border bg-background"}`}
+          title="Cet horaire entre en conflit avec un autre événement."
+          aria-label="Filtre Chevauchement d’horaire — Cet horaire entre en conflit avec un autre événement"
         >
-          Conflits
+          ⚠️ Chevauchement d’horaire
         </button>
+
+        <div className="w-full md:hidden text-[11px] text-muted-foreground leading-relaxed">
+          ↻ Répéter: événement automatique (jour/semaine/mois) · ⚠️ Chevauchement: horaire en conflit.
+        </div>
 
         <select
           value={priorityFilter}
