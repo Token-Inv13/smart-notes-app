@@ -56,7 +56,8 @@ export function middleware(request: NextRequest) {
     pathname.startsWith('/tasks') ||
     pathname.startsWith('/notes') ||
     pathname.startsWith('/todo') ||
-    pathname.startsWith('/settings');
+    pathname.startsWith('/settings') ||
+    pathname.startsWith('/admin');
 
   if (!isProtectedRoute) {
     return applySecurityHeaders(NextResponse.next(), requestId);

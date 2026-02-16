@@ -3,8 +3,11 @@ import * as admin from 'firebase-admin';
 import * as nodemailer from 'nodemailer';
 import { createHash } from 'crypto';
 import { parseAssistantVoiceIntent } from './assistant/voiceIntent';
+export * from './admin';
 
-admin.initializeApp();
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
 
 interface TaskReminder {
   userId: string;

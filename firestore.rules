@@ -10,6 +10,10 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
 
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+
     function isProUser() {
       return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.plan == 'pro';
@@ -243,6 +247,17 @@ service cloud.firestore {
         request.resource.data.members.size() == resource.data.members.size();
       allow delete: if isAuthenticated() && 
         isOwner(resource.data.ownerId);
+    }
+
+    // Admin observability collections (read-only from admin UI)
+    match /adminAuditLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /appErrorLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
   }
 }

@@ -1,4 +1,18 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.assistantRunAIJobQueue = exports.assistantPurgeExpiredVoiceData = exports.assistantExecuteIntent = exports.assistantRequestVoiceTranscription = exports.assistantCreateVoiceJob = exports.assistantRewriteText = exports.assistantRequestAIAnalysis = exports.assistantRequestReanalysis = exports.assistantRateSuggestionFeedback = exports.assistantRejectSuggestion = exports.assistantApplySuggestion = exports.assistantRunJobQueue = exports.assistantEnqueueTodoJob = exports.assistantEnqueueNoteJob = exports.testSendReminderEmail = exports.cleanupOldReminders = exports.assistantPurgeExpiredSuggestions = exports.assistantExpireSuggestions = exports.checkAndSendReminders = void 0;
 const functions = require("firebase-functions/v1");
@@ -6,7 +20,10 @@ const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
 const crypto_1 = require("crypto");
 const voiceIntent_1 = require("./assistant/voiceIntent");
-admin.initializeApp();
+__exportStar(require("./admin"), exports);
+if (!admin.apps.length) {
+    admin.initializeApp();
+}
 const ASSISTANT_REANALYSIS_FREE_DAILY_LIMIT = 10;
 const ASSISTANT_REANALYSIS_PRO_DAILY_LIMIT = 200;
 const ASSISTANT_AI_ANALYSIS_FREE_DAILY_LIMIT = 2;
