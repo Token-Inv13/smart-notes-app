@@ -34,12 +34,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    const clientId = process.env.GOOGLE_CLIENT_ID ?? process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    const clientId = process.env.GOOGLE_CLIENT_ID;
     const appOrigin = await getServerAppOrigin();
     const redirectUri = process.env.GOOGLE_CALENDAR_REDIRECT_URI ?? `${appOrigin}/api/google/calendar/callback`;
 
     if (!clientId) {
-      return NextResponse.json({ error: "Missing GOOGLE_CLIENT_ID" }, { status: 500 });
+      return NextResponse.json(
+        {
+          code: "missing_env",
+          error: "La connexion Google Calendar n’est pas encore configurée.",
+        },
+        { status: 500 },
+      );
     }
 
     const state = `${decoded.uid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
@@ -92,8 +98,7 @@ export async function GET(request: NextRequest) {
     });
 
     return response;
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "Failed to create Google OAuth URL";
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Impossible de lancer la connexion Google Calendar." }, { status: 500 });
   }
 }

@@ -104,23 +104,23 @@ export default function SettingsPage() {
       return;
     }
     if (calendarState === "oauth_state_invalid") {
-      setCalendarMessage("Échec OAuth Google Calendar (state invalide).");
+      setCalendarMessage("La connexion Google Calendar a expiré. Merci de réessayer.");
       return;
     }
     if (calendarState === "missing_env") {
-      setCalendarMessage("Configuration Google Calendar manquante côté serveur.");
+      setCalendarMessage("La connexion Google Calendar n’est pas encore configurée.");
       return;
     }
     if (calendarState === "token_exchange_failed") {
-      setCalendarMessage("Impossible d’échanger le code OAuth Google.");
+      setCalendarMessage("Impossible de finaliser la connexion Google Calendar. Réessaie.");
       return;
     }
     if (calendarState === "token_missing") {
-      setCalendarMessage("Token Google Calendar manquant.");
+      setCalendarMessage("Impossible de finaliser la connexion Google Calendar. Réessaie.");
       return;
     }
     if (calendarState === "error") {
-      setCalendarMessage("Erreur de connexion Google Calendar.");
+      setCalendarMessage("Impossible de finaliser la connexion Google Calendar. Réessaie.");
     }
   }, []);
 
@@ -219,9 +219,13 @@ export default function SettingsPage() {
         method: "GET",
         cache: "no-store",
       });
-      const data = (await res.json()) as { url?: unknown; error?: unknown };
+      const data = (await res.json()) as { url?: unknown; code?: unknown };
       if (!res.ok || typeof data?.url !== "string") {
-        setCalendarMessage(typeof data?.error === "string" ? data.error : "Impossible de lancer la connexion Google Calendar.");
+        if (data?.code === "missing_env") {
+          setCalendarMessage("La connexion Google Calendar n’est pas encore configurée.");
+        } else {
+          setCalendarMessage("Impossible de lancer la connexion Google Calendar.");
+        }
         return;
       }
 
