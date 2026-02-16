@@ -100,6 +100,15 @@ export default function AgendaCalendar({
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [googleCalendarEvents, setGoogleCalendarEvents] = useState<GoogleCalendarEvent[]>([]);
 
+  const workspaceNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const workspace of workspaces) {
+      if (!workspace.id) continue;
+      map.set(workspace.id, workspace.name);
+    }
+    return map;
+  }, [workspaces]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -279,7 +288,7 @@ export default function AgendaCalendar({
         extendedProps: {
           taskId,
           workspaceId: task.workspaceId ?? "",
-          workspaceName: workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "Sans dossier",
+          workspaceName: (task.workspaceId ? workspaceNameById.get(task.workspaceId) : null) ?? "Sans dossier",
           priority: itemPriority,
           recurrence,
           instanceDate,
@@ -300,7 +309,7 @@ export default function AgendaCalendar({
         conflicts,
       },
     };
-  }, [priorityFilter, showConflictsOnly, showRecurringOnly, tasks, timeWindowFilter, visibleRange, workspaces]);
+  }, [priorityFilter, showConflictsOnly, showRecurringOnly, tasks, timeWindowFilter, visibleRange, workspaceNameById]);
 
   const { handleMoveOrResize } = useAgendaEventMutation({
     onCreateEvent,
