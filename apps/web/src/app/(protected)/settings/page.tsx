@@ -2,7 +2,7 @@
 
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useAssistantSettings } from "@/hooks/useAssistantSettings";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { auth, db } from "@/lib/firebase";
 import { isAndroidNative } from "@/lib/runtimePlatform";
@@ -94,6 +94,36 @@ export default function SettingsPage() {
   const [calendarBusy, setCalendarBusy] = useState(false);
   const [calendarMessage, setCalendarMessage] = useState<string | null>(null);
 
+  const applyCalendarStateMessage = useCallback((calendarState: string) => {
+    if (calendarState === "connected") {
+      setCalendarMessage("Google Calendar connecté.");
+      return;
+    }
+    if (calendarState === "auth_required") {
+      setCalendarMessage("Connexion requise pour Google Calendar.");
+      return;
+    }
+    if (calendarState === "oauth_state_invalid") {
+      setCalendarMessage("Échec OAuth Google Calendar (state invalide).");
+      return;
+    }
+    if (calendarState === "missing_env") {
+      setCalendarMessage("Configuration Google Calendar manquante côté serveur.");
+      return;
+    }
+    if (calendarState === "token_exchange_failed") {
+      setCalendarMessage("Impossible d’échanger le code OAuth Google.");
+      return;
+    }
+    if (calendarState === "token_missing") {
+      setCalendarMessage("Token Google Calendar manquant.");
+      return;
+    }
+    if (calendarState === "error") {
+      setCalendarMessage("Erreur de connexion Google Calendar.");
+    }
+  }, []);
+
   useEffect(() => {
     setDisplayNameDraft(user?.displayName ?? "");
   }, [user?.displayName]);
@@ -139,7 +169,7 @@ export default function SettingsPage() {
     setAssistantAIAllowFullDraft(aiAllowFull === true);
   }, [assistantSettings]);
 
-  const loadCalendarStatus = async () => {
+  const loadCalendarStatus = useCallback(async () => {
     setCalendarLoading(true);
     try {
       const res = await fetch("/api/google/calendar/status", { method: "GET", cache: "no-store" });
@@ -157,11 +187,11 @@ export default function SettingsPage() {
     } finally {
       setCalendarLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void loadCalendarStatus();
-  }, []);
+  }, [loadCalendarStatus]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -169,40 +199,80 @@ export default function SettingsPage() {
     const calendarState = params.get("calendar");
     if (!calendarState) return;
 
+    applyCalendarStateMessage(calendarState);
     if (calendarState === "connected") {
-      setCalendarMessage("Google Calendar connecté.");
       void loadCalendarStatus();
-    } else if (calendarState === "auth_required") {
-      setCalendarMessage("Connexion requise pour Google Calendar.");
-    } else if (calendarState === "oauth_state_invalid") {
-      setCalendarMessage("Échec OAuth Google Calendar (state invalide).");
-    } else if (calendarState === "missing_env") {
-      setCalendarMessage("Configuration Google Calendar manquante côté serveur.");
-    } else if (calendarState === "token_exchange_failed") {
-      setCalendarMessage("Impossible d’échanger le code OAuth Google.");
-    } else if (calendarState === "token_missing") {
-      setCalendarMessage("Token Google Calendar manquant.");
-    } else if (calendarState === "error") {
-      setCalendarMessage("Erreur de connexion Google Calendar.");
     }
 
     params.delete("calendar");
     const nextQuery = params.toString();
     const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`;
     window.history.replaceState({}, "", nextUrl);
-  }, []);
+  }, [applyCalendarStateMessage, loadCalendarStatus]);
 
   const handleConnectGoogleCalendar = async () => {
     setCalendarBusy(true);
     setCalendarMessage(null);
     try {
-      const res = await fetch("/api/google/calendar/connect", { method: "GET", cache: "no-store" });
+      const returnTo = "/settings";
+      const res = await fetch(`/api/google/calendar/connect?returnTo=${encodeURIComponent(returnTo)}`, {
+        method: "GET",
+        cache: "no-store",
+      });
       const data = (await res.json()) as { url?: unknown; error?: unknown };
       if (!res.ok || typeof data?.url !== "string") {
         setCalendarMessage(typeof data?.error === "string" ? data.error : "Impossible de lancer la connexion Google Calendar.");
         return;
       }
-      window.location.href = data.url;
+
+      const popup = window.open(
+        data.url,
+        "google-calendar-oauth",
+        "width=540,height=720,menubar=no,toolbar=no,status=no,resizable=yes,scrollbars=yes",
+      );
+
+      if (!popup) {
+        window.location.href = data.url;
+        return;
+      }
+
+      popup.focus();
+
+      await new Promise<void>((resolve) => {
+        const startedAt = Date.now();
+        const timer = window.setInterval(() => {
+          if (popup.closed) {
+            window.clearInterval(timer);
+            resolve();
+            return;
+          }
+
+          try {
+            const popupUrl = popup.location.href;
+            if (!popupUrl.startsWith(window.location.origin)) {
+              if (Date.now() - startedAt > 3 * 60 * 1000) {
+                popup.close();
+                window.clearInterval(timer);
+                resolve();
+              }
+              return;
+            }
+
+            const parsed = new URL(popupUrl);
+            const popupState = parsed.searchParams.get("calendar");
+            if (!popupState) return;
+
+            applyCalendarStateMessage(popupState);
+            popup.close();
+            window.clearInterval(timer);
+            resolve();
+          } catch {
+            // Cross-origin while still on Google OAuth pages.
+          }
+        }, 350);
+      });
+
+      await loadCalendarStatus();
     } catch {
       setCalendarMessage("Impossible de lancer la connexion Google Calendar.");
     } finally {
@@ -609,6 +679,57 @@ export default function SettingsPage() {
 
           <section className="border border-border/70 rounded-xl p-5 bg-card shadow-sm space-y-4">
             <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">Calendriers connectés</h2>
+              <div className="text-xs text-muted-foreground">Intégrations</div>
+            </div>
+
+            <div className="rounded-lg border border-border/60 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium">Google Calendar</div>
+                  <div className="text-xs text-muted-foreground">
+                    {calendarLoading
+                      ? "Chargement…"
+                      : calendarConnected
+                        ? "Connecté"
+                        : "Non connecté"}
+                  </div>
+                </div>
+                {!calendarConnected ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleConnectGoogleCalendar()}
+                    disabled={calendarBusy || calendarLoading}
+                    className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50"
+                  >
+                    {calendarBusy ? "Connexion…" : "Connecter Google Calendar"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void handleDisconnectGoogleCalendar()}
+                    disabled={calendarBusy || calendarLoading}
+                    className="px-3 py-2 rounded-md border border-input text-xs disabled:opacity-50"
+                  >
+                    {calendarBusy ? "Déconnexion…" : "Déconnecter"}
+                  </button>
+                )}
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Connexion OAuth officielle Google en 1 clic, sans saisie manuelle ni affichage de token.
+              </p>
+
+              {calendarPrimaryId ? (
+                <div className="text-xs text-muted-foreground break-all">Calendrier principal: {calendarPrimaryId}</div>
+              ) : null}
+
+              {calendarMessage ? <div className="text-xs">{calendarMessage}</div> : null}
+            </div>
+          </section>
+
+          <section className="border border-border/70 rounded-xl p-5 bg-card shadow-sm space-y-4">
+            <div className="flex items-center justify-between gap-3">
               <h2 className="text-base font-semibold">Notifications</h2>
               <div className="text-xs text-muted-foreground">Rappels</div>
             </div>
@@ -791,50 +912,6 @@ export default function SettingsPage() {
                 <option value="meetings">Réunions & décisions</option>
                 <option value="projects">Projets (pilotage)</option>
               </select>
-            </div>
-
-            <div className="space-y-2 rounded-lg border border-border/60 p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-medium">Google Calendar (réunions)</div>
-                  <div className="text-xs text-muted-foreground">
-                    {calendarLoading
-                      ? "Chargement…"
-                      : calendarConnected
-                        ? "Connecté"
-                        : "Non connecté"}
-                  </div>
-                </div>
-                {!calendarConnected ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleConnectGoogleCalendar()}
-                    disabled={calendarBusy || calendarLoading}
-                    className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50"
-                  >
-                    {calendarBusy ? "Connexion…" : "Connecter"}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => void handleDisconnectGoogleCalendar()}
-                    disabled={calendarBusy || calendarLoading}
-                    className="px-3 py-2 rounded-md border border-input text-xs disabled:opacity-50"
-                  >
-                    {calendarBusy ? "Déconnexion…" : "Déconnecter"}
-                  </button>
-                )}
-              </div>
-
-              {calendarPrimaryId ? (
-                <div className="text-xs text-muted-foreground break-all">Calendrier principal: {calendarPrimaryId}</div>
-              ) : null}
-
-              {assistantJtbdDraft === "meetings" ? (
-                <div className="text-xs text-muted-foreground">Le mode “Réunions & décisions” fonctionne mieux avec Calendar connecté.</div>
-              ) : null}
-
-              {calendarMessage ? <div className="text-xs">{calendarMessage}</div> : null}
             </div>
 
             {assistantAdvancedOpen ? (
