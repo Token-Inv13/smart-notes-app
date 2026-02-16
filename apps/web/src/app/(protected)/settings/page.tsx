@@ -90,7 +90,7 @@ export default function SettingsPage() {
   const [enablingPush, setEnablingPush] = useState(false);
 
   const [notesViewMode, setNotesViewMode] = useState<"list" | "grid">("list");
-  const [tasksViewMode, setTasksViewMode] = useState<"list" | "grid" | "kanban">("list");
+  const [tasksViewMode, setTasksViewMode] = useState<"list" | "grid" | "kanban" | "calendar">("list");
 
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
@@ -350,7 +350,7 @@ export default function SettingsPage() {
       }
 
       const rawTasks = window.localStorage.getItem("tasksViewMode");
-      if (rawTasks === "list" || rawTasks === "grid" || rawTasks === "kanban") {
+      if (rawTasks === "list" || rawTasks === "grid" || rawTasks === "kanban" || rawTasks === "calendar") {
         setTasksViewMode(rawTasks);
       }
     } catch {
@@ -435,12 +435,16 @@ export default function SettingsPage() {
     }
   };
 
-  const setAndPersistTasksViewMode = (next: "list" | "grid" | "kanban") => {
+  const setAndPersistTasksViewMode = (next: "list" | "grid" | "kanban" | "calendar") => {
     setTasksViewMode(next);
     try {
       window.localStorage.setItem("tasksViewMode", next);
     } catch {
       // ignore
+    }
+
+    if (next === "calendar") {
+      window.location.assign("/tasks");
     }
   };
 
@@ -1063,13 +1067,14 @@ export default function SettingsPage() {
               <div className="text-sm font-medium">Agenda</div>
               <select
                 value={tasksViewMode}
-                onChange={(e) => setAndPersistTasksViewMode(e.target.value as "list" | "grid" | "kanban")}
+                onChange={(e) => setAndPersistTasksViewMode(e.target.value as "list" | "grid" | "kanban" | "calendar")}
                 className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm"
                 aria-label="Affichage de l’agenda"
               >
                 <option value="list">Liste</option>
                 <option value="grid">Vignettes</option>
                 <option value="kanban">Kanban</option>
+                <option value="calendar">Agenda</option>
               </select>
             </div>
           </section>
