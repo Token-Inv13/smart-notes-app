@@ -20,11 +20,15 @@ import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
-import AgendaCalendar from "../_components/AgendaCalendar";
 import { registerFcmToken } from "@/lib/fcm";
 import type { Priority, TaskDoc } from "@/types/firestore";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
+
+const AgendaCalendar = dynamic(() => import("../_components/AgendaCalendar"), {
+  loading: () => <div className="sn-empty">Chargement du calendrier…</div>,
+});
 
 type TaskStatus = "todo" | "doing" | "done";
 type TaskStatusFilter = "all" | TaskStatus;
