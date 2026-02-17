@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.adminListErrorLogs = exports.adminListAuditLogs = exports.adminListUserActivityEvents = exports.rebuildAdminUsersIndex = exports.adminListUsersIndex = exports.adminSendSegmentEmail = exports.adminSendUserEmail = exports.adminPreviewSegmentEmail = exports.adminSendBroadcastMessage = exports.adminPreviewBroadcastMessage = exports.adminGetAnalyticsOverview = exports.adminGetOperatorDashboard = exports.adminGetHealthSummary = exports.adminSendUserMessage = exports.adminResetUserFlags = exports.adminDisablePremium = exports.adminEnablePremium = exports.adminRevokeUserSessions = exports.adminUserInboxOnRead = exports.adminUsersIndexOnErrorLogCreate = exports.adminUsersIndexOnAuthDelete = exports.adminUsersIndexOnAuthCreate = exports.adminUsersIndexOnUserWrite = exports.adminGetUserMessagingStats = exports.adminLookupUser = exports.adminHardDeleteUser = exports.adminSoftDeleteUser = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
+const google_auth_library_1 = require("google-auth-library");
 if (!admin.apps.length) {
     admin.initializeApp();
 }
@@ -508,9 +509,12 @@ async function sendEmailViaResend(params) {
 }
 async function getGoogleApiAccessToken() {
     var _a;
-    const credential = admin.credential.applicationDefault();
-    const tokenData = await credential.getAccessToken();
-    const accessToken = (_a = toOptionalString(tokenData.access_token)) !== null && _a !== void 0 ? _a : toOptionalString(tokenData.accessToken);
+    const auth = new google_auth_library_1.GoogleAuth({
+        scopes: ['https://www.googleapis.com/auth/analytics.readonly'],
+    });
+    const client = await auth.getClient();
+    const tokenData = await client.getAccessToken();
+    const accessToken = (_a = toOptionalString(typeof tokenData === 'string' ? tokenData : null)) !== null && _a !== void 0 ? _a : toOptionalString(tokenData === null || tokenData === void 0 ? void 0 : tokenData.token);
     if (!accessToken) {
         throw new functions.https.HttpsError('failed-precondition', 'Unable to obtain Google API access token.');
     }

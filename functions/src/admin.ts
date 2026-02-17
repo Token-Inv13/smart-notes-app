@@ -1,5 +1,6 @@
 import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
+import { GoogleAuth } from 'google-auth-library';
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -718,11 +719,14 @@ async function sendEmailViaResend(params: { to: string; subject: string; html: s
 }
 
 async function getGoogleApiAccessToken(): Promise<string> {
-  const credential = admin.credential.applicationDefault();
-  const tokenData = await credential.getAccessToken();
+  const auth = new GoogleAuth({
+    scopes: ['https://www.googleapis.com/auth/analytics.readonly'],
+  });
+  const client = await auth.getClient();
+  const tokenData = await client.getAccessToken();
   const accessToken =
-    toOptionalString((tokenData as { access_token?: unknown }).access_token) ??
-    toOptionalString((tokenData as { accessToken?: unknown }).accessToken);
+    toOptionalString(typeof tokenData === 'string' ? tokenData : null) ??
+    toOptionalString((tokenData as { token?: unknown } | null)?.token);
   if (!accessToken) {
     throw new functions.https.HttpsError('failed-precondition', 'Unable to obtain Google API access token.');
   }
