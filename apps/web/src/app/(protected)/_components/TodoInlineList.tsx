@@ -441,8 +441,8 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                     aria-label={todo.id ? `Ouvrir la checklist ${todo.title}` : undefined}
                     onClick={() => openTodoDetail(todo.id)}
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
                         <input
                           type="checkbox"
                           checked={todo.completed === true}
@@ -473,37 +473,39 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleFavorite(todo);
-                        }}
-                        className="sn-icon-btn shrink-0 pointer-events-auto"
-                        aria-label={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                        title={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onPointerDown={(e) => e.stopPropagation()}
-                      >
-                        {todo.favorite ? "★" : "☆"}
-                      </button>
-
-                      {todo.completed === true && (
+                      <div className="ml-auto shrink-0 flex items-center gap-2">
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            void toggleCompleted(todo, false);
+                            toggleFavorite(todo);
                           }}
+                          className="sn-icon-btn shrink-0 pointer-events-auto"
+                          aria-label={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                          title={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                           onMouseDown={(e) => e.stopPropagation()}
                           onPointerDown={(e) => e.stopPropagation()}
-                          className="sn-text-btn shrink-0"
-                          aria-label="Restaurer la checklist"
-                          title="Restaurer"
                         >
-                          Restaurer
+                          {todo.favorite ? "★" : "☆"}
                         </button>
-                      )}
+
+                        {todo.completed === true && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void toggleCompleted(todo, false);
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            className="sn-text-btn shrink-0"
+                            aria-label="Restaurer la checklist"
+                            title="Restaurer"
+                          >
+                            Restaurer
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </li>
