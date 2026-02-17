@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.adminListErrorLogs = exports.adminListAuditLogs = exports.adminListUserActivityEvents = exports.rebuildAdminUsersIndex = exports.adminListUsersIndex = exports.adminSendBroadcastMessage = exports.adminPreviewBroadcastMessage = exports.adminGetOperatorDashboard = exports.adminGetHealthSummary = exports.adminSendUserMessage = exports.adminResetUserFlags = exports.adminDisablePremium = exports.adminEnablePremium = exports.adminRevokeUserSessions = exports.adminUserInboxOnRead = exports.adminUsersIndexOnErrorLogCreate = exports.adminUsersIndexOnAuthDelete = exports.adminUsersIndexOnAuthCreate = exports.adminUsersIndexOnUserWrite = exports.adminGetUserMessagingStats = exports.adminLookupUser = exports.adminHardDeleteUser = exports.adminSoftDeleteUser = void 0;
+exports.adminListErrorLogs = exports.adminListAuditLogs = exports.adminListUserActivityEvents = exports.rebuildAdminUsersIndex = exports.adminListUsersIndex = exports.adminSendSegmentEmail = exports.adminSendUserEmail = exports.adminPreviewSegmentEmail = exports.adminSendBroadcastMessage = exports.adminPreviewBroadcastMessage = exports.adminGetOperatorDashboard = exports.adminGetHealthSummary = exports.adminSendUserMessage = exports.adminResetUserFlags = exports.adminDisablePremium = exports.adminEnablePremium = exports.adminRevokeUserSessions = exports.adminUserInboxOnRead = exports.adminUsersIndexOnErrorLogCreate = exports.adminUsersIndexOnAuthDelete = exports.adminUsersIndexOnAuthCreate = exports.adminUsersIndexOnUserWrite = exports.adminGetUserMessagingStats = exports.adminLookupUser = exports.adminHardDeleteUser = exports.adminSoftDeleteUser = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 if (!admin.apps.length) {
@@ -171,6 +171,24 @@ async function writeAdminAuditLog(params) {
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
     await db.collection('adminAuditLogs').add(record);
+}
+async function writeAdminEmailLog(params) {
+    var _a, _b, _c, _d, _e, _f;
+    const db = admin.firestore();
+    const record = {
+        adminUid: params.adminUid,
+        targetUserUid: (_a = params.targetUserUid) !== null && _a !== void 0 ? _a : null,
+        segment: (_b = params.segment) !== null && _b !== void 0 ? _b : null,
+        recipientEmail: (_c = params.recipientEmail) !== null && _c !== void 0 ? _c : null,
+        subject: params.subject,
+        status: params.status,
+        provider: 'resend',
+        providerMessageId: (_d = params.providerMessageId) !== null && _d !== void 0 ? _d : null,
+        errorCode: (_e = params.errorCode) !== null && _e !== void 0 ? _e : null,
+        errorMessage: (_f = params.errorMessage) !== null && _f !== void 0 ? _f : null,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    await db.collection('adminEmailLogs').add(record);
 }
 async function writeAppErrorLog(params) {
     var _a;
@@ -447,6 +465,62 @@ async function resolveBroadcastTargetUids(params) {
         collectFromSnapshot(await usersIndex.where('tags', 'array-contains', tag).get());
     }
     return Array.from(unique);
+}
+async function assertEmailThrottle(params) {
+    const thresholdTs = admin.firestore.Timestamp.fromMillis(Date.now() - params.windowMinutes * 60 * 1000);
+    const recent = await countQuery(admin
+        .firestore()
+        .collection('adminEmailLogs')
+        .where('adminUid', '==', params.adminUid)
+        .where('createdAt', '>=', thresholdTs)
+        .where('status', '==', 'success'));
+    if (recent >= params.limit) {
+        throw new functions.https.HttpsError('resource-exhausted', `Email throttle reached for ${params.scope}. Retry in a few minutes.`);
+    }
+}
+async function sendEmailViaResend(params) {
+    var _a;
+    const apiKey = toOptionalString(process.env.RESEND_API_KEY);
+    const from = toOptionalString(process.env.RESEND_FROM_EMAIL);
+    if (!apiKey || !from) {
+        throw new functions.https.HttpsError('failed-precondition', 'RESEND_API_KEY and RESEND_FROM_EMAIL are required.');
+    }
+    const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            from,
+            to: [params.to],
+            subject: params.subject,
+            html: params.html,
+        }),
+    });
+    const json = (await response.json().catch(() => null));
+    if (!response.ok) {
+        const message = (_a = json === null || json === void 0 ? void 0 : json.message) !== null && _a !== void 0 ? _a : `Resend request failed with status ${response.status}`;
+        throw new functions.https.HttpsError('internal', message);
+    }
+    return toOptionalString(json === null || json === void 0 ? void 0 : json.id);
+}
+async function resolveSegmentTargetEmails(params) {
+    const uids = await resolveBroadcastTargetUids(params);
+    if (uids.length === 0)
+        return [];
+    const refs = uids.map((uid) => params.db.collection('adminUsersIndex').doc(uid));
+    const snaps = await params.db.getAll(...refs);
+    const out = [];
+    for (const snap of snaps) {
+        if (!snap.exists)
+            continue;
+        const email = toOptionalString(snap.get('email'));
+        if (!email)
+            continue;
+        out.push({ uid: snap.id, email });
+    }
+    return out;
 }
 async function upsertAdminUsersIndexForUid(params) {
     var _a, _b, _c, _d;
@@ -1600,6 +1674,249 @@ exports.adminSendBroadcastMessage = functions.https.onCall(async (data, context)
             });
         }
         catch (_c) {
+            // Ignore logging failures.
+        }
+        throw mapped;
+    }
+});
+exports.adminPreviewSegmentEmail = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c;
+    const action = 'preview_segment_email';
+    const payload = isObject(data) ? data : {};
+    const adminUid = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid) !== null && _b !== void 0 ? _b : null;
+    try {
+        const actorUid = assertAdmin(context);
+        const segment = normalizeBroadcastSegment(payload.segment);
+        const tag = toOptionalString(payload.tag);
+        const recipients = await resolveSegmentTargetEmails({
+            db: admin.firestore(),
+            segment,
+            tag,
+        });
+        await writeAdminAuditLog({
+            adminUid: actorUid,
+            targetUserUid: null,
+            action,
+            payload: { segment, tag: tag !== null && tag !== void 0 ? tag : null, recipients: recipients.length },
+            status: 'success',
+            message: 'Computed segment email preview.',
+        });
+        await writeAdminEmailLog({
+            adminUid: actorUid,
+            segment,
+            recipientEmail: null,
+            subject: (_c = toOptionalString(payload.subject)) !== null && _c !== void 0 ? _c : '[preview]',
+            status: 'preview',
+        });
+        return {
+            segment,
+            tag: tag !== null && tag !== void 0 ? tag : null,
+            recipients: recipients.length,
+        };
+    }
+    catch (error) {
+        const mapped = toHttpsError(error);
+        try {
+            await writeAdminAuditLog({
+                adminUid,
+                targetUserUid: null,
+                action,
+                payload,
+                status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
+                message: mapped.message,
+            });
+            await writeAppErrorLog({
+                category: 'functions',
+                scope: action,
+                code: mapped.code,
+                message: mapped.message,
+                context: { adminUid, payload },
+            });
+        }
+        catch (_d) {
+            // Ignore logging failures.
+        }
+        throw mapped;
+    }
+});
+exports.adminSendUserEmail = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c;
+    const action = 'send_user_email';
+    const payload = isObject(data) ? data : {};
+    const adminUid = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid) !== null && _b !== void 0 ? _b : null;
+    try {
+        const actorUid = assertAdmin(context);
+        const targetUserUid = toNonEmptyString(payload.targetUserUid);
+        const subject = toNonEmptyString(payload.subject);
+        const html = toNonEmptyString(payload.html);
+        if (!targetUserUid || !subject || !html) {
+            throw new functions.https.HttpsError('invalid-argument', 'targetUserUid, subject and html are required.');
+        }
+        if (subject.length > 200 || html.length > 50000) {
+            throw new functions.https.HttpsError('invalid-argument', 'subject/html too large.');
+        }
+        await assertEmailThrottle({ adminUid: actorUid, scope: action, limit: 20, windowMinutes: 10 });
+        const db = admin.firestore();
+        const indexSnap = await db.collection('adminUsersIndex').doc(targetUserUid).get();
+        const recipientEmail = toOptionalString(indexSnap.get('email'));
+        if (!recipientEmail) {
+            throw new functions.https.HttpsError('not-found', 'No recipient email found for this user.');
+        }
+        const messageId = await sendEmailViaResend({
+            to: recipientEmail,
+            subject,
+            html,
+        });
+        await writeAdminEmailLog({
+            adminUid: actorUid,
+            targetUserUid,
+            recipientEmail,
+            subject,
+            status: 'success',
+            providerMessageId: messageId,
+        });
+        await writeAdminAuditLog({
+            adminUid: actorUid,
+            targetUserUid,
+            action,
+            payload: { recipientEmail, subject },
+            status: 'success',
+            message: 'User email sent.',
+        });
+        return { ok: true, message: 'Email envoyé.', recipients: 1 };
+    }
+    catch (error) {
+        const mapped = toHttpsError(error);
+        const targetUserUid = toOptionalString(payload.targetUserUid);
+        try {
+            await writeAdminEmailLog({
+                adminUid,
+                targetUserUid,
+                recipientEmail: null,
+                subject: (_c = toOptionalString(payload.subject)) !== null && _c !== void 0 ? _c : '[unknown-subject]',
+                status: mapped.code === 'resource-exhausted' ? 'throttled' : 'error',
+                errorCode: mapped.code,
+                errorMessage: mapped.message,
+            });
+            await writeAdminAuditLog({
+                adminUid,
+                targetUserUid,
+                action,
+                payload,
+                status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
+                message: mapped.message,
+            });
+            await writeAppErrorLog({
+                category: 'functions',
+                scope: action,
+                code: mapped.code,
+                message: mapped.message,
+                context: { adminUid, targetUserUid },
+            });
+        }
+        catch (_d) {
+            // Ignore logging failures.
+        }
+        throw mapped;
+    }
+});
+exports.adminSendSegmentEmail = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c;
+    const action = 'send_segment_email';
+    const payload = isObject(data) ? data : {};
+    const adminUid = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid) !== null && _b !== void 0 ? _b : null;
+    try {
+        const actorUid = assertAdmin(context);
+        const segment = normalizeBroadcastSegment(payload.segment);
+        const tag = toOptionalString(payload.tag);
+        const subject = toNonEmptyString(payload.subject);
+        const html = toNonEmptyString(payload.html);
+        if (!subject || !html) {
+            throw new functions.https.HttpsError('invalid-argument', 'subject and html are required.');
+        }
+        if (subject.length > 200 || html.length > 50000) {
+            throw new functions.https.HttpsError('invalid-argument', 'subject/html too large.');
+        }
+        await assertEmailThrottle({ adminUid: actorUid, scope: action, limit: 200, windowMinutes: 10 });
+        const recipients = await resolveSegmentTargetEmails({
+            db: admin.firestore(),
+            segment,
+            tag,
+        });
+        if (recipients.length === 0) {
+            return { ok: true, message: 'Aucun destinataire email.', recipients: 0 };
+        }
+        let sent = 0;
+        for (const recipient of recipients) {
+            try {
+                const messageId = await sendEmailViaResend({ to: recipient.email, subject, html });
+                await writeAdminEmailLog({
+                    adminUid: actorUid,
+                    targetUserUid: recipient.uid,
+                    segment,
+                    recipientEmail: recipient.email,
+                    subject,
+                    status: 'success',
+                    providerMessageId: messageId,
+                });
+                sent += 1;
+            }
+            catch (err) {
+                const mapped = toHttpsError(err);
+                await writeAdminEmailLog({
+                    adminUid: actorUid,
+                    targetUserUid: recipient.uid,
+                    segment,
+                    recipientEmail: recipient.email,
+                    subject,
+                    status: mapped.code === 'resource-exhausted' ? 'throttled' : 'error',
+                    errorCode: mapped.code,
+                    errorMessage: mapped.message,
+                });
+            }
+        }
+        await writeAdminAuditLog({
+            adminUid: actorUid,
+            targetUserUid: null,
+            action,
+            payload: { segment, tag: tag !== null && tag !== void 0 ? tag : null, requested: recipients.length, sent, subject },
+            status: 'success',
+            message: `Segment email sent to ${sent}/${recipients.length} recipients.`,
+        });
+        return {
+            ok: true,
+            message: `Email segment envoyé à ${sent}/${recipients.length} destinataires.`,
+            recipients: sent,
+        };
+    }
+    catch (error) {
+        const mapped = toHttpsError(error);
+        try {
+            await writeAdminEmailLog({
+                adminUid,
+                segment: normalizeBroadcastSegment(payload.segment),
+                subject: (_c = toOptionalString(payload.subject)) !== null && _c !== void 0 ? _c : '[unknown-subject]',
+                status: mapped.code === 'resource-exhausted' ? 'throttled' : 'error',
+                errorCode: mapped.code,
+                errorMessage: mapped.message,
+            });
+            await writeAdminAuditLog({
+                adminUid,
+                targetUserUid: null,
+                action,
+                payload,
+                status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
+                message: mapped.message,
+            });
+            await writeAppErrorLog({
+                category: 'functions',
+                scope: action,
+                code: mapped.code,
+                message: mapped.message,
+                context: { adminUid, payload },
+            });
+        }
+        catch (_d) {
             // Ignore logging failures.
         }
         throw mapped;

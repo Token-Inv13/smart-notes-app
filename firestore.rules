@@ -274,5 +274,10 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow write: if false;
     }
+
+    match /adminEmailLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
   }
 }

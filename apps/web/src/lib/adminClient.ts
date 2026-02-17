@@ -164,6 +164,46 @@ export async function sendBroadcastMessage(params: {
   return res.data;
 }
 
+export async function previewSegmentEmail(params: {
+  segment: 'all' | 'premium' | 'inactive' | 'tag';
+  tag?: string;
+  subject?: string;
+}): Promise<AdminBroadcastPreview> {
+  const fn = httpsCallable<
+    { segment: 'all' | 'premium' | 'inactive' | 'tag'; tag?: string; subject?: string },
+    AdminBroadcastPreview
+  >(fbFunctions, 'adminPreviewSegmentEmail');
+  const res = await fn(params);
+  return res.data;
+}
+
+export async function sendUserEmail(params: {
+  targetUserUid: string;
+  subject: string;
+  html: string;
+}): Promise<AdminActionResponse> {
+  const fn = httpsCallable<{ targetUserUid: string; subject: string; html: string }, AdminActionResponse>(
+    fbFunctions,
+    'adminSendUserEmail',
+  );
+  const res = await fn(params);
+  return res.data;
+}
+
+export async function sendSegmentEmail(params: {
+  segment: 'all' | 'premium' | 'inactive' | 'tag';
+  tag?: string;
+  subject: string;
+  html: string;
+}): Promise<AdminActionResponse> {
+  const fn = httpsCallable<
+    { segment: 'all' | 'premium' | 'inactive' | 'tag'; tag?: string; subject: string; html: string },
+    AdminActionResponse
+  >(fbFunctions, 'adminSendSegmentEmail');
+  const res = await fn(params);
+  return res.data;
+}
+
 export async function getUserMessagingStats(params: {
   targetUserUid: string;
   windowHours?: number;

@@ -12,8 +12,11 @@ import {
   listUsersIndex,
   lookupUser,
   previewBroadcastMessage,
+  previewSegmentEmail,
   rebuildUsersIndex,
   sendBroadcastMessage,
+  sendSegmentEmail,
+  sendUserEmail,
   sendUserMessage,
   softDeleteUser,
   hardDeleteUser,
@@ -141,6 +144,15 @@ export default function AdminPage() {
   const [broadcastSending, setBroadcastSending] = useState(false);
   const [broadcastError, setBroadcastError] = useState<string | null>(null);
   const [broadcastInfo, setBroadcastInfo] = useState<string | null>(null);
+  const [emailSegment, setEmailSegment] = useState<'all' | 'premium' | 'inactive' | 'tag'>('all');
+  const [emailTag, setEmailTag] = useState('');
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailHtml, setEmailHtml] = useState('');
+  const [emailPreview, setEmailPreview] = useState<AdminBroadcastPreview | null>(null);
+  const [emailPreviewLoading, setEmailPreviewLoading] = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailInfo, setEmailInfo] = useState<string | null>(null);
 
   const [recentUsers, setRecentUsers] = useState<string[]>([]);
 
@@ -232,6 +244,98 @@ export default function AdminPage() {
       setUsersError(e instanceof Error ? e.message : 'Impossible de charger la liste utilisateurs.');
     } finally {
       setUsersLoading(false);
+    }
+  };
+
+  const loadEmailPreview = async () => {
+    setEmailPreviewLoading(true);
+    setEmailError(null);
+    try {
+      const preview = await previewSegmentEmail({
+        segment: emailSegment,
+        tag: emailSegment === 'tag' ? emailTag.trim() : undefined,
+        subject: emailSubject.trim() || undefined,
+      });
+      setEmailPreview(preview);
+    } catch (e) {
+      setEmailPreview(null);
+      setEmailError(e instanceof Error ? e.message : 'Preview email impossible.');
+    } finally {
+      setEmailPreviewLoading(false);
+    }
+  };
+
+  const handleSendSegmentEmail = async () => {
+    if (!emailSubject.trim() || !emailHtml.trim()) {
+      setEmailError('Sujet et contenu HTML requis.');
+      return;
+    }
+    if (emailSegment === 'tag' && !emailTag.trim()) {
+      setEmailError('Le tag est requis pour ce segment email.');
+      return;
+    }
+
+    const recipients = emailPreview?.recipients ?? 0;
+    const confirmed = await new Promise<boolean>((resolve) => {
+      confirmResolverRef.current = resolve;
+      setConfirmModal({
+        open: true,
+        title: 'Confirmer envoi email segment',
+        message: `Envoyer cet email à ${recipients} destinataire(s) ?`,
+      });
+    });
+    if (!confirmed) return;
+
+    setEmailSending(true);
+    setEmailError(null);
+    setEmailInfo(null);
+    try {
+      const res = await sendSegmentEmail({
+        segment: emailSegment,
+        tag: emailSegment === 'tag' ? emailTag.trim() : undefined,
+        subject: emailSubject.trim(),
+        html: emailHtml,
+      });
+      setEmailInfo(res.message);
+      await loadEmailPreview();
+    } catch (e) {
+      setEmailError(e instanceof Error ? e.message : 'Envoi email segment impossible.');
+    } finally {
+      setEmailSending(false);
+    }
+  };
+
+  const handleSendUserEmail = async () => {
+    if (!lookupResult) return;
+    if (!emailSubject.trim() || !emailHtml.trim()) {
+      setEmailError('Sujet et contenu HTML requis.');
+      return;
+    }
+
+    const confirmed = await new Promise<boolean>((resolve) => {
+      confirmResolverRef.current = resolve;
+      setConfirmModal({
+        open: true,
+        title: 'Confirmer envoi email utilisateur',
+        message: `Envoyer un email direct à ${lookupResult.uid} ?`,
+      });
+    });
+    if (!confirmed) return;
+
+    setEmailSending(true);
+    setEmailError(null);
+    setEmailInfo(null);
+    try {
+      const res = await sendUserEmail({
+        targetUserUid: lookupResult.uid,
+        subject: emailSubject.trim(),
+        html: emailHtml,
+      });
+      setEmailInfo(res.message);
+    } catch (e) {
+      setEmailError(e instanceof Error ? e.message : 'Envoi email utilisateur impossible.');
+    } finally {
+      setEmailSending(false);
     }
   };
 
@@ -685,6 +789,78 @@ export default function AdminPage() {
         </div>
         {broadcastInfo && <p className="mt-2 text-xs text-emerald-600">{broadcastInfo}</p>}
         {broadcastError && <p className="mt-2 text-xs text-destructive">{broadcastError}</p>}
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">Emails transactionnels</h2>
+        <p className="mt-1 text-xs text-slate-500">Provider: Resend · Preview avant envoi · Throttle actif côté backend.</p>
+        <div className="mt-3 grid gap-2 md:grid-cols-4">
+          <select
+            value={emailSegment}
+            onChange={(e) => setEmailSegment(e.target.value as 'all' | 'premium' | 'inactive' | 'tag')}
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+            aria-label="Segment email"
+          >
+            <option value="all">all</option>
+            <option value="premium">premium</option>
+            <option value="inactive">inactive</option>
+            <option value="tag">tag</option>
+          </select>
+          <input
+            value={emailTag}
+            onChange={(e) => setEmailTag(e.target.value)}
+            placeholder="Tag (si segment=tag)"
+            disabled={emailSegment !== 'tag'}
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 disabled:opacity-60"
+          />
+          <input
+            value={emailSubject}
+            onChange={(e) => setEmailSubject(e.target.value)}
+            placeholder="Sujet email"
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 md:col-span-2"
+          />
+        </div>
+        <textarea
+          value={emailHtml}
+          onChange={(e) => setEmailHtml(e.target.value)}
+          placeholder="Contenu HTML"
+          rows={6}
+          className="mt-2 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 font-mono"
+        />
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="text-sm text-slate-700">
+            Destinataires estimés:{' '}
+            <span className="font-semibold">{emailPreview ? emailPreview.recipients : '—'}</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void loadEmailPreview()}
+              disabled={emailPreviewLoading}
+              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+            >
+              {emailPreviewLoading ? 'Preview…' : 'Preview'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleSendSegmentEmail()}
+              disabled={emailSending}
+              className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+            >
+              {emailSending ? 'Envoi…' : 'Envoyer segment'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleSendUserEmail()}
+              disabled={emailSending || !lookupResult}
+              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 disabled:opacity-60"
+            >
+              Envoyer à l’utilisateur ouvert
+            </button>
+          </div>
+        </div>
+        {emailInfo && <p className="mt-2 text-xs text-emerald-600">{emailInfo}</p>}
+        {emailError && <p className="mt-2 text-xs text-destructive">{emailError}</p>}
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
