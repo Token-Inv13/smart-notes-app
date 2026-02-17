@@ -121,6 +121,21 @@ export type AdminHealthSummary = {
   aiJobFailedCount: number;
 };
 
+export type AdminOperatorDashboard = {
+  generatedAtMs: number;
+  usersTotal: number;
+  usersNew24h: number;
+  premiumActive: number;
+  inactive7d: number;
+  errors24h: number;
+  aiJobsFailed24h: number;
+  inboxReadRatePercent: number;
+  usersSeries30d: Array<{
+    date: string;
+    count: number;
+  }>;
+};
+
 export type AdminUserMessagingStats = {
   windowHours: number;
   sentCount: number;

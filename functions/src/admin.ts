@@ -1546,6 +1546,116 @@ export const adminGetHealthSummary = functions.https.onCall(async (data, context
   }
 });
 
+export const adminGetOperatorDashboard = functions.https.onCall(async (data, context) => {
+  const action = 'get_operator_dashboard';
+  const payload = isObject(data) ? data : {};
+  const adminUid = context.auth?.uid ?? null;
+
+  try {
+    const actorUid = assertAdmin(context);
+    const db = admin.firestore();
+    const nowMs = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const last24hTs = admin.firestore.Timestamp.fromMillis(nowMs - dayMs);
+    const inactive7dTs = admin.firestore.Timestamp.fromMillis(nowMs - 7 * dayMs);
+
+    const [totalUsers, newUsers24h, premiumActiveUsers, inactiveUsers7dSeen, inactiveUsers7dNeverSeen, errors24h, aiJobsFailed24h] =
+      await Promise.all([
+        countQuery(db.collection('adminUsersIndex')),
+        countQuery(db.collection('adminUsersIndex').where('createdAt', '>=', last24hTs)),
+        countQuery(db.collection('adminUsersIndex').where('plan', '==', 'premium')),
+        countQuery(db.collection('adminUsersIndex').where('lastSeenAt', '<', inactive7dTs)),
+        countQuery(db.collection('adminUsersIndex').where('lastSeenAt', '==', null)),
+        countQuery(db.collection('appErrorLogs').where('createdAt', '>=', last24hTs)),
+        countQuery(
+          db
+            .collection('userActivityEvents')
+            .where('createdAt', '>=', last24hTs)
+            .where('type', '==', 'ai_job_failed')
+            .orderBy('createdAt', 'desc'),
+        ),
+      ]);
+
+    const [inboxSent24h, inboxRead24h] = await Promise.all([
+      countQuery(
+        db
+          .collection('userActivityEvents')
+          .where('createdAt', '>=', last24hTs)
+          .where('type', '==', 'notification_sent')
+          .orderBy('createdAt', 'desc'),
+      ),
+      countQuery(
+        db
+          .collection('userActivityEvents')
+          .where('createdAt', '>=', last24hTs)
+          .where('type', '==', 'notification_read')
+          .orderBy('createdAt', 'desc'),
+      ),
+    ]);
+
+    const inboxReadRatePercent = inboxSent24h > 0 ? Math.min(100, Math.round((inboxRead24h / inboxSent24h) * 100)) : 0;
+
+    const startTodayMs = new Date(new Date(nowMs).toDateString()).getTime();
+    const usersSeries30d = await Promise.all(
+      Array.from({ length: 30 }, async (_, index) => {
+        const dayOffset = 29 - index;
+        const fromMs = startTodayMs - dayOffset * dayMs;
+        const toMs = fromMs + dayMs;
+        const fromTs = admin.firestore.Timestamp.fromMillis(fromMs);
+        const toTs = admin.firestore.Timestamp.fromMillis(toMs);
+        const count = await countQuery(
+          db.collection('adminUsersIndex').where('createdAt', '>=', fromTs).where('createdAt', '<', toTs),
+        );
+        const date = new Date(fromMs).toISOString().slice(0, 10);
+        return { date, count };
+      }),
+    );
+
+    await writeAdminAuditLog({
+      adminUid: actorUid,
+      targetUserUid: null,
+      action,
+      payload: { windowDays: 30 },
+      status: 'success',
+      message: 'Computed operator dashboard metrics.',
+    });
+
+    return {
+      generatedAtMs: nowMs,
+      usersTotal: totalUsers,
+      usersNew24h: newUsers24h,
+      premiumActive: premiumActiveUsers,
+      inactive7d: inactiveUsers7dSeen + inactiveUsers7dNeverSeen,
+      errors24h,
+      aiJobsFailed24h,
+      inboxReadRatePercent,
+      usersSeries30d,
+    };
+  } catch (error) {
+    const mapped = toHttpsError(error);
+    try {
+      await writeAdminAuditLog({
+        adminUid,
+        targetUserUid: null,
+        action,
+        payload,
+        status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
+        message: mapped.message,
+      });
+      await writeAppErrorLog({
+        category: 'functions',
+        scope: action,
+        code: mapped.code,
+        message: mapped.message,
+        context: { adminUid, payload },
+      });
+    } catch {
+      // Ignore logging failures.
+    }
+    throw mapped;
+  }
+});
+
 export const adminListUsersIndex = functions.https.onCall(async (data, context) => {
   const action = 'list_users_index';
   const payload = isObject(data) ? data : {};

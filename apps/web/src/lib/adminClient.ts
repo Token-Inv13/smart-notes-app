@@ -9,6 +9,7 @@ import type {
   AdminListUsersIndexResponse,
   AdminHealthSummary,
   AdminLookupUserResult,
+  AdminOperatorDashboard,
   AdminRebuildUsersIndexResponse,
   AdminUserMessagingStats,
   AdminUserActivityEvent,
@@ -146,6 +147,12 @@ export async function getAdminHealthSummary(params?: {
 }): Promise<AdminHealthSummary> {
   const fn = httpsCallable<{ windowHours?: number }, AdminHealthSummary>(fbFunctions, 'adminGetHealthSummary');
   const res = await fn(params ?? {});
+  return res.data;
+}
+
+export async function getOperatorDashboard(): Promise<AdminOperatorDashboard> {
+  const fn = httpsCallable<Record<string, never>, AdminOperatorDashboard>(fbFunctions, 'adminGetOperatorDashboard');
+  const res = await fn({});
   return res.data;
 }
 

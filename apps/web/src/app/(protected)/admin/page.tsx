@@ -527,6 +527,12 @@ export default function AdminPage() {
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">Mode sécurisé</span>
             <Link
+              href="/admin/dashboard"
+              className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+            >
+              Dashboard opérateur
+            </Link>
+            <Link
               href="/admin/errors"
               className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
             >
