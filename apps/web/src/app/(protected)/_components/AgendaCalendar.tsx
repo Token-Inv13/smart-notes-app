@@ -203,6 +203,11 @@ export default function AgendaCalendar({
     [planningAnchorDate, viewMode],
   );
 
+  const effectiveVisibleRange = useMemo<{ start: Date; end: Date } | null>(
+    () => (displayMode === "planning" ? planningWindow : visibleRange),
+    [displayMode, planningWindow, visibleRange],
+  );
+
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(CALENDAR_PREFERENCES_STORAGE_KEY);
@@ -289,15 +294,15 @@ export default function AgendaCalendar({
   }, []);
 
   const loadGoogleCalendarEvents = useCallback(async () => {
-    if (!calendarConnected || !visibleRange) {
+    if (!calendarConnected || !effectiveVisibleRange) {
       setGoogleCalendarEvents([]);
       return;
     }
 
     try {
       const params = new URLSearchParams({
-        timeMin: visibleRange.start.toISOString(),
-        timeMax: visibleRange.end.toISOString(),
+        timeMin: effectiveVisibleRange.start.toISOString(),
+        timeMax: effectiveVisibleRange.end.toISOString(),
       });
       const res = await fetch(`/api/google/calendar/events?${params.toString()}`, {
         method: "GET",
@@ -314,15 +319,15 @@ export default function AgendaCalendar({
     } catch {
       setGoogleCalendarEvents([]);
     }
-  }, [calendarConnected, visibleRange]);
+  }, [calendarConnected, effectiveVisibleRange]);
 
   useEffect(() => {
     void loadGoogleCalendarEvents();
   }, [loadGoogleCalendarEvents]);
 
   const calendarData = useMemo(() => {
-    const rangeStart = visibleRange?.start ?? new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
-    const rangeEnd = visibleRange?.end ?? new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
+    const rangeStart = effectiveVisibleRange?.start ?? new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
+    const rangeEnd = effectiveVisibleRange?.end ?? new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
 
     const withDates = [] as Array<{
       eventId: string;
@@ -462,7 +467,7 @@ export default function AgendaCalendar({
         conflicts,
       },
     };
-  }, [priorityFilter, showConflictsOnly, showRecurringOnly, tasks, timeWindowFilter, visibleRange, workspaceNameById]);
+  }, [effectiveVisibleRange, priorityFilter, showConflictsOnly, showRecurringOnly, tasks, timeWindowFilter, workspaceNameById]);
 
   const { handleMoveOrResize } = useAgendaEventMutation({
     onCreateEvent,
@@ -536,6 +541,7 @@ export default function AgendaCalendar({
 
   useEffect(() => {
     if (displayMode !== "planning") return;
+    setVisibleRange(planningWindow);
     onVisibleRangeChange?.(planningWindow);
   }, [displayMode, onVisibleRangeChange, planningWindow]);
 
