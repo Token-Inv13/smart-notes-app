@@ -708,6 +708,12 @@ export default function AdminPage() {
               Dashboard opérateur
             </Link>
             <Link
+              href="/admin/analytics"
+              className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+            >
+              Analytics GA4
+            </Link>
+            <Link
               href="/admin/errors"
               className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
             >

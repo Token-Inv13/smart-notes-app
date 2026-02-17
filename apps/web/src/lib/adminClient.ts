@@ -2,6 +2,7 @@ import { httpsCallable } from 'firebase/functions';
 import { functions as fbFunctions } from '@/lib/firebase';
 import type {
   AdminActionResponse,
+  AdminAnalyticsOverview,
   AdminAuditLogItem,
   AdminBroadcastPreview,
   AdminCursor,
@@ -227,6 +228,12 @@ export async function getAdminHealthSummary(params?: {
 export async function getOperatorDashboard(): Promise<AdminOperatorDashboard> {
   const fn = httpsCallable<Record<string, never>, AdminOperatorDashboard>(fbFunctions, 'adminGetOperatorDashboard');
   const res = await fn({});
+  return res.data;
+}
+
+export async function getAnalyticsOverview(params?: { forceRefresh?: boolean }): Promise<AdminAnalyticsOverview> {
+  const fn = httpsCallable<{ forceRefresh?: boolean }, AdminAnalyticsOverview>(fbFunctions, 'adminGetAnalyticsOverview');
+  const res = await fn(params ?? {});
   return res.data;
 }
 

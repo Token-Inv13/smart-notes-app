@@ -72,6 +72,20 @@ type AuditLogRecord = {
   createdAt: FirebaseFirestore.FieldValue;
 };
 
+type AdminAnalyticsOverview = {
+  generatedAtMs: number;
+  activeUsers30d: number;
+  newUsers30d: number;
+  sessions30d: number;
+  pageViews30d: number;
+  engagementRatePercent30d: number;
+  avgSessionDurationSec30d: number;
+  usersSeries30d: Array<{
+    date: string;
+    activeUsers: number;
+  }>;
+};
+
 type AdminEmailLogRecord = {
   adminUid: string | null;
   targetUserUid: string | null;
@@ -152,6 +166,7 @@ const MAX_SCAN_FACTOR = 5;
 const MAX_REBUILD_BATCH_SIZE = 200;
 const INBOX_MESSAGE_TTL_DAYS = 30;
 const INBOX_DUPLICATE_WINDOW_MS = 2 * 60 * 1000;
+const ADMIN_ANALYTICS_CACHE_TTL_MS = 5 * 60 * 1000;
 
 function normalizeInboxText(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLowerCase();
@@ -700,6 +715,66 @@ async function sendEmailViaResend(params: { to: string; subject: string; html: s
   }
 
   return toOptionalString(json?.id);
+}
+
+async function getGoogleApiAccessToken(): Promise<string> {
+  const credential = admin.credential.applicationDefault();
+  const tokenData = await credential.getAccessToken();
+  const accessToken =
+    toOptionalString((tokenData as { access_token?: unknown }).access_token) ??
+    toOptionalString((tokenData as { accessToken?: unknown }).accessToken);
+  if (!accessToken) {
+    throw new functions.https.HttpsError('failed-precondition', 'Unable to obtain Google API access token.');
+  }
+  return accessToken;
+}
+
+async function runGaReport(params: {
+  accessToken: string;
+  propertyId: string;
+  body: Record<string, unknown>;
+}): Promise<{ rows: Array<{ dimensionValues?: Array<{ value?: string }>; metricValues?: Array<{ value?: string }> }> }> {
+  const response = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${params.propertyId}:runReport`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${params.accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(params.body),
+  });
+
+  const json = (await response.json().catch(() => null)) as
+    | {
+        rows?: Array<{
+          dimensionValues?: Array<{ value?: string }>;
+          metricValues?: Array<{ value?: string }>;
+        }>;
+        error?: { message?: string };
+      }
+    | null;
+
+  if (!response.ok) {
+    const message = json?.error?.message ?? `GA Data API request failed with status ${response.status}`;
+    throw new functions.https.HttpsError('internal', message);
+  }
+
+  return {
+    rows: Array.isArray(json?.rows) ? json.rows : [],
+  };
+}
+
+function toNumber(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function normalizeGaDate(raw: string): string {
+  if (!raw || raw.length !== 8) return raw;
+  return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
 }
 
 async function resolveSegmentTargetEmails(params: {
@@ -1788,6 +1863,145 @@ export const adminGetOperatorDashboard = functions.https.onCall(async (data, con
       aiJobsFailed24h,
       inboxReadRatePercent,
       usersSeries30d,
+    };
+  } catch (error) {
+    const mapped = toHttpsError(error);
+    try {
+      await writeAdminAuditLog({
+        adminUid,
+        targetUserUid: null,
+        action,
+        payload,
+        status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
+        message: mapped.message,
+      });
+      await writeAppErrorLog({
+        category: 'functions',
+        scope: action,
+        code: mapped.code,
+        message: mapped.message,
+        context: { adminUid, payload },
+      });
+    } catch {
+      // Ignore logging failures.
+    }
+    throw mapped;
+  }
+});
+
+export const adminGetAnalyticsOverview = functions.https.onCall(async (data, context) => {
+  const action = 'get_analytics_overview';
+  const payload = isObject(data) ? data : {};
+  const adminUid = context.auth?.uid ?? null;
+
+  try {
+    const actorUid = assertAdmin(context);
+    const forceRefresh = payload.forceRefresh === true;
+    const db = admin.firestore();
+    const cacheRef = db.collection('adminAnalyticsCache').doc('ga4_overview');
+    const nowMs = Date.now();
+
+    if (!forceRefresh) {
+      const cacheSnap = await cacheRef.get();
+      if (cacheSnap.exists) {
+        const cachedPayload = cacheSnap.get('payload') as AdminAnalyticsOverview | undefined;
+        const expiresAtMs = toNumber(cacheSnap.get('expiresAtMs'));
+        if (cachedPayload && expiresAtMs > nowMs) {
+          await writeAdminAuditLog({
+            adminUid: actorUid,
+            targetUserUid: null,
+            action,
+            payload: { cache: 'hit' },
+            status: 'success',
+            message: 'Returned cached GA4 analytics overview.',
+          });
+
+          return {
+            ...cachedPayload,
+            cached: true,
+            cacheExpiresAtMs: expiresAtMs,
+          };
+        }
+      }
+    }
+
+    const propertyId = toOptionalString(process.env.GA4_PROPERTY_ID);
+    if (!propertyId) {
+      throw new functions.https.HttpsError('failed-precondition', 'GA4_PROPERTY_ID is required.');
+    }
+
+    const accessToken = await getGoogleApiAccessToken();
+
+    const [overviewReport, usersSeriesReport] = await Promise.all([
+      runGaReport({
+        accessToken,
+        propertyId,
+        body: {
+          dateRanges: [{ startDate: '30daysAgo', endDate: 'today' }],
+          metrics: [
+            { name: 'activeUsers' },
+            { name: 'newUsers' },
+            { name: 'sessions' },
+            { name: 'screenPageViews' },
+            { name: 'engagementRate' },
+            { name: 'averageSessionDuration' },
+          ],
+        },
+      }),
+      runGaReport({
+        accessToken,
+        propertyId,
+        body: {
+          dateRanges: [{ startDate: '30daysAgo', endDate: 'today' }],
+          dimensions: [{ name: 'date' }],
+          metrics: [{ name: 'activeUsers' }],
+          orderBys: [{ dimension: { dimensionName: 'date' } }],
+          limit: 60,
+        },
+      }),
+    ]);
+
+    const metrics = overviewReport.rows[0]?.metricValues ?? [];
+    const result: AdminAnalyticsOverview = {
+      generatedAtMs: nowMs,
+      activeUsers30d: Math.round(toNumber(metrics[0]?.value)),
+      newUsers30d: Math.round(toNumber(metrics[1]?.value)),
+      sessions30d: Math.round(toNumber(metrics[2]?.value)),
+      pageViews30d: Math.round(toNumber(metrics[3]?.value)),
+      engagementRatePercent30d: Number((toNumber(metrics[4]?.value) * 100).toFixed(2)),
+      avgSessionDurationSec30d: Number(toNumber(metrics[5]?.value).toFixed(2)),
+      usersSeries30d: usersSeriesReport.rows.map((row) => ({
+        date: normalizeGaDate(toOptionalString(row.dimensionValues?.[0]?.value) ?? ''),
+        activeUsers: Math.round(toNumber(row.metricValues?.[0]?.value)),
+      })),
+    };
+
+    const expiresAtMs = nowMs + ADMIN_ANALYTICS_CACHE_TTL_MS;
+    await cacheRef.set(
+      {
+        key: 'ga4_overview',
+        payload: result,
+        generatedAtMs: nowMs,
+        expiresAtMs,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedBy: actorUid,
+      },
+      { merge: true },
+    );
+
+    await writeAdminAuditLog({
+      adminUid: actorUid,
+      targetUserUid: null,
+      action,
+      payload: { cache: 'miss', forceRefresh },
+      status: 'success',
+      message: 'Computed GA4 analytics overview.',
+    });
+
+    return {
+      ...result,
+      cached: false,
+      cacheExpiresAtMs: expiresAtMs,
     };
   } catch (error) {
     const mapped = toHttpsError(error);

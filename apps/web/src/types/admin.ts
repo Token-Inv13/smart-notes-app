@@ -143,6 +143,22 @@ export type AdminOperatorDashboard = {
   }>;
 };
 
+export type AdminAnalyticsOverview = {
+  generatedAtMs: number;
+  activeUsers30d: number;
+  newUsers30d: number;
+  sessions30d: number;
+  pageViews30d: number;
+  engagementRatePercent30d: number;
+  avgSessionDurationSec30d: number;
+  usersSeries30d: Array<{
+    date: string;
+    activeUsers: number;
+  }>;
+  cached: boolean;
+  cacheExpiresAtMs: number;
+};
+
 export type AdminUserMessagingStats = {
   windowHours: number;
   sentCount: number;

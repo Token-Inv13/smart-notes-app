@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.adminListErrorLogs = exports.adminListAuditLogs = exports.adminListUserActivityEvents = exports.rebuildAdminUsersIndex = exports.adminListUsersIndex = exports.adminSendSegmentEmail = exports.adminSendUserEmail = exports.adminPreviewSegmentEmail = exports.adminSendBroadcastMessage = exports.adminPreviewBroadcastMessage = exports.adminGetOperatorDashboard = exports.adminGetHealthSummary = exports.adminSendUserMessage = exports.adminResetUserFlags = exports.adminDisablePremium = exports.adminEnablePremium = exports.adminRevokeUserSessions = exports.adminUserInboxOnRead = exports.adminUsersIndexOnErrorLogCreate = exports.adminUsersIndexOnAuthDelete = exports.adminUsersIndexOnAuthCreate = exports.adminUsersIndexOnUserWrite = exports.adminGetUserMessagingStats = exports.adminLookupUser = exports.adminHardDeleteUser = exports.adminSoftDeleteUser = void 0;
+exports.adminListErrorLogs = exports.adminListAuditLogs = exports.adminListUserActivityEvents = exports.rebuildAdminUsersIndex = exports.adminListUsersIndex = exports.adminSendSegmentEmail = exports.adminSendUserEmail = exports.adminPreviewSegmentEmail = exports.adminSendBroadcastMessage = exports.adminPreviewBroadcastMessage = exports.adminGetAnalyticsOverview = exports.adminGetOperatorDashboard = exports.adminGetHealthSummary = exports.adminSendUserMessage = exports.adminResetUserFlags = exports.adminDisablePremium = exports.adminEnablePremium = exports.adminRevokeUserSessions = exports.adminUserInboxOnRead = exports.adminUsersIndexOnErrorLogCreate = exports.adminUsersIndexOnAuthDelete = exports.adminUsersIndexOnAuthCreate = exports.adminUsersIndexOnUserWrite = exports.adminGetUserMessagingStats = exports.adminLookupUser = exports.adminHardDeleteUser = exports.adminSoftDeleteUser = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 if (!admin.apps.length) {
@@ -61,6 +61,7 @@ const MAX_SCAN_FACTOR = 5;
 const MAX_REBUILD_BATCH_SIZE = 200;
 const INBOX_MESSAGE_TTL_DAYS = 30;
 const INBOX_DUPLICATE_WINDOW_MS = 2 * 60 * 1000;
+const ADMIN_ANALYTICS_CACHE_TTL_MS = 5 * 60 * 1000;
 function normalizeInboxText(value) {
     return value.trim().replace(/\s+/g, ' ').toLowerCase();
 }
@@ -504,6 +505,49 @@ async function sendEmailViaResend(params) {
         throw new functions.https.HttpsError('internal', message);
     }
     return toOptionalString(json === null || json === void 0 ? void 0 : json.id);
+}
+async function getGoogleApiAccessToken() {
+    var _a;
+    const credential = admin.credential.applicationDefault();
+    const tokenData = await credential.getAccessToken();
+    const accessToken = (_a = toOptionalString(tokenData.access_token)) !== null && _a !== void 0 ? _a : toOptionalString(tokenData.accessToken);
+    if (!accessToken) {
+        throw new functions.https.HttpsError('failed-precondition', 'Unable to obtain Google API access token.');
+    }
+    return accessToken;
+}
+async function runGaReport(params) {
+    var _a, _b;
+    const response = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${params.propertyId}:runReport`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${params.accessToken}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(params.body),
+    });
+    const json = (await response.json().catch(() => null));
+    if (!response.ok) {
+        const message = (_b = (_a = json === null || json === void 0 ? void 0 : json.error) === null || _a === void 0 ? void 0 : _a.message) !== null && _b !== void 0 ? _b : `GA Data API request failed with status ${response.status}`;
+        throw new functions.https.HttpsError('internal', message);
+    }
+    return {
+        rows: Array.isArray(json === null || json === void 0 ? void 0 : json.rows) ? json.rows : [],
+    };
+}
+function toNumber(value) {
+    if (typeof value === 'number' && Number.isFinite(value))
+        return value;
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+    return 0;
+}
+function normalizeGaDate(raw) {
+    if (!raw || raw.length !== 8)
+        return raw;
+    return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
 }
 async function resolveSegmentTargetEmails(params) {
     const uids = await resolveBroadcastTargetUids(params);
@@ -1509,6 +1553,129 @@ exports.adminGetOperatorDashboard = functions.https.onCall(async (data, context)
             });
         }
         catch (_c) {
+            // Ignore logging failures.
+        }
+        throw mapped;
+    }
+});
+exports.adminGetAnalyticsOverview = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
+    const action = 'get_analytics_overview';
+    const payload = isObject(data) ? data : {};
+    const adminUid = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid) !== null && _b !== void 0 ? _b : null;
+    try {
+        const actorUid = assertAdmin(context);
+        const forceRefresh = payload.forceRefresh === true;
+        const db = admin.firestore();
+        const cacheRef = db.collection('adminAnalyticsCache').doc('ga4_overview');
+        const nowMs = Date.now();
+        if (!forceRefresh) {
+            const cacheSnap = await cacheRef.get();
+            if (cacheSnap.exists) {
+                const cachedPayload = cacheSnap.get('payload');
+                const expiresAtMs = toNumber(cacheSnap.get('expiresAtMs'));
+                if (cachedPayload && expiresAtMs > nowMs) {
+                    await writeAdminAuditLog({
+                        adminUid: actorUid,
+                        targetUserUid: null,
+                        action,
+                        payload: { cache: 'hit' },
+                        status: 'success',
+                        message: 'Returned cached GA4 analytics overview.',
+                    });
+                    return Object.assign(Object.assign({}, cachedPayload), { cached: true, cacheExpiresAtMs: expiresAtMs });
+                }
+            }
+        }
+        const propertyId = toOptionalString(process.env.GA4_PROPERTY_ID);
+        if (!propertyId) {
+            throw new functions.https.HttpsError('failed-precondition', 'GA4_PROPERTY_ID is required.');
+        }
+        const accessToken = await getGoogleApiAccessToken();
+        const [overviewReport, usersSeriesReport] = await Promise.all([
+            runGaReport({
+                accessToken,
+                propertyId,
+                body: {
+                    dateRanges: [{ startDate: '30daysAgo', endDate: 'today' }],
+                    metrics: [
+                        { name: 'activeUsers' },
+                        { name: 'newUsers' },
+                        { name: 'sessions' },
+                        { name: 'screenPageViews' },
+                        { name: 'engagementRate' },
+                        { name: 'averageSessionDuration' },
+                    ],
+                },
+            }),
+            runGaReport({
+                accessToken,
+                propertyId,
+                body: {
+                    dateRanges: [{ startDate: '30daysAgo', endDate: 'today' }],
+                    dimensions: [{ name: 'date' }],
+                    metrics: [{ name: 'activeUsers' }],
+                    orderBys: [{ dimension: { dimensionName: 'date' } }],
+                    limit: 60,
+                },
+            }),
+        ]);
+        const metrics = (_d = (_c = overviewReport.rows[0]) === null || _c === void 0 ? void 0 : _c.metricValues) !== null && _d !== void 0 ? _d : [];
+        const result = {
+            generatedAtMs: nowMs,
+            activeUsers30d: Math.round(toNumber((_e = metrics[0]) === null || _e === void 0 ? void 0 : _e.value)),
+            newUsers30d: Math.round(toNumber((_f = metrics[1]) === null || _f === void 0 ? void 0 : _f.value)),
+            sessions30d: Math.round(toNumber((_g = metrics[2]) === null || _g === void 0 ? void 0 : _g.value)),
+            pageViews30d: Math.round(toNumber((_h = metrics[3]) === null || _h === void 0 ? void 0 : _h.value)),
+            engagementRatePercent30d: Number((toNumber((_j = metrics[4]) === null || _j === void 0 ? void 0 : _j.value) * 100).toFixed(2)),
+            avgSessionDurationSec30d: Number(toNumber((_k = metrics[5]) === null || _k === void 0 ? void 0 : _k.value).toFixed(2)),
+            usersSeries30d: usersSeriesReport.rows.map((row) => {
+                var _a, _b, _c, _d, _e;
+                return ({
+                    date: normalizeGaDate((_c = toOptionalString((_b = (_a = row.dimensionValues) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.value)) !== null && _c !== void 0 ? _c : ''),
+                    activeUsers: Math.round(toNumber((_e = (_d = row.metricValues) === null || _d === void 0 ? void 0 : _d[0]) === null || _e === void 0 ? void 0 : _e.value)),
+                });
+            }),
+        };
+        const expiresAtMs = nowMs + ADMIN_ANALYTICS_CACHE_TTL_MS;
+        await cacheRef.set({
+            key: 'ga4_overview',
+            payload: result,
+            generatedAtMs: nowMs,
+            expiresAtMs,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedBy: actorUid,
+        }, { merge: true });
+        await writeAdminAuditLog({
+            adminUid: actorUid,
+            targetUserUid: null,
+            action,
+            payload: { cache: 'miss', forceRefresh },
+            status: 'success',
+            message: 'Computed GA4 analytics overview.',
+        });
+        return Object.assign(Object.assign({}, result), { cached: false, cacheExpiresAtMs: expiresAtMs });
+    }
+    catch (error) {
+        const mapped = toHttpsError(error);
+        try {
+            await writeAdminAuditLog({
+                adminUid,
+                targetUserUid: null,
+                action,
+                payload,
+                status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
+                message: mapped.message,
+            });
+            await writeAppErrorLog({
+                category: 'functions',
+                scope: action,
+                code: mapped.code,
+                message: mapped.message,
+                context: { adminUid, payload },
+            });
+        }
+        catch (_l) {
             // Ignore logging failures.
         }
         throw mapped;
