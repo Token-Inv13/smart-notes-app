@@ -2,12 +2,13 @@
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import { FirebaseError } from "firebase/app";
-import { deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDoc, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { auth, db, functions as fbFunctions } from "@/lib/firebase";
 import { formatTimestampForDateInput, parseLocalDateToTimestamp } from "@/lib/datetime";
 import { toUserErrorMessage } from "@/lib/userError";
-import type { TodoDoc } from "@/types/firestore";
+import type { TaskDoc, TodoDoc } from "@/types/firestore";
+import { useRouter } from "next/navigation";
 import DictationMicButton from "@/app/(protected)/_components/DictationMicButton";
 import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
 import Modal from "../../../Modal";
@@ -36,49 +37,28 @@ function normalizeTodoItems(items: TodoDoc["items"] | null | undefined): TodoIte
     .filter((item): item is TodoItem => item !== null);
 }
 
-type AssistantActionId =
-  | "summary"
-  | "correction"
-  | "structure"
-  | "translation"
-  | "rewrite_pro"
-  | "rewrite_humor"
-  | "rewrite_short";
+type AssistantActionId = "correction";
 
 const ASSISTANT_ACTIONS: Record<AssistantActionId, { label: string; instruction: string }> = {
-  summary: {
-    label: "Résumer",
-    instruction:
-      "Résume ce todo en conservant uniquement l'essentiel. Réponds avec un titre court puis une liste à puces d'actions claires.",
-  },
   correction: {
     label: "Correction",
     instruction:
       "Corrige l'orthographe, la grammaire et la ponctuation en français, sans modifier le sens des éléments.",
   },
-  structure: {
-    label: "Structurer",
-    instruction:
-      "Réorganise ce todo pour le rendre plus lisible: un titre explicite et une liste d'items ordonnés et actionnables.",
-  },
-  translation: {
-    label: "Traduction",
-    instruction:
-      "Traduis le todo en anglais naturel, en gardant exactement le même sens et la même structure (titre + liste).",
-  },
-  rewrite_pro: {
-    label: "Reformuler (pro)",
-    instruction: "Reformule le todo dans un style professionnel, clair et orienté action.",
-  },
-  rewrite_humor: {
-    label: "Reformuler (humour)",
-    instruction: "Reformule le todo avec une touche d'humour légère et positive, tout en restant utile.",
-  },
-  rewrite_short: {
-    label: "Reformuler (succinct)",
-    instruction: "Reformule le todo de façon très concise avec des phrases courtes.",
-  },
 };
+
+function buildAgendaDescription(todo: TodoDoc) {
+  const items = Array.isArray(todo.items) ? todo.items : [];
+  if (items.length === 0) return "";
+
+  const lines = ["Checklist:", ""];
+  for (const item of items) {
+    const text = typeof item?.text === "string" ? item.text.trim() : "";
+    if (!text) continue;
+    lines.push(`- [${item.done === true ? "x" : " "}] ${text}`);
+  }
+  return lines.join("\n");
+}
 
 function todoToAssistantText(todo: TodoDoc): string {
   const title = typeof todo.title === "string" && todo.title.trim() ? todo.title.trim() : "Checklist";
@@ -120,6 +100,7 @@ function parseAssistantTodoText(raw: string, fallbackTitle: string): { title: st
 }
 
 export default function TodoDetailModal(props: { params: Promise<{ id: string }> }) {
+  const router = useRouter();
   const params = use(props.params);
   const todoId: string | undefined = params?.id;
 
@@ -144,10 +125,12 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [dueDateDraft, setDueDateDraft] = useState("");
   const [priorityDraft, setPriorityDraft] = useState<"" | NonNullable<TodoDoc["priority"]>>("");
-  const [assistantMenuOpen, setAssistantMenuOpen] = useState(false);
   const [assistantBusyAction, setAssistantBusyAction] = useState<AssistantActionId | null>(null);
   const [assistantInfo, setAssistantInfo] = useState<string | null>(null);
   const [assistantError, setAssistantError] = useState<string | null>(null);
+  const [agendaBusy, setAgendaBusy] = useState(false);
+  const [agendaFeedback, setAgendaFeedback] = useState<string | null>(null);
+  const [agendaTaskId, setAgendaTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -314,7 +297,6 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
     setAssistantBusyAction(actionId);
     setAssistantInfo(null);
     setAssistantError(null);
-    setAssistantMenuOpen(false);
 
     try {
       const fn = httpsCallable<
@@ -342,6 +324,72 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
       else setAssistantError("Impossible d’appliquer l’action assistant.");
     } finally {
       setAssistantBusyAction(null);
+    }
+  };
+
+  const addToAgenda = async () => {
+    if (!todo?.id) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== todo.userId) {
+      setEditError("Impossible de modifier cette checklist.");
+      return;
+    }
+
+    if (agendaBusy) return;
+
+    setAgendaBusy(true);
+    setEditError(null);
+    setAgendaFeedback(null);
+
+    try {
+      const linkedTaskId = typeof todo.agendaTaskId === "string" && todo.agendaTaskId.trim() ? todo.agendaTaskId : null;
+      if (linkedTaskId) {
+        const linkedSnap = await getDoc(doc(db, "tasks", linkedTaskId));
+        if (linkedSnap.exists()) {
+          const linkedData = linkedSnap.data() as TaskDoc;
+          if (linkedData.userId === user.uid) {
+            setAgendaTaskId(linkedTaskId);
+            setAgendaFeedback("Déjà ajouté à l’agenda.");
+            return;
+          }
+        }
+      }
+
+      const baseDate = todo.dueDate?.toDate?.() ?? new Date();
+      const startDate = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), 0, 0, 0, 0);
+      const endDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
+
+      const taskPayload: Omit<TaskDoc, "id"> = {
+        userId: user.uid,
+        workspaceId: typeof todo.workspaceId === "string" ? todo.workspaceId : null,
+        title: todo.title?.trim() || "Checklist",
+        description: buildAgendaDescription(todo),
+        status: "todo",
+        startDate: Timestamp.fromDate(startDate),
+        dueDate: Timestamp.fromDate(endDate),
+        priority: todo.priority ?? null,
+        recurrence: null,
+        favorite: false,
+        archived: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        sourceTodoId: todo.id,
+      };
+
+      const taskRef = await addDoc(collection(db, "tasks"), taskPayload);
+      await updateDoc(doc(db, "todos", todo.id), {
+        agendaTaskId: taskRef.id,
+        updatedAt: serverTimestamp(),
+      });
+
+      setAgendaTaskId(taskRef.id);
+      setTodo((prev) => (prev ? { ...prev, agendaTaskId: taskRef.id } : prev));
+      setAgendaFeedback("Ajouté à l’agenda.");
+    } catch (e) {
+      console.error("Error adding checklist to agenda", e);
+      setEditError(toUserErrorMessage(e, "Impossible de rajouter cette checklist à l’agenda."));
+    } finally {
+      setAgendaBusy(false);
     }
   };
 
@@ -432,6 +480,22 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
         return (
           <div className="space-y-4 max-h-[90svh] md:max-h-[90vh] overflow-y-auto">
             {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
+            {agendaFeedback && (
+              <div className="sn-alert" role="status" aria-live="polite">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>{agendaFeedback}</span>
+                  {agendaTaskId && (
+                    <button
+                      type="button"
+                      className="sn-text-btn"
+                      onClick={() => router.push(`/tasks/${encodeURIComponent(agendaTaskId)}`)}
+                    >
+                      Modifier
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="sn-card p-4 space-y-3">
               <div className="sn-modal-header-safe">
@@ -514,48 +578,27 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                     type="button"
                     className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
                     disabled={saving || !!assistantBusyAction}
-                    onClick={() => void runAssistantAction("summary")}
-                  >
-                    {assistantBusyAction === "summary" ? "Résumé…" : "Résumer"}
-                  </button>
-                  <button
-                    type="button"
-                    className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
-                    disabled={saving || !!assistantBusyAction}
                     onClick={() => void runAssistantAction("correction")}
                   >
                     {assistantBusyAction === "correction" ? "Correction…" : "Correction"}
                   </button>
-                  <button
-                    type="button"
-                    className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
-                    disabled={saving || !!assistantBusyAction}
-                    onClick={() => void runAssistantAction("structure")}
-                  >
-                    {assistantBusyAction === "structure" ? "Structure…" : "Structurer"}
-                  </button>
-
-                  <div className="relative">
-                    <button
-                      type="button"
-                      className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
-                      disabled={saving || !!assistantBusyAction}
-                      onClick={() => setAssistantMenuOpen((v) => !v)}
-                    >
-                      Plus
-                    </button>
-                    {assistantMenuOpen ? (
-                      <div className="absolute right-0 mt-1 z-20 min-w-[210px] rounded-md border border-border bg-card shadow-lg p-1">
-                        <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("translation")}>Traduction</button>
-                        <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("rewrite_pro")}>Reformuler (pro)</button>
-                        <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("rewrite_humor")}>Reformuler (humour)</button>
-                        <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("rewrite_short")}>Reformuler (succinct)</button>
-                      </div>
-                    ) : null}
-                  </div>
                 </div>
                 {assistantInfo ? <div className="mt-1 text-[11px] text-muted-foreground">{assistantInfo}</div> : null}
                 {assistantError ? <div className="mt-1 text-[11px] text-destructive">{assistantError}</div> : null}
+              </div>
+
+              <div className="rounded-md border border-border/70 bg-background/40 px-3 py-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="text-xs text-muted-foreground">Action rapide</span>
+                  <button
+                    type="button"
+                    onClick={() => void addToAgenda()}
+                    disabled={saving || agendaBusy}
+                    className="h-9 inline-flex items-center justify-center px-3 rounded-md border border-input text-sm hover:bg-accent disabled:opacity-50"
+                  >
+                    {agendaBusy ? "Ajout…" : "Rajouter à l’agenda"}
+                  </button>
+                </div>
               </div>
 
               <details

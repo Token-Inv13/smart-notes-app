@@ -92,6 +92,7 @@ type Props = {
   onCancel?: () => void;
   autoFocus?: boolean;
   showActions?: boolean;
+  assistantMode?: "full" | "correction_only";
 };
 
 export default function TodoCreateForm({
@@ -101,6 +102,7 @@ export default function TodoCreateForm({
   onCancel,
   autoFocus,
   showActions,
+  assistantMode = "full",
 }: Props) {
   const [title, setTitle] = useState("");
   const [newItemText, setNewItemText] = useState("");
@@ -348,44 +350,48 @@ export default function TodoCreateForm({
               type="button"
               className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
               disabled={creating || !!assistantBusyAction}
-              onClick={() => void runAssistantAction("summary")}
-            >
-              {assistantBusyAction === "summary" ? "Résumé…" : "Résumer"}
-            </button>
-            <button
-              type="button"
-              className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
-              disabled={creating || !!assistantBusyAction}
               onClick={() => void runAssistantAction("correction")}
             >
               {assistantBusyAction === "correction" ? "Correction…" : "Correction"}
             </button>
-            <button
-              type="button"
-              className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
-              disabled={creating || !!assistantBusyAction}
-              onClick={() => void runAssistantAction("structure")}
-            >
-              {assistantBusyAction === "structure" ? "Structure…" : "Structurer"}
-            </button>
-            <div className="relative">
-              <button
-                type="button"
-                className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
-                disabled={creating || !!assistantBusyAction}
-                onClick={() => setAssistantMenuOpen((v) => !v)}
-              >
-                Plus
-              </button>
-              {assistantMenuOpen ? (
-                <div className="absolute right-0 mt-1 z-20 min-w-[210px] rounded-md border border-border bg-card shadow-lg p-1">
-                  <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("translation")}>Traduction</button>
-                  <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("rewrite_pro")}>Reformuler (pro)</button>
-                  <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("rewrite_humor")}>Reformuler (humour)</button>
-                  <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("rewrite_short")}>Reformuler (succinct)</button>
+            {assistantMode === "full" && (
+              <>
+                <button
+                  type="button"
+                  className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  disabled={creating || !!assistantBusyAction}
+                  onClick={() => void runAssistantAction("summary")}
+                >
+                  {assistantBusyAction === "summary" ? "Résumé…" : "Résumer"}
+                </button>
+                <button
+                  type="button"
+                  className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  disabled={creating || !!assistantBusyAction}
+                  onClick={() => void runAssistantAction("structure")}
+                >
+                  {assistantBusyAction === "structure" ? "Structure…" : "Structurer"}
+                </button>
+                <div className="relative">
+                  <button
+                    type="button"
+                    className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+                    disabled={creating || !!assistantBusyAction}
+                    onClick={() => setAssistantMenuOpen((v) => !v)}
+                  >
+                    Plus
+                  </button>
+                  {assistantMenuOpen ? (
+                    <div className="absolute right-0 mt-1 z-20 min-w-[210px] rounded-md border border-border bg-card shadow-lg p-1">
+                      <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("translation")}>Traduction</button>
+                      <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("rewrite_pro")}>Reformuler (pro)</button>
+                      <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("rewrite_humor")}>Reformuler (humour)</button>
+                      <button type="button" className="w-full text-left px-2 py-1.5 rounded text-xs hover:bg-accent" onClick={() => void runAssistantAction("rewrite_short")}>Reformuler (succinct)</button>
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
-            </div>
+              </>
+            )}
           </div>
           {assistantInfo ? <div className="mt-1 text-[11px] text-muted-foreground">{assistantInfo}</div> : null}
           {assistantError ? <div className="mt-1 text-[11px] text-destructive">{assistantError}</div> : null}

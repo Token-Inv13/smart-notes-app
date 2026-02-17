@@ -17,6 +17,7 @@ export default function NewTodoModal() {
         initialFavorite={initialFavorite}
         autoFocus
         showActions
+        assistantMode="correction_only"
         onCancel={() => router.back()}
         onCreated={(_todoId) => router.back()}
       />
