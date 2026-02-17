@@ -1,10 +1,8 @@
 "use client";
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
-import { FirebaseError } from "firebase/app";
 import { addDoc, collection, deleteDoc, doc, getDoc, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
-import { httpsCallable } from "firebase/functions";
-import { auth, db, functions as fbFunctions } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { formatTimestampForDateInput, parseLocalDateToTimestamp } from "@/lib/datetime";
 import { toUserErrorMessage } from "@/lib/userError";
 import type { TaskDoc, TodoDoc } from "@/types/firestore";
@@ -36,16 +34,6 @@ function normalizeTodoItems(items: TodoDoc["items"] | null | undefined): TodoIte
     })
     .filter((item): item is TodoItem => item !== null);
 }
-
-type AssistantActionId = "correction";
-
-const ASSISTANT_ACTIONS: Record<AssistantActionId, { label: string; instruction: string }> = {
-  correction: {
-    label: "Correction",
-    instruction:
-      "Corrige l'orthographe, la grammaire et la ponctuation en français, sans modifier le sens des éléments.",
-  },
-};
 
 function buildAgendaDescription(todo: TodoDoc) {
   const items = Array.isArray(todo.items) ? todo.items : [];
@@ -106,45 +94,6 @@ function mapChecklistDueDateToAgendaWindow(dueDate: TodoDoc["dueDate"] | null | 
   };
 }
 
-function todoToAssistantText(todo: TodoDoc): string {
-  const title = typeof todo.title === "string" && todo.title.trim() ? todo.title.trim() : "Checklist";
-  const active = Array.isArray(todo.items) ? todo.items.filter((it) => it?.done !== true) : [];
-  const done = Array.isArray(todo.items) ? todo.items.filter((it) => it?.done === true) : [];
-  const lines = [title, "", "Éléments actifs:"];
-  if (active.length === 0) lines.push("- Aucun");
-  for (const item of active) {
-    const text = typeof item?.text === "string" ? item.text.trim() : "";
-    if (text) lines.push(`- ${text}`);
-  }
-  if (done.length > 0) {
-    lines.push("", "Terminés:");
-    for (const item of done) {
-      const text = typeof item?.text === "string" ? item.text.trim() : "";
-      if (text) lines.push(`- ${text}`);
-    }
-  }
-  return lines.join("\n");
-}
-
-function parseAssistantTodoText(raw: string, fallbackTitle: string): { title: string; items: NonNullable<TodoDoc["items"]> } {
-  const lines = raw
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const first = lines[0] ?? "";
-  const cleanedTitle = first.replace(/^[-*•#\d.\s)]+/, "").trim();
-  const title = cleanedTitle || fallbackTitle || "Checklist";
-
-  const bulletItems = lines
-    .slice(1)
-    .map((line) => line.replace(/^[-*•\d.\s)]+/, "").trim())
-    .filter((line) => line.length > 0 && !/^éléments actifs:?$/i.test(line) && !/^terminés:?$/i.test(line) && !/^aucun$/i.test(line));
-
-  const uniq = Array.from(new Set(bulletItems)).slice(0, 60);
-  const items = uniq.map((text) => ({ id: safeItemId(), text, done: false, createdAt: Date.now() }));
-  return { title, items };
-}
-
 export default function TodoDetailModal(props: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const params = use(props.params);
@@ -160,11 +109,8 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
 
   const [newItemText, setNewItemText] = useState("");
 
-  const titleInputRef = useRef<HTMLInputElement | null>(null);
   const itemInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [dictationStatus, setDictationStatus] = useState<"idle" | "listening" | "stopped" | "error">("idle");
-  const [dictationError, setDictationError] = useState<string | null>(null);
   const [itemDictationStatus, setItemDictationStatus] = useState<"idle" | "listening" | "stopped" | "error">("idle");
   const [itemDictationError, setItemDictationError] = useState<string | null>(null);
 
@@ -172,9 +118,6 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
   const [doneSectionOpen, setDoneSectionOpen] = useState(false);
   const [dueDateDraft, setDueDateDraft] = useState("");
   const [priorityDraft, setPriorityDraft] = useState<"" | NonNullable<TodoDoc["priority"]>>("");
-  const [assistantBusyAction, setAssistantBusyAction] = useState<AssistantActionId | null>(null);
-  const [assistantInfo, setAssistantInfo] = useState<string | null>(null);
-  const [assistantError, setAssistantError] = useState<string | null>(null);
   const [agendaBusy, setAgendaBusy] = useState(false);
   const [agendaFeedback, setAgendaFeedback] = useState<string | null>(null);
   const [agendaTaskId, setAgendaTaskId] = useState<string | null>(null);
@@ -337,44 +280,6 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
       text: `Échéance: ${ts.toDate().toLocaleDateString("fr-FR")}`,
     };
   }, [dueDateDraft]);
-
-  const runAssistantAction = async (actionId: AssistantActionId) => {
-    if (!todo) return;
-    if (assistantBusyAction) return;
-
-    const action = ASSISTANT_ACTIONS[actionId];
-    setAssistantBusyAction(actionId);
-    setAssistantInfo(null);
-    setAssistantError(null);
-
-    try {
-      const fn = httpsCallable<
-        { text: string; instruction: string },
-        { text: string; model?: string | null }
-      >(fbFunctions, "assistantRewriteText");
-
-      const source = todoToAssistantText(todo);
-      const response = await fn({ text: source, instruction: action.instruction });
-      const transformed = typeof response.data?.text === "string" ? response.data.text.trim() : "";
-      if (!transformed) {
-        throw new Error("Réponse IA vide.");
-      }
-
-      const parsed = parseAssistantTodoText(transformed, todo.title);
-      const nextItems = parsed.items.length > 0 ? parsed.items : (todo.items ?? []);
-      await persistTodo({ title: parsed.title, items: nextItems, completed: false });
-      setAssistantInfo(`${action.label} appliqué.`);
-    } catch (e) {
-      if (e instanceof FirebaseError) {
-        const code = String(e.code || "");
-        if (code.includes("internal")) setAssistantError("Aide à la rédaction indisponible pour le moment. Réessaie dans quelques secondes.");
-        else setAssistantError(toUserErrorMessage(e, "Impossible d’appliquer l’action assistant."));
-      }
-      else setAssistantError("Impossible d’appliquer l’action assistant.");
-    } finally {
-      setAssistantBusyAction(null);
-    }
-  };
 
   const addToAgenda = async () => {
     if (!todo?.id) return;
@@ -550,7 +455,6 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Checklist</div>
                     <input
-                      ref={titleInputRef}
                       value={todo.title}
                       onChange={(e) => setTitleDraft(e.target.value)}
                       onBlur={() => void commitTitle()}
@@ -592,70 +496,16 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
 
               <div className="rounded-md border border-border/70 bg-background/40 px-3 py-2.5 space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-muted-foreground">Actions rapides</span>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      className="h-8 px-3 rounded-md border border-input text-xs font-medium hover:bg-accent disabled:opacity-50"
-                      disabled={saving || !!assistantBusyAction}
-                      onClick={() => void runAssistantAction("correction")}
-                    >
-                      {assistantBusyAction === "correction" ? "Correction…" : "Correction"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void addToAgenda()}
-                      disabled={saving || agendaBusy}
-                      className="h-8 px-3 rounded-md border border-input text-xs font-medium hover:bg-accent disabled:opacity-50"
-                    >
-                      {agendaBusy ? "Ajout…" : "Rajouter à l’agenda"}
-                    </button>
-                  </div>
+                  <span className="text-xs font-medium text-muted-foreground">Action rapide</span>
+                  <button
+                    type="button"
+                    onClick={() => void addToAgenda()}
+                    disabled={saving || agendaBusy}
+                    className="h-8 px-3 rounded-md border border-input text-xs font-medium hover:bg-accent disabled:opacity-50"
+                  >
+                    {agendaBusy ? "Ajout…" : "Rajouter à l’agenda"}
+                  </button>
                 </div>
-                {assistantInfo ? <div className="text-[11px] text-muted-foreground">{assistantInfo}</div> : null}
-                {assistantError ? <div className="text-[11px] text-destructive">{assistantError}</div> : null}
-              </div>
-
-              <div className="rounded-md border border-border/70 bg-background/30 px-3 py-2 space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-muted-foreground">Dictée du titre</span>
-                  <DictationMicButton
-                    disabled={saving}
-                    onFinalText={(rawText) => {
-                      const el = titleInputRef.current;
-                      const insert = prepareDictationTextForInsertion({
-                        value: todo.title,
-                        selectionStart: el?.selectionStart ?? null,
-                        rawText,
-                      });
-                      if (!insert) return;
-                      const { nextValue, nextCursor } = insertTextAtSelection({
-                        value: todo.title,
-                        selectionStart: el?.selectionStart ?? null,
-                        selectionEnd: el?.selectionEnd ?? null,
-                        text: insert,
-                      });
-                      setTitleDraft(nextValue);
-                      window.requestAnimationFrame(() => {
-                        try {
-                          el?.focus();
-                          el?.setSelectionRange(nextCursor, nextCursor);
-                        } catch {
-                          // ignore
-                        }
-                      });
-                    }}
-                    onStatusChange={(st, err) => {
-                      setDictationStatus(st);
-                      setDictationError(err);
-                    }}
-                  />
-                </div>
-                {dictationStatus === "listening" ? (
-                  <div className="text-xs text-muted-foreground">Écoute…</div>
-                ) : dictationError ? (
-                  <div className="text-xs text-destructive">{dictationError}</div>
-                ) : null}
               </div>
 
               <details
