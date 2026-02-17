@@ -169,6 +169,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
   const [itemDictationError, setItemDictationError] = useState<string | null>(null);
 
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [doneSectionOpen, setDoneSectionOpen] = useState(false);
   const [dueDateDraft, setDueDateDraft] = useState("");
   const [priorityDraft, setPriorityDraft] = useState<"" | NonNullable<TodoDoc["priority"]>>("");
   const [assistantBusyAction, setAssistantBusyAction] = useState<AssistantActionId | null>(null);
@@ -234,6 +235,8 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
   const items = useMemo(() => todo?.items ?? [], [todo?.items]);
   const activeItems = useMemo(() => items.filter((it) => it.done !== true), [items]);
   const doneItems = useMemo(() => items.filter((it) => it.done === true), [items]);
+  const totalItems = activeItems.length + doneItems.length;
+  const completionPercent = totalItems > 0 ? Math.round((doneItems.length / totalItems) * 100) : 0;
 
   useEffect(() => {
     if (!todo) return;
@@ -541,10 +544,11 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
               </div>
             )}
 
-            <div className="sn-card p-4 space-y-3">
-              <div className="sn-modal-header-safe">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+            <div className="sn-card p-4 sm:p-5 space-y-4">
+              <div className="space-y-3">
+                <div className="sn-modal-header-safe">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Checklist</div>
                     <input
                       ref={titleInputRef}
                       value={todo.title}
@@ -560,89 +564,98 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                           (e.currentTarget as HTMLInputElement).blur();
                         }
                       }}
-                      className="flex-1 w-full bg-transparent text-sm font-semibold outline-none"
+                      className="flex-1 w-full bg-transparent text-base sm:text-lg font-semibold leading-tight outline-none"
                       aria-label="Titre de la checklist"
                       disabled={saving}
                     />
                   </div>
-                  <div className="sn-modal-secondary-controls">
-                    <DictationMicButton
-                      disabled={saving}
-                      onFinalText={(rawText) => {
-                        const el = titleInputRef.current;
-                        const insert = prepareDictationTextForInsertion({
-                          value: todo.title,
-                          selectionStart: el?.selectionStart ?? null,
-                          rawText,
-                        });
-                        if (!insert) return;
-                        const { nextValue, nextCursor } = insertTextAtSelection({
-                          value: todo.title,
-                          selectionStart: el?.selectionStart ?? null,
-                          selectionEnd: el?.selectionEnd ?? null,
-                          text: insert,
-                        });
-                        setTitleDraft(nextValue);
-                        window.requestAnimationFrame(() => {
-                          try {
-                            el?.focus();
-                            el?.setSelectionRange(nextCursor, nextCursor);
-                          } catch {
-                            // ignore
-                          }
-                        });
-                      }}
-                      onStatusChange={(st, err) => {
-                        setDictationStatus(st);
-                        setDictationError(err);
-                      }}
-                    />
-                    {dictationStatus === "listening" ? (
-                      <div className="text-xs text-muted-foreground">Écoute…</div>
-                    ) : dictationError ? (
-                      <div className="text-xs text-destructive">{dictationError}</div>
-                    ) : null}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Actifs: {activeItems.length} · Terminés: {doneItems.length}
+
+                  <div className="sn-modal-header-actions">
+                    <button type="button" onClick={close} className="sn-icon-btn" aria-label="Fermer" title="Fermer">
+                      ×
+                    </button>
                   </div>
                 </div>
 
-                <div className="sn-modal-header-actions">
-                  <button type="button" onClick={close} className="sn-icon-btn" aria-label="Fermer" title="Fermer">
-                    ×
-                  </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="sn-badge">Actifs: {activeItems.length}</span>
+                  <span className="sn-badge">Terminés: {doneItems.length}</span>
+                  <span className="sn-badge">Progression: {completionPercent}%</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-muted overflow-hidden" aria-hidden="true">
+                  <div
+                    className="h-full bg-primary transition-[width] duration-200"
+                    style={{ width: `${completionPercent}%` }}
+                  />
                 </div>
               </div>
 
-              <div className="rounded-md border border-border/70 bg-background/40 px-2 py-1.5">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-[11px] text-muted-foreground mr-1">Assistant</span>
-                  <button
-                    type="button"
-                    className="px-2 py-1 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
-                    disabled={saving || !!assistantBusyAction}
-                    onClick={() => void runAssistantAction("correction")}
-                  >
-                    {assistantBusyAction === "correction" ? "Correction…" : "Correction"}
-                  </button>
+              <div className="rounded-md border border-border/70 bg-background/40 px-3 py-2.5 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-muted-foreground">Actions rapides</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      className="h-8 px-3 rounded-md border border-input text-xs font-medium hover:bg-accent disabled:opacity-50"
+                      disabled={saving || !!assistantBusyAction}
+                      onClick={() => void runAssistantAction("correction")}
+                    >
+                      {assistantBusyAction === "correction" ? "Correction…" : "Correction"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void addToAgenda()}
+                      disabled={saving || agendaBusy}
+                      className="h-8 px-3 rounded-md border border-input text-xs font-medium hover:bg-accent disabled:opacity-50"
+                    >
+                      {agendaBusy ? "Ajout…" : "Rajouter à l’agenda"}
+                    </button>
+                  </div>
                 </div>
-                {assistantInfo ? <div className="mt-1 text-[11px] text-muted-foreground">{assistantInfo}</div> : null}
-                {assistantError ? <div className="mt-1 text-[11px] text-destructive">{assistantError}</div> : null}
+                {assistantInfo ? <div className="text-[11px] text-muted-foreground">{assistantInfo}</div> : null}
+                {assistantError ? <div className="text-[11px] text-destructive">{assistantError}</div> : null}
               </div>
 
-              <div className="rounded-md border border-border/70 bg-background/40 px-3 py-2">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <span className="text-xs text-muted-foreground">Action rapide</span>
-                  <button
-                    type="button"
-                    onClick={() => void addToAgenda()}
-                    disabled={saving || agendaBusy}
-                    className="h-9 inline-flex items-center justify-center px-3 rounded-md border border-input text-sm hover:bg-accent disabled:opacity-50"
-                  >
-                    {agendaBusy ? "Ajout…" : "Rajouter à l’agenda"}
-                  </button>
+              <div className="rounded-md border border-border/70 bg-background/30 px-3 py-2 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-muted-foreground">Dictée du titre</span>
+                  <DictationMicButton
+                    disabled={saving}
+                    onFinalText={(rawText) => {
+                      const el = titleInputRef.current;
+                      const insert = prepareDictationTextForInsertion({
+                        value: todo.title,
+                        selectionStart: el?.selectionStart ?? null,
+                        rawText,
+                      });
+                      if (!insert) return;
+                      const { nextValue, nextCursor } = insertTextAtSelection({
+                        value: todo.title,
+                        selectionStart: el?.selectionStart ?? null,
+                        selectionEnd: el?.selectionEnd ?? null,
+                        text: insert,
+                      });
+                      setTitleDraft(nextValue);
+                      window.requestAnimationFrame(() => {
+                        try {
+                          el?.focus();
+                          el?.setSelectionRange(nextCursor, nextCursor);
+                        } catch {
+                          // ignore
+                        }
+                      });
+                    }}
+                    onStatusChange={(st, err) => {
+                      setDictationStatus(st);
+                      setDictationError(err);
+                    }}
+                  />
                 </div>
+                {dictationStatus === "listening" ? (
+                  <div className="text-xs text-muted-foreground">Écoute…</div>
+                ) : dictationError ? (
+                  <div className="text-xs text-destructive">{dictationError}</div>
+                ) : null}
               </div>
 
               <details
@@ -716,26 +729,29 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                 </div>
               </details>
 
-              <div className="sn-card sn-card--muted p-3">
+              <div className="rounded-md border border-border bg-card/80 p-3 space-y-2">
+                <div className="text-xs font-medium text-muted-foreground">Ajouter un élément</div>
                 <div className="flex items-center gap-2">
-                  <input
-                    ref={itemInputRef}
-                    value={newItemText}
-                    onChange={(e) => setNewItemText(e.target.value)}
-                    placeholder="Ajouter un élément"
-                    className="w-full bg-transparent text-sm outline-none"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        void addItem();
-                      }
-                      if (e.key === "Escape") {
-                        e.preventDefault();
-                        setNewItemText("");
-                      }
-                    }}
-                    disabled={saving}
-                  />
+                  <div className="flex-1 rounded-md border border-input bg-background px-3 py-2">
+                    <input
+                      ref={itemInputRef}
+                      value={newItemText}
+                      onChange={(e) => setNewItemText(e.target.value)}
+                      placeholder="Ajouter un élément"
+                      className="w-full bg-transparent text-sm outline-none"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void addItem();
+                        }
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          setNewItemText("");
+                        }
+                      }}
+                      disabled={saving}
+                    />
+                  </div>
                   <DictationMicButton
                     disabled={saving}
                     onFinalText={(rawText) => {
@@ -769,7 +785,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                   />
                   <button
                     type="button"
-                    className="sn-text-btn"
+                    className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
                     onClick={() => void addItem()}
                     disabled={saving || !newItemText.trim()}
                   >
@@ -777,9 +793,9 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                   </button>
                 </div>
                 {itemDictationStatus === "listening" ? (
-                  <div className="mt-2 text-xs text-muted-foreground">Écoute…</div>
+                  <div className="text-xs text-muted-foreground">Écoute…</div>
                 ) : itemDictationError ? (
-                  <div className="mt-2 text-xs text-destructive">{itemDictationError}</div>
+                  <div className="text-xs text-destructive">{itemDictationError}</div>
                 ) : null}
               </div>
 
@@ -790,83 +806,55 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                 </div>
               )}
 
-              {activeItems.length > 0 && (
-                <ul className="space-y-2">
-                  {activeItems.map((it) => (
-                    <li key={`active-${it.id}`} className="sn-card p-3">
-                      <div className="flex items-start gap-3">
-                        <input
-                          type="checkbox"
-                          checked={it.done === true}
-                          onChange={(e) => {
-                            e.currentTarget.blur();
-                            void toggleItemDone(it.id, e.target.checked);
-                          }}
-                          aria-label="Marquer l’élément comme terminé"
-                          disabled={saving}
-                        />
-                        <input
-                          className="w-full bg-transparent text-sm outline-none"
-                          value={it.text}
-                          placeholder="Nouvel élément"
-                          onChange={(e) => updateItemTextDraft(it.id, e.target.value)}
-                          onBlur={() => void commitItemText(it.id)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              (e.currentTarget as HTMLInputElement).blur();
-                            }
-                            if (e.key === "Escape") {
-                              e.preventDefault();
-                              (e.currentTarget as HTMLInputElement).blur();
-                            }
-                          }}
-                          disabled={saving}
-                          aria-label="Texte de l’élément"
-                        />
-                        <button
-                          type="button"
-                          className="sn-icon-btn shrink-0"
-                          aria-label="Supprimer l’élément"
-                          title="Supprimer"
-                          onClick={() => void removeItem(it.id)}
-                          disabled={saving}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm font-medium">À faire</div>
+                  <span className="sn-badge">{activeItems.length}</span>
+                </div>
 
-              <div className="pt-2">
-                <div className="text-sm font-medium mb-2">Terminées</div>
-
-                {doneItems.length === 0 && <div className="text-sm text-muted-foreground">Aucun élément terminé.</div>}
-
-                {doneItems.length > 0 && (
-                  <ul className="space-y-2">
-                    {doneItems.map((it) => (
-                      <li key={`done-${it.id}`} className="sn-card sn-card--muted p-3">
-                        <div className="flex items-start gap-3 opacity-80">
+                {activeItems.length === 0 ? (
+                  <div className="text-sm text-muted-foreground rounded-md border border-dashed border-border p-3">
+                    Aucun élément actif.
+                  </div>
+                ) : (
+                  <ul className="space-y-2.5">
+                    {activeItems.map((it) => (
+                      <li key={`active-${it.id}`} className="rounded-md border border-border bg-card p-3">
+                        <div className="flex items-start gap-3">
                           <input
                             type="checkbox"
-                            checked={true}
-                            onChange={() => {
-                              (document.activeElement as HTMLElement | null)?.blur?.();
-                              void toggleItemDone(it.id, false);
+                            checked={it.done === true}
+                            onChange={(e) => {
+                              e.currentTarget.blur();
+                              void toggleItemDone(it.id, e.target.checked);
                             }}
-                            aria-label="Restaurer l’élément"
+                            aria-label="Marquer l’élément comme terminé"
                             disabled={saving}
+                            className="mt-0.5"
                           />
-                          <div className="w-full min-w-0">
-                            <div className="text-sm line-through text-muted-foreground break-words">{it.text}</div>
-                          </div>
+                          <input
+                            className="w-full bg-transparent text-sm outline-none"
+                            value={it.text}
+                            placeholder="Nouvel élément"
+                            onChange={(e) => updateItemTextDraft(it.id, e.target.value)}
+                            onBlur={() => void commitItemText(it.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                (e.currentTarget as HTMLInputElement).blur();
+                              }
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                (e.currentTarget as HTMLInputElement).blur();
+                              }
+                            }}
+                            disabled={saving}
+                            aria-label="Texte de l’élément"
+                          />
                           <button
                             type="button"
                             className="sn-icon-btn shrink-0"
-                            aria-label="Supprimer définitivement l’élément"
+                            aria-label="Supprimer l’élément"
                             title="Supprimer"
                             onClick={() => void removeItem(it.id)}
                             disabled={saving}
@@ -879,6 +867,55 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                   </ul>
                 )}
               </div>
+
+              <details
+                className="rounded-md border border-border bg-card"
+                open={doneSectionOpen}
+                onToggle={(e) => setDoneSectionOpen((e.currentTarget as HTMLDetailsElement).open)}
+              >
+                <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium flex items-center justify-between gap-2">
+                  <span>Terminées</span>
+                  <span className="sn-badge">{doneItems.length}</span>
+                </summary>
+                <div className="px-3 pb-3">
+                  {doneItems.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">Aucun élément terminé.</div>
+                  ) : (
+                    <ul className="space-y-2">
+                      {doneItems.map((it) => (
+                        <li key={`done-${it.id}`} className="rounded-md border border-border bg-muted/20 p-3">
+                          <div className="flex items-start gap-3 opacity-80">
+                            <input
+                              type="checkbox"
+                              checked={true}
+                              onChange={() => {
+                                (document.activeElement as HTMLElement | null)?.blur?.();
+                                void toggleItemDone(it.id, false);
+                              }}
+                              aria-label="Restaurer l’élément"
+                              disabled={saving}
+                              className="mt-0.5"
+                            />
+                            <div className="w-full min-w-0">
+                              <div className="text-sm line-through text-muted-foreground break-words">{it.text}</div>
+                            </div>
+                            <button
+                              type="button"
+                              className="sn-icon-btn shrink-0"
+                              aria-label="Supprimer définitivement l’élément"
+                              title="Supprimer"
+                              onClick={() => void removeItem(it.id)}
+                              disabled={saving}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </details>
 
               <div className="pt-3 border-t border-border/70">
                 {!confirmingDelete && (
