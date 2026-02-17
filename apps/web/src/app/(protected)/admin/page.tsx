@@ -11,7 +11,9 @@ import {
   listUserActivityEvents,
   listUsersIndex,
   lookupUser,
+  previewBroadcastMessage,
   rebuildUsersIndex,
+  sendBroadcastMessage,
   sendUserMessage,
   softDeleteUser,
   hardDeleteUser,
@@ -20,6 +22,7 @@ import {
 } from '@/lib/adminClient';
 import type {
   AdminAuditLogItem,
+  AdminBroadcastPreview,
   AdminCursor,
   AdminLookupUserResult,
   AdminUserMessagingStats,
@@ -128,6 +131,16 @@ export default function AdminPage() {
   const [messageStats, setMessageStats] = useState<AdminUserMessagingStats | null>(null);
   const [messageStatsLoading, setMessageStatsLoading] = useState(false);
   const [messageStatsError, setMessageStatsError] = useState<string | null>(null);
+  const [broadcastSegment, setBroadcastSegment] = useState<'all' | 'premium' | 'inactive' | 'tag'>('all');
+  const [broadcastTag, setBroadcastTag] = useState('');
+  const [broadcastTitle, setBroadcastTitle] = useState('');
+  const [broadcastBody, setBroadcastBody] = useState('');
+  const [broadcastSeverity, setBroadcastSeverity] = useState<'info' | 'warn' | 'critical'>('info');
+  const [broadcastPreview, setBroadcastPreview] = useState<AdminBroadcastPreview | null>(null);
+  const [broadcastLoading, setBroadcastLoading] = useState(false);
+  const [broadcastSending, setBroadcastSending] = useState(false);
+  const [broadcastError, setBroadcastError] = useState<string | null>(null);
+  const [broadcastInfo, setBroadcastInfo] = useState<string | null>(null);
 
   const [recentUsers, setRecentUsers] = useState<string[]>([]);
 
@@ -513,6 +526,64 @@ export default function AdminPage() {
     }
   };
 
+  const loadBroadcastPreview = async () => {
+    setBroadcastLoading(true);
+    setBroadcastError(null);
+    try {
+      const preview = await previewBroadcastMessage({
+        segment: broadcastSegment,
+        tag: broadcastSegment === 'tag' ? broadcastTag.trim() : undefined,
+      });
+      setBroadcastPreview(preview);
+    } catch (e) {
+      setBroadcastPreview(null);
+      setBroadcastError(e instanceof Error ? e.message : 'Preview impossible.');
+    } finally {
+      setBroadcastLoading(false);
+    }
+  };
+
+  const handleBroadcastSend = async () => {
+    if (!broadcastTitle.trim() || !broadcastBody.trim()) {
+      setBroadcastError('Titre et contenu requis.');
+      return;
+    }
+    if (broadcastSegment === 'tag' && !broadcastTag.trim()) {
+      setBroadcastError('Le tag est requis pour ce segment.');
+      return;
+    }
+
+    setBroadcastError(null);
+    const recipients = broadcastPreview?.recipients ?? 0;
+    const confirmed = await new Promise<boolean>((resolve) => {
+      confirmResolverRef.current = resolve;
+      setConfirmModal({
+        open: true,
+        title: 'Confirmer le broadcast',
+        message: `Envoyer ce message à ${recipients} utilisateur(s) ?`,
+      });
+    });
+    if (!confirmed) return;
+
+    setBroadcastSending(true);
+    setBroadcastInfo(null);
+    try {
+      const res = await sendBroadcastMessage({
+        segment: broadcastSegment,
+        tag: broadcastSegment === 'tag' ? broadcastTag.trim() : undefined,
+        title: broadcastTitle.trim(),
+        body: broadcastBody.trim(),
+        severity: broadcastSeverity,
+      });
+      setBroadcastInfo(res.message);
+      await loadBroadcastPreview();
+    } catch (e) {
+      setBroadcastError(e instanceof Error ? e.message : 'Envoi broadcast impossible.');
+    } finally {
+      setBroadcastSending(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
@@ -541,6 +612,80 @@ export default function AdminPage() {
           </div>
         </div>
       </header>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">Broadcast in-app</h2>
+        <p className="mt-1 text-xs text-slate-500">Envoi segmenté global avec preview avant diffusion.</p>
+        <div className="mt-3 grid gap-2 md:grid-cols-4">
+          <select
+            value={broadcastSegment}
+            onChange={(e) => setBroadcastSegment(e.target.value as 'all' | 'premium' | 'inactive' | 'tag')}
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+            aria-label="Segment broadcast"
+          >
+            <option value="all">all</option>
+            <option value="premium">premium</option>
+            <option value="inactive">inactive</option>
+            <option value="tag">tag</option>
+          </select>
+          <input
+            value={broadcastTag}
+            onChange={(e) => setBroadcastTag(e.target.value)}
+            placeholder="Tag (si segment=tag)"
+            disabled={broadcastSegment !== 'tag'}
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 disabled:opacity-60"
+          />
+          <input
+            value={broadcastTitle}
+            onChange={(e) => setBroadcastTitle(e.target.value)}
+            placeholder="Titre"
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+          />
+          <select
+            value={broadcastSeverity}
+            onChange={(e) => setBroadcastSeverity(e.target.value as 'info' | 'warn' | 'critical')}
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+            aria-label="Sévérité broadcast"
+          >
+            <option value="info">info</option>
+            <option value="warn">warn</option>
+            <option value="critical">critical</option>
+          </select>
+        </div>
+        <textarea
+          value={broadcastBody}
+          onChange={(e) => setBroadcastBody(e.target.value)}
+          placeholder="Message du broadcast"
+          rows={3}
+          className="mt-2 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+        />
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="text-sm text-slate-700">
+            Destinataires estimés:{' '}
+            <span className="font-semibold">{broadcastPreview ? broadcastPreview.recipients : '—'}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void loadBroadcastPreview()}
+              disabled={broadcastLoading}
+              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+            >
+              {broadcastLoading ? 'Preview…' : 'Preview'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleBroadcastSend()}
+              disabled={broadcastSending}
+              className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+            >
+              {broadcastSending ? 'Envoi…' : 'Envoyer broadcast'}
+            </button>
+          </div>
+        </div>
+        {broadcastInfo && <p className="mt-2 text-xs text-emerald-600">{broadcastInfo}</p>}
+        {broadcastError && <p className="mt-2 text-xs text-destructive">{broadcastError}</p>}
+      </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">

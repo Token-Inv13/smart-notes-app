@@ -22,6 +22,13 @@ export type AdminActionResponse = {
   ok: boolean;
   message: string;
   expiresAtMs?: number;
+  recipients?: number;
+};
+
+export type AdminBroadcastPreview = {
+  segment: 'all' | 'premium' | 'inactive' | 'tag';
+  tag: string | null;
+  recipients: number;
 };
 
 export type AdminCursor = {

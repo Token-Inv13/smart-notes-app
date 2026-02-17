@@ -5,6 +5,12 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 
+function normalizeBroadcastSegment(raw: unknown): BroadcastSegment {
+  const value = toOptionalString(raw);
+  if (value === 'premium' || value === 'inactive' || value === 'tag') return value;
+  return 'all';
+}
+
 function normalizeActivityType(raw: unknown): ActivityEventRecord['type'] | null {
   const value = toOptionalString(raw);
   if (!value) return null;
@@ -117,6 +123,7 @@ type AdminUsersCursor = {
 };
 
 type AdminUsersSortBy = 'createdAt' | 'lastSeenAt' | 'premiumUntil';
+type BroadcastSegment = 'all' | 'premium' | 'inactive' | 'tag';
 
 type PaginationCursor = {
   createdAtMs: number;
@@ -562,6 +569,47 @@ async function countQuery(query: FirebaseFirestore.Query): Promise<number> {
     const snap = await query.get();
     return snap.size;
   }
+}
+
+async function resolveBroadcastTargetUids(params: {
+  db: FirebaseFirestore.Firestore;
+  segment: BroadcastSegment;
+  tag?: string | null;
+}): Promise<string[]> {
+  const usersIndex = params.db.collection('adminUsersIndex');
+  const unique = new Set<string>();
+
+  const collectFromSnapshot = (snap: FirebaseFirestore.QuerySnapshot) => {
+    for (const doc of snap.docs) {
+      const uid = toOptionalString(doc.get('uid')) ?? doc.id;
+      const status = toOptionalString(doc.get('status')) ?? 'active';
+      if (!uid) continue;
+      if (status !== 'active') continue;
+      unique.add(uid);
+    }
+  };
+
+  if (params.segment === 'all') {
+    collectFromSnapshot(await usersIndex.get());
+  } else if (params.segment === 'premium') {
+    collectFromSnapshot(await usersIndex.where('plan', '==', 'premium').get());
+  } else if (params.segment === 'inactive') {
+    const thresholdTs = admin.firestore.Timestamp.fromMillis(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const [seenSnap, neverSeenSnap] = await Promise.all([
+      usersIndex.where('lastSeenAt', '<', thresholdTs).get(),
+      usersIndex.where('lastSeenAt', '==', null).get(),
+    ]);
+    collectFromSnapshot(seenSnap);
+    collectFromSnapshot(neverSeenSnap);
+  } else {
+    const tag = params.tag?.trim().toLowerCase();
+    if (!tag) {
+      throw new functions.https.HttpsError('invalid-argument', 'tag is required for segment=tag.');
+    }
+    collectFromSnapshot(await usersIndex.where('tags', 'array-contains', tag).get());
+  }
+
+  return Array.from(unique);
 }
 
 async function upsertAdminUsersIndexForUid(params: {
@@ -1630,6 +1678,179 @@ export const adminGetOperatorDashboard = functions.https.onCall(async (data, con
       aiJobsFailed24h,
       inboxReadRatePercent,
       usersSeries30d,
+    };
+  } catch (error) {
+    const mapped = toHttpsError(error);
+    try {
+      await writeAdminAuditLog({
+        adminUid,
+        targetUserUid: null,
+        action,
+        payload,
+        status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
+        message: mapped.message,
+      });
+      await writeAppErrorLog({
+        category: 'functions',
+        scope: action,
+        code: mapped.code,
+        message: mapped.message,
+        context: { adminUid, payload },
+      });
+    } catch {
+      // Ignore logging failures.
+    }
+    throw mapped;
+  }
+});
+
+export const adminPreviewBroadcastMessage = functions.https.onCall(async (data, context) => {
+  const action = 'preview_broadcast_message';
+  const payload = isObject(data) ? data : {};
+  const adminUid = context.auth?.uid ?? null;
+
+  try {
+    const actorUid = assertAdmin(context);
+    const segment = normalizeBroadcastSegment(payload.segment);
+    const tag = toOptionalString(payload.tag);
+    const targetUids = await resolveBroadcastTargetUids({
+      db: admin.firestore(),
+      segment,
+      tag,
+    });
+
+    await writeAdminAuditLog({
+      adminUid: actorUid,
+      targetUserUid: null,
+      action,
+      payload: { segment, tag: tag ?? null, recipients: targetUids.length },
+      status: 'success',
+      message: 'Computed broadcast preview.',
+    });
+
+    return {
+      segment,
+      tag: tag ?? null,
+      recipients: targetUids.length,
+    };
+  } catch (error) {
+    const mapped = toHttpsError(error);
+    try {
+      await writeAdminAuditLog({
+        adminUid,
+        targetUserUid: null,
+        action,
+        payload,
+        status: mapped.code === 'permission-denied' || mapped.code === 'unauthenticated' ? 'denied' : 'error',
+        message: mapped.message,
+      });
+      await writeAppErrorLog({
+        category: 'functions',
+        scope: action,
+        code: mapped.code,
+        message: mapped.message,
+        context: { adminUid, payload },
+      });
+    } catch {
+      // Ignore logging failures.
+    }
+    throw mapped;
+  }
+});
+
+export const adminSendBroadcastMessage = functions.https.onCall(async (data, context) => {
+  const action = 'send_broadcast_message';
+  const payload = isObject(data) ? data : {};
+  const adminUid = context.auth?.uid ?? null;
+
+  try {
+    const actorUid = assertAdmin(context);
+    const segment = normalizeBroadcastSegment(payload.segment);
+    const tag = toOptionalString(payload.tag);
+    const title = toNonEmptyString(payload.title);
+    const body = toNonEmptyString(payload.body);
+    const severityRaw = toOptionalString(payload.severity);
+    const severity =
+      severityRaw === 'warn' || severityRaw === 'critical' || severityRaw === 'info' ? severityRaw : 'info';
+
+    if (!title || title.length > 120) {
+      throw new functions.https.HttpsError('invalid-argument', 'title is required and must be <= 120 chars.');
+    }
+    if (!body || body.length > 4000) {
+      throw new functions.https.HttpsError('invalid-argument', 'body is required and must be <= 4000 chars.');
+    }
+
+    const db = admin.firestore();
+    const targetUids = await resolveBroadcastTargetUids({ db, segment, tag });
+    if (targetUids.length === 0) {
+      return {
+        ok: true,
+        message: 'Aucun destinataire pour ce segment.',
+        recipients: 0,
+      };
+    }
+
+    const nowMs = Date.now();
+    const expiresAt = admin.firestore.Timestamp.fromMillis(nowMs + INBOX_MESSAGE_TTL_DAYS * 24 * 60 * 60 * 1000);
+
+    let sentCount = 0;
+    const batchSize = 250;
+    for (let i = 0; i < targetUids.length; i += batchSize) {
+      const slice = targetUids.slice(i, i + batchSize);
+      const batch = db.batch();
+      for (const uid of slice) {
+        const inboxRef = db.collection('users').doc(uid).collection('inbox').doc();
+        batch.set(inboxRef, {
+          title,
+          body,
+          severity,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          expiresAt,
+          readAt: null,
+          createdBy: actorUid,
+          source: 'broadcast',
+          segment,
+        });
+
+        const eventRef = db.collection('userActivityEvents').doc();
+        batch.set(eventRef, {
+          uid,
+          type: 'notification_sent',
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          metadata: {
+            action,
+            severity,
+            title,
+            adminUid: actorUid,
+            segment,
+            broadcast: true,
+          },
+        });
+      }
+      await batch.commit();
+      sentCount += slice.length;
+    }
+
+    await writeAdminAuditLog({
+      adminUid: actorUid,
+      targetUserUid: null,
+      action,
+      payload: {
+        segment,
+        tag: tag ?? null,
+        severity,
+        title,
+        bodyLength: body.length,
+        recipients: sentCount,
+      },
+      status: 'success',
+      message: `Broadcast envoyé à ${sentCount} utilisateur(s).`,
+    });
+
+    return {
+      ok: true,
+      message: `Broadcast envoyé à ${sentCount} utilisateur(s).`,
+      recipients: sentCount,
     };
   } catch (error) {
     const mapped = toHttpsError(error);

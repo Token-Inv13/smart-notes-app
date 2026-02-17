@@ -3,6 +3,7 @@ import { functions as fbFunctions } from '@/lib/firebase';
 import type {
   AdminActionResponse,
   AdminAuditLogItem,
+  AdminBroadcastPreview,
   AdminCursor,
   AdminErrorLogItem,
   AdminListUsersIndexParams,
@@ -126,6 +127,39 @@ export async function sendUserMessage(params: {
     { targetUserUid: string; title: string; body: string; severity?: 'info' | 'warn' | 'critical' },
     AdminActionResponse
   >(fbFunctions, 'adminSendUserMessage');
+  const res = await fn(params);
+  return res.data;
+}
+
+export async function previewBroadcastMessage(params: {
+  segment: 'all' | 'premium' | 'inactive' | 'tag';
+  tag?: string;
+}): Promise<AdminBroadcastPreview> {
+  const fn = httpsCallable<
+    { segment: 'all' | 'premium' | 'inactive' | 'tag'; tag?: string },
+    AdminBroadcastPreview
+  >(fbFunctions, 'adminPreviewBroadcastMessage');
+  const res = await fn(params);
+  return res.data;
+}
+
+export async function sendBroadcastMessage(params: {
+  segment: 'all' | 'premium' | 'inactive' | 'tag';
+  tag?: string;
+  title: string;
+  body: string;
+  severity?: 'info' | 'warn' | 'critical';
+}): Promise<AdminActionResponse> {
+  const fn = httpsCallable<
+    {
+      segment: 'all' | 'premium' | 'inactive' | 'tag';
+      tag?: string;
+      title: string;
+      body: string;
+      severity?: 'info' | 'warn' | 'critical';
+    },
+    AdminActionResponse
+  >(fbFunctions, 'adminSendBroadcastMessage');
   const res = await fn(params);
   return res.data;
 }
