@@ -888,7 +888,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
           {reminderFeedback && <div className="sn-alert">{reminderFeedback}</div>}
           {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
           <div className="sn-card p-4 space-y-3">
-            <div className="flex items-start justify-between gap-3">
+            <div className="sn-modal-header-safe">
               <div className="min-w-0 flex-1">
                 {mode === "view" ? (
                   <div className="text-sm font-semibold truncate">{task.title}</div>
@@ -897,7 +897,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                 )}
               </div>
 
-              <div className="shrink-0 flex items-center gap-2">
+              <div className="sn-modal-header-actions">
                 {mode === "view" ? (
                   <ItemActionsMenu
                     onEdit={startEdit}

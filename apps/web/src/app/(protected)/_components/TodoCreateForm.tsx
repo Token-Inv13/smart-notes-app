@@ -299,6 +299,8 @@ export default function TodoCreateForm({
               void submit();
             }}
           />
+        </div>
+        <div className="sn-modal-secondary-controls mt-0">
           <DictationMicButton
             disabled={creating}
             onFinalText={(rawText) => {

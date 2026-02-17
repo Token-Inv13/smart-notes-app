@@ -434,7 +434,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
             {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
 
             <div className="sn-card p-4 space-y-3">
-              <div className="flex items-start justify-between gap-3">
+              <div className="sn-modal-header-safe">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <input
@@ -456,6 +456,8 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                       aria-label="Titre de la checklist"
                       disabled={saving}
                     />
+                  </div>
+                  <div className="sn-modal-secondary-controls">
                     <DictationMicButton
                       disabled={saving}
                       onFinalText={(rawText) => {
@@ -487,18 +489,18 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                         setDictationError(err);
                       }}
                     />
+                    {dictationStatus === "listening" ? (
+                      <div className="text-xs text-muted-foreground">Écoute…</div>
+                    ) : dictationError ? (
+                      <div className="text-xs text-destructive">{dictationError}</div>
+                    ) : null}
                   </div>
-                  {dictationStatus === "listening" ? (
-                    <div className="text-xs text-muted-foreground">Écoute…</div>
-                  ) : dictationError ? (
-                    <div className="text-xs text-destructive">{dictationError}</div>
-                  ) : null}
                   <div className="text-xs text-muted-foreground">
                     Actifs: {activeItems.length} · Terminés: {doneItems.length}
                   </div>
                 </div>
 
-                <div className="shrink-0 flex items-center gap-2">
+                <div className="sn-modal-header-actions">
                   <button type="button" onClick={close} className="sn-icon-btn" aria-label="Fermer" title="Fermer">
                     ×
                   </button>

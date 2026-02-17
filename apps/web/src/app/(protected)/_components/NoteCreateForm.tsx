@@ -325,6 +325,8 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
               className="flex-1 w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="Ex: Idées pour demain"
             />
+          </div>
+          <div className="sn-modal-secondary-controls mt-0">
             <DictationMicButton
               disabled={creating}
               onFinalText={(rawText) => {

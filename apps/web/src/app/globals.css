@@ -560,6 +560,18 @@ body {
     @apply flex items-center gap-2;
   }
 
+  .sn-modal-header-safe {
+    @apply flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between;
+  }
+
+  .sn-modal-header-actions {
+    @apply shrink-0 flex flex-wrap items-center justify-end gap-2 sm:max-w-[60%];
+  }
+
+  .sn-modal-secondary-controls {
+    @apply mt-2 flex flex-wrap items-center gap-2;
+  }
+
   @media (max-width: 640px) {
     .sn-card-actions {
       gap: 0.75rem;

@@ -305,6 +305,8 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
               placeholder="Ex : Payer le loyer"
               disabled={creating}
             />
+          </div>
+          <div className="sn-modal-secondary-controls">
             <DictationMicButton
               disabled={creating}
               onFinalText={(rawText) => {
@@ -336,12 +338,12 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
                 setDictationError(err);
               }}
             />
+            {dictationStatus === "listening" ? (
+              <div className="text-xs text-muted-foreground">Écoute…</div>
+            ) : dictationError ? (
+              <div className="text-xs text-destructive">{dictationError}</div>
+            ) : null}
           </div>
-          {dictationStatus === "listening" ? (
-            <div className="text-xs text-muted-foreground">Écoute…</div>
-          ) : dictationError ? (
-            <div className="text-xs text-destructive">{dictationError}</div>
-          ) : null}
         </div>
 
         <div className="space-y-1">
