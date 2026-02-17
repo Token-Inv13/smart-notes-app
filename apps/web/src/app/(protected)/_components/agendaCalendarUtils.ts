@@ -1,6 +1,7 @@
 import type { Priority, TaskRecurrenceFreq } from "@/types/firestore";
 
 export const CALENDAR_FILTERS_STORAGE_KEY = "agenda-calendar-filters-v1";
+export const CALENDAR_PREFERENCES_STORAGE_KEY = "agenda-calendar-preferences-v1";
 
 export function toLocalInputValue(date: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");

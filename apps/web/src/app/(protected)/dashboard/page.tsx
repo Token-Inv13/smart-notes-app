@@ -82,6 +82,13 @@ export default function DashboardPage() {
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get('workspaceId') || undefined;
   const suffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : '';
+  const tasksCalendarHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (workspaceId) params.set('workspaceId', workspaceId);
+    params.set('view', 'calendar');
+    const qs = params.toString();
+    return qs ? `/tasks?${qs}` : '/tasks';
+  }, [workspaceId]);
 
   const {
     data: notes,
@@ -638,7 +645,15 @@ export default function DashboardPage() {
           className="flex-none w-full snap-start"
         >
           <section>
-            <h2 className="text-lg font-semibold mb-2">Ton agenda important</h2>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold">Ton agenda important</h2>
+              <Link
+                href={tasksCalendarHref}
+                className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1.5 text-sm hover:bg-accent"
+              >
+                Ouvrir calendrier
+              </Link>
+            </div>
             {tasksLoading && (
               <div className="sn-empty sn-animate-in">
                 <div className="space-y-3">

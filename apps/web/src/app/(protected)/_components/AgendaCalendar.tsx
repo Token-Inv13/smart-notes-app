@@ -10,7 +10,13 @@ import type {
   DatesSetArg,
   EventInput,
 } from "@fullcalendar/core";
-import { addRecurrenceStep, overlapsRange, priorityColor, toLocalDateInputValue } from "./agendaCalendarUtils";
+import {
+  addRecurrenceStep,
+  CALENDAR_PREFERENCES_STORAGE_KEY,
+  overlapsRange,
+  priorityColor,
+  toLocalDateInputValue,
+} from "./agendaCalendarUtils";
 import { useAgendaCalendarFilters } from "./useAgendaCalendarFilters";
 import { useAgendaPlanningData } from "./useAgendaPlanningData";
 import { useAgendaPlanningSelection } from "./useAgendaPlanningSelection";
@@ -28,6 +34,13 @@ import type { TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq } from "@/type
 
 type CalendarViewMode = "dayGridMonth" | "timeGridWeek" | "timeGridDay";
 type AgendaDisplayMode = "calendar" | "planning";
+
+export type AgendaCalendarPreferences = {
+  viewMode: CalendarViewMode;
+  displayMode: AgendaDisplayMode;
+  showPlanningAvailability: boolean;
+  planningAvailabilityTargetMinutes: number;
+};
 
 type GoogleCalendarEvent = {
   id: string;
@@ -69,6 +82,85 @@ interface AgendaCalendarProps {
   onSkipOccurrence?: (taskId: string, occurrenceDate: string) => Promise<void>;
   onOpenTask: (taskId: string) => void;
   onVisibleRangeChange?: (range: { start: Date; end: Date }) => void;
+  initialPreferences?: Partial<AgendaCalendarPreferences> | null;
+  onPreferencesChange?: (prefs: AgendaCalendarPreferences) => void;
+}
+
+function normalizePreferences(raw: Partial<AgendaCalendarPreferences> | null | undefined): AgendaCalendarPreferences | null {
+  if (!raw || typeof raw !== "object") return null;
+  const mode = raw.viewMode;
+  const displayMode = raw.displayMode;
+  const targetMinutesRaw = raw.planningAvailabilityTargetMinutes;
+
+  if (mode !== "dayGridMonth" && mode !== "timeGridWeek" && mode !== "timeGridDay") return null;
+  if (displayMode !== "calendar" && displayMode !== "planning") return null;
+
+  const planningAvailabilityTargetMinutes =
+    typeof targetMinutesRaw === "number" && Number.isFinite(targetMinutesRaw)
+      ? Math.max(15, Math.min(240, Math.round(targetMinutesRaw)))
+      : 45;
+
+  return {
+    viewMode: mode,
+    displayMode,
+    showPlanningAvailability: raw.showPlanningAvailability !== false,
+    planningAvailabilityTargetMinutes,
+  };
+}
+
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+}
+
+function startOfWeekMonday(date: Date) {
+  const dayStart = startOfDay(date);
+  const day = dayStart.getDay();
+  const offset = (day + 6) % 7;
+  dayStart.setDate(dayStart.getDate() - offset);
+  return dayStart;
+}
+
+function computePlanningWindow(anchorDate: Date, mode: CalendarViewMode) {
+  if (mode === "timeGridDay") {
+    const start = startOfDay(anchorDate);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    return { start, end };
+  }
+
+  if (mode === "timeGridWeek") {
+    const start = startOfWeekMonday(anchorDate);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    return { start, end };
+  }
+
+  const start = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1, 0, 0, 0, 0);
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, 1, 0, 0, 0, 0);
+  return { start, end };
+}
+
+function formatPlanningLabel(windowRange: { start: Date; end: Date }, mode: CalendarViewMode) {
+  if (mode === "timeGridDay") {
+    return windowRange.start.toLocaleDateString("fr-FR", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  }
+
+  if (mode === "timeGridWeek") {
+    const endInclusive = new Date(windowRange.end.getTime() - 1);
+    const startLabel = windowRange.start.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+    const endLabel = endInclusive.toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
+    return `Semaine ${startLabel} → ${endLabel}`;
+  }
+
+  return windowRange.start.toLocaleDateString("fr-FR", {
+    month: "long",
+    year: "numeric",
+  });
 }
 
 export default function AgendaCalendar({
@@ -79,10 +171,13 @@ export default function AgendaCalendar({
   onSkipOccurrence,
   onOpenTask,
   onVisibleRangeChange,
+  initialPreferences,
+  onPreferencesChange,
 }: AgendaCalendarProps) {
   const calendarRef = useRef<FullCalendar | null>(null);
   const [viewMode, setViewMode] = useState<CalendarViewMode>("timeGridWeek");
   const [displayMode, setDisplayMode] = useState<AgendaDisplayMode>("calendar");
+  const [prefsHydrated, setPrefsHydrated] = useState(false);
   const {
     showRecurringOnly,
     setShowRecurringOnly,
@@ -101,6 +196,62 @@ export default function AgendaCalendar({
   const [planningAvailabilityTargetMinutes, setPlanningAvailabilityTargetMinutes] = useState(45);
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [googleCalendarEvents, setGoogleCalendarEvents] = useState<GoogleCalendarEvent[]>([]);
+  const [planningAnchorDate, setPlanningAnchorDate] = useState<Date>(new Date());
+
+  const planningWindow = useMemo(
+    () => computePlanningWindow(planningAnchorDate, viewMode),
+    [planningAnchorDate, viewMode],
+  );
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(CALENDAR_PREFERENCES_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = normalizePreferences(JSON.parse(raw) as Partial<AgendaCalendarPreferences>);
+      if (!parsed) return;
+
+      setViewMode(parsed.viewMode);
+      setDisplayMode(parsed.displayMode);
+      setShowPlanningAvailability(parsed.showPlanningAvailability);
+      setPlanningAvailabilityTargetMinutes(parsed.planningAvailabilityTargetMinutes);
+    } catch {
+      // ignore invalid payload
+    } finally {
+      setPrefsHydrated(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    const parsed = normalizePreferences(initialPreferences);
+    if (!parsed) return;
+    setViewMode(parsed.viewMode);
+    setDisplayMode(parsed.displayMode);
+    setShowPlanningAvailability(parsed.showPlanningAvailability);
+    setPlanningAvailabilityTargetMinutes(parsed.planningAvailabilityTargetMinutes);
+    setPrefsHydrated(true);
+  }, [initialPreferences]);
+
+  const normalizedPreferences = useMemo<AgendaCalendarPreferences>(
+    () => ({
+      viewMode,
+      displayMode,
+      showPlanningAvailability,
+      planningAvailabilityTargetMinutes,
+    }),
+    [displayMode, planningAvailabilityTargetMinutes, showPlanningAvailability, viewMode],
+  );
+
+  useEffect(() => {
+    if (!prefsHydrated) return;
+
+    try {
+      window.localStorage.setItem(CALENDAR_PREFERENCES_STORAGE_KEY, JSON.stringify(normalizedPreferences));
+    } catch {
+      // ignore write errors
+    }
+
+    onPreferencesChange?.(normalizedPreferences);
+  }, [normalizedPreferences, onPreferencesChange, prefsHydrated]);
 
   const workspaceNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -346,18 +497,52 @@ export default function AgendaCalendar({
     calendarRef,
     displayMode,
     openQuickDraft,
+    onPlanningJump: (action) => {
+      setPlanningAnchorDate((prev) => {
+        if (action === "today") return new Date();
+        const next = new Date(prev);
+        if (viewMode === "dayGridMonth") {
+          next.setMonth(next.getMonth() + (action === "next" ? 1 : -1));
+          return next;
+        }
+        if (viewMode === "timeGridWeek") {
+          next.setDate(next.getDate() + (action === "next" ? 7 : -7));
+          return next;
+        }
+        next.setDate(next.getDate() + (action === "next" ? 1 : -1));
+        return next;
+      });
+    },
   });
 
   const changeView = (next: CalendarViewMode) => {
     setViewMode(next);
-    calendarRef.current?.getApi().changeView(next);
+    if (displayMode === "calendar") {
+      calendarRef.current?.getApi().changeView(next);
+    }
   };
 
   const onDatesSet = (arg: DatesSetArg) => {
     setLabel(arg.view.title);
     setVisibleRange({ start: arg.start, end: arg.end });
+    setPlanningAnchorDate(arg.start);
     onVisibleRangeChange?.({ start: arg.start, end: arg.end });
   };
+
+  useEffect(() => {
+    if (displayMode !== "planning") return;
+    setLabel(formatPlanningLabel(planningWindow, viewMode));
+  }, [displayMode, planningWindow, viewMode]);
+
+  useEffect(() => {
+    if (displayMode !== "planning") return;
+    onVisibleRangeChange?.(planningWindow);
+  }, [displayMode, onVisibleRangeChange, planningWindow]);
+
+  useEffect(() => {
+    if (displayMode !== "calendar") return;
+    calendarRef.current?.getApi().changeView(viewMode);
+  }, [displayMode, viewMode]);
 
   const { agendaEvents, agendaConflictCount, isCompactDensity } = useAgendaMergedEvents({
     calendarData,
@@ -373,6 +558,7 @@ export default function AgendaCalendar({
   const { planningSections, planningAvailabilityByDate } = useAgendaPlanningData({
     agendaEvents,
     planningAvailabilityTargetMinutes,
+    planningWindow: displayMode === "planning" ? planningWindow : null,
   });
 
   const planningEventMap = useMemo(() => {
@@ -465,7 +651,6 @@ export default function AgendaCalendar({
             type="button"
             className={`px-3 py-1.5 text-sm ${viewMode === "dayGridMonth" ? "bg-accent font-semibold" : ""}`}
             onClick={() => changeView("dayGridMonth")}
-            disabled={displayMode === "planning"}
           >
             Mois
           </button>
@@ -473,7 +658,6 @@ export default function AgendaCalendar({
             type="button"
             className={`px-3 py-1.5 text-sm border-l border-border ${viewMode === "timeGridWeek" ? "bg-accent font-semibold" : ""}`}
             onClick={() => changeView("timeGridWeek")}
-            disabled={displayMode === "planning"}
           >
             Semaine
           </button>
@@ -481,7 +665,6 @@ export default function AgendaCalendar({
             type="button"
             className={`px-3 py-1.5 text-sm border-l border-border ${viewMode === "timeGridDay" ? "bg-accent font-semibold" : ""}`}
             onClick={() => changeView("timeGridDay")}
-            disabled={displayMode === "planning"}
           >
             Jour
           </button>

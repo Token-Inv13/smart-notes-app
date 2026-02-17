@@ -25,6 +25,8 @@ import type { Priority, TaskDoc } from "@/types/firestore";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
+import { CALENDAR_PREFERENCES_STORAGE_KEY } from "../_components/agendaCalendarUtils";
+import type { AgendaCalendarPreferences } from "../_components/AgendaCalendar";
 
 const AgendaCalendar = dynamic(() => import("../_components/AgendaCalendar"), {
   loading: () => <div className="sn-empty">Chargement du calendrier…</div>,
@@ -45,6 +47,31 @@ type TaskPriorityFilter = "all" | NonNullable<TaskDoc["priority"]>;
 type DueFilter = "all" | "today" | "overdue";
 type TaskSortBy = "dueDate" | "updatedAt" | "createdAt";
 
+function normalizeAgendaCalendarPreferences(raw: unknown): AgendaCalendarPreferences | null {
+  if (!raw || typeof raw !== "object") return null;
+  const candidate = raw as Partial<AgendaCalendarPreferences>;
+  if (
+    candidate.viewMode !== "dayGridMonth" &&
+    candidate.viewMode !== "timeGridWeek" &&
+    candidate.viewMode !== "timeGridDay"
+  ) {
+    return null;
+  }
+  if (candidate.displayMode !== "calendar" && candidate.displayMode !== "planning") return null;
+
+  const target =
+    typeof candidate.planningAvailabilityTargetMinutes === "number" && Number.isFinite(candidate.planningAvailabilityTargetMinutes)
+      ? Math.max(15, Math.min(240, Math.round(candidate.planningAvailabilityTargetMinutes)))
+      : 45;
+
+  return {
+    viewMode: candidate.viewMode,
+    displayMode: candidate.displayMode,
+    showPlanningAvailability: candidate.showPlanningAvailability !== false,
+    planningAvailabilityTargetMinutes: target,
+  };
+}
+
 export default function TasksPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -53,6 +80,7 @@ export default function TasksPage() {
   const highlightedTaskId = searchParams.get("taskId");
   const workspaceIdParam = searchParams.get("workspaceId");
   const createParam = searchParams.get("create");
+  const viewParam = searchParams.get("view");
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === "pro";
   const freeLimitMessage = "Limite Free atteinte. Passe en Pro pour créer plus d’éléments d’agenda et utiliser les favoris sans limite.";
@@ -215,6 +243,9 @@ export default function TasksPage() {
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [pushStatus, setPushStatus] = useState<string | null>(null);
   const [enablingPush, setEnablingPush] = useState(false);
+  const [calendarPrefsLocalFallback, setCalendarPrefsLocalFallback] = useState<AgendaCalendarPreferences | null>(null);
+  const calendarPrefsWriteTimerRef = useRef<number | null>(null);
+  const hasAppliedViewParamRef = useRef(false);
 
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null);
@@ -348,6 +379,70 @@ export default function TasksPage() {
       // ignore localStorage errors
     }
   }, []);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(CALENDAR_PREFERENCES_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = normalizeAgendaCalendarPreferences(JSON.parse(raw));
+      if (!parsed) return;
+      setCalendarPrefsLocalFallback(parsed);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const calendarPrefsFromUser = useMemo(
+    () => normalizeAgendaCalendarPreferences(userSettings?.settings?.agendaCalendarPreferences),
+    [userSettings?.settings?.agendaCalendarPreferences],
+  );
+
+  const calendarInitialPreferences = calendarPrefsFromUser ?? calendarPrefsLocalFallback;
+
+  const handleAgendaCalendarPreferencesChange = useCallback((prefs: AgendaCalendarPreferences) => {
+    setCalendarPrefsLocalFallback(prefs);
+
+    try {
+      window.localStorage.setItem(CALENDAR_PREFERENCES_STORAGE_KEY, JSON.stringify(prefs));
+    } catch {
+      // ignore
+    }
+
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    if (calendarPrefsWriteTimerRef.current) {
+      window.clearTimeout(calendarPrefsWriteTimerRef.current);
+    }
+
+    calendarPrefsWriteTimerRef.current = window.setTimeout(() => {
+      void updateDoc(doc(db, "users", uid), {
+        "settings.agendaCalendarPreferences": prefs,
+        updatedAt: serverTimestamp(),
+      }).catch((e) => {
+        console.error("Error saving agenda calendar preferences", e);
+      });
+      calendarPrefsWriteTimerRef.current = null;
+    }, 450);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (calendarPrefsWriteTimerRef.current) {
+        window.clearTimeout(calendarPrefsWriteTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (hasAppliedViewParamRef.current) return;
+    if (viewParam === "calendar" || viewParam === "list" || viewParam === "grid" || viewParam === "kanban") {
+      applyViewMode(viewParam);
+      hasAppliedViewParamRef.current = true;
+      return;
+    }
+    hasAppliedViewParamRef.current = true;
+  }, [applyViewMode, viewParam]);
 
   // Keep workspaceFilter in sync with ?workspaceId=... from the sidebar.
   useEffect(() => {
@@ -1229,6 +1324,8 @@ export default function TasksPage() {
         <AgendaCalendar
           tasks={mainTasks}
           workspaces={workspaces}
+          initialPreferences={calendarInitialPreferences}
+          onPreferencesChange={handleAgendaCalendarPreferencesChange}
           onCreateEvent={handleCalendarCreate}
           onUpdateEvent={handleCalendarUpdate}
           onSkipOccurrence={handleSkipOccurrence}

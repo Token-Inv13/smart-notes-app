@@ -16,13 +16,30 @@ export type PlanningAvailabilitySlot = {
 export function useAgendaPlanningData(params: {
   agendaEvents: EventInput[];
   planningAvailabilityTargetMinutes: number;
+  planningWindow: { start: Date; end: Date } | null;
 }) {
-  const { agendaEvents, planningAvailabilityTargetMinutes } = params;
+  const { agendaEvents, planningAvailabilityTargetMinutes, planningWindow } = params;
+
+  const scopedEvents = useMemo(() => {
+    if (!planningWindow) return agendaEvents;
+    const windowStart = planningWindow.start.getTime();
+    const windowEnd = planningWindow.end.getTime();
+    if (!Number.isFinite(windowStart) || !Number.isFinite(windowEnd) || windowEnd <= windowStart) return agendaEvents;
+
+    return agendaEvents.filter((event) => {
+      const start = event.start instanceof Date ? event.start.getTime() : Number.NaN;
+      const end = event.end instanceof Date ? event.end.getTime() : Number.NaN;
+      if (!Number.isFinite(start)) return false;
+
+      const safeEnd = Number.isFinite(end) && end > start ? end : start + 1;
+      return start < windowEnd && safeEnd > windowStart;
+    });
+  }, [agendaEvents, planningWindow]);
 
   const planningSections = useMemo<PlanningSection[]>(() => {
     const grouped = new Map<string, EventInput[]>();
 
-    for (const event of agendaEvents) {
+    for (const event of scopedEvents) {
       if (!(event.start instanceof Date)) continue;
       const key = toLocalDateInputValue(event.start);
       const existing = grouped.get(key) ?? [];
@@ -40,11 +57,11 @@ export function useAgendaPlanningData(params: {
           return aStart - bStart;
         }),
       }));
-  }, [agendaEvents]);
+  }, [scopedEvents]);
 
   const planningAvailabilityByDate = useMemo<Map<string, PlanningAvailabilitySlot[]>>(() => {
     const dateMap = new Map<string, EventInput[]>();
-    for (const event of agendaEvents) {
+    for (const event of scopedEvents) {
       if (!(event.start instanceof Date)) continue;
       const key = toLocalDateInputValue(event.start);
       const existing = dateMap.get(key) ?? [];
@@ -123,7 +140,7 @@ export function useAgendaPlanningData(params: {
     }
 
     return output;
-  }, [agendaEvents, planningAvailabilityTargetMinutes]);
+  }, [planningAvailabilityTargetMinutes, scopedEvents]);
 
   return {
     planningSections,

@@ -7,12 +7,14 @@ type UseAgendaCalendarNavigationParams = {
   calendarRef: RefObject<FullCalendar | null>;
   displayMode: AgendaDisplayMode;
   openQuickDraft: () => void;
+  onPlanningJump?: (action: "prev" | "next" | "today") => void;
 };
 
 export function useAgendaCalendarNavigation({
   calendarRef,
   displayMode,
   openQuickDraft,
+  onPlanningJump,
 }: UseAgendaCalendarNavigationParams) {
   const touchStartRef = useRef<{ x: number; y: number; at: number } | null>(null);
 
@@ -28,6 +30,12 @@ export function useAgendaCalendarNavigation({
 
   const jump = useCallback(
     (action: "prev" | "next" | "today") => {
+      if (displayMode === "planning") {
+        onPlanningJump?.(action);
+        keepPageScrollStable();
+        return;
+      }
+
       const api = calendarRef.current?.getApi();
       if (!api) return;
       if (action === "prev") api.prev();
@@ -35,7 +43,7 @@ export function useAgendaCalendarNavigation({
       if (action === "today") api.today();
       keepPageScrollStable();
     },
-    [calendarRef, keepPageScrollStable],
+    [calendarRef, displayMode, keepPageScrollStable, onPlanningJump],
   );
 
   const isSwipeBlockedTarget = (target: EventTarget | null) => {
