@@ -37,6 +37,9 @@ export default function TodoPage() {
     onSwipeRight: () => {
       router.push(`/tasks${hrefSuffix}`);
     },
+    onSwipeLeft: () => {
+      router.push(`/notes${hrefSuffix}`);
+    },
     disabled: !workspaceId,
   });
 

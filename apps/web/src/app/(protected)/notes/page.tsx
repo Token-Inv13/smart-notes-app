@@ -215,6 +215,9 @@ export default function NotesPage() {
     onSwipeLeft: () => {
       router.push(`/tasks${hrefSuffix}`);
     },
+    onSwipeRight: () => {
+      router.push(`/todo${hrefSuffix}`);
+    },
     disabled: !workspaceId,
   });
 
