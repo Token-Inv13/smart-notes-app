@@ -291,13 +291,15 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
       const slot = document.getElementById("sn-create-slot");
       const slotMode = slot?.getAttribute("data-task-view-mode");
       if (slotMode) {
-        setIsTasksCalendarView(slotMode === "calendar");
+        const next = slotMode === "calendar";
+        setIsTasksCalendarView((prev) => (prev === next ? prev : next));
         return;
       }
 
       try {
         const persisted = window.localStorage.getItem("tasksViewMode");
-        setIsTasksCalendarView(persisted === "calendar");
+        const next = persisted === "calendar";
+        setIsTasksCalendarView((prev) => (prev === next ? prev : next));
       } catch {
         setIsTasksCalendarView(false);
       }
@@ -305,17 +307,40 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
 
     syncCalendarMode();
 
-    const observer = new MutationObserver(syncCalendarMode);
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["data-task-view-mode"],
-    });
+    let slotObserver: MutationObserver | null = null;
+    let slotPollTimer: number | null = null;
+
+    const attachSlotObserver = () => {
+      const slot = document.getElementById("sn-create-slot");
+      if (!slot) return false;
+
+      slotObserver?.disconnect();
+      slotObserver = new MutationObserver(syncCalendarMode);
+      slotObserver.observe(slot, {
+        attributes: true,
+        attributeFilter: ["data-task-view-mode"],
+      });
+      return true;
+    };
+
+    if (!attachSlotObserver()) {
+      slotPollTimer = window.setInterval(() => {
+        if (attachSlotObserver()) {
+          if (slotPollTimer !== null) {
+            window.clearInterval(slotPollTimer);
+            slotPollTimer = null;
+          }
+        }
+        syncCalendarMode();
+      }, 250);
+    }
 
     window.addEventListener("focus", syncCalendarMode);
     return () => {
-      observer.disconnect();
+      slotObserver?.disconnect();
+      if (slotPollTimer !== null) {
+        window.clearInterval(slotPollTimer);
+      }
       window.removeEventListener("focus", syncCalendarMode);
     };
   }, [isAgendaRoute]);
