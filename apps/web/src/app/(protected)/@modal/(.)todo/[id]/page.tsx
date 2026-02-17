@@ -60,6 +60,52 @@ function buildAgendaDescription(todo: TodoDoc) {
   return lines.join("\n");
 }
 
+function mapChecklistDueDateToAgendaWindow(dueDate: TodoDoc["dueDate"] | null | undefined) {
+  const now = new Date();
+  if (!dueDate?.toDate) {
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1, 0, 0, 0, 0);
+    return {
+      start,
+      end,
+      allDay: true,
+    };
+  }
+
+  const base = dueDate.toDate();
+  const hasExplicitTime =
+    base.getHours() !== 0 ||
+    base.getMinutes() !== 0 ||
+    base.getSeconds() !== 0 ||
+    base.getMilliseconds() !== 0;
+
+  if (hasExplicitTime) {
+    const start = new Date(base.getTime());
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
+    return {
+      start,
+      end,
+      allDay: false,
+    };
+  }
+
+  const start = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 0, 0, 0, 0);
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1, 0, 0, 0, 0);
+
+  if (
+    process.env.NODE_ENV !== "production" &&
+    (end.getHours() !== 0 || end.getMinutes() !== 0 || end.getSeconds() !== 0 || end.getMilliseconds() !== 0)
+  ) {
+    console.warn("[todo->agenda] Invalid all-day end normalization", { start, end });
+  }
+
+  return {
+    start,
+    end,
+    allDay: true,
+  };
+}
+
 function todoToAssistantText(todo: TodoDoc): string {
   const title = typeof todo.title === "string" && todo.title.trim() ? todo.title.trim() : "Checklist";
   const active = Array.isArray(todo.items) ? todo.items.filter((it) => it?.done !== true) : [];
@@ -355,9 +401,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
         }
       }
 
-      const baseDate = todo.dueDate?.toDate?.() ?? new Date();
-      const startDate = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), 0, 0, 0, 0);
-      const endDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
+      const agendaWindow = mapChecklistDueDateToAgendaWindow(todo.dueDate ?? null);
 
       const taskPayload: Omit<TaskDoc, "id"> = {
         userId: user.uid,
@@ -365,8 +409,8 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
         title: todo.title?.trim() || "Checklist",
         description: buildAgendaDescription(todo),
         status: "todo",
-        startDate: Timestamp.fromDate(startDate),
-        dueDate: Timestamp.fromDate(endDate),
+        startDate: Timestamp.fromDate(agendaWindow.start),
+        dueDate: Timestamp.fromDate(agendaWindow.end),
         priority: todo.priority ?? null,
         recurrence: null,
         favorite: false,
