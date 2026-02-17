@@ -7,8 +7,37 @@ import { Timestamp } from 'firebase/firestore';
 export function parseLocalDateTimeToTimestamp(value: string): Timestamp | null {
   if (!value) return null;
 
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value);
+  if (!m) return null;
+
+  const yyyy = Number(m[1]);
+  const mm = Number(m[2]);
+  const dd = Number(m[3]);
+  const hh = Number(m[4]);
+  const min = Number(m[5]);
+  const ss = m[6] ? Number(m[6]) : 0;
+
+  if (
+    !Number.isFinite(yyyy) ||
+    !Number.isFinite(mm) ||
+    !Number.isFinite(dd) ||
+    !Number.isFinite(hh) ||
+    !Number.isFinite(min) ||
+    !Number.isFinite(ss)
+  ) {
+    return null;
+  }
+
+  const date = new Date(yyyy, mm - 1, dd, hh, min, ss, 0);
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getFullYear() !== yyyy ||
+    date.getMonth() !== mm - 1 ||
+    date.getDate() !== dd ||
+    date.getHours() !== hh ||
+    date.getMinutes() !== min ||
+    date.getSeconds() !== ss
+  ) {
     return null;
   }
 

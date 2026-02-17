@@ -109,6 +109,9 @@ export function useAgendaCalendarNavigation({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName?.toLowerCase();
       const isEditing = tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable;
@@ -125,6 +128,12 @@ export function useAgendaCalendarNavigation({
         const searchInput = document.getElementById("tasks-search-input") as HTMLInputElement | null;
         searchInput?.focus();
         searchInput?.select();
+        return;
+      }
+
+      if (e.key.toLowerCase() === "t") {
+        e.preventDefault();
+        jump("today");
         return;
       }
 

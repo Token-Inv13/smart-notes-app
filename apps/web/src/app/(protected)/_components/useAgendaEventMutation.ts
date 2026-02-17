@@ -53,7 +53,11 @@ export function useAgendaEventMutation({
     async (arg: CalendarMutationArg) => {
       try {
         const start = arg.event.start;
-        const end = arg.event.end;
+        const end =
+          arg.event.end ??
+          (start
+            ? new Date(start.getTime() + (arg.event.allDay ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000))
+            : null);
         const taskId = ((arg.event.extendedProps.taskId as string) || arg.event.id) as string;
         const instanceDate = (arg.event.extendedProps.instanceDate as string | undefined) ?? undefined;
         const recurrence = (arg.event.extendedProps.recurrence as TaskDoc["recurrence"] | null) ?? null;
