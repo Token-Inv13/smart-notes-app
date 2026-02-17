@@ -609,7 +609,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
 
   const voiceModal = open ? (
     <div
-      className="fixed inset-0 z-[70] bg-black/45 p-0 md:p-4 flex items-end md:items-center md:justify-center"
+      className="fixed inset-0 z-[70] bg-background/75 backdrop-blur-[2px] p-0 md:p-4 flex items-end md:items-center md:justify-center"
       role="dialog"
       aria-modal="true"
       aria-label="Assistant vocal"

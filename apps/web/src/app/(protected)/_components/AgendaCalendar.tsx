@@ -22,6 +22,8 @@ import { renderAgendaCalendarEventContent } from "./AgendaCalendarEventContent";
 import AgendaCalendarFiltersBar from "./AgendaCalendarFiltersBar";
 import AgendaCalendarDraftModal from "./AgendaCalendarDraftModal";
 import AgendaCalendarPlanningView from "./AgendaCalendarPlanningView";
+import CreateButton from "./CreateButton";
+import VoiceAgentButton from "./assistant/VoiceAgentButton";
 import type { TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq } from "@/types/firestore";
 
 type CalendarViewMode = "dayGridMonth" | "timeGridWeek" | "timeGridDay";
@@ -409,6 +411,38 @@ export default function AgendaCalendar({
         <div className="text-sm font-semibold">{label}</div>
 
         <div className="flex items-center gap-2 flex-wrap justify-end">
+          {displayMode === "calendar" ? (
+            <div className="inline-flex items-center rounded-md border border-border bg-background/90 shadow-sm overflow-hidden">
+              <VoiceAgentButton
+                renderCustomTrigger={({ onClick, ariaLabel, title }) => (
+                  <button
+                    type="button"
+                    onClick={onClick}
+                    aria-label={ariaLabel}
+                    title={title}
+                    className="h-9 w-10 text-base text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+                  >
+                    🎤
+                  </button>
+                )}
+              />
+              <div className="h-6 w-px bg-border" aria-hidden="true" />
+              <CreateButton
+                renderCustomTrigger={({ onClick, ariaLabel, title }) => (
+                  <button
+                    type="button"
+                    onClick={onClick}
+                    aria-label={ariaLabel}
+                    title={title}
+                    className="h-9 w-10 text-lg font-semibold leading-none text-primary hover:bg-primary/10 transition-colors"
+                  >
+                    +
+                  </button>
+                )}
+              />
+            </div>
+          ) : null}
+
           <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit">
           <button
             type="button"

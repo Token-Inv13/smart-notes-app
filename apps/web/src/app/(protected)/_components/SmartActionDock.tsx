@@ -14,14 +14,14 @@ type Props = {
 export default function SmartActionDock({
   mobileHidden,
   hiddenOnScroll = false,
-  desktopTopClass = "md:top-32",
+  desktopTopClass = "md:top-24",
   subtleIdle = false,
   voiceAction,
   createAction,
 }: Props) {
   const hasVoiceAction = Boolean(voiceAction);
   const visibilityClass = mobileHidden ? "hidden md:flex" : "flex";
-  const mobileLayoutClass = "max-md:right-[calc(0.75rem+env(safe-area-inset-right))] max-md:rounded-full";
+  const mobileLayoutClass = "max-md:left-1/2 max-md:-translate-x-1/2 max-md:rounded-full";
   const hiddenClass = hiddenOnScroll
     ? "translate-y-[130%] opacity-0 pointer-events-none md:translate-y-0 md:opacity-100 md:pointer-events-auto"
     : "translate-y-0 opacity-100";

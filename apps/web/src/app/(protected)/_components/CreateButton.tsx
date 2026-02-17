@@ -101,7 +101,7 @@ export default function CreateButton({ mobileHidden, renderCustomTrigger }: Prop
 
   const favoritesPicker = favoritesPickerOpen ? (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4 py-6"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-background/75 backdrop-blur-[2px] px-4 py-6"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) setFavoritesPickerOpen(false);
       }}
