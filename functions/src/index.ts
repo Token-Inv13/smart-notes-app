@@ -400,6 +400,47 @@ function normalizeAssistantText(raw: unknown): string {
   }
 }
 
+function decodeBasicHtmlEntities(raw: string): string {
+  return raw
+    .replace(/&(nbsp|amp|lt|gt|#39|apos|quot);/gi, (match) => {
+      const k = match.toLowerCase();
+      if (k === '&nbsp;') return ' ';
+      if (k === '&amp;') return '&';
+      if (k === '&lt;') return '<';
+      if (k === '&gt;') return '>';
+      if (k === '&#39;' || k === '&apos;') return "'";
+      if (k === '&quot;') return '"';
+      return match;
+    })
+    .replace(/&#(\d+);/g, (_, dec: string) => {
+      const code = Number(dec);
+      if (!Number.isFinite(code) || code <= 0 || code > 0x10ffff) return '';
+      return String.fromCodePoint(code);
+    })
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => {
+      const code = Number.parseInt(hex, 16);
+      if (!Number.isFinite(code) || code <= 0 || code > 0x10ffff) return '';
+      return String.fromCodePoint(code);
+    });
+}
+
+function sanitizeAssistantSnippet(raw: unknown): string {
+  const input = typeof raw === 'string' ? raw : '';
+  const decoded = decodeBasicHtmlEntities(input.replace(/\r\n?/g, '\n'));
+  return decoded
+    .replace(/<style[\s\S]*?(<\/style>|$)/gi, ' ')
+    .replace(/<script[\s\S]*?(<\/script>|$)/gi, ' ')
+    .replace(/<\s*br\s*\/?>/gi, '\n')
+    .replace(/<\s*\/?\s*(div|p|li|h[1-6]|section|article|blockquote|pre|ul|ol|tr)\b[^>]*>/gi, '\n')
+    .replace(/<\/?[a-z][^>\n]*>/gi, ' ')
+    .replace(/<\/?[a-z][^>\n]*$/gim, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function sha256Hex(input: string): string {
   return createHash('sha256').update(input).digest('hex');
 }
@@ -464,7 +505,7 @@ async function callOpenAIWhisperTranscription(params: {
 }
 
 function clampFromText(raw: string, maxLen: number): string {
-  const s = (raw ?? '').trim();
+  const s = sanitizeAssistantSnippet(raw ?? '');
   if (s.length <= maxLen) return s;
   return `${s.slice(0, maxLen - 1).trim()}…`;
 }
@@ -1331,7 +1372,7 @@ function extractBundleTaskTitlesFromText(rawText: string): { title: string; orig
   const out: { title: string; originFromText: string }[] = [];
 
   const add = (title: string, originFromText: string) => {
-    const t = title.replace(/\s+/g, ' ').trim();
+    const t = sanitizeAssistantSnippet(title).replace(/\s+/g, ' ').trim();
     if (!t) return;
     out.push({ title: t, originFromText: clampFromText(originFromText, 120) });
   };

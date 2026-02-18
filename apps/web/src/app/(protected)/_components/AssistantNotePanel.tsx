@@ -574,7 +574,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
     setEditing(s);
     setEditError(null);
     const payloadObj = toPayloadObject(s.payload);
-    setEditTitle(typeof payloadObj?.title === "string" ? String(payloadObj.title) : "");
+    setEditTitle(sanitizeAssistantText(payloadObj?.title));
     if (s.kind === "create_task") {
       const dueDateRaw = payloadObj && "dueDate" in payloadObj ? payloadObj.dueDate : null;
       const dueDate =

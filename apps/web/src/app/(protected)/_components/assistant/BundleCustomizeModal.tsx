@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Timestamp } from "firebase/firestore";
 import { formatTimestampForInput, parseLocalDateTimeToTimestamp } from "@/lib/datetime";
+import { sanitizeAssistantText } from "@/lib/assistantText";
 import { toUserErrorMessage } from "@/lib/userError";
 import type { AssistantSuggestionDoc, Priority } from "@/types/firestore";
 import Modal from "../../Modal";
@@ -73,7 +74,7 @@ export default function BundleCustomizeModal({ open, onClose, suggestion, onConf
 
     tasks.forEach((t, idx) => {
       nextSelected[idx] = true;
-      nextTitles[idx] = t.title ?? "";
+      nextTitles[idx] = sanitizeAssistantText(t.title ?? "");
       nextDue[idx] = t.dueDate ? formatTimestampForInput(t.dueDate) : "";
       nextRemind[idx] = t.remindAt ? formatTimestampForInput(t.remindAt) : "";
       const p = t.priority;
@@ -131,7 +132,8 @@ export default function BundleCustomizeModal({ open, onClose, suggestion, onConf
         setError("Le titre ne peut pas être vide.");
         return;
       }
-      if (nextTitle !== (base.title ?? "")) row.title = nextTitle;
+      const baseTitle = sanitizeAssistantText(base.title ?? "");
+      if (nextTitle !== baseTitle) row.title = nextTitle;
 
       const nextDue = (dueDates[idx] ?? "") ? parseLocalDateTimeToTimestamp(dueDates[idx] ?? "") : null;
       const nextRemind = (remindAts[idx] ?? "") ? parseLocalDateTimeToTimestamp(remindAts[idx] ?? "") : null;
