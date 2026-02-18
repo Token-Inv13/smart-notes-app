@@ -8,6 +8,7 @@ import { useAssistantSettings } from "@/hooks/useAssistantSettings";
 import { useUserAssistantSuggestions } from "@/hooks/useUserAssistantSuggestions";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
+import { sanitizeAssistantText } from "@/lib/assistantText";
 import { toUserErrorMessage } from "@/lib/userError";
 import type { AssistantSuggestionDoc } from "@/types/firestore";
 import BundleCustomizeModal from "../_components/assistant/BundleCustomizeModal";
@@ -31,30 +32,6 @@ type SuggestionPayload = {
   remindAt?: unknown;
   [key: string]: unknown;
 };
-
-function sanitizeDynamicText(value: unknown, fallback = ""): string {
-  if (typeof value !== "string") return fallback;
-
-  const withBreaks = value
-    .replace(/<\s*br\s*\/?\s*>/gi, "\n")
-    .replace(/<\s*\/\s*(p|div|li|h[1-6])\s*>/gi, "\n");
-
-  const withoutDangerousBlocks = withBreaks
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<script[\s\S]*?<\/script>/gi, " ");
-
-  const withoutTags = withoutDangerousBlocks.replace(/<[^>]*>/g, " ");
-  const decoded = withoutTags
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&#39;/gi, "'")
-    .replace(/&quot;/gi, '"');
-
-  const compact = decoded.replace(/\s+/g, " ").trim();
-  return compact || fallback;
-}
 
 export default function AssistantPage() {
   const { data: assistantSettings, loading: assistantLoading, error: assistantError } = useAssistantSettings();
@@ -366,17 +343,17 @@ export default function AssistantPage() {
             const dueLabel = s.kind === "create_task" && payload?.dueDate ? formatTs(payload.dueDate) : "";
             const remindLabel = s.kind === "create_reminder" && payload?.remindAt ? formatTs(payload.remindAt) : "";
 
-            const title = sanitizeDynamicText(payload?.title, "Suggestion");
-            const explanation = sanitizeDynamicText(payload?.explanation);
-            const excerpt = sanitizeDynamicText(payload?.origin?.fromText);
+            const title = sanitizeAssistantText(payload?.title, "Suggestion");
+            const explanation = sanitizeAssistantText(payload?.explanation);
+            const excerpt = sanitizeAssistantText(payload?.origin?.fromText);
 
             return (
               <div key={suggestionId ?? s.dedupeKey} className="border border-border rounded-md p-3 space-y-2">
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1">
                     <div className="text-sm font-semibold">{title}</div>
-                    {explanation ? <div className="text-xs text-muted-foreground">{explanation}</div> : null}
-                    {excerpt ? <div className="text-xs text-muted-foreground">Extrait: “{excerpt}”</div> : null}
+                    {explanation ? <div className="text-xs text-muted-foreground whitespace-pre-line">{explanation}</div> : null}
+                    {excerpt ? <div className="text-xs text-muted-foreground whitespace-pre-line">Extrait: “{excerpt}”</div> : null}
                     {!isBundle && dueLabel ? <div className="text-xs text-muted-foreground">Échéance: {dueLabel}</div> : null}
                     {!isBundle && remindLabel ? <div className="text-xs text-muted-foreground">Rappel: {remindLabel}</div> : null}
                     {isBundle ? (
@@ -399,7 +376,7 @@ export default function AssistantPage() {
                             <ol className="list-decimal pl-5 space-y-1">
                               {bundleTasks.slice(0, 6).map((t: { title?: unknown }, idx: number) => (
                                 <li key={`${suggestionId ?? "bundle"}_${idx}`}>
-                                  {sanitizeDynamicText(t?.title, "Élément d’agenda")}
+                                  {sanitizeAssistantText(t?.title, "Élément d’agenda")}
                                 </li>
                               ))}
                             </ol>

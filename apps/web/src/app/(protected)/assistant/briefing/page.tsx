@@ -8,6 +8,7 @@ import { useAssistantSettings } from "@/hooks/useAssistantSettings";
 import { useUserAssistantSuggestions } from "@/hooks/useUserAssistantSuggestions";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
+import { sanitizeAssistantText } from "@/lib/assistantText";
 import { toUserErrorMessage } from "@/lib/userError";
 import type { AssistantSuggestionDoc } from "@/types/firestore";
 
@@ -25,30 +26,6 @@ type SuggestionPayload = {
   remindAt?: unknown;
   [key: string]: unknown;
 };
-
-function sanitizeDynamicText(value: unknown, fallback = ""): string {
-  if (typeof value !== "string") return fallback;
-
-  const withBreaks = value
-    .replace(/<\s*br\s*\/?\s*>/gi, "\n")
-    .replace(/<\s*\/\s*(p|div|li|h[1-6])\s*>/gi, "\n");
-
-  const withoutDangerousBlocks = withBreaks
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<script[\s\S]*?<\/script>/gi, " ");
-
-  const withoutTags = withoutDangerousBlocks.replace(/<[^>]*>/g, " ");
-  const decoded = withoutTags
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&#39;/gi, "'")
-    .replace(/&quot;/gi, '"');
-
-  const compact = decoded.replace(/\s+/g, " ").trim();
-  return compact || fallback;
-}
 
 function toMillisSafe(ts: unknown) {
   const maybe = ts as { toMillis?: () => number };
@@ -374,9 +351,9 @@ export default function AssistantBriefingPage() {
             const feedbackValue = suggestionId ? feedbackBySuggestionId[suggestionId] : undefined;
 
             const payload = s.payload && typeof s.payload === "object" ? (s.payload as SuggestionPayload) : null;
-            const title = sanitizeDynamicText(payload?.title, "Suggestion");
-            const explanation = sanitizeDynamicText(payload?.explanation);
-            const excerpt = sanitizeDynamicText(payload?.origin?.fromText);
+            const title = sanitizeAssistantText(payload?.title, "Suggestion");
+            const explanation = sanitizeAssistantText(payload?.explanation);
+            const excerpt = sanitizeAssistantText(payload?.origin?.fromText);
 
             const isBundle = s.kind === "create_task_bundle";
             const bundleTasks = isBundle && Array.isArray(payload?.tasks) ? payload.tasks : [];
@@ -389,8 +366,8 @@ export default function AssistantBriefingPage() {
               <div key={suggestionId ?? s.dedupeKey} className="border border-border rounded-md p-3 space-y-2">
                 <div className="space-y-1">
                   <div className="text-sm font-semibold">{title}</div>
-                  {explanation ? <div className="text-xs text-muted-foreground">{explanation}</div> : null}
-                  {excerpt ? <div className="text-xs text-muted-foreground">Extrait: “{excerpt}”</div> : null}
+                  {explanation ? <div className="text-xs text-muted-foreground whitespace-pre-line">{explanation}</div> : null}
+                  {excerpt ? <div className="text-xs text-muted-foreground whitespace-pre-line">Extrait: “{excerpt}”</div> : null}
                   {dueLabel ? <div className="text-xs text-muted-foreground">Échéance: {dueLabel}</div> : null}
                   {remindLabel ? <div className="text-xs text-muted-foreground">Rappel: {remindLabel}</div> : null}
 
@@ -412,7 +389,7 @@ export default function AssistantBriefingPage() {
                       {isExpanded ? (
                         <ol className="list-decimal pl-5 space-y-1 text-sm">
                           {bundleTasks.slice(0, 6).map((t: { title?: unknown }, idx: number) => (
-                            <li key={`${suggestionId ?? "bundle"}_${idx}`}>{sanitizeDynamicText(t?.title, "Élément d’agenda")}</li>
+                            <li key={`${suggestionId ?? "bundle"}_${idx}`}>{sanitizeAssistantText(t?.title, "Élément d’agenda")}</li>
                           ))}
                         </ol>
                       ) : null}
@@ -499,13 +476,13 @@ export default function AssistantBriefingPage() {
           {inbox.map((s) => {
             const suggestionId = s.id ?? s.dedupeKey;
             const payload = s.payload && typeof s.payload === "object" ? (s.payload as SuggestionPayload) : null;
-            const title = sanitizeDynamicText(payload?.title, "Suggestion");
-            const explanation = sanitizeDynamicText(payload?.explanation);
+            const title = sanitizeAssistantText(payload?.title, "Suggestion");
+            const explanation = sanitizeAssistantText(payload?.explanation);
 
             return (
               <div key={suggestionId ?? s.dedupeKey} className="border border-border rounded-md p-3">
                 <div className="text-sm font-medium">{title}</div>
-                {explanation ? <div className="text-xs text-muted-foreground mt-1">{explanation}</div> : null}
+                {explanation ? <div className="text-xs text-muted-foreground mt-1 whitespace-pre-line">{explanation}</div> : null}
               </div>
             );
           })}

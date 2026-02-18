@@ -8,6 +8,7 @@ import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidatio
 import { useAssistantSettings } from "@/hooks/useAssistantSettings";
 import { useNoteAssistantSuggestions } from "@/hooks/useNoteAssistantSuggestions";
 import { useAuth } from "@/hooks/useAuth";
+import { sanitizeAssistantText } from "@/lib/assistantText";
 import { formatTimestampForInput, parseLocalDateTimeToTimestamp } from "@/lib/datetime";
 import { htmlToReadableText, sanitizeNoteHtml } from "@/lib/richText";
 import { toUserErrorMessage } from "@/lib/userError";
@@ -440,12 +441,18 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
 
   const appendGeneratedContentToNote = async (s: AssistantSuggestionDoc) => {
     const payloadObj = toPayloadObject(s.payload);
-    const baseTitle = typeof payloadObj?.title === "string" ? String(payloadObj.title).trim() : "Suggestion";
-    const summaryShort = typeof payloadObj?.summaryShort === "string" ? String(payloadObj.summaryShort).trim() : "";
-    const explanation = typeof payloadObj?.explanation === "string" ? String(payloadObj.explanation).trim() : "";
-    const keyPoints = Array.isArray(payloadObj?.keyPoints) ? (payloadObj.keyPoints as unknown[]).filter((x): x is string => typeof x === "string") : [];
-    const hooks = Array.isArray(payloadObj?.hooks) ? (payloadObj.hooks as unknown[]).filter((x): x is string => typeof x === "string") : [];
-    const tags = Array.isArray(payloadObj?.tags) ? (payloadObj.tags as unknown[]).filter((x): x is string => typeof x === "string") : [];
+    const baseTitle = sanitizeAssistantText(payloadObj?.title, "Suggestion");
+    const summaryShort = sanitizeAssistantText(payloadObj?.summaryShort);
+    const explanation = sanitizeAssistantText(payloadObj?.explanation);
+    const keyPoints = Array.isArray(payloadObj?.keyPoints)
+      ? (payloadObj.keyPoints as unknown[]).map((x) => sanitizeAssistantText(x)).filter((x) => x.length > 0)
+      : [];
+    const hooks = Array.isArray(payloadObj?.hooks)
+      ? (payloadObj.hooks as unknown[]).map((x) => sanitizeAssistantText(x)).filter((x) => x.length > 0)
+      : [];
+    const tags = Array.isArray(payloadObj?.tags)
+      ? (payloadObj.tags as unknown[]).map((x) => sanitizeAssistantText(x)).filter((x) => x.length > 0)
+      : [];
 
     const sections: string[] = [];
     if (summaryShort) sections.push(summaryShort);
@@ -477,14 +484,18 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
 
   const getSuggestionDetails = (s: AssistantSuggestionDoc) => {
     const payloadObj = toPayloadObject(s.payload);
-    const fromText = typeof payloadObj?.origin?.fromText === "string" ? String(payloadObj.origin.fromText) : "";
+    const fromText = sanitizeAssistantText(payloadObj?.origin?.fromText);
     const targetExcerpt = fromText.trim().slice(0, 280).trim();
 
-    const rewrite = typeof payloadObj?.rewriteContent === "string" ? String(payloadObj.rewriteContent).trim() : "";
-    const summary = typeof payloadObj?.summaryShort === "string" ? String(payloadObj.summaryShort).trim() : "";
-    const explanation = typeof payloadObj?.explanation === "string" ? String(payloadObj.explanation).trim() : "";
-    const keyPoints = Array.isArray(payloadObj?.keyPoints) ? (payloadObj.keyPoints as unknown[]).filter((x): x is string => typeof x === "string") : [];
-    const hooks = Array.isArray(payloadObj?.hooks) ? (payloadObj.hooks as unknown[]).filter((x): x is string => typeof x === "string") : [];
+    const rewrite = sanitizeAssistantText(payloadObj?.rewriteContent);
+    const summary = sanitizeAssistantText(payloadObj?.summaryShort);
+    const explanation = sanitizeAssistantText(payloadObj?.explanation);
+    const keyPoints = Array.isArray(payloadObj?.keyPoints)
+      ? (payloadObj.keyPoints as unknown[]).map((x) => sanitizeAssistantText(x)).filter((x) => x.length > 0)
+      : [];
+    const hooks = Array.isArray(payloadObj?.hooks)
+      ? (payloadObj.hooks as unknown[]).map((x) => sanitizeAssistantText(x)).filter((x) => x.length > 0)
+      : [];
 
     const afterPreview = rewrite
       || summary
@@ -514,7 +525,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
 
   const shouldDisplaySuggestion = (s: AssistantSuggestionDoc) => {
     const payloadObj = toPayloadObject(s.payload);
-    const fromText = typeof payloadObj?.origin?.fromText === "string" ? String(payloadObj.origin.fromText).trim() : "";
+    const fromText = sanitizeAssistantText(payloadObj?.origin?.fromText);
     return fromText.length > 0;
   };
 
@@ -688,7 +699,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
     if (!pendingPreviewAction) return;
 
     const out = aiResult?.output ?? null;
-    const rewriteContent = typeof out?.rewriteContent === "string" ? String(out.rewriteContent) : "";
+    const rewriteContent = sanitizeAssistantText(out?.rewriteContent);
     if (!rewriteContent.trim()) {
       if (aiJobStatus === "done" || aiJobStatus === "error") {
         setPendingPreviewAction(null);
@@ -794,7 +805,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
     }
     if (s.kind === "rewrite_note") {
       const payloadObj = toPayloadObject(s.payload);
-      const rewriteContent = typeof payloadObj?.rewriteContent === "string" ? String(payloadObj.rewriteContent) : "";
+      const rewriteContent = sanitizeAssistantText(payloadObj?.rewriteContent);
       if (!rewriteContent.trim()) return;
       const suggestionId = s.id ?? s.dedupeKey;
       setTextModal({ title: "Prévisualisation avant remplacement", text: rewriteContent, originalText: noteTextBefore, allowReplaceNote: true, suggestionId: suggestionId || undefined });
@@ -804,9 +815,9 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
 
   const renderSuggestionPreview = (s: AssistantSuggestionDoc) => {
     const payloadObj = toPayloadObject(s.payload);
-    const explanation = typeof payloadObj?.explanation === "string" ? String(payloadObj.explanation).trim() : "";
-    const title = typeof payloadObj?.title === "string" ? String(payloadObj.title).trim() : "";
-    const rewriteContent = typeof payloadObj?.rewriteContent === "string" ? String(payloadObj.rewriteContent).trim() : "";
+    const explanation = sanitizeAssistantText(payloadObj?.explanation);
+    const title = sanitizeAssistantText(payloadObj?.title);
+    const rewriteContent = sanitizeAssistantText(payloadObj?.rewriteContent);
     if (explanation) return explanation;
     if (rewriteContent) return rewriteContent;
     return title || "Suggestion prête à appliquer.";
@@ -814,6 +825,8 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
 
   const renderSuggestionCard = (s: AssistantSuggestionDoc) => {
     const suggestionId = s.id ?? s.dedupeKey;
+    const payloadObj = toPayloadObject(s.payload);
+    const suggestionTitle = sanitizeAssistantText(payloadObj?.title, "Suggestion");
     const isBusy = !!suggestionId && busySuggestionId === suggestionId;
     const expired = s.status === "expired";
     const canModify = s.kind === "create_task" || s.kind === "create_reminder" || s.kind === "create_task_bundle" || s.kind === "rewrite_note";
@@ -826,11 +839,11 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
       <div key={suggestionId ?? s.dedupeKey} className="rounded-md bg-card/70 p-2 space-y-1.5">
         <div className="space-y-1">
           <div className="text-sm font-medium leading-snug">
-            {s.payload?.title || "Suggestion"}
+            {suggestionTitle}
             {expired ? <span className="ml-2 text-[11px] text-muted-foreground">(expirée)</span> : null}
           </div>
           <div className="text-[11px] text-muted-foreground">{details.changeLabel}</div>
-          <div className="text-[11px] text-muted-foreground line-clamp-3">{details.targetExcerpt}</div>
+          <div className="text-[11px] text-muted-foreground line-clamp-3 whitespace-pre-line">{details.targetExcerpt}</div>
           <button
             type="button"
             className="text-[11px] underline text-muted-foreground"
@@ -853,7 +866,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
               </div>
             </div>
           ) : null}
-          <div className="text-[11px] text-muted-foreground line-clamp-3">{renderSuggestionPreview(s)}</div>
+          <div className="text-[11px] text-muted-foreground line-clamp-3 whitespace-pre-line">{renderSuggestionPreview(s)}</div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <button
@@ -910,18 +923,18 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
   const aiCards = (() => {
     if (!aiResult) return [] as Array<{ key: string; title: string; text: string; allowReplaceNote?: boolean }>;
     const out = aiResult.output ?? null;
-    const refusal = typeof aiResult.refusal === "string" ? String(aiResult.refusal) : "";
+    const refusal = sanitizeAssistantText(aiResult.refusal);
     if (refusal) {
       return [{ key: `refusal_${aiResult.id ?? "x"}`, title: "Refus", text: refusal }];
     }
 
-    const summaryShort = typeof out?.summaryShort === "string" ? String(out.summaryShort) : "";
+    const summaryShort = sanitizeAssistantText(out?.summaryShort);
     const summaryStructured = Array.isArray(out?.summaryStructured) ? out.summaryStructured : [];
     const keyPoints = Array.isArray(out?.keyPoints) ? out.keyPoints : [];
     const hooks = Array.isArray(out?.hooks) ? out.hooks : [];
     const tags = Array.isArray(out?.tags) ? out.tags : [];
     const entities = out?.entities && typeof out.entities === "object" ? out.entities : null;
-    const rewriteContent = typeof out?.rewriteContent === "string" ? String(out.rewriteContent) : "";
+    const rewriteContent = sanitizeAssistantText(out?.rewriteContent);
 
     const cards: Array<{ key: string; title: string; text: string; allowReplaceNote?: boolean }> = [];
 
@@ -936,7 +949,8 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
         const bullets = Array.isArray(sec?.bullets) ? sec.bullets : [];
         if (title) lines.push(title);
         for (const b of bullets) {
-          if (typeof b === "string" && b.trim()) lines.push(`- ${b}`);
+          const bullet = sanitizeAssistantText(b);
+          if (bullet) lines.push(`- ${bullet}`);
         }
         if ((title || bullets.length > 0) && lines.length > 0) lines.push("");
       }
@@ -945,24 +959,40 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
     }
 
     if (keyPoints.length > 0) {
-      const txt = keyPoints.filter((x) => typeof x === "string").slice(0, 50).map((x) => `- ${x}`).join("\n");
+      const txt = keyPoints
+        .map((x) => sanitizeAssistantText(x))
+        .filter((x) => x.length > 0)
+        .slice(0, 50)
+        .map((x) => `- ${x}`)
+        .join("\n");
       if (txt.trim()) cards.push({ key: `keypoints_${aiResult.id ?? "x"}`, title: "Points clés", text: txt });
     }
 
     if (hooks.length > 0) {
-      const txt = hooks.filter((x) => typeof x === "string").slice(0, 50).map((x) => `- ${x}`).join("\n");
+      const txt = hooks
+        .map((x) => sanitizeAssistantText(x))
+        .filter((x) => x.length > 0)
+        .slice(0, 50)
+        .map((x) => `- ${x}`)
+        .join("\n");
       if (txt.trim()) cards.push({ key: `hooks_${aiResult.id ?? "x"}`, title: "Hooks", text: txt });
     }
 
     if (tags.length > 0 || entities) {
       const lines: string[] = [];
       if (tags.length > 0) {
-        lines.push(`Tags: ${tags.filter((t) => typeof t === "string").join(", ")}`);
+        const safeTags = tags
+          .map((t) => sanitizeAssistantText(t))
+          .filter((t) => t.length > 0);
+        if (safeTags.length > 0) lines.push(`Tags: ${safeTags.join(", ")}`);
       }
       if (entities) {
         for (const [k, v] of Object.entries(entities)) {
           if (!Array.isArray(v) || v.length === 0) continue;
-          const joined = v.filter((x): x is string => typeof x === "string").join(", ");
+          const joined = v
+            .map((x) => sanitizeAssistantText(x))
+            .filter((x) => x.length > 0)
+            .join(", ");
           if (joined) lines.push(`${k}: ${joined}`);
         }
       }

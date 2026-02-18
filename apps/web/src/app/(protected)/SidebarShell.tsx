@@ -11,6 +11,7 @@ import VoiceAgentButton from "./_components/assistant/VoiceAgentButton";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useAuth } from "@/hooks/useAuth";
 import { invalidateAuthSession } from "@/lib/authInvalidation";
+import { sanitizeAssistantText } from "@/lib/assistantText";
 import { useAssistantSettings } from "@/hooks/useAssistantSettings";
 import { useUserAssistantSuggestions } from "@/hooks/useUserAssistantSuggestions";
 import type { WorkspaceDoc } from "@/types/firestore";
@@ -26,30 +27,6 @@ type ProactiveSuggestionBanner = {
   title: string;
   explanation: string;
 };
-
-function sanitizeDynamicText(value: unknown, fallback: string): string {
-  if (typeof value !== "string") return fallback;
-
-  const withBreaks = value
-    .replace(/<\s*br\s*\/?\s*>/gi, "\n")
-    .replace(/<\s*\/\s*(p|div|li|h[1-6])\s*>/gi, "\n");
-
-  const withoutDangerousBlocks = withBreaks
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<script[\s\S]*?<\/script>/gi, " ");
-
-  const withoutTags = withoutDangerousBlocks.replace(/<[^>]*>/g, " ");
-  const decoded = withoutTags
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&#39;/gi, "'")
-    .replace(/&quot;/gi, '"');
-
-  const compact = decoded.replace(/\s+/g, " ").trim();
-  return compact || fallback;
-}
 
 function localDayKey(d: Date): string {
   const y = d.getFullYear();
@@ -456,8 +433,8 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
     const payload = candidate.payload && typeof candidate.payload === "object" ? (candidate.payload as { title?: unknown; explanation?: unknown }) : null;
     setProactiveBanner({
       suggestionId,
-      title: sanitizeDynamicText(payload?.title, "Suggestion"),
-      explanation: sanitizeDynamicText(payload?.explanation, "Une action prioritaire est prête."),
+      title: sanitizeAssistantText(payload?.title, "Suggestion"),
+      explanation: sanitizeAssistantText(payload?.explanation, "Une action prioritaire est prête."),
     });
   }, [assistantSettings, topActionableSuggestion]);
 
@@ -597,7 +574,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
                 <div className="min-w-0">
                   <div className="text-xs font-medium text-primary">Assistant proactif</div>
                   <div className="text-sm font-semibold truncate">{proactiveBanner.title}</div>
-                  <div className="text-xs text-muted-foreground line-clamp-2">{proactiveBanner.explanation}</div>
+                  <div className="text-xs text-muted-foreground line-clamp-2 whitespace-pre-line">{proactiveBanner.explanation}</div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <a href="/assistant/briefing" className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-xs font-medium">

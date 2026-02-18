@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useUserAssistantDecisions } from "@/hooks/useUserAssistantDecisions";
+import { sanitizeAssistantText } from "@/lib/assistantText";
 import type { AssistantDecisionDoc } from "@/types/firestore";
 
 type Filter = "all" | "accepted" | "rejected" | "edited";
@@ -54,9 +55,9 @@ function extractPayloadSearchText(payload: AssistantDecisionDoc["beforePayload"]
   };
 
   return {
-    title: typeof obj.title === "string" ? obj.title : "",
-    explanation: typeof obj.explanation === "string" ? obj.explanation : "",
-    excerpt: typeof obj.origin?.fromText === "string" ? obj.origin.fromText : "",
+    title: sanitizeAssistantText(obj.title),
+    explanation: sanitizeAssistantText(obj.explanation),
+    excerpt: sanitizeAssistantText(obj.origin?.fromText),
   };
 }
 
@@ -246,8 +247,8 @@ export default function AssistantHistoryPage() {
           const before = d.beforePayload;
           const final = d.finalPayload;
 
-          const title = final?.title ?? before?.title ?? "";
-          const excerpt = before?.origin?.fromText ?? "";
+          const title = sanitizeAssistantText(final?.title ?? before?.title ?? "");
+          const excerpt = sanitizeAssistantText(before?.origin?.fromText ?? "");
 
           return (
             <div key={d.id ?? `${d.suggestionId}-${toMillisSafe(d.createdAt)}`} className="sn-card p-4 space-y-2">
@@ -256,9 +257,7 @@ export default function AssistantHistoryPage() {
                   <div className="text-sm font-semibold truncate">{title || "(sans titre)"}</div>
                   <div className="text-xs text-muted-foreground">{decisionLabel(d.action)}</div>
                   <div className="text-xs text-muted-foreground">{formatTs(d.createdAt)}</div>
-                  {excerpt ? (
-                    <div className="text-xs text-muted-foreground">Extrait: “{excerpt}”</div>
-                  ) : null}
+                  {excerpt ? <div className="text-xs text-muted-foreground whitespace-pre-line">Extrait: “{excerpt}”</div> : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {taskId ? (
