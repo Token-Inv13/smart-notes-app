@@ -15,6 +15,7 @@ import {
   CALENDAR_PREFERENCES_STORAGE_KEY,
   overlapsRange,
   priorityColor,
+  taskToAgendaEventWindow,
   toLocalDateInputValue,
 } from "./agendaCalendarUtils";
 import { useAgendaCalendarFilters } from "./useAgendaCalendarFilters";
@@ -335,18 +336,17 @@ export default function AgendaCalendar({
       task: TaskDoc;
       start: Date;
       end: Date;
+      allDay: boolean;
       recurrence: TaskDoc["recurrence"] | null;
       instanceDate?: string;
     }>;
 
     for (const task of tasks) {
       if (!task.id) continue;
-      const start = task.startDate?.toDate?.() ?? task.dueDate?.toDate?.();
-      if (!start) continue;
-
-      const due = task.dueDate?.toDate?.();
-      const fallbackEnd = new Date(start.getTime() + 60 * 60 * 1000);
-      const end = due && due.getTime() > start.getTime() ? due : fallbackEnd;
+      const window = taskToAgendaEventWindow(task);
+      const start = window.start;
+      const end = window.end;
+      if (!start || !end) continue;
 
       const recurrence = task.recurrence ?? null;
       if (!recurrence?.freq) {
@@ -357,6 +357,7 @@ export default function AgendaCalendar({
             task,
             start,
             end,
+            allDay: window.allDay,
             recurrence: null,
           });
         }
@@ -381,6 +382,7 @@ export default function AgendaCalendar({
             task,
             start: new Date(cursorStart),
             end: new Date(cursorEnd),
+            allDay: window.allDay,
             recurrence,
             instanceDate,
           });
@@ -408,21 +410,16 @@ export default function AgendaCalendar({
 
     const output: EventInput[] = [];
     for (const item of withDates) {
-      const { task, start, end, recurrence, taskId, eventId, instanceDate } = item;
+      const { task, start, end, allDay, recurrence, taskId, eventId, instanceDate } = item;
       const itemPriority = (task.priority ?? "") as Priority | "";
       const itemHasConflict = conflictIds.has(eventId);
       const itemIsRecurring = Boolean(recurrence?.freq);
-      const looksAllDay =
-        start.getHours() === 0 &&
-        start.getMinutes() === 0 &&
-        end.getHours() === 0 &&
-        end.getMinutes() === 0;
       const startHour = start.getHours();
 
       const matchesTimeWindow = (() => {
         if (!timeWindowFilter) return true;
-        if (timeWindowFilter === "allDay") return looksAllDay;
-        if (looksAllDay) return false;
+        if (timeWindowFilter === "allDay") return allDay;
+        if (allDay) return false;
         if (timeWindowFilter === "morning") return startHour >= 6 && startHour < 12;
         if (timeWindowFilter === "afternoon") return startHour >= 12 && startHour < 18;
         if (timeWindowFilter === "evening") return startHour >= 18 || startHour < 6;
@@ -439,7 +436,7 @@ export default function AgendaCalendar({
         title: task.title,
         start,
         end,
-        allDay: looksAllDay,
+        allDay,
         backgroundColor: priorityColor(itemPriority),
         borderColor: priorityColor(itemPriority),
         classNames: ["agenda-event", "agenda-event-local", `agenda-priority-${itemPriority || "none"}`],

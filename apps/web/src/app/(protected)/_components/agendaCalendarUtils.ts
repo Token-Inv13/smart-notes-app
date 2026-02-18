@@ -1,4 +1,4 @@
-import type { Priority, TaskRecurrenceFreq } from "@/types/firestore";
+import type { Priority, TaskDoc, TaskRecurrenceFreq } from "@/types/firestore";
 
 export const CALENDAR_FILTERS_STORAGE_KEY = "agenda-calendar-filters-v1";
 export const CALENDAR_PREFERENCES_STORAGE_KEY = "agenda-calendar-preferences-v1";
@@ -103,6 +103,52 @@ export function addRecurrenceStep(base: Date, freq: TaskRecurrenceFreq, interval
 
 export function overlapsRange(start: Date, end: Date, rangeStart: Date, rangeEnd: Date) {
   return end.getTime() > rangeStart.getTime() && start.getTime() < rangeEnd.getTime();
+}
+
+function isMidnightLocal(d: Date) {
+  return d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0 && d.getMilliseconds() === 0;
+}
+
+function isMultipleOfDaysMs(ms: number) {
+  const dayMs = 24 * 60 * 60 * 1000;
+  return ms > 0 && ms % dayMs === 0;
+}
+
+export function taskToAgendaEventWindow(task: TaskDoc): { start: Date | null; end: Date | null; allDay: boolean } {
+  const startRaw = task.startDate?.toDate?.() ?? null;
+  const dueRaw = task.dueDate?.toDate?.() ?? null;
+
+  const start = startRaw ?? dueRaw;
+  if (!start) return { start: null, end: null, allDay: false };
+
+  const fallbackTimedEnd = new Date(start.getTime() + 60 * 60 * 1000);
+  const fallbackAllDayEnd = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+
+  const end = dueRaw && dueRaw.getTime() > start.getTime() ? dueRaw : fallbackTimedEnd;
+
+  const inferredAllDay = (() => {
+    if (!startRaw || !dueRaw) return false;
+    if (!isMidnightLocal(startRaw) || !isMidnightLocal(dueRaw)) return false;
+    return isMultipleOfDaysMs(dueRaw.getTime() - startRaw.getTime());
+  })();
+
+  const finalEnd = inferredAllDay ? (dueRaw && dueRaw.getTime() > start.getTime() ? dueRaw : fallbackAllDayEnd) : end;
+
+  if (process.env.NODE_ENV !== "production") {
+    if (startRaw === null && dueRaw !== null) {
+      // Legacy/incorrect docs: dueDate used as start.
+      console.warn("[agendaCalendar] Task missing startDate; falling back to dueDate as start", {
+        taskId: task.id,
+        dueDate: dueRaw,
+      });
+    }
+  }
+
+  return {
+    start,
+    end: finalEnd,
+    allDay: inferredAllDay,
+  };
 }
 
 export function priorityConflictWeight(priority: unknown) {
