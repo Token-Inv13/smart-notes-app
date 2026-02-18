@@ -218,6 +218,7 @@ export default function NotesPage() {
     onSwipeRight: () => {
       router.push(`/todo${hrefSuffix}`);
     },
+    ignoreInteractiveTargets: true,
     disabled: !workspaceId,
   });
 
@@ -236,10 +237,7 @@ export default function NotesPage() {
     [pathname, router, searchParams],
   );
   const tabs = (
-    <div
-      className="mb-4 max-w-full overflow-x-auto"
-      {...workspaceTabsSwipeHandlers}
-    >
+    <div className="mb-4 max-w-full overflow-x-auto">
       <div className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap">
         <button
           type="button"
@@ -309,7 +307,7 @@ export default function NotesPage() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" {...workspaceTabsSwipeHandlers}>
       {workspaceId && tabs}
       <header className="flex flex-col gap-2 mb-4">
         <div className="flex items-center justify-between gap-3">

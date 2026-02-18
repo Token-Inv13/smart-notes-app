@@ -14,6 +14,7 @@ interface UseSwipeNavigationOptions {
   onSwipeLeft?: () => void;
   onSwipeRight?: () => void;
   disabled?: boolean;
+  ignoreInteractiveTargets?: boolean;
   minDistancePx?: number;
   minWheelDistancePx?: number;
   maxScrollDeltaPx?: number;
@@ -33,10 +34,43 @@ export function useSwipeNavigation<T extends HTMLElement = HTMLDivElement>(
     onSwipeLeft,
     onSwipeRight,
     disabled = false,
+    ignoreInteractiveTargets = false,
     minDistancePx = 60,
     minWheelDistancePx = 80,
     maxScrollDeltaPx = 20,
   } = opts;
+
+  const shouldIgnoreTarget = useCallback(
+    (target: EventTarget | null) => {
+      if (!ignoreInteractiveTargets) return false;
+      if (!(target instanceof Element)) return false;
+
+      return Boolean(
+        target.closest(
+          [
+            "input",
+            "textarea",
+            "select",
+            "option",
+            "button",
+            "a",
+            "label",
+            "summary",
+            "[contenteditable='true']",
+            "[role='button']",
+            "[role='link']",
+            "[role='checkbox']",
+            "[role='radio']",
+            "[role='switch']",
+            "[role='slider']",
+            "[draggable='true']",
+            "[data-no-swipe='true']",
+          ].join(","),
+        ),
+      );
+    },
+    [ignoreInteractiveTargets],
+  );
 
   const startRef = useRef<SwipeStart | null>(null);
   const wheelAccumRef = useRef(0);
@@ -64,6 +98,7 @@ export function useSwipeNavigation<T extends HTMLElement = HTMLDivElement>(
   const onTouchStart = useCallback<TouchEventHandler<T>>(
     (e) => {
       if (disabled) return;
+      if (shouldIgnoreTarget(e.target)) return;
       const t = e.touches[0];
       if (!t) return;
       startRef.current = {
@@ -72,7 +107,7 @@ export function useSwipeNavigation<T extends HTMLElement = HTMLDivElement>(
         scrollLeft: (e.currentTarget as unknown as HTMLElement).scrollLeft ?? 0,
       };
     },
-    [disabled],
+    [disabled, shouldIgnoreTarget],
   );
 
   const onTouchCancel = useCallback<TouchEventHandler<T>>(() => {
@@ -82,6 +117,7 @@ export function useSwipeNavigation<T extends HTMLElement = HTMLDivElement>(
   const onTouchEnd = useCallback<TouchEventHandler<T>>(
     (e) => {
       if (disabled) return;
+      if (shouldIgnoreTarget(e.target)) return;
       const start = startRef.current;
       startRef.current = null;
 
@@ -100,13 +136,14 @@ export function useSwipeNavigation<T extends HTMLElement = HTMLDivElement>(
       if (dx < 0) fire("left");
       else fire("right");
     },
-    [disabled, fire, maxScrollDeltaPx, minDistancePx],
+    [disabled, fire, maxScrollDeltaPx, minDistancePx, shouldIgnoreTarget],
   );
 
   const onWheel = useCallback<WheelEventHandler<T>>(
     (e) => {
       if (disabled) return;
       if (e.ctrlKey) return;
+      if (shouldIgnoreTarget(e.target)) return;
 
       const el = e.currentTarget as unknown as HTMLElement;
       if (el && el.scrollWidth > el.clientWidth + 2) return;
@@ -137,7 +174,7 @@ export function useSwipeNavigation<T extends HTMLElement = HTMLDivElement>(
         else fire("right");
       }
     },
-    [disabled, fire, minWheelDistancePx, resetWheel],
+    [disabled, fire, minWheelDistancePx, resetWheel, shouldIgnoreTarget],
   );
 
   return { onTouchStart, onTouchEnd, onTouchCancel, onWheel };

@@ -40,14 +40,12 @@ export default function TodoPage() {
     onSwipeLeft: () => {
       router.push(`/notes${hrefSuffix}`);
     },
+    ignoreInteractiveTargets: true,
     disabled: !workspaceId,
   });
 
   const tabs = (
-    <div
-      className="mb-4 max-w-full overflow-x-auto"
-      {...workspaceTabsSwipeHandlers}
-    >
+    <div className="mb-4 max-w-full overflow-x-auto">
       <div className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap">
         <button
           type="button"
@@ -75,7 +73,7 @@ export default function TodoPage() {
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" {...workspaceTabsSwipeHandlers}>
       {workspaceId && tabs}
       <header className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Checklist</h1>
