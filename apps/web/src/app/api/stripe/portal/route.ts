@@ -1,9 +1,9 @@
-import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import Stripe from 'stripe';
 import { getAdminDb, verifySessionCookie } from '@/lib/firebaseAdmin';
 import { getServerAppOrigin } from '@/lib/serverOrigin';
 import { normalizeEmail, normalizeStripeId } from '@/lib/stripeUtils';
+import { beginApiObserve, observedError, observedJson, observedText } from '@/lib/apiObservability';
 import type { UserDoc } from '@/types/firestore';
 
 export const runtime = 'nodejs';
@@ -55,15 +55,37 @@ async function recoverFromSubscriptionSearch(
 }
 
 export async function POST() {
+  const requestId = crypto.randomUUID();
+  const obs = beginApiObserve({
+    eventName: 'stripe.portal.post',
+    route: '/api/stripe/portal',
+    requestId,
+    uid: 'anonymous',
+  });
+
   try {
     const sessionCookie = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
-    if (!sessionCookie) return new NextResponse('Unauthorized', { status: 401 });
+    if (!sessionCookie) return observedText(obs, 'Unauthorized', { status: 401 });
 
     const decoded = await verifySessionCookie(sessionCookie);
-    if (!decoded) return new NextResponse('Unauthorized', { status: 401 });
+    if (!decoded) return observedText(obs, 'Unauthorized', { status: 401 });
+
+    const obsUser = beginApiObserve({
+      eventName: 'stripe.portal.post',
+      route: '/api/stripe/portal',
+      requestId,
+      uid: decoded.uid,
+    });
 
     const secretKey = process.env.STRIPE_SECRET_KEY;
-    if (!secretKey) return new NextResponse('Missing STRIPE_SECRET_KEY', { status: 500 });
+    if (!secretKey) {
+      console.error('stripe.portal.service_unavailable', {
+        reason: 'missing_stripe_secret_key',
+        requestId,
+        uid: decoded.uid,
+      });
+      return observedText(obsUser, 'Configuration du service indisponible.', { status: 500 });
+    }
 
     const stripe = new Stripe(secretKey, { apiVersion: '2024-06-20' });
 
@@ -94,7 +116,7 @@ export async function POST() {
           if (recoveredCustomer) {
             await db.collection('users').doc(decoded.uid).update({ stripeCustomerId: recoveredCustomer });
             const portal = await attemptCreatePortal(recoveredCustomer);
-            return NextResponse.json({ url: portal.url });
+            return observedJson(obsUser, { url: portal.url });
           }
         } catch {
           // ignore, try email-based recovery
@@ -110,7 +132,7 @@ export async function POST() {
           stripeSubscriptionStatus: fromSearch.status,
         });
         const portal = await attemptCreatePortal(fromSearch.customerId);
-        return NextResponse.json({ url: portal.url });
+        return observedJson(obsUser, { url: portal.url });
       }
 
       // Recovery path #3: find an existing live customer by email
@@ -119,7 +141,7 @@ export async function POST() {
         if (recoveredCustomer) {
           await db.collection('users').doc(decoded.uid).update({ stripeCustomerId: recoveredCustomer });
           const portal = await attemptCreatePortal(recoveredCustomer);
-          return NextResponse.json({ url: portal.url });
+          return observedJson(obsUser, { url: portal.url });
         }
       }
 
@@ -136,7 +158,7 @@ export async function POST() {
           stripeSubscriptionStatus: fromSearch.status,
         });
         const portal = await attemptCreatePortal(fromSearch.customerId);
-        return NextResponse.json({ url: portal.url });
+        return observedJson(obsUser, { url: portal.url });
       }
 
       if (normalizedEmail) {
@@ -144,20 +166,22 @@ export async function POST() {
         if (recoveredCustomer) {
           await db.collection('users').doc(decoded.uid).update({ stripeCustomerId: recoveredCustomer });
           const portal = await attemptCreatePortal(recoveredCustomer);
-          return NextResponse.json({ url: portal.url });
+          return observedJson(obsUser, { url: portal.url });
         }
       }
 
-      return new NextResponse('Missing stripeCustomerId', { status: 400 });
+      console.error('stripe.portal.missing_customer', { uid: decoded.uid });
+      return observedText(obsUser, 'Configuration du service indisponible.', { status: 400 });
     }
 
     try {
       const portal = await attemptCreatePortal(customer);
-      return NextResponse.json({ url: portal.url });
+      return observedJson(obsUser, { url: portal.url });
     } catch (err) {
       return await attemptRecoveryAndCreate(err);
     }
   } catch (e) {
+    observedError(obs, e);
     const stripeError = e as StripeLikeError;
     const message = typeof stripeError?.message === 'string' ? stripeError.message : '';
     const lower = message.toLowerCase();
@@ -171,15 +195,15 @@ export async function POST() {
     });
 
     if (lower.includes('return_url') && (lower.includes('allowed') || lower.includes('not allowed'))) {
-      return new NextResponse('RETURN_URL_NOT_ALLOWED', { status: 400 });
+      return observedText(obs, 'RETURN_URL_NOT_ALLOWED', { status: 400 });
     }
     if (isNoSuchCustomerError(stripeError)) {
-      return new NextResponse('NO_SUCH_CUSTOMER', { status: 400 });
+      return observedText(obs, 'NO_SUCH_CUSTOMER', { status: 400 });
     }
     if (lower.includes('customer portal') && (lower.includes('not enabled') || lower.includes('not been configured'))) {
-      return new NextResponse('PORTAL_NOT_ENABLED', { status: 500 });
+      return observedText(obs, 'PORTAL_NOT_ENABLED', { status: 500 });
     }
 
-    return new NextResponse('Failed to create portal session', { status: 500 });
+    return observedText(obs, 'Failed to create portal session', { status: 500 });
   }
 }

@@ -1,10 +1,10 @@
-import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import Stripe from 'stripe';
 import admin from 'firebase-admin';
 import { getAdminDb, getAdminProjectId, verifySessionCookie } from '@/lib/firebaseAdmin';
 import { logServerError, logServerWarn } from '@/lib/observability';
 import { getStripeModeFromSecret, normalizeEmail, normalizeStripeId, type StripeMode } from '@/lib/stripeUtils';
+import { beginApiObserve, observedError, observedJson, observedText } from '@/lib/apiObservability';
 import type { UserDoc } from '@/types/firestore';
 
 export const runtime = 'nodejs';
@@ -115,12 +115,26 @@ async function getSubscriptionForUser(params: {
 
 export async function POST() {
   const requestId = crypto.randomUUID();
+  const obs = beginApiObserve({
+    eventName: 'stripe.sync.post',
+    route: '/api/stripe/sync',
+    requestId,
+    uid: 'anonymous',
+  });
+
   try {
     const sessionCookie = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
-    if (!sessionCookie) return new NextResponse('Unauthorized', { status: 401 });
+    if (!sessionCookie) return observedText(obs, 'Unauthorized', { status: 401 });
 
     const decoded = await verifySessionCookie(sessionCookie);
-    if (!decoded) return new NextResponse('Unauthorized', { status: 401 });
+    if (!decoded) return observedText(obs, 'Unauthorized', { status: 401 });
+
+    const obsUser = beginApiObserve({
+      eventName: 'stripe.sync.post',
+      route: '/api/stripe/sync',
+      requestId,
+      uid: decoded.uid,
+    });
 
     const stripe = getStripeClient();
     const db = getAdminDb();
@@ -158,7 +172,7 @@ export async function POST() {
         );
       }
 
-      return NextResponse.json({ ok: true, found: false, stripeMode, adminProjectId, attempts });
+      return observedJson(obsUser, { ok: true, found: false, stripeMode, adminProjectId, attempts });
     }
 
     if (isSubscriptionModeMismatch(sub, stripeMode)) {
@@ -170,7 +184,7 @@ export async function POST() {
         subscriptionMode,
         subscriptionId: sub.id,
       });
-      return NextResponse.json({
+      return observedJson(obsUser, {
         ok: true,
         found: false,
         ignored: true,
@@ -199,7 +213,7 @@ export async function POST() {
       { merge: true },
     );
 
-    return NextResponse.json({
+    return observedJson(obsUser, {
       ok: true,
       found: true,
       stripeMode,
@@ -213,7 +227,8 @@ export async function POST() {
       plan: isActive ? 'pro' : 'free',
     });
   } catch (e) {
+    observedError(obs, e);
     logServerError('stripe.sync.failure', { requestId, error: e });
-    return new NextResponse('Sync failed', { status: 500 });
+    return observedText(obs, 'Sync failed', { status: 500 });
   }
 }

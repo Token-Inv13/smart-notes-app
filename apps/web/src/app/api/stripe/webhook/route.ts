@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { getAdminDb } from '@/lib/firebaseAdmin';
 import { logServerError, logServerWarn } from '@/lib/observability';
 import { getStripeModeFromSecret, normalizeStripeId } from '@/lib/stripeUtils';
+import { beginApiObserve, observedError, observedJson, observedText } from '@/lib/apiObservability';
 import admin from 'firebase-admin';
 import type { UserDoc } from '@/types/firestore';
 
@@ -83,16 +83,29 @@ async function setUserPlan(userId: string, plan: 'free' | 'pro', updates?: Parti
 
 export async function POST(request: Request) {
   const requestId = request.headers.get('x-request-id') ?? crypto.randomUUID();
+  const obs = beginApiObserve({
+    eventName: 'stripe.webhook.post',
+    route: '/api/stripe/webhook',
+    requestId,
+    uid: 'anonymous',
+  });
+
   let lockAcquired = false;
   let lockedEventRef: FirebaseFirestore.DocumentReference | null = null;
   try {
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-    if (!webhookSecret) return new NextResponse('Missing STRIPE_WEBHOOK_SECRET', { status: 500 });
+    if (!webhookSecret) {
+      logServerError('stripe.webhook.service_unavailable', {
+        requestId,
+        reason: 'missing_stripe_webhook_secret',
+      });
+      return observedText(obs, 'Configuration du service indisponible.', { status: 500 });
+    }
 
     const stripe = getStripeClient();
 
     const sig = request.headers.get('stripe-signature');
-    if (!sig) return new NextResponse('Missing stripe-signature', { status: 400 });
+    if (!sig) return observedText(obs, 'Missing stripe-signature', { status: 400 });
 
     const payload = await request.text();
 
@@ -101,7 +114,7 @@ export async function POST(request: Request) {
       event = stripe.webhooks.constructEvent(payload, sig, webhookSecret);
     } catch (err) {
       logServerError('stripe.webhook.invalid_signature', { requestId, error: err });
-      return new NextResponse('Invalid signature', { status: 400 });
+      return observedText(obs, 'Invalid signature', { status: 400 });
     }
 
     const stripeMode = getStripeModeFromSecret(process.env.STRIPE_SECRET_KEY);
@@ -115,7 +128,7 @@ export async function POST(request: Request) {
           eventMode,
           stripeMode,
         });
-        return NextResponse.json({ received: true, ignored: true, reason: 'mode_mismatch' });
+        return observedJson(obs, { received: true, ignored: true, reason: 'mode_mismatch' });
       }
     }
 
@@ -139,7 +152,7 @@ export async function POST(request: Request) {
     } catch (e) {
       const code = typeof (e as { code?: unknown })?.code === 'number' ? (e as { code?: number }).code : null;
       if (code === 6) {
-        return NextResponse.json({ received: true, deduped: true });
+        return observedJson(obs, { received: true, deduped: true });
       }
       throw e;
     }
@@ -212,8 +225,9 @@ export async function POST(request: Request) {
       { merge: true },
     );
 
-    return NextResponse.json({ received: true });
+    return observedJson(obs, { received: true });
   } catch (e) {
+    observedError(obs, e);
     if (lockAcquired && lockedEventRef) {
       try {
         await lockedEventRef.delete();
@@ -222,6 +236,6 @@ export async function POST(request: Request) {
       }
     }
     logServerError('stripe.webhook.failure', { requestId, error: e });
-    return new NextResponse('Webhook handler failed', { status: 500 });
+    return observedText(obs, 'Webhook handler failed', { status: 500 });
   }
 }

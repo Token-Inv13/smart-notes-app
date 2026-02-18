@@ -6,6 +6,7 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { listenToForegroundMessages } from "@/lib/fcm";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
+import { installGlobalErrorHandlers, observeCaughtError } from "@/lib/clientObservability";
 
 type ThemeMode = "light" | "dark";
 
@@ -53,6 +54,7 @@ function readLocalAppearance(): { mode: ThemeMode; background: BackgroundPreset 
 export default function ThemeClientProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     listenToForegroundMessages();
+    const uninstallGlobalErrorHandlers = installGlobalErrorHandlers();
 
     const local = readLocalAppearance();
     applyTheme(local.mode);
@@ -88,7 +90,12 @@ export default function ThemeClientProvider({ children }: { children: React.Reac
         (err) => {
           if (isAuthInvalidError(err)) {
             void invalidateAuthSession();
+            return;
           }
+
+          void observeCaughtError("frontend.auth_settings_snapshot_error", err, {
+            source: "ThemeClientProvider",
+          });
         },
       );
     });
@@ -96,6 +103,7 @@ export default function ThemeClientProvider({ children }: { children: React.Reac
     return () => {
       if (unsubscribeSettings) unsubscribeSettings();
       unsubscribeAuth();
+      uninstallGlobalErrorHandlers();
     };
   }, []);
 

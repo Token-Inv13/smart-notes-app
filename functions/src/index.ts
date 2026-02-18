@@ -9,6 +9,107 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 
+type ObserveStatus = 'success' | 'error';
+
+type ObserveFunctionContext = {
+  functionName: string;
+  requestId: string;
+  startMs: number;
+  meta?: Record<string, unknown>;
+};
+
+function beginFunctionObserve(params: {
+  functionName: string;
+  requestId?: string;
+  meta?: Record<string, unknown>;
+}): ObserveFunctionContext {
+  const ctx: ObserveFunctionContext = {
+    functionName: params.functionName,
+    requestId: params.requestId ?? crypto.randomUUID(),
+    startMs: Date.now(),
+    meta: params.meta,
+  };
+
+  console.info('ops.function.started', {
+    functionName: ctx.functionName,
+    requestId: ctx.requestId,
+    ...(ctx.meta ?? {}),
+  });
+
+  return ctx;
+}
+
+async function writeFunctionErrorLog(params: {
+  functionName: string;
+  code: string;
+  message: string;
+  context?: Record<string, unknown>;
+}) {
+  try {
+    const db = admin.firestore();
+    await db.collection('appErrorLogs').add({
+      source: 'functions',
+      category: 'functions',
+      scope: params.functionName,
+      code: params.code,
+      message: params.message,
+      context: params.context ?? {},
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch {
+    // best effort
+  }
+}
+
+async function endFunctionObserve(
+  ctx: ObserveFunctionContext,
+  status: ObserveStatus,
+  extra?: Record<string, unknown>,
+) {
+  const durationMs = Date.now() - ctx.startMs;
+  const payload = {
+    functionName: ctx.functionName,
+    requestId: ctx.requestId,
+    durationMs,
+    status,
+    ...(ctx.meta ?? {}),
+    ...(extra ?? {}),
+  };
+
+  if (status === 'error') {
+    console.error('ops.function.failed', payload);
+    console.warn('ops.metric.functions_error', {
+      functionName: ctx.functionName,
+      count: 1,
+      requestId: ctx.requestId,
+      durationMs,
+    });
+    await writeFunctionErrorLog({
+      functionName: ctx.functionName,
+      code: 'internal',
+      message: 'Function execution failed.',
+      context: payload,
+    });
+    return;
+  }
+
+  console.info('ops.function.completed', payload);
+}
+
+function backlogOldestAgeMs(
+  docs: FirebaseFirestore.QueryDocumentSnapshot[],
+  field: string,
+): number | null {
+  const values = docs
+    .map((d) => d.get(field))
+    .filter((v) => typeof v === 'object' && v !== null && typeof (v as { toMillis?: unknown }).toMillis === 'function')
+    .map((v) => (v as { toMillis: () => number }).toMillis());
+
+  if (values.length === 0) return null;
+  const min = Math.min(...values);
+  return Math.max(0, Date.now() - min);
+}
+
 interface TaskReminder {
   userId: string;
   taskId: string;
@@ -2024,6 +2125,16 @@ async function claimReminder(params: {
 export const checkAndSendReminders = functions.pubsub
   .schedule('every 1 minutes')
   .onRun(async (context) => {
+    const requestId =
+      typeof (context as { eventId?: unknown })?.eventId === 'string' && (context as { eventId?: string }).eventId
+        ? String((context as { eventId?: string }).eventId)
+        : crypto.randomUUID();
+    const obs = beginFunctionObserve({
+      functionName: 'checkAndSendReminders',
+      requestId,
+      meta: { jobType: 'reminders' },
+    });
+
     const now = new Date();
     const nowIso = now.toISOString();
     const processingTtlMs = 2 * 60 * 1000;
@@ -2040,6 +2151,21 @@ export const checkAndSendReminders = functions.pubsub
         .orderBy('reminderTime', 'asc')
         .limit(200)
         .get();
+
+      const oldestReminderMs = remindersSnapshot.docs
+        .map((d) => {
+          const raw = (d.data() as { reminderTime?: unknown }).reminderTime;
+          return typeof raw === 'string' ? Date.parse(raw) : NaN;
+        })
+        .filter((v) => Number.isFinite(v));
+      const oldestReminderAgeMs =
+        oldestReminderMs.length > 0 ? Math.max(0, Date.now() - Math.min(...oldestReminderMs)) : null;
+
+      console.info('ops.metric.queue_backlog', {
+        queue: 'taskReminders',
+        pending: remindersSnapshot.size,
+        oldestAgeMs: oldestReminderAgeMs,
+      });
 
       console.log(
         `checkAndSendReminders: now=${nowIso} reminders=${remindersSnapshot.size}`,
@@ -2193,8 +2319,16 @@ export const checkAndSendReminders = functions.pubsub
       await Promise.all(reminderPromises);
       
       console.log('Reminder check completed successfully');
+      await endFunctionObserve(obs, 'success', {
+        jobType: 'reminders',
+        batchSize: remindersSnapshot.size,
+      });
     } catch (error) {
       console.error('Error processing reminders:', error instanceof Error ? error.message : 'Unknown error');
+      await endFunctionObserve(obs, 'error', {
+        jobType: 'reminders',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      });
     }
   });
 
@@ -2691,6 +2825,16 @@ async function claimAssistantJob(params: {
 export const assistantRunJobQueue = functions.pubsub
   .schedule('every 1 minutes')
   .onRun(async (context) => {
+    const requestId =
+      typeof (context as { eventId?: unknown })?.eventId === 'string' && (context as { eventId?: string }).eventId
+        ? String((context as { eventId?: string }).eventId)
+        : crypto.randomUUID();
+    const obs = beginFunctionObserve({
+      functionName: 'assistantRunJobQueue',
+      requestId,
+      meta: { jobType: 'assistant_queue' },
+    });
+
     const db = admin.firestore();
     const nowDate = new Date();
     const nowTs = admin.firestore.Timestamp.fromDate(nowDate);
@@ -2705,8 +2849,23 @@ export const assistantRunJobQueue = functions.pubsub
 
     if (snap.empty) {
       console.log('assistantRunJobQueue: no queued jobs');
+      console.info('ops.metric.queue_backlog', {
+        queue: 'assistantJobs',
+        pending: 0,
+        oldestAgeMs: null,
+      });
+      await endFunctionObserve(obs, 'success', {
+        jobType: 'assistant_queue',
+        batchSize: 0,
+      });
       return;
     }
+
+    console.info('ops.metric.queue_backlog', {
+      queue: 'assistantJobs',
+      pending: snap.size,
+      oldestAgeMs: backlogOldestAgeMs(snap.docs, 'lockedUntil'),
+    });
 
     console.log(`assistantRunJobQueue: queued=${snap.size}`);
 
@@ -3075,6 +3234,11 @@ export const assistantRunJobQueue = functions.pubsub
     });
 
     await Promise.all(tasks);
+
+    await endFunctionObserve(obs, 'success', {
+      jobType: 'assistant_queue',
+      batchSize: snap.size,
+    });
   });
 
 export const assistantApplySuggestion = functions.https.onCall(async (data, context) => {
@@ -4925,6 +5089,22 @@ export const assistantRequestVoiceTranscription = functions
   });
 
 export const assistantExecuteIntent = functions.https.onCall(async (data, context) => {
+  const requestIdRaw = (context as { rawRequest?: { headers?: Record<string, unknown> } })?.rawRequest?.headers?.[
+    'x-request-id'
+  ];
+  const requestId = typeof requestIdRaw === 'string' && requestIdRaw ? requestIdRaw : crypto.randomUUID();
+  const obs = beginFunctionObserve({
+    functionName: 'assistantExecuteIntent',
+    requestId,
+    meta: {
+      jobType: 'assistant_intent',
+      uid: context.auth?.uid ?? 'anonymous',
+    },
+  });
+  let obsStatus: ObserveStatus = 'success';
+  let obsErrorMessage: string | null = null;
+
+  try {
   const userId = context.auth?.uid;
   if (!userId) {
     throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
@@ -5139,6 +5319,17 @@ export const assistantExecuteIntent = functions.https.onCall(async (data, contex
   }
 
   return responseBase;
+  } catch (error) {
+    obsStatus = 'error';
+    obsErrorMessage = error instanceof Error ? error.message : 'Unknown error';
+    throw error;
+  } finally {
+    await endFunctionObserve(obs, obsStatus, {
+      jobType: 'assistant_intent',
+      uid: context.auth?.uid ?? 'anonymous',
+      errorMessage: obsErrorMessage,
+    });
+  }
 });
 
 export const assistantPurgeExpiredVoiceData = functions.pubsub
@@ -5739,7 +5930,17 @@ async function processAssistantAIJob(params: {
 
 export const assistantRunAIJobQueue = functions.pubsub
   .schedule('every 1 minutes')
-  .onRun(async () => {
+  .onRun(async (context) => {
+    const requestId =
+      typeof (context as { eventId?: unknown })?.eventId === 'string' && (context as { eventId?: string }).eventId
+        ? String((context as { eventId?: string }).eventId)
+        : crypto.randomUUID();
+    const obs = beginFunctionObserve({
+      functionName: 'assistantRunAIJobQueue',
+      requestId,
+      meta: { jobType: 'assistant_ai_queue' },
+    });
+
     const db = admin.firestore();
     const nowDate = new Date();
     const nowTs = admin.firestore.Timestamp.fromDate(nowDate);
@@ -5753,8 +5954,23 @@ export const assistantRunAIJobQueue = functions.pubsub
       .get();
 
     if (snap.empty) {
+      console.info('ops.metric.queue_backlog', {
+        queue: 'assistantAIJobs',
+        pending: 0,
+        oldestAgeMs: null,
+      });
+      await endFunctionObserve(obs, 'success', {
+        jobType: 'assistant_ai_queue',
+        batchSize: 0,
+      });
       return;
     }
+
+    console.info('ops.metric.queue_backlog', {
+      queue: 'assistantAIJobs',
+      pending: snap.size,
+      oldestAgeMs: backlogOldestAgeMs(snap.docs, 'lockedUntil'),
+    });
 
     const tasks = snap.docs.map(async (jobDoc) => {
       const userRef = jobDoc.ref.parent.parent;
@@ -5768,4 +5984,9 @@ export const assistantRunAIJobQueue = functions.pubsub
     });
 
     await Promise.all(tasks);
+
+    await endFunctionObserve(obs, 'success', {
+      jobType: 'assistant_ai_queue',
+      batchSize: snap.size,
+    });
   });

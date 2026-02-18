@@ -6,6 +6,52 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 
+type AdminObserveContext = {
+  callableName: string;
+  requestId: string;
+  startMs: number;
+  adminUid: string | null;
+};
+
+function beginAdminCallableObserve(params: { callableName: string; adminUid: string | null }): AdminObserveContext {
+  const ctx: AdminObserveContext = {
+    callableName: params.callableName,
+    requestId: crypto.randomUUID(),
+    startMs: Date.now(),
+    adminUid: params.adminUid,
+  };
+
+  console.info('ops.admin_callable.started', {
+    callableName: ctx.callableName,
+    requestId: ctx.requestId,
+    adminUid: ctx.adminUid,
+  });
+
+  return ctx;
+}
+
+function endAdminCallableObserve(
+  ctx: AdminObserveContext,
+  status: 'success' | 'error',
+  extra?: Record<string, unknown>,
+) {
+  const durationMs = Date.now() - ctx.startMs;
+  const payload = {
+    callableName: ctx.callableName,
+    requestId: ctx.requestId,
+    adminUid: ctx.adminUid,
+    status,
+    durationMs,
+    ...(extra ?? {}),
+  };
+
+  if (status === 'error') {
+    console.error('ops.admin_callable.failed', payload);
+  } else {
+    console.info('ops.admin_callable.completed', payload);
+  }
+}
+
 function normalizeBroadcastSegment(raw: unknown): BroadcastSegment {
   const value = toOptionalString(raw);
   if (value === 'premium' || value === 'inactive' || value === 'tag') return value;
@@ -1714,6 +1760,7 @@ export const adminGetHealthSummary = functions.https.onCall(async (data, context
   const action = 'get_health_summary';
   const payload = isObject(data) ? data : {};
   const adminUid = context.auth?.uid ?? null;
+  const obs = beginAdminCallableObserve({ callableName: 'adminGetHealthSummary', adminUid });
 
   try {
     const actorUid = assertAdmin(context);
@@ -1747,6 +1794,7 @@ export const adminGetHealthSummary = functions.https.onCall(async (data, context
       message: 'Computed admin health summary.',
     });
 
+    endAdminCallableObserve(obs, 'success', { action });
     return {
       windowHours,
       totalErrors,
@@ -1759,6 +1807,9 @@ export const adminGetHealthSummary = functions.https.onCall(async (data, context
       aiJobFailedCount,
     };
   } catch (error) {
+    endAdminCallableObserve(obs, 'error', {
+      errorMessage: error instanceof Error ? error.message : 'unknown_error',
+    });
     const mapped = toHttpsError(error);
     try {
       await writeAdminAuditLog({
@@ -1787,6 +1838,7 @@ export const adminGetOperatorDashboard = functions.https.onCall(async (data, con
   const action = 'get_operator_dashboard';
   const payload = isObject(data) ? data : {};
   const adminUid = context.auth?.uid ?? null;
+  const obs = beginAdminCallableObserve({ callableName: 'adminGetOperatorDashboard', adminUid });
 
   try {
     const actorUid = assertAdmin(context);
@@ -1857,6 +1909,7 @@ export const adminGetOperatorDashboard = functions.https.onCall(async (data, con
       message: 'Computed operator dashboard metrics.',
     });
 
+    endAdminCallableObserve(obs, 'success', { action });
     return {
       generatedAtMs: nowMs,
       usersTotal: totalUsers,
@@ -1869,6 +1922,9 @@ export const adminGetOperatorDashboard = functions.https.onCall(async (data, con
       usersSeries30d,
     };
   } catch (error) {
+    endAdminCallableObserve(obs, 'error', {
+      errorMessage: error instanceof Error ? error.message : 'unknown_error',
+    });
     const mapped = toHttpsError(error);
     try {
       await writeAdminAuditLog({
@@ -1897,6 +1953,7 @@ export const adminGetAnalyticsOverview = functions.https.onCall(async (data, con
   const action = 'get_analytics_overview';
   const payload = isObject(data) ? data : {};
   const adminUid = context.auth?.uid ?? null;
+  const obs = beginAdminCallableObserve({ callableName: 'adminGetAnalyticsOverview', adminUid });
 
   try {
     const actorUid = assertAdmin(context);
@@ -1918,6 +1975,11 @@ export const adminGetAnalyticsOverview = functions.https.onCall(async (data, con
             payload: { cache: 'hit' },
             status: 'success',
             message: 'Returned cached GA4 analytics overview.',
+          });
+
+          endAdminCallableObserve(obs, 'success', {
+            action,
+            cache: 'hit',
           });
 
           return {
@@ -2002,12 +2064,21 @@ export const adminGetAnalyticsOverview = functions.https.onCall(async (data, con
       message: 'Computed GA4 analytics overview.',
     });
 
+    endAdminCallableObserve(obs, 'success', {
+      action,
+      cache: 'miss',
+      forceRefresh,
+    });
+
     return {
       ...result,
       cached: false,
       cacheExpiresAtMs: expiresAtMs,
     };
   } catch (error) {
+    endAdminCallableObserve(obs, 'error', {
+      errorMessage: error instanceof Error ? error.message : 'unknown_error',
+    });
     const mapped = toHttpsError(error);
     try {
       await writeAdminAuditLog({

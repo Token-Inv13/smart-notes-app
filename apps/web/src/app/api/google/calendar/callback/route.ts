@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb, verifySessionCookie } from "@/lib/firebaseAdmin";
 import { encryptGoogleToken, hasGoogleTokenEncryptionKey } from "@/lib/googleCalendarCrypto";
+import { beginApiObserve, endApiObserve, observedError } from "@/lib/apiObservability";
 import { getServerAppOrigin } from "@/lib/serverOrigin";
 
 const OAUTH_STATE_COOKIE = "gcal_oauth_state";
@@ -32,21 +33,46 @@ type CalendarListResponse = {
   }>;
 };
 
+function redirectWithCalendarState(base: URL, state: string) {
+  base.searchParams.set("calendar", state);
+  const res = NextResponse.redirect(base);
+  res.cookies.set(OAUTH_STATE_COOKIE, "", { path: "/", maxAge: 0 });
+  res.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
+  res.cookies.set(OAUTH_RETURN_TO_COOKIE, "", { path: "/", maxAge: 0 });
+  return res;
+}
+
 export async function GET(request: NextRequest) {
+  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+  const obs = beginApiObserve({
+    eventName: "google.calendar.callback.get",
+    route: "/api/google/calendar/callback",
+    requestId,
+    uid: "anonymous",
+  });
+
   const returnTo = sanitizeReturnTo(request.cookies.get(OAUTH_RETURN_TO_COOKIE)?.value ?? null);
   const redirectBase = new URL(returnTo, request.nextUrl.origin);
+
+  const redirectWithStateObserved = (state: string, status = 302, uid = "anonymous") => {
+    const response = redirectWithCalendarState(redirectBase, state);
+    endApiObserve(obs, status, {
+      requestId,
+      uid,
+      oauthState: state,
+    });
+    return response;
+  };
 
   try {
     const sessionCookie = request.cookies.get("session")?.value;
     if (!sessionCookie) {
-      redirectBase.searchParams.set("calendar", "auth_required");
-      return NextResponse.redirect(redirectBase);
+      return redirectWithStateObserved("auth_required", 302, "anonymous");
     }
 
     const decoded = await verifySessionCookie(sessionCookie);
     if (!decoded?.uid) {
-      redirectBase.searchParams.set("calendar", "auth_required");
-      return NextResponse.redirect(redirectBase);
+      return redirectWithStateObserved("auth_required", 302, "anonymous");
     }
 
     const code = request.nextUrl.searchParams.get("code");
@@ -55,12 +81,15 @@ export async function GET(request: NextRequest) {
     const verifier = request.cookies.get(OAUTH_VERIFIER_COOKIE)?.value;
 
     if (!code || !state || !stateCookie || state !== stateCookie || !state.startsWith(`${decoded.uid}:`)) {
-      redirectBase.searchParams.set("calendar", "oauth_state_invalid");
-      const res = NextResponse.redirect(redirectBase);
-      res.cookies.set(OAUTH_STATE_COOKIE, "", { path: "/", maxAge: 0 });
-      res.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
-      res.cookies.set(OAUTH_RETURN_TO_COOKIE, "", { path: "/", maxAge: 0 });
-      return res;
+      return redirectWithStateObserved("oauth_state_invalid", 302, decoded.uid);
+    }
+
+    if (!hasGoogleTokenEncryptionKey()) {
+      console.error("google.calendar.callback.service_unavailable", {
+        reason: "missing_token_encryption_key",
+        uid: decoded.uid,
+      });
+      return redirectWithStateObserved("service_unavailable", 302, decoded.uid);
     }
 
     const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -69,12 +98,11 @@ export async function GET(request: NextRequest) {
     const redirectUri = process.env.GOOGLE_CALENDAR_REDIRECT_URI ?? `${appOrigin}/api/google/calendar/callback`;
 
     if (!clientId) {
-      redirectBase.searchParams.set("calendar", "missing_env");
-      const res = NextResponse.redirect(redirectBase);
-      res.cookies.set(OAUTH_STATE_COOKIE, "", { path: "/", maxAge: 0 });
-      res.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
-      res.cookies.set(OAUTH_RETURN_TO_COOKIE, "", { path: "/", maxAge: 0 });
-      return res;
+      console.error("google.calendar.callback.service_unavailable", {
+        reason: "missing_google_client_id",
+        uid: decoded.uid,
+      });
+      return redirectWithStateObserved("service_unavailable", 302, decoded.uid);
     }
 
     const tokenBody = new URLSearchParams({
@@ -97,12 +125,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (!tokenResp.ok) {
-      redirectBase.searchParams.set("calendar", "token_exchange_failed");
-      const res = NextResponse.redirect(redirectBase);
-      res.cookies.set(OAUTH_STATE_COOKIE, "", { path: "/", maxAge: 0 });
-      res.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
-      res.cookies.set(OAUTH_RETURN_TO_COOKIE, "", { path: "/", maxAge: 0 });
-      return res;
+      return redirectWithStateObserved("token_exchange_failed", 302, decoded.uid);
     }
 
     const tokenJson = (await tokenResp.json()) as TokenResponse;
@@ -111,12 +134,7 @@ export async function GET(request: NextRequest) {
     const expiresIn = typeof tokenJson.expires_in === "number" ? tokenJson.expires_in : 3600;
 
     if (!accessToken) {
-      redirectBase.searchParams.set("calendar", "token_missing");
-      const res = NextResponse.redirect(redirectBase);
-      res.cookies.set(OAUTH_STATE_COOKIE, "", { path: "/", maxAge: 0 });
-      res.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
-      res.cookies.set(OAUTH_RETURN_TO_COOKIE, "", { path: "/", maxAge: 0 });
-      return res;
+      return redirectWithStateObserved("token_missing", 302, decoded.uid);
     }
 
     const calendarResp = await fetch("https://www.googleapis.com/calendar/v3/users/me/calendarList", {
@@ -140,23 +158,21 @@ export async function GET(request: NextRequest) {
     const expiresAtMs = nowMs + Math.max(60, expiresIn) * 1000;
     const encryptedAccessToken = encryptGoogleToken(accessToken);
     const encryptedRefreshToken = refreshToken ? encryptGoogleToken(refreshToken) : null;
-    const shouldUseEncryptedStorage = hasGoogleTokenEncryptionKey() && Boolean(encryptedAccessToken);
+    if (!encryptedAccessToken) {
+      console.error("google.calendar.callback.service_unavailable", {
+        reason: "token_encryption_failed",
+        uid: decoded.uid,
+      });
+      return redirectWithStateObserved("service_unavailable", 302, decoded.uid);
+    }
 
-    const tokenPayload = shouldUseEncryptedStorage
-      ? {
-          tokenStorageMode: "encrypted",
-          accessTokenEncrypted: encryptedAccessToken,
-          ...(encryptedRefreshToken ? { refreshTokenEncrypted: encryptedRefreshToken } : {}),
-          accessToken: FieldValue.delete(),
-          refreshToken: FieldValue.delete(),
-        }
-      : {
-          tokenStorageMode: "plain",
-          accessToken,
-          ...(refreshToken ? { refreshToken } : {}),
-          accessTokenEncrypted: FieldValue.delete(),
-          refreshTokenEncrypted: FieldValue.delete(),
-        };
+    const tokenPayload = {
+      tokenStorageMode: "encrypted",
+      accessTokenEncrypted: encryptedAccessToken,
+      ...(encryptedRefreshToken ? { refreshTokenEncrypted: encryptedRefreshToken } : {}),
+      accessToken: FieldValue.delete(),
+      refreshToken: FieldValue.delete(),
+    };
 
     await ref.set(
       {
@@ -172,18 +188,10 @@ export async function GET(request: NextRequest) {
       { merge: true },
     );
 
-    redirectBase.searchParams.set("calendar", "connected");
-    const response = NextResponse.redirect(redirectBase);
-    response.cookies.set(OAUTH_STATE_COOKIE, "", { path: "/", maxAge: 0 });
-    response.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
-    response.cookies.set(OAUTH_RETURN_TO_COOKIE, "", { path: "/", maxAge: 0 });
-    return response;
-  } catch {
-    redirectBase.searchParams.set("calendar", "error");
-    const response = NextResponse.redirect(redirectBase);
-    response.cookies.set(OAUTH_STATE_COOKIE, "", { path: "/", maxAge: 0 });
-    response.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
-    response.cookies.set(OAUTH_RETURN_TO_COOKIE, "", { path: "/", maxAge: 0 });
-    return response;
+    return redirectWithStateObserved("connected", 302, decoded.uid);
+  } catch (error) {
+    observedError(obs, error, { requestId });
+    console.error("google.calendar.callback.failed", error);
+    return redirectWithStateObserved("error", 302, "anonymous");
   }
 }

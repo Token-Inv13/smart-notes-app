@@ -1,18 +1,34 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb, verifySessionCookie } from "@/lib/firebaseAdmin";
+import { beginApiObserve, observedError, observedJson } from "@/lib/apiObservability";
 
 export async function POST(request: NextRequest) {
+  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+  const obs = beginApiObserve({
+    eventName: "google.calendar.disconnect.post",
+    route: "/api/google/calendar/disconnect",
+    requestId,
+    uid: "anonymous",
+  });
+
   try {
     const sessionCookie = request.cookies.get("session")?.value;
     if (!sessionCookie) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+      return observedJson(obs, { error: "Not authenticated" }, { status: 401 });
     }
 
     const decoded = await verifySessionCookie(sessionCookie);
     if (!decoded?.uid) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+      return observedJson(obs, { error: "Not authenticated" }, { status: 401 });
     }
+
+    const obsUser = beginApiObserve({
+      eventName: "google.calendar.disconnect.post",
+      route: "/api/google/calendar/disconnect",
+      requestId,
+      uid: decoded.uid,
+    });
 
     const db = getAdminDb();
     const ref = db.collection("users").doc(decoded.uid).collection("assistantIntegrations").doc("googleCalendar");
@@ -33,9 +49,10 @@ export async function POST(request: NextRequest) {
       { merge: true },
     );
 
-    return NextResponse.json({ ok: true });
+    return observedJson(obsUser, { ok: true });
   } catch (e) {
+    observedError(obs, e);
     console.error("Google Calendar disconnect route failed", e);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return observedJson(obs, { error: "Internal server error" }, { status: 500 });
   }
 }

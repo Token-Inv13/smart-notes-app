@@ -1,6 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { createHash, randomBytes } from "node:crypto";
 import { verifySessionCookie } from "@/lib/firebaseAdmin";
+import { hasGoogleTokenEncryptionKey } from "@/lib/googleCalendarCrypto";
+import { beginApiObserve, observedError, observedJson } from "@/lib/apiObservability";
 import { getServerAppOrigin } from "@/lib/serverOrigin";
 
 const OAUTH_STATE_COOKIE = "gcal_oauth_state";
@@ -23,26 +25,57 @@ function base64url(input: Buffer): string {
 }
 
 export async function GET(request: NextRequest) {
+  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+  const obs = beginApiObserve({
+    eventName: "google.calendar.connect.get",
+    route: "/api/google/calendar/connect",
+    requestId,
+    uid: "anonymous",
+  });
+
   try {
     const sessionCookie = request.cookies.get("session")?.value;
     if (!sessionCookie) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+      return observedJson(obs, { error: "Not authenticated" }, { status: 401 });
     }
 
     const decoded = await verifySessionCookie(sessionCookie);
     if (!decoded?.uid) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+      return observedJson(obs, { error: "Not authenticated" }, { status: 401 });
     }
+
+    const obsUser = beginApiObserve({
+      eventName: "google.calendar.connect.get",
+      route: "/api/google/calendar/connect",
+      requestId,
+      uid: decoded.uid,
+    });
 
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const appOrigin = await getServerAppOrigin();
     const redirectUri = process.env.GOOGLE_CALENDAR_REDIRECT_URI ?? `${appOrigin}/api/google/calendar/callback`;
 
-    if (!clientId) {
-      return NextResponse.json(
+    if (!hasGoogleTokenEncryptionKey()) {
+      console.error("google.calendar.connect.service_unavailable", {
+        reason: "missing_token_encryption_key",
+      });
+      return observedJson(
+        obsUser,
         {
-          code: "missing_env",
-          error: "La connexion Google Calendar n’est pas encore configurée.",
+          code: "service_unavailable",
+          error: "Configuration du service indisponible.",
+        },
+        { status: 503 },
+      );
+    }
+
+    if (!clientId) {
+      console.error("google.calendar.connect.service_unavailable", { reason: "missing_google_client_id" });
+      return observedJson(
+        obsUser,
+        {
+          code: "service_unavailable",
+          error: "Configuration du service indisponible.",
         },
         { status: 500 },
       );
@@ -68,7 +101,7 @@ export async function GET(request: NextRequest) {
     });
 
     const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
-    const response = NextResponse.json({ url });
+    const response = observedJson(obsUser, { url });
     response.cookies.set({
       name: OAUTH_STATE_COOKIE,
       value: state,
@@ -98,7 +131,8 @@ export async function GET(request: NextRequest) {
     });
 
     return response;
-  } catch {
-    return NextResponse.json({ error: "Impossible de lancer la connexion Google Calendar." }, { status: 500 });
+  } catch (error) {
+    observedError(obs, error);
+    return observedJson(obs, { error: "Impossible de lancer la connexion Google Calendar." }, { status: 500 });
   }
 }

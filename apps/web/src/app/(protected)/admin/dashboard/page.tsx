@@ -144,6 +144,34 @@ export default function AdminDashboardPage() {
           )}
         </div>
       </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">Ops / Santé</h2>
+        <p className="mt-1 text-xs text-slate-500">Accès rapide aux signaux critiques d’exploitation.</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <Link
+            href="/admin/errors"
+            className="rounded-lg border border-slate-200 px-3 py-3 text-sm text-slate-700 hover:bg-slate-50"
+          >
+            Logs erreurs (24h)
+          </Link>
+          <a
+            href="/docs/runbook-observability.md"
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-lg border border-slate-200 px-3 py-3 text-sm text-slate-700 hover:bg-slate-50"
+          >
+            Runbook incident
+          </a>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="rounded-lg border border-slate-200 px-3 py-3 text-left text-sm text-slate-700 hover:bg-slate-50"
+          >
+            Rafraîchir métriques santé
+          </button>
+        </div>
+      </section>
     </div>
   );
 }

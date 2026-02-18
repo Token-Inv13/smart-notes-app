@@ -1,14 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { decryptGoogleToken, encryptGoogleToken, hasGoogleTokenEncryptionKey } from "@/lib/googleCalendarCrypto";
 import { getAdminDb, verifySessionCookie } from "@/lib/firebaseAdmin";
+import { beginApiObserve, observedError, observedJson } from "@/lib/apiObservability";
 
 type IntegrationDoc = {
   connected?: boolean;
   primaryCalendarId?: string;
-  tokenStorageMode?: "plain" | "encrypted";
-  accessToken?: string;
-  refreshToken?: string;
+  tokenStorageMode?: "encrypted";
   accessTokenEncrypted?: string;
   refreshTokenEncrypted?: string;
   accessTokenExpiresAtMs?: number;
@@ -32,12 +31,9 @@ type TokenRefreshResponse = {
   token_type?: string;
 };
 
-function resolveStoredToken(value: string | undefined, encryptedValue: string | undefined): string | null {
+function resolveStoredToken(encryptedValue: string | undefined): string | null {
   if (typeof encryptedValue === "string" && encryptedValue.length > 0) {
     return decryptGoogleToken(encryptedValue);
-  }
-  if (typeof value === "string" && value.length > 0) {
-    return value;
   }
   return null;
 }
@@ -54,10 +50,19 @@ async function refreshAccessTokenIfNeeded(input: {
   userId: string;
 }): Promise<string | null> {
   const { integration, userId } = input;
+
+  if (!hasGoogleTokenEncryptionKey()) {
+    console.error("google.calendar.events.service_unavailable", {
+      reason: "missing_token_encryption_key",
+      uid: userId,
+    });
+    return null;
+  }
+
   const nowMs = Date.now();
 
-  const currentAccessToken = resolveStoredToken(integration.accessToken, integration.accessTokenEncrypted);
-  const currentRefreshToken = resolveStoredToken(integration.refreshToken, integration.refreshTokenEncrypted);
+  const currentAccessToken = resolveStoredToken(integration.accessTokenEncrypted);
+  const currentRefreshToken = resolveStoredToken(integration.refreshTokenEncrypted);
   const expiresAtMs = typeof integration.accessTokenExpiresAtMs === "number" ? integration.accessTokenExpiresAtMs : null;
 
   const stillValid = typeof expiresAtMs === "number" && expiresAtMs > nowMs + 30_000;
@@ -71,6 +76,10 @@ async function refreshAccessTokenIfNeeded(input: {
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) {
+    console.error("google.calendar.events.service_unavailable", {
+      reason: "missing_google_client_id",
+      uid: userId,
+    });
     return currentAccessToken;
   }
 
@@ -109,23 +118,21 @@ async function refreshAccessTokenIfNeeded(input: {
 
   const encryptedAccessToken = encryptGoogleToken(refreshedAccessToken);
   const encryptedRefreshToken = encryptGoogleToken(currentRefreshToken);
-  const useEncryptedStorage = hasGoogleTokenEncryptionKey() && Boolean(encryptedAccessToken);
+  if (!encryptedAccessToken) {
+    console.error("google.calendar.events.service_unavailable", {
+      reason: "token_encryption_failed",
+      uid: userId,
+    });
+    return currentAccessToken;
+  }
 
-  const tokenPayload = useEncryptedStorage
-    ? {
-        tokenStorageMode: "encrypted",
-        accessTokenEncrypted: encryptedAccessToken,
-        ...(encryptedRefreshToken ? { refreshTokenEncrypted: encryptedRefreshToken } : {}),
-        accessToken: FieldValue.delete(),
-        refreshToken: FieldValue.delete(),
-      }
-    : {
-        tokenStorageMode: "plain",
-        accessToken: refreshedAccessToken,
-        ...(currentRefreshToken ? { refreshToken: currentRefreshToken } : {}),
-        accessTokenEncrypted: FieldValue.delete(),
-        refreshTokenEncrypted: FieldValue.delete(),
-      };
+  const tokenPayload = {
+    tokenStorageMode: "encrypted",
+    accessTokenEncrypted: encryptedAccessToken,
+    ...(encryptedRefreshToken ? { refreshTokenEncrypted: encryptedRefreshToken } : {}),
+    accessToken: FieldValue.delete(),
+    refreshToken: FieldValue.delete(),
+  };
 
   await ref.set(
     {
@@ -140,38 +147,61 @@ async function refreshAccessTokenIfNeeded(input: {
 }
 
 export async function GET(request: NextRequest) {
+  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+  const obs = beginApiObserve({
+    eventName: "google.calendar.events.get",
+    route: "/api/google/calendar/events",
+    requestId,
+    uid: "anonymous",
+  });
+
   try {
+    if (!hasGoogleTokenEncryptionKey()) {
+      console.error("google.calendar.events.service_unavailable", {
+        reason: "missing_token_encryption_key",
+        requestId,
+      });
+      return observedJson(obs, { error: "Configuration du service indisponible." }, { status: 503 });
+    }
+
     const sessionCookie = request.cookies.get("session")?.value;
     if (!sessionCookie) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+      return observedJson(obs, { error: "Not authenticated" }, { status: 401 });
     }
 
     const decoded = await verifySessionCookie(sessionCookie);
     if (!decoded?.uid) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+      return observedJson(obs, { error: "Not authenticated" }, { status: 401 });
     }
+
+    const obsUser = beginApiObserve({
+      eventName: "google.calendar.events.get",
+      route: "/api/google/calendar/events",
+      requestId,
+      uid: decoded.uid,
+    });
 
     const timeMin = sanitizeIso(request.nextUrl.searchParams.get("timeMin"));
     const timeMax = sanitizeIso(request.nextUrl.searchParams.get("timeMax"));
     if (!timeMin || !timeMax) {
-      return NextResponse.json({ error: "Invalid time range" }, { status: 400 });
+      return observedJson(obsUser, { error: "Invalid time range" }, { status: 400 });
     }
 
     const db = getAdminDb();
     const ref = db.collection("users").doc(decoded.uid).collection("assistantIntegrations").doc("googleCalendar");
     const snap = await ref.get();
     if (!snap.exists) {
-      return NextResponse.json({ events: [] });
+      return observedJson(obsUser, { events: [] });
     }
 
     const integration = snap.data() as IntegrationDoc;
     if (integration.connected !== true) {
-      return NextResponse.json({ events: [] });
+      return observedJson(obsUser, { events: [] });
     }
 
     const accessToken = await refreshAccessTokenIfNeeded({ integration, userId: decoded.uid });
     if (!accessToken) {
-      return NextResponse.json({ events: [] });
+      return observedJson(obsUser, { events: [] });
     }
 
     const calendarId = typeof integration.primaryCalendarId === "string" && integration.primaryCalendarId
@@ -197,7 +227,16 @@ export async function GET(request: NextRequest) {
     );
 
     if (!eventsRes.ok) {
-      return NextResponse.json({ events: [] });
+      if (eventsRes.status === 429) {
+        console.warn("ops.metric.google_quota_error", {
+          requestId,
+          uid: decoded.uid,
+          route: "/api/google/calendar/events",
+          status: 429,
+          count: 1,
+        });
+      }
+      return observedJson(obsUser, { events: [] });
     }
 
     const eventsJson = (await eventsRes.json()) as GoogleEventsResponse;
@@ -218,9 +257,10 @@ export async function GET(request: NextRequest) {
           .filter((item) => Boolean(item))
       : [];
 
-    return NextResponse.json({ events });
+    return observedJson(obsUser, { events });
   } catch (e) {
+    observedError(obs, e);
     console.error("Google Calendar events route failed", e);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return observedJson(obs, { error: "Internal server error" }, { status: 500 });
   }
 }
