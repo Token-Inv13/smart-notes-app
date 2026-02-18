@@ -12,6 +12,16 @@ interface ProtectedLayoutProps {
 }
 
 export default async function ProtectedLayout({ children, modal }: ProtectedLayoutProps) {
+  const useEmulators = process.env.NEXT_PUBLIC_USE_EMULATORS === "true";
+  if (useEmulators && process.env.NODE_ENV !== "production") {
+    return (
+      <SidebarShell>
+        {children}
+        {modal}
+      </SidebarShell>
+    );
+  }
+
   const sessionCookie = (await cookies()).get("session")?.value;
   if (!sessionCookie) {
     redirect("/login");

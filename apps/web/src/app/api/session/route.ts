@@ -6,6 +6,13 @@ const SESSION_EXPIRES_IN_MS = 1000 * 60 * 60 * 24 * 5; // 5 days
 
 export async function POST(request: Request) {
   try {
+    const useEmulators = process.env.NEXT_PUBLIC_USE_EMULATORS === 'true';
+    if (useEmulators && process.env.NODE_ENV !== 'production') {
+      // In local emulator mode we don't require server-side session cookies.
+      // This avoids needing firebase-admin credentials locally.
+      return NextResponse.json({ ok: true, emulators: true });
+    }
+
     const body = await request.json().catch(() => null);
     const idToken = body?.idToken;
 

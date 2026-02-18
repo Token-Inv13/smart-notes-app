@@ -431,11 +431,14 @@ export default function AgendaCalendar({
       if (priorityFilter && itemPriority !== priorityFilter) continue;
       if (!matchesTimeWindow) continue;
 
+      const fcStart = allDay ? toLocalDateInputValue(start) : start;
+      const fcEnd = allDay ? toLocalDateInputValue(end) : end;
+
       output.push({
         id: eventId,
         title: task.title,
-        start,
-        end,
+        start: fcStart,
+        end: fcEnd,
         allDay,
         backgroundColor: priorityColor(itemPriority),
         borderColor: priorityColor(itemPriority),
