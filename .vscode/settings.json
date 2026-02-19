@@ -2,13 +2,23 @@
   "npm.packageManager": "pnpm",
   "chatgpt.openOnStartup": true,
   "java.configuration.updateBuildConfiguration": "interactive",
+  "java.import.gradle.enabled": false,
   "java.import.exclusions": [
-    "**/apps/web/android/capacitor-cordova-android-plugins/**"
+    "**/apps/web/android/capacitor-cordova-android-plugins/**",
+    "**/capacitor-cordova-android-plugins/**",
+    "capacitor-cordova-android-plugins/**"
+  ],
+  "java.project.resourceFilters": [
+    "node_modules",
+    ".git",
+    "capacitor-cordova-android-plugins"
   ],
   "files.watcherExclude": {
-    "**/apps/web/android/capacitor-cordova-android-plugins/**": true
+    "**/apps/web/android/capacitor-cordova-android-plugins/**": true,
+    "**/capacitor-cordova-android-plugins/**": true
   },
   "search.exclude": {
-    "**/apps/web/android/capacitor-cordova-android-plugins/**": true
+    "**/apps/web/android/capacitor-cordova-android-plugins/**": true,
+    "**/capacitor-cordova-android-plugins/**": true
   }
 }
