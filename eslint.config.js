@@ -11,6 +11,7 @@ export default tseslint.config(
       '**/.next/**',
       'apps/web/.next/**',
       'apps/web/next-env.d.ts',
+      'apps/web/e2e/**',
     ],
   },
   {
