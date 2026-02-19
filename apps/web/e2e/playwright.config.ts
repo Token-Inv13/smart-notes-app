@@ -1,17 +1,18 @@
 import { defineConfig } from "@playwright/test";
 
-const baseURL = process.env.E2E_BASE_URL;
+const isCI = process.env.CI === "true";
+const baseURL = process.env.E2E_BASE_URL?.trim() || "http://127.0.0.1:3000";
 
-if (!baseURL) {
+if (isCI && !process.env.E2E_BASE_URL?.trim()) {
   throw new Error("Missing E2E_BASE_URL. Example: https://app.tachesnotes.com");
 }
 
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: false,
-  forbidOnly: Boolean(process.env.CI),
-  retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  forbidOnly: isCI,
+  retries: isCI ? 1 : 0,
+  workers: isCI ? 1 : undefined,
   timeout: 60_000,
   expect: {
     timeout: 10_000,

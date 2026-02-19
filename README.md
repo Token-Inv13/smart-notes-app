@@ -24,6 +24,51 @@ Les alias explicites existent aussi :
 - `pnpm web:start`
 - `pnpm web:lint`
 - `pnpm web:typecheck`
+- `pnpm e2e:install`
+- `pnpm e2e`
+
+## E2E Playwright
+
+Le runner E2E lit `E2E_BASE_URL`.
+
+- En local, si `E2E_BASE_URL` est absent, la base URL par défaut est `http://127.0.0.1:3000`.
+- En CI (`CI=true`), `E2E_BASE_URL` est **obligatoire** et le workflow échoue si la variable est absente.
+
+Variables requises pour la suite complète:
+
+- `E2E_BASE_URL`
+- `E2E_OWNER_EMAIL`
+- `E2E_OWNER_PASSWORD`
+- `E2E_EDITOR_EMAIL`
+- `E2E_EDITOR_PASSWORD`
+- `E2E_VIEWER_EMAIL`
+- `E2E_VIEWER_PASSWORD`
+
+Exemples d'export local:
+
+PowerShell:
+
+```powershell
+$env:E2E_BASE_URL="https://app.tachesnotes.com"
+$env:E2E_OWNER_EMAIL="owner@example.com"
+$env:E2E_OWNER_PASSWORD="***"
+$env:E2E_EDITOR_EMAIL="editor@example.com"
+$env:E2E_EDITOR_PASSWORD="***"
+$env:E2E_VIEWER_EMAIL="viewer@example.com"
+$env:E2E_VIEWER_PASSWORD="***"
+```
+
+bash:
+
+```bash
+export E2E_BASE_URL="https://app.tachesnotes.com"
+export E2E_OWNER_EMAIL="owner@example.com"
+export E2E_OWNER_PASSWORD="***"
+export E2E_EDITOR_EMAIL="editor@example.com"
+export E2E_EDITOR_PASSWORD="***"
+export E2E_VIEWER_EMAIL="viewer@example.com"
+export E2E_VIEWER_PASSWORD="***"
+```
 
 ## Cloud Functions
 
@@ -53,6 +98,8 @@ Créer un projet Vercel pointant ce repository avec :
 - **Install Command**: `pnpm install`
 - **Build Command**: `pnpm build`
 - **Node.js**: 20.x
+
+Si Vercel affiche un warning runtime Node, vérifier aussi **Project Settings → General → Node.js Version** et forcer `20.x`.
 
 Variables d'environnement à configurer en production :
 

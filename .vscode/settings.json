@@ -1,0 +1,14 @@
+{
+  "npm.packageManager": "pnpm",
+  "chatgpt.openOnStartup": true,
+  "java.configuration.updateBuildConfiguration": "interactive",
+  "java.import.exclusions": [
+    "**/apps/web/android/capacitor-cordova-android-plugins/**"
+  ],
+  "files.watcherExclude": {
+    "**/apps/web/android/capacitor-cordova-android-plugins/**": true
+  },
+  "search.exclude": {
+    "**/apps/web/android/capacitor-cordova-android-plugins/**": true
+  }
+}

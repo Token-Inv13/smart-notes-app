@@ -32,9 +32,14 @@ apps/web/.next/
 apps/web/public/sw.js
 apps/web/public/workbox-*.js
 
+# Playwright generated artifacts (apps/web)
+apps/web/e2e/playwright-report/
+apps/web/e2e/test-results/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
+!.vscode/settings.json
 .idea
 .DS_Store
 *.suo

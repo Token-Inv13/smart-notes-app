@@ -13,6 +13,7 @@ export default tseslint.config(
       '.next/**',
       'public/**',
       'android/**',
+      'e2e/**',
       'next-env.d.ts',
     ],
   },

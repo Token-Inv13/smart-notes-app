@@ -12,13 +12,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
-      E2E_OWNER_EMAIL: ${{ secrets.E2E_OWNER_EMAIL }}
-      E2E_OWNER_PASSWORD: ${{ secrets.E2E_OWNER_PASSWORD }}
-      E2E_EDITOR_EMAIL: ${{ secrets.E2E_EDITOR_EMAIL }}
-      E2E_EDITOR_PASSWORD: ${{ secrets.E2E_EDITOR_PASSWORD }}
-      E2E_VIEWER_EMAIL: ${{ secrets.E2E_VIEWER_EMAIL }}
-      E2E_VIEWER_PASSWORD: ${{ secrets.E2E_VIEWER_PASSWORD }}
+      E2E_BASE_URL: ${{ secrets['E2E_BASE_URL'] }}
+      E2E_OWNER_EMAIL: ${{ secrets['E2E_OWNER_EMAIL'] }}
+      E2E_OWNER_PASSWORD: ${{ secrets['E2E_OWNER_PASSWORD'] }}
+      E2E_EDITOR_EMAIL: ${{ secrets['E2E_EDITOR_EMAIL'] }}
+      E2E_EDITOR_PASSWORD: ${{ secrets['E2E_EDITOR_PASSWORD'] }}
+      E2E_VIEWER_EMAIL: ${{ secrets['E2E_VIEWER_EMAIL'] }}
+      E2E_VIEWER_PASSWORD: ${{ secrets['E2E_VIEWER_PASSWORD'] }}
 
     steps:
       - name: Checkout
@@ -47,14 +47,48 @@ jobs:
       - name: Web build
         run: pnpm web:build
 
+      - name: Check E2E secret availability
+        id: e2e_guard
+        shell: bash
+        run: |
+          required=(
+            E2E_BASE_URL
+            E2E_OWNER_EMAIL
+            E2E_OWNER_PASSWORD
+            E2E_EDITOR_EMAIL
+            E2E_EDITOR_PASSWORD
+            E2E_VIEWER_EMAIL
+            E2E_VIEWER_PASSWORD
+          )
+
+          missing=0
+          for key in "${required[@]}"; do
+            if [ -z "${!key}" ]; then
+              echo "::notice title=E2E skipped::Missing $key"
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -eq 0 ]; then
+            echo "run_e2e=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_e2e=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install Playwright browsers
+        if: steps.e2e_guard.outputs.run_e2e == 'true'
         run: pnpm e2e:install
 
       - name: Run E2E
+        if: steps.e2e_guard.outputs.run_e2e == 'true'
         run: pnpm e2e
 
+      - name: E2E skipped (missing secrets)
+        if: steps.e2e_guard.outputs.run_e2e != 'true'
+        run: echo "Skipping E2E run because one or more E2E_* secrets are missing."
+
       - name: Upload Playwright artifacts (failure only)
-        if: failure()
+        if: failure() && steps.e2e_guard.outputs.run_e2e == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: playwright-artifacts
