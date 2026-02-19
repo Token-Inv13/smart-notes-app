@@ -238,7 +238,10 @@ service cloud.firestore {
     match /workspaces/{workspaceId} {
       allow read: if isAuthenticated() && (
         isOwner(resource.data.ownerId) || 
-        request.auth.uid in resource.data.members
+        (
+          resource.data.members is list &&
+          request.auth.uid in resource.data.members
+        )
       );
       allow create: if isAuthenticated()
         && request.resource.data.ownerId == request.auth.uid

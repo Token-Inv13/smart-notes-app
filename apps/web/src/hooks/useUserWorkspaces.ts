@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, type FirestoreError } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/hooks/useAuth';
 import { invalidateAuthSession, isAuthInvalidError } from '@/lib/authInvalidation';
@@ -43,9 +43,13 @@ export function useUserWorkspaces(): UseUserWorkspacesState {
       where('members', 'array-contains', user.uid),
     );
 
+    let ownerStreamOk = false;
+    let memberStreamOk = false;
+
     const unsubscribeOwners = onSnapshot(
       ownerRef,
       (snapshot) => {
+        ownerStreamOk = true;
         const ownerDocs = snapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as WorkspaceDoc) }));
         setData((prev) => {
           const memberOnly = prev.filter((w) => w.ownerId !== user.uid);
@@ -55,10 +59,17 @@ export function useUserWorkspaces(): UseUserWorkspacesState {
           });
           return Array.from(byId.values());
         });
+        setError(null);
         setLoading(false);
       },
       (err) => {
-        setError(err as Error);
+        const firestoreErr = err as FirestoreError;
+        if (firestoreErr.code === 'permission-denied' && memberStreamOk) {
+          setLoading(false);
+          return;
+        }
+
+        setError(firestoreErr);
         setLoading(false);
         if (isAuthInvalidError(err)) {
           void invalidateAuthSession();
@@ -69,6 +80,7 @@ export function useUserWorkspaces(): UseUserWorkspacesState {
     const unsubscribeMembers = onSnapshot(
       memberRef,
       (snapshot) => {
+        memberStreamOk = true;
         const memberDocs = snapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as WorkspaceDoc) }));
         setData((prev) => {
           const ownerOnly = prev.filter((w) => w.ownerId === user.uid);
@@ -78,10 +90,17 @@ export function useUserWorkspaces(): UseUserWorkspacesState {
           });
           return Array.from(byId.values());
         });
+        setError(null);
         setLoading(false);
       },
       (err) => {
-        setError(err as Error);
+        const firestoreErr = err as FirestoreError;
+        if (firestoreErr.code === 'permission-denied' && ownerStreamOk) {
+          setLoading(false);
+          return;
+        }
+
+        setError(firestoreErr);
         setLoading(false);
         if (isAuthInvalidError(err)) {
           void invalidateAuthSession();
