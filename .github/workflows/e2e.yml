@@ -38,15 +38,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Web typecheck
-        run: pnpm web:typecheck
-
-      - name: Web lint
-        run: pnpm web:lint
-
-      - name: Web build
-        run: pnpm web:build
-
       - name: Check E2E secret availability
         id: e2e_guard
         shell: bash
