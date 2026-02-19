@@ -37,13 +37,23 @@ export function getE2EUsers(): E2EUsers {
 }
 
 export async function loginViaUi(page: Page, user: E2EUser, nextPath = "/dashboard"): Promise<void> {
-  await page.goto(`/login?next=${encodeURIComponent(nextPath)}`);
+  await page.goto(`/login?next=${encodeURIComponent(nextPath)}`, { waitUntil: "domcontentloaded" });
 
-  await page.getByLabel("Email").fill(user.email);
-  await page.getByLabel("Mot de passe").fill(user.password);
+  if (!page.url().includes("/login")) {
+    return;
+  }
+
+  const emailInput = page.locator("#email");
+  const passwordInput = page.locator("#password");
+
+  await expect(emailInput).toBeVisible({ timeout: 20_000 });
+  await expect(passwordInput).toBeVisible({ timeout: 20_000 });
+
+  await emailInput.fill(user.email);
+  await passwordInput.fill(user.password);
 
   await Promise.all([
-    page.waitForLoadState("networkidle"),
+    page.waitForURL((url) => !url.pathname.includes("/login"), { timeout: 20_000 }),
     page.getByRole("button", { name: "Se connecter", exact: true }).click(),
   ]);
 

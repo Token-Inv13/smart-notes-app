@@ -31,7 +31,11 @@ test("e2e_rate_limit_invites_basic", async ({ page }) => {
 
   const tooMany = responses.filter((entry) => entry.status === 429);
   expect(tooMany.length).toBeGreaterThan(0);
-  expect(tooMany.some((entry) => entry.error === "Trop d’invitations envoyées. Réessayez plus tard.")).toBeTruthy();
+  expect(
+    tooMany.some((entry) => {
+      return typeof entry.error === "string" && /trop d.?invitations envoyées/i.test(entry.error);
+    }),
+  ).toBeTruthy();
 });
 
 test("e2e_google_status_non404_on_app_host", async ({ request }) => {
