@@ -96,6 +96,510 @@ async function endFunctionObserve(
   console.info('ops.function.completed', payload);
 }
 
+type OpsMetricLabels = Record<string, string>;
+
+type OpsJobSnapshotInput = {
+  functionName: 'checkAndSendReminders' | 'assistantRunJobQueue' | 'assistantRunAIJobQueue';
+  requestId: string;
+  success: boolean;
+  durationMs: number;
+  processed: number;
+  failed: number;
+  backlogSize: number;
+  sent?: number;
+  shardCount?: number;
+  stoppedByBacklogGuard?: boolean;
+  stopThresholdHit?: boolean;
+};
+
+type OpsStateDoc = {
+  jobName: string;
+  lastRunAtMs: number;
+  lastSuccessAtMs?: number;
+  lastFailureAtMs?: number;
+  lastDurationMs: number;
+  lastBacklogSize: number;
+  lastProcessed: number;
+  lastFailed: number;
+  lastSent?: number;
+  lastShardCount?: number;
+  lastStoppedByBacklogGuard?: boolean;
+  lastStopThresholdHit?: boolean;
+  consecutiveFailures: number;
+  backlogAboveThresholdRuns: number;
+  updatedAt: FirebaseFirestore.FieldValue;
+};
+
+function readEnvNumber(name: string, fallback: number): number {
+  const raw = typeof process.env[name] === 'string' ? process.env[name]?.trim() : '';
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  return parsed;
+}
+
+function readEnvString(name: string): string {
+  const raw = process.env[name];
+  return typeof raw === 'string' ? raw.trim() : '';
+}
+
+function getOpsAlertRecipients(): string[] {
+  const raw = readEnvString('OPS_ALERT_EMAIL_TO');
+  if (!raw) return [];
+  return raw
+    .split(/[;,]/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function opsAlertCooldownMs(): number {
+  return Math.max(60_000, Math.trunc(readEnvNumber('OPS_ALERT_COOLDOWN_MS', 30 * 60 * 1000)));
+}
+
+function opsConsecutiveFailThreshold(): number {
+  return Math.max(1, Math.trunc(readEnvNumber('OPS_ALERT_CONSEC_FAIL_THRESHOLD', 3)));
+}
+
+function opsReminderBacklogThreshold(): number {
+  return Math.max(1, Math.trunc(readEnvNumber('OPS_ALERT_BACKLOG_THRESHOLD_REMINDERS', 180)));
+}
+
+function opsAssistantBacklogThreshold(): number {
+  return Math.max(1, Math.trunc(readEnvNumber('OPS_ALERT_BACKLOG_THRESHOLD_ASSISTANT', 40)));
+}
+
+function opsErrorRateThreshold(): number {
+  const ratio = readEnvNumber('OPS_ALERT_ERROR_RATE_THRESHOLD', 0.3);
+  if (!Number.isFinite(ratio)) return 0.3;
+  return Math.max(0.01, Math.min(1, ratio));
+}
+
+function opsGoogleGuardThreshold(): number {
+  return Math.max(1, Math.trunc(readEnvNumber('OPS_ALERT_GOOGLE_GUARD_THRESHOLD', 6)));
+}
+
+function opsRunStaleThresholdMs(): number {
+  return Math.max(60_000, Math.trunc(readEnvNumber('OPS_ALERT_STALE_SUCCESS_MS', 15 * 60 * 1000)));
+}
+
+function toMinuteBucket(date: Date): string {
+  return date.toISOString().slice(0, 16);
+}
+
+function toHourBucket(date: Date): string {
+  return date.toISOString().slice(0, 13);
+}
+
+function toDayBucket(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function bucketStartMs(bucket: string): number {
+  const iso =
+    bucket.length === 16 ? `${bucket}:00.000Z` : bucket.length === 13 ? `${bucket}:00:00.000Z` : `${bucket}T00:00:00.000Z`;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : Date.now();
+}
+
+async function upsertOpsMetricBuckets(params: {
+  db: FirebaseFirestore.Firestore;
+  metricKey: string;
+  value: number;
+  labels?: OpsMetricLabels;
+  now: Date;
+}) {
+  const { db, metricKey, labels, now } = params;
+  const value = Number.isFinite(params.value) ? params.value : 0;
+  const buckets = [toMinuteBucket(now), toHourBucket(now), toDayBucket(now)];
+
+  const batch = db.batch();
+  for (const bucket of buckets) {
+    const pointRef = db.collection('opsMetrics').doc(metricKey).collection('points').doc(bucket);
+    batch.set(
+      pointRef,
+      {
+        metricKey,
+        bucket,
+        createdAtMs: bucketStartMs(bucket),
+        value: admin.firestore.FieldValue.increment(value),
+        ...(labels ? { labels } : {}),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
+
+  await batch.commit();
+}
+
+async function sumOpsMetricSince(params: {
+  db: FirebaseFirestore.Firestore;
+  metricKey: string;
+  sinceMs: number;
+}): Promise<number> {
+  const { db, metricKey, sinceMs } = params;
+  const snap = await db
+    .collection('opsMetrics')
+    .doc(metricKey)
+    .collection('points')
+    .where('createdAtMs', '>=', sinceMs)
+    .get();
+
+  return snap.docs.reduce((acc, doc) => {
+    const raw = doc.get('value');
+    return acc + (typeof raw === 'number' && Number.isFinite(raw) ? raw : 0);
+  }, 0);
+}
+
+async function updateOpsStateAfterRun(params: {
+  db: FirebaseFirestore.Firestore;
+  jobName: OpsJobSnapshotInput['functionName'];
+  nowMs: number;
+  success: boolean;
+  durationMs: number;
+  backlogSize: number;
+  backlogThreshold: number;
+  processed: number;
+  failed: number;
+  sent?: number;
+  shardCount?: number;
+  stoppedByBacklogGuard?: boolean;
+  stopThresholdHit?: boolean;
+}): Promise<{ consecutiveFailures: number; backlogAboveThresholdRuns: number; lastSuccessAtMs: number | null }> {
+  const { db } = params;
+  const ref = db.collection('opsState').doc(params.jobName);
+
+  return await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const prev = (snap.exists ? (snap.data() as Partial<OpsStateDoc>) : null) ?? {};
+
+    const prevConsecutive = typeof prev.consecutiveFailures === 'number' ? Math.max(0, Math.trunc(prev.consecutiveFailures)) : 0;
+    const prevBacklogRuns =
+      typeof prev.backlogAboveThresholdRuns === 'number' ? Math.max(0, Math.trunc(prev.backlogAboveThresholdRuns)) : 0;
+    const nextConsecutive = params.success ? 0 : prevConsecutive + 1;
+    const backlogAbove = params.backlogSize > params.backlogThreshold;
+    const nextBacklogRuns = backlogAbove ? prevBacklogRuns + 1 : 0;
+    const prevLastSuccessAtMs = typeof prev.lastSuccessAtMs === 'number' ? prev.lastSuccessAtMs : null;
+    const nextLastSuccessAtMs = params.success ? params.nowMs : prevLastSuccessAtMs;
+
+    const payload: OpsStateDoc = {
+      jobName: params.jobName,
+      lastRunAtMs: params.nowMs,
+      ...(params.success ? { lastSuccessAtMs: params.nowMs } : { lastFailureAtMs: params.nowMs }),
+      lastDurationMs: Math.max(0, Math.trunc(params.durationMs)),
+      lastBacklogSize: Math.max(0, Math.trunc(params.backlogSize)),
+      lastProcessed: Math.max(0, Math.trunc(params.processed)),
+      lastFailed: Math.max(0, Math.trunc(params.failed)),
+      ...(typeof params.sent === 'number' ? { lastSent: Math.max(0, Math.trunc(params.sent)) } : {}),
+      ...(typeof params.shardCount === 'number' ? { lastShardCount: Math.max(0, Math.trunc(params.shardCount)) } : {}),
+      ...(typeof params.stoppedByBacklogGuard === 'boolean'
+        ? { lastStoppedByBacklogGuard: params.stoppedByBacklogGuard }
+        : {}),
+      ...(typeof params.stopThresholdHit === 'boolean' ? { lastStopThresholdHit: params.stopThresholdHit } : {}),
+      consecutiveFailures: nextConsecutive,
+      backlogAboveThresholdRuns: nextBacklogRuns,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    tx.set(ref, payload, { merge: true });
+    return {
+      consecutiveFailures: nextConsecutive,
+      backlogAboveThresholdRuns: nextBacklogRuns,
+      lastSuccessAtMs: nextLastSuccessAtMs,
+    };
+  });
+}
+
+function opsLogsUrl(functionName: string): string {
+  const projectId = readEnvString('GCLOUD_PROJECT') || readEnvString('GCP_PROJECT');
+  if (!projectId) return 'https://console.cloud.google.com/logs/query';
+  return `https://console.cloud.google.com/logs/query?project=${encodeURIComponent(projectId)}&query=${encodeURIComponent(
+    `resource.type="cloud_function"\nlabels.function_name="${functionName}"`,
+  )}`;
+}
+
+async function sendOpsAlertEmail(params: {
+  subject: string;
+  lines: string[];
+  recipients: string[];
+  functionName: string;
+}): Promise<boolean> {
+  if (params.recipients.length === 0) return false;
+  const resolved = getSmtpEnv();
+  if (!resolved) {
+    console.warn('ops.alert.email.skipped_missing_smtp', { functionName: params.functionName });
+    return false;
+  }
+
+  const { env } = resolved;
+  const transporter = nodemailer.createTransport({
+    host: env.host,
+    port: env.port,
+    secure: env.port === 465,
+    requireTLS: env.port === 587,
+    tls: { minVersion: 'TLSv1.2' },
+    auth: {
+      user: env.user,
+      pass: env.pass,
+    },
+  });
+
+  const html = `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111;">${params.lines
+    .map((line) => `<p style="margin:0 0 10px;">${escapeHtml(line)}</p>`)
+    .join('')}</div>`;
+
+  await transporter.sendMail({
+    from: env.from,
+    to: params.recipients.join(','),
+    replyTo: env.from,
+    subject: params.subject,
+    html,
+  });
+  return true;
+}
+
+async function sendOpsAlertSlack(params: {
+  title: string;
+  lines: string[];
+  functionName: string;
+}): Promise<boolean> {
+  const webhookUrl = readEnvString('SLACK_WEBHOOK_URL');
+  if (!webhookUrl) return false;
+
+  const text = [params.title, ...params.lines].join('\n');
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Slack webhook failed (${response.status}): ${body}`);
+  }
+
+  return true;
+}
+
+async function maybeDispatchOpsAlert(params: {
+  db: FirebaseFirestore.Firestore;
+  alertKey: string;
+  functionName: OpsJobSnapshotInput['functionName'];
+  title: string;
+  lines: string[];
+  nowMs: number;
+}) {
+  const cooldownMs = opsAlertCooldownMs();
+  const alertRef = params.db.collection('opsAlerts').doc(params.alertKey);
+
+  const txResult = await params.db.runTransaction(async (tx) => {
+    const snap = await tx.get(alertRef);
+    const data = snap.exists ? (snap.data() as { lastSentAtMs?: unknown; sentCount?: unknown }) : null;
+    const lastSentAtMs = typeof data?.lastSentAtMs === 'number' ? data.lastSentAtMs : 0;
+    const sentCount = typeof data?.sentCount === 'number' ? Math.max(0, Math.trunc(data.sentCount)) : 0;
+    const cooldownRemainingMs = lastSentAtMs + cooldownMs - params.nowMs;
+
+    if (cooldownRemainingMs > 0) {
+      return { shouldSend: false as const, sentCount, lastSentAtMs };
+    }
+
+    tx.set(
+      alertRef,
+      {
+        alertKey: params.alertKey,
+        jobName: params.functionName,
+        lastTitle: params.title,
+        lastMessage: params.lines.join(' | '),
+        lastSentAtMs: params.nowMs,
+        sentCount: sentCount + 1,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+
+    return { shouldSend: true as const, sentCount: sentCount + 1, lastSentAtMs: params.nowMs };
+  });
+
+  if (!txResult.shouldSend) return;
+
+  const recipients = getOpsAlertRecipients();
+  const lines = [...params.lines, `Logs: ${opsLogsUrl(params.functionName)}`];
+
+  let emailSent = false;
+  let slackSent = false;
+  let emailError: string | null = null;
+  let slackError: string | null = null;
+
+  try {
+    emailSent = await sendOpsAlertEmail({
+      subject: params.title,
+      lines,
+      recipients,
+      functionName: params.functionName,
+    });
+  } catch (err) {
+    emailError = err instanceof Error ? err.message : String(err);
+  }
+
+  try {
+    slackSent = await sendOpsAlertSlack({ title: params.title, lines, functionName: params.functionName });
+  } catch (err) {
+    slackError = err instanceof Error ? err.message : String(err);
+  }
+
+  console.warn('ops.alert.dispatched', {
+    alertKey: params.alertKey,
+    functionName: params.functionName,
+    emailSent,
+    slackSent,
+    emailError,
+    slackError,
+  });
+}
+
+async function writeOpsJobSnapshot(input: OpsJobSnapshotInput) {
+  const db = admin.firestore();
+  const now = new Date();
+  const nowMs = now.getTime();
+  const labels = { jobName: input.functionName };
+
+  const metricWrites: Array<Promise<void>> = [
+    upsertOpsMetricBuckets({ db, metricKey: `ops.job.${input.functionName}.processed`, value: input.processed, labels, now }),
+    upsertOpsMetricBuckets({ db, metricKey: `ops.job.${input.functionName}.failed`, value: input.failed, labels, now }),
+    upsertOpsMetricBuckets({ db, metricKey: `ops.job.${input.functionName}.backlogSize`, value: input.backlogSize, labels, now }),
+    upsertOpsMetricBuckets({ db, metricKey: `ops.job.${input.functionName}.durationMs`, value: input.durationMs, labels, now }),
+  ];
+
+  if (typeof input.sent === 'number') {
+    metricWrites.push(
+      upsertOpsMetricBuckets({ db, metricKey: `ops.job.${input.functionName}.sent`, value: input.sent, labels, now }),
+    );
+  }
+  if (typeof input.shardCount === 'number') {
+    metricWrites.push(
+      upsertOpsMetricBuckets({ db, metricKey: `ops.job.${input.functionName}.shardCount`, value: input.shardCount, labels, now }),
+    );
+  }
+  if (input.stoppedByBacklogGuard) {
+    metricWrites.push(
+      upsertOpsMetricBuckets({
+        db,
+        metricKey: `ops.job.${input.functionName}.stoppedByBacklogGuard`,
+        value: 1,
+        labels,
+        now,
+      }),
+    );
+  }
+  if (input.stopThresholdHit) {
+    metricWrites.push(
+      upsertOpsMetricBuckets({ db, metricKey: `ops.job.${input.functionName}.stopThresholdHit`, value: 1, labels, now }),
+    );
+  }
+
+  await Promise.all(metricWrites);
+
+  const backlogThreshold =
+    input.functionName === 'checkAndSendReminders' ? opsReminderBacklogThreshold() : opsAssistantBacklogThreshold();
+  const state = await updateOpsStateAfterRun({
+    db,
+    jobName: input.functionName,
+    nowMs,
+    success: input.success,
+    durationMs: input.durationMs,
+    backlogSize: input.backlogSize,
+    backlogThreshold,
+    processed: input.processed,
+    failed: input.failed,
+    sent: input.sent,
+    shardCount: input.shardCount,
+    stoppedByBacklogGuard: input.stoppedByBacklogGuard,
+    stopThresholdHit: input.stopThresholdHit,
+  });
+
+  const sinceMs = nowMs - 10 * 60 * 1000;
+  const [processed10m, failed10m, googleGuardHits10m] = await Promise.all([
+    sumOpsMetricSince({ db, metricKey: `ops.job.${input.functionName}.processed`, sinceMs }),
+    sumOpsMetricSince({ db, metricKey: `ops.job.${input.functionName}.failed`, sinceMs }),
+    sumOpsMetricSince({ db, metricKey: 'ops.metric.google_quota.globalGuardHits', sinceMs }),
+  ]);
+
+  const errorRateBase = processed10m + failed10m;
+  const errorRate10m = errorRateBase > 0 ? failed10m / errorRateBase : 0;
+
+  if (errorRateBase >= 5 && errorRate10m > opsErrorRateThreshold()) {
+    await maybeDispatchOpsAlert({
+      db,
+      alertKey: `${input.functionName}:error-rate-10m`,
+      functionName: input.functionName,
+      title: `[Smart Notes][Ops] Taux d'erreur élevé sur ${input.functionName}`,
+      lines: [
+        `Le taux d'erreur sur 10 min est ${Math.round(errorRate10m * 100)}% (seuil ${Math.round(
+          opsErrorRateThreshold() * 100,
+        )}%).`,
+        `processed=${processed10m}, failed=${failed10m}, requestId=${input.requestId}`,
+      ],
+      nowMs,
+    });
+  }
+
+  if (state.backlogAboveThresholdRuns >= 3) {
+    await maybeDispatchOpsAlert({
+      db,
+      alertKey: `${input.functionName}:backlog-persistent`,
+      functionName: input.functionName,
+      title: `[Smart Notes][Ops] Backlog persistant sur ${input.functionName}`,
+      lines: [
+        `Le backlog (${input.backlogSize}) dépasse le seuil (${backlogThreshold}) depuis ${state.backlogAboveThresholdRuns} runs.`,
+        `Action: vérifier les logs du scheduler et les quotas Firebase/OpenAI.`,
+      ],
+      nowMs,
+    });
+  }
+
+  if (state.consecutiveFailures >= opsConsecutiveFailThreshold()) {
+    await maybeDispatchOpsAlert({
+      db,
+      alertKey: `${input.functionName}:consecutive-failures`,
+      functionName: input.functionName,
+      title: `[Smart Notes][Ops] Échecs consécutifs sur ${input.functionName}`,
+      lines: [
+        `${state.consecutiveFailures} échecs consécutifs détectés (seuil ${opsConsecutiveFailThreshold()}).`,
+        `Dernier requestId=${input.requestId}.`,
+      ],
+      nowMs,
+    });
+  }
+
+  if (state.lastSuccessAtMs && nowMs - state.lastSuccessAtMs > opsRunStaleThresholdMs()) {
+    await maybeDispatchOpsAlert({
+      db,
+      alertKey: `${input.functionName}:stale-success`,
+      functionName: input.functionName,
+      title: `[Smart Notes][Ops] Pas de succès récent pour ${input.functionName}`,
+      lines: [
+        `Aucun run réussi depuis ${Math.round((nowMs - state.lastSuccessAtMs) / 60_000)} min.`,
+        `Seuil actuel: ${Math.round(opsRunStaleThresholdMs() / 60_000)} min.`,
+      ],
+      nowMs,
+    });
+  }
+
+  if (googleGuardHits10m >= opsGoogleGuardThreshold()) {
+    await maybeDispatchOpsAlert({
+      db,
+      alertKey: 'google-quota-global-guard-high',
+      functionName: input.functionName,
+      title: `[Smart Notes][Ops] Guard quota Google élevé`,
+      lines: [
+        `${googleGuardHits10m} hits du guard Google quota sur 10 min (seuil ${opsGoogleGuardThreshold()}).`,
+        `Action: réduire la cadence des appels Calendar ou vérifier les quotas API.`
+      ],
+      nowMs,
+    });
+  }
+}
+
 function backlogOldestAgeMs(
   docs: FirebaseFirestore.QueryDocumentSnapshot[],
   field: string,
@@ -2141,6 +2645,12 @@ export const checkAndSendReminders = functions.pubsub
     const processingBy = typeof (context as any)?.eventId === 'string' && (context as any).eventId
       ? String((context as any).eventId)
       : `run:${nowIso}`;
+    let processedCount = 0;
+    let failedCount = 0;
+    let sentCount = 0;
+    let backlogSize = 0;
+    let shardCount = 0;
+    const stoppedByBacklogGuard = false;
 
     try {
       const db = admin.firestore();
@@ -2151,6 +2661,13 @@ export const checkAndSendReminders = functions.pubsub
         .orderBy('reminderTime', 'asc')
         .limit(200)
         .get();
+
+      backlogSize = remindersSnapshot.size;
+      shardCount = new Set(
+        remindersSnapshot.docs
+          .map((doc) => doc.get('queueShard'))
+          .filter((value) => typeof value === 'string' && value.length > 0),
+      ).size;
 
       const oldestReminderMs = remindersSnapshot.docs
         .map((d) => {
@@ -2184,6 +2701,8 @@ export const checkAndSendReminders = functions.pubsub
         if (!claimed) {
           return;
         }
+
+        processedCount += 1;
         
         // Get the task details
         const taskDoc = await db.collection('tasks').doc(reminder.taskId).get();
@@ -2306,7 +2825,9 @@ export const checkAndSendReminders = functions.pubsub
             processingAt: admin.firestore.FieldValue.delete(),
             processingBy: admin.firestore.FieldValue.delete(),
           });
+          sentCount += 1;
         } else {
+          failedCount += 1;
           // Allow retry on next run (but only after TTL, enforced by claimReminder).
           try {
             await doc.ref.update({ processingAt: admin.firestore.Timestamp.fromDate(now), processingBy });
@@ -2323,11 +2844,35 @@ export const checkAndSendReminders = functions.pubsub
         jobType: 'reminders',
         batchSize: remindersSnapshot.size,
       });
+      await writeOpsJobSnapshot({
+        functionName: 'checkAndSendReminders',
+        requestId: obs.requestId,
+        success: true,
+        durationMs: Date.now() - obs.startMs,
+        processed: processedCount,
+        failed: failedCount,
+        backlogSize,
+        sent: sentCount,
+        shardCount,
+        stoppedByBacklogGuard,
+      });
     } catch (error) {
       console.error('Error processing reminders:', error instanceof Error ? error.message : 'Unknown error');
       await endFunctionObserve(obs, 'error', {
         jobType: 'reminders',
         errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      });
+      await writeOpsJobSnapshot({
+        functionName: 'checkAndSendReminders',
+        requestId: obs.requestId,
+        success: false,
+        durationMs: Date.now() - obs.startMs,
+        processed: processedCount,
+        failed: Math.max(1, failedCount),
+        backlogSize,
+        sent: sentCount,
+        shardCount,
+        stoppedByBacklogGuard,
       });
     }
   });
@@ -2838,73 +3383,92 @@ export const assistantRunJobQueue = functions.pubsub
     const db = admin.firestore();
     const nowDate = new Date();
     const nowTs = admin.firestore.Timestamp.fromDate(nowDate);
+    let processedCount = 0;
+    let failedCount = 0;
+    let backlogSize = 0;
+    const stopThresholdHit = false;
 
-    const snap = await db
-      .collectionGroup('assistantJobs')
-      .where('status', '==', 'queued')
-      .where('lockedUntil', '<=', nowTs)
-      .orderBy('lockedUntil', 'asc')
-      .limit(25)
-      .get();
+    try {
+      const snap = await db
+        .collectionGroup('assistantJobs')
+        .where('status', '==', 'queued')
+        .where('lockedUntil', '<=', nowTs)
+        .orderBy('lockedUntil', 'asc')
+        .limit(25)
+        .get();
 
-    if (snap.empty) {
-      console.log('assistantRunJobQueue: no queued jobs');
-      console.info('ops.metric.queue_backlog', {
-        queue: 'assistantJobs',
-        pending: 0,
-        oldestAgeMs: null,
-      });
-      await endFunctionObserve(obs, 'success', {
-        jobType: 'assistant_queue',
-        batchSize: 0,
-      });
-      return;
-    }
+      backlogSize = snap.size;
 
-    console.info('ops.metric.queue_backlog', {
-      queue: 'assistantJobs',
-      pending: snap.size,
-      oldestAgeMs: backlogOldestAgeMs(snap.docs, 'lockedUntil'),
-    });
-
-    console.log(`assistantRunJobQueue: queued=${snap.size}`);
-
-    const tasks = snap.docs.map(async (jobDoc) => {
-      const userRef = jobDoc.ref.parent.parent;
-      const userId = userRef?.id;
-      if (!userId) return;
-
-      const assistantSettings = await getAssistantSettingsForUser(db, userId);
-      if (!assistantSettings.enabled) return;
-      const jtbdPreset = assistantSettings.jtbdPreset;
-
-      const claimed = await claimAssistantJob({ db, ref: jobDoc.ref, now: nowTs });
-      if (!claimed) return;
-
-      const objectId = typeof claimed.objectId === 'string' ? claimed.objectId : null;
-      if (!objectId) return;
-
-      const objectRef = db.collection('users').doc(userId).collection('assistantObjects').doc(objectId);
-      try {
-        await objectRef.set(
-          {
-            status: 'processing',
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true },
-        );
-      } catch {
-        // ignore
+      if (snap.empty) {
+        console.log('assistantRunJobQueue: no queued jobs');
+        console.info('ops.metric.queue_backlog', {
+          queue: 'assistantJobs',
+          pending: 0,
+          oldestAgeMs: null,
+        });
+        await endFunctionObserve(obs, 'success', {
+          jobType: 'assistant_queue',
+          batchSize: 0,
+        });
+        await writeOpsJobSnapshot({
+          functionName: 'assistantRunJobQueue',
+          requestId: obs.requestId,
+          success: true,
+          durationMs: Date.now() - obs.startMs,
+          processed: 0,
+          failed: 0,
+          backlogSize: 0,
+          stopThresholdHit,
+        });
+        return;
       }
 
-      try {
-        console.log('assistant job processing', {
-          userId,
-          jobId: jobDoc.id,
-          objectId,
-          jobType: claimed.jobType,
-          pipelineVersion: claimed.pipelineVersion,
-        });
+      console.info('ops.metric.queue_backlog', {
+        queue: 'assistantJobs',
+        pending: snap.size,
+        oldestAgeMs: backlogOldestAgeMs(snap.docs, 'lockedUntil'),
+      });
+
+      console.log(`assistantRunJobQueue: queued=${snap.size}`);
+
+      const tasks = snap.docs.map(async (jobDoc) => {
+        const userRef = jobDoc.ref.parent.parent;
+        const userId = userRef?.id;
+        if (!userId) return;
+
+        const assistantSettings = await getAssistantSettingsForUser(db, userId);
+        if (!assistantSettings.enabled) return;
+        const jtbdPreset = assistantSettings.jtbdPreset;
+
+        const claimed = await claimAssistantJob({ db, ref: jobDoc.ref, now: nowTs });
+        if (!claimed) return;
+
+        processedCount += 1;
+
+        const objectId = typeof claimed.objectId === 'string' ? claimed.objectId : null;
+        if (!objectId) return;
+
+        const objectRef = db.collection('users').doc(userId).collection('assistantObjects').doc(objectId);
+        try {
+          await objectRef.set(
+            {
+              status: 'processing',
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        } catch {
+          // ignore
+        }
+
+        try {
+          console.log('assistant job processing', {
+            userId,
+            jobId: jobDoc.id,
+            objectId,
+            jobType: claimed.jobType,
+            pipelineVersion: claimed.pipelineVersion,
+          });
 
         const metricsRef = assistantMetricsRef(db, userId);
 
@@ -3062,7 +3626,7 @@ export const assistantRunJobQueue = functions.pubsub
                   sourceId,
                   objectId,
                   candidates: candidates.length,
-                  bundleMode: !!detectedBundle ? detectedBundle.bundleMode : null,
+                  bundleMode: detectedBundle ? detectedBundle.bundleMode : null,
                 });
 
                 resultCandidates = candidates.length;
@@ -3194,12 +3758,13 @@ export const assistantRunJobQueue = functions.pubsub
         } catch {
           // ignore
         }
-      } catch (e) {
-        console.error('assistant job failed', {
-          userId,
-          jobId: jobDoc.id,
-          error: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : e,
-        });
+        } catch (e) {
+          failedCount += 1;
+          console.error('assistant job failed', {
+            userId,
+            jobId: jobDoc.id,
+            error: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : e,
+          });
 
         try {
           await jobDoc.ref.update({
@@ -3230,15 +3795,41 @@ export const assistantRunJobQueue = functions.pubsub
         } catch {
           // ignore
         }
-      }
-    });
+        }
+      });
 
-    await Promise.all(tasks);
+      await Promise.all(tasks);
 
-    await endFunctionObserve(obs, 'success', {
-      jobType: 'assistant_queue',
-      batchSize: snap.size,
-    });
+      await endFunctionObserve(obs, 'success', {
+        jobType: 'assistant_queue',
+        batchSize: snap.size,
+      });
+      await writeOpsJobSnapshot({
+        functionName: 'assistantRunJobQueue',
+        requestId: obs.requestId,
+        success: true,
+        durationMs: Date.now() - obs.startMs,
+        processed: processedCount,
+        failed: failedCount,
+        backlogSize,
+        stopThresholdHit,
+      });
+    } catch (error) {
+      await endFunctionObserve(obs, 'error', {
+        jobType: 'assistant_queue',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      });
+      await writeOpsJobSnapshot({
+        functionName: 'assistantRunJobQueue',
+        requestId: obs.requestId,
+        success: false,
+        durationMs: Date.now() - obs.startMs,
+        processed: processedCount,
+        failed: Math.max(1, failedCount),
+        backlogSize,
+        stopThresholdHit,
+      });
+    }
   });
 
 export const assistantApplySuggestion = functions.https.onCall(async (data, context) => {
@@ -5423,10 +6014,10 @@ async function processAssistantAIJob(params: {
   jobDoc: FirebaseFirestore.QueryDocumentSnapshot;
   nowDate: Date;
   nowTs: FirebaseFirestore.Timestamp;
-}): Promise<void> {
+}): Promise<{ processed: boolean; failed: boolean }> {
   const { db, userId, jobDoc, nowDate, nowTs } = params;
   const claimed = await claimAssistantAIJob({ db, ref: jobDoc.ref, now: nowTs });
-  if (!claimed) return;
+  if (!claimed) return { processed: false, failed: false };
 
   const noteId = typeof (claimed as any)?.noteId === 'string' ? String((claimed as any).noteId) : null;
   const objectId = typeof claimed.objectId === 'string' ? claimed.objectId : null;
@@ -5435,7 +6026,7 @@ async function processAssistantAIJob(params: {
   const modes = Array.isArray((claimed as any)?.modes) ? ((claimed as any).modes as unknown[]).filter((m) => typeof m === 'string').map((m) => String(m)) : [];
   const rewriteInstruction = typeof (claimed as any)?.rewriteInstruction === 'string' ? String((claimed as any).rewriteInstruction).trim().slice(0, 280) : '';
 
-  if (!noteId || !objectId) return;
+  if (!noteId || !objectId) return { processed: true, failed: true };
 
   const metricsRef = assistantMetricsRef(db, userId);
   const userRef = db.collection('users').doc(userId);
@@ -5451,7 +6042,7 @@ async function processAssistantAIJob(params: {
     const noteUserId = typeof note?.userId === 'string' ? note.userId : null;
     if (!note || noteUserId !== userId) {
       await jobDoc.ref.update({ status: 'error', lockedUntil: admin.firestore.Timestamp.fromMillis(0), error: 'Note not accessible', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-      return;
+      return { processed: true, failed: true };
     }
 
     const title = typeof note?.title === 'string' ? note.title : '';
@@ -5555,7 +6146,7 @@ async function processAssistantAIJob(params: {
         error: null,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
-      return;
+      return { processed: true, failed: false };
     }
     if (fallbackResultRef && existingFallback && existingFallback.exists) {
       await jobDoc.ref.update({
@@ -5569,7 +6160,7 @@ async function processAssistantAIJob(params: {
         error: null,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
-      return;
+      return { processed: true, failed: false };
     }
 
     const requestedModes = new Set(modes.length > 0 ? modes : ['summary', 'actions', 'hooks', 'rewrite', 'entities']);
@@ -5883,6 +6474,7 @@ async function processAssistantAIJob(params: {
       error: null,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+    return { processed: true, failed: false };
   } catch (e) {
     if (e instanceof OpenAIHttpError) {
       console.error('openai.request_failed', {
@@ -5925,6 +6517,7 @@ async function processAssistantAIJob(params: {
     } catch {
       // ignore
     }
+    return { processed: true, failed: true };
   }
 }
 
@@ -5944,49 +6537,96 @@ export const assistantRunAIJobQueue = functions.pubsub
     const db = admin.firestore();
     const nowDate = new Date();
     const nowTs = admin.firestore.Timestamp.fromDate(nowDate);
+    let processedCount = 0;
+    let failedCount = 0;
+    let backlogSize = 0;
+    const stopThresholdHit = false;
 
-    const snap = await db
-      .collectionGroup('assistantAIJobs')
-      .where('status', '==', 'queued')
-      .where('lockedUntil', '<=', nowTs)
-      .orderBy('lockedUntil', 'asc')
-      .limit(10)
-      .get();
+    try {
+      const snap = await db
+        .collectionGroup('assistantAIJobs')
+        .where('status', '==', 'queued')
+        .where('lockedUntil', '<=', nowTs)
+        .orderBy('lockedUntil', 'asc')
+        .limit(10)
+        .get();
 
-    if (snap.empty) {
+      backlogSize = snap.size;
+
+      if (snap.empty) {
+        console.info('ops.metric.queue_backlog', {
+          queue: 'assistantAIJobs',
+          pending: 0,
+          oldestAgeMs: null,
+        });
+        await endFunctionObserve(obs, 'success', {
+          jobType: 'assistant_ai_queue',
+          batchSize: 0,
+        });
+        await writeOpsJobSnapshot({
+          functionName: 'assistantRunAIJobQueue',
+          requestId: obs.requestId,
+          success: true,
+          durationMs: Date.now() - obs.startMs,
+          processed: 0,
+          failed: 0,
+          backlogSize: 0,
+          stopThresholdHit,
+        });
+        return;
+      }
+
       console.info('ops.metric.queue_backlog', {
         queue: 'assistantAIJobs',
-        pending: 0,
-        oldestAgeMs: null,
+        pending: snap.size,
+        oldestAgeMs: backlogOldestAgeMs(snap.docs, 'lockedUntil'),
       });
+
+      const tasks = snap.docs.map(async (jobDoc) => {
+        const userRef = jobDoc.ref.parent.parent;
+        const userId = userRef?.id;
+        if (!userId) return;
+
+        const enabled = await isAssistantEnabledForUser(db, userId);
+        if (!enabled) return;
+
+        const result = await processAssistantAIJob({ db, userId, jobDoc, nowDate, nowTs });
+        if (result.processed) {
+          processedCount += 1;
+          if (result.failed) failedCount += 1;
+        }
+      });
+
+      await Promise.all(tasks);
+
       await endFunctionObserve(obs, 'success', {
         jobType: 'assistant_ai_queue',
-        batchSize: 0,
+        batchSize: snap.size,
       });
-      return;
+      await writeOpsJobSnapshot({
+        functionName: 'assistantRunAIJobQueue',
+        requestId: obs.requestId,
+        success: true,
+        durationMs: Date.now() - obs.startMs,
+        processed: processedCount,
+        failed: failedCount,
+        backlogSize,
+        stopThresholdHit,
+      });
+    } catch (error) {
+      await endFunctionObserve(obs, 'error', {
+        jobType: 'assistant_ai_queue',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      });
+      await writeOpsJobSnapshot({
+        functionName: 'assistantRunAIJobQueue',
+        requestId: obs.requestId,
+        success: false,
+        durationMs: Date.now() - obs.startMs,
+        processed: processedCount,
+        failed: Math.max(1, failedCount),
+        backlogSize,
+        stopThresholdHit,
+      });
     }
-
-    console.info('ops.metric.queue_backlog', {
-      queue: 'assistantAIJobs',
-      pending: snap.size,
-      oldestAgeMs: backlogOldestAgeMs(snap.docs, 'lockedUntil'),
-    });
-
-    const tasks = snap.docs.map(async (jobDoc) => {
-      const userRef = jobDoc.ref.parent.parent;
-      const userId = userRef?.id;
-      if (!userId) return;
-
-      const enabled = await isAssistantEnabledForUser(db, userId);
-      if (!enabled) return;
-
-      await processAssistantAIJob({ db, userId, jobDoc, nowDate, nowTs });
-    });
-
-    await Promise.all(tasks);
-
-    await endFunctionObserve(obs, 'success', {
-      jobType: 'assistant_ai_queue',
-      batchSize: snap.size,
-    });
   });

@@ -155,3 +155,29 @@ Sentry n’est pas encore branché dans ce repo. Si vous activez Sentry:
 1. Créer un projet Sentry Web + Server.
 2. Définir DSN/env sur Vercel/Firebase.
 3. Mapper les alertes P0 du runbook (spike frontend, API 5xx, functions, backlog, quota Google).
+
+## Ops Monitoring & Alerting (PR-12)
+
+- Runbook ops détaillé: `docs/runbook-monitoring.md`
+- Collections Firestore utilisées:
+  - `opsMetrics/{metricKey}/points/{bucket}`
+  - `opsState/{jobName}`
+  - `opsAlerts/{alertKey}`
+- Jobs instrumentés:
+  - `checkAndSendReminders`
+  - `assistantRunJobQueue`
+  - `assistantRunAIJobQueue`
+
+Variables Functions (server-only) pour l’alerting:
+
+- `OPS_ALERT_EMAIL_TO`
+- `OPS_ALERT_COOLDOWN_MS`
+- `OPS_ALERT_BACKLOG_THRESHOLD_REMINDERS`
+- `OPS_ALERT_BACKLOG_THRESHOLD_ASSISTANT`
+- `OPS_ALERT_CONSEC_FAIL_THRESHOLD`
+- `OPS_ALERT_ERROR_RATE_THRESHOLD`
+- `OPS_ALERT_STALE_SUCCESS_MS`
+- `OPS_ALERT_GOOGLE_GUARD_THRESHOLD`
+- `SLACK_WEBHOOK_URL` (optionnel)
+
+Ces variables sont documentées avec des valeurs par défaut dans `/.env.example`.

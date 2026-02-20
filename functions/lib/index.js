@@ -24,6 +24,410 @@ __exportStar(require("./admin"), exports);
 if (!admin.apps.length) {
     admin.initializeApp();
 }
+function beginFunctionObserve(params) {
+    var _a, _b;
+    const ctx = {
+        functionName: params.functionName,
+        requestId: (_a = params.requestId) !== null && _a !== void 0 ? _a : crypto.randomUUID(),
+        startMs: Date.now(),
+        meta: params.meta,
+    };
+    console.info('ops.function.started', Object.assign({ functionName: ctx.functionName, requestId: ctx.requestId }, ((_b = ctx.meta) !== null && _b !== void 0 ? _b : {})));
+    return ctx;
+}
+async function writeFunctionErrorLog(params) {
+    var _a;
+    try {
+        const db = admin.firestore();
+        await db.collection('appErrorLogs').add({
+            source: 'functions',
+            category: 'functions',
+            scope: params.functionName,
+            code: params.code,
+            message: params.message,
+            context: (_a = params.context) !== null && _a !== void 0 ? _a : {},
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+    }
+    catch (_b) {
+        // best effort
+    }
+}
+async function endFunctionObserve(ctx, status, extra) {
+    var _a;
+    const durationMs = Date.now() - ctx.startMs;
+    const payload = Object.assign(Object.assign({ functionName: ctx.functionName, requestId: ctx.requestId, durationMs,
+        status }, ((_a = ctx.meta) !== null && _a !== void 0 ? _a : {})), (extra !== null && extra !== void 0 ? extra : {}));
+    if (status === 'error') {
+        console.error('ops.function.failed', payload);
+        console.warn('ops.metric.functions_error', {
+            functionName: ctx.functionName,
+            count: 1,
+            requestId: ctx.requestId,
+            durationMs,
+        });
+        await writeFunctionErrorLog({
+            functionName: ctx.functionName,
+            code: 'internal',
+            message: 'Function execution failed.',
+            context: payload,
+        });
+        return;
+    }
+    console.info('ops.function.completed', payload);
+}
+function readEnvNumber(name, fallback) {
+    var _a;
+    const raw = typeof process.env[name] === 'string' ? (_a = process.env[name]) === null || _a === void 0 ? void 0 : _a.trim() : '';
+    if (!raw)
+        return fallback;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed))
+        return fallback;
+    return parsed;
+}
+function readEnvString(name) {
+    const raw = process.env[name];
+    return typeof raw === 'string' ? raw.trim() : '';
+}
+function getOpsAlertRecipients() {
+    const raw = readEnvString('OPS_ALERT_EMAIL_TO');
+    if (!raw)
+        return [];
+    return raw
+        .split(/[;,]/)
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+}
+function opsAlertCooldownMs() {
+    return Math.max(60000, Math.trunc(readEnvNumber('OPS_ALERT_COOLDOWN_MS', 30 * 60 * 1000)));
+}
+function opsConsecutiveFailThreshold() {
+    return Math.max(1, Math.trunc(readEnvNumber('OPS_ALERT_CONSEC_FAIL_THRESHOLD', 3)));
+}
+function opsReminderBacklogThreshold() {
+    return Math.max(1, Math.trunc(readEnvNumber('OPS_ALERT_BACKLOG_THRESHOLD_REMINDERS', 180)));
+}
+function opsAssistantBacklogThreshold() {
+    return Math.max(1, Math.trunc(readEnvNumber('OPS_ALERT_BACKLOG_THRESHOLD_ASSISTANT', 40)));
+}
+function opsErrorRateThreshold() {
+    const ratio = readEnvNumber('OPS_ALERT_ERROR_RATE_THRESHOLD', 0.3);
+    if (!Number.isFinite(ratio))
+        return 0.3;
+    return Math.max(0.01, Math.min(1, ratio));
+}
+function opsGoogleGuardThreshold() {
+    return Math.max(1, Math.trunc(readEnvNumber('OPS_ALERT_GOOGLE_GUARD_THRESHOLD', 6)));
+}
+function opsRunStaleThresholdMs() {
+    return Math.max(60000, Math.trunc(readEnvNumber('OPS_ALERT_STALE_SUCCESS_MS', 15 * 60 * 1000)));
+}
+function toMinuteBucket(date) {
+    return date.toISOString().slice(0, 16);
+}
+function toHourBucket(date) {
+    return date.toISOString().slice(0, 13);
+}
+function toDayBucket(date) {
+    return date.toISOString().slice(0, 10);
+}
+function bucketStartMs(bucket) {
+    const iso = bucket.length === 16 ? `${bucket}:00.000Z` : bucket.length === 13 ? `${bucket}:00:00.000Z` : `${bucket}T00:00:00.000Z`;
+    const ms = Date.parse(iso);
+    return Number.isFinite(ms) ? ms : Date.now();
+}
+async function upsertOpsMetricBuckets(params) {
+    const { db, metricKey, labels, now } = params;
+    const value = Number.isFinite(params.value) ? params.value : 0;
+    const buckets = [toMinuteBucket(now), toHourBucket(now), toDayBucket(now)];
+    const batch = db.batch();
+    for (const bucket of buckets) {
+        const pointRef = db.collection('opsMetrics').doc(metricKey).collection('points').doc(bucket);
+        batch.set(pointRef, Object.assign(Object.assign({ metricKey,
+            bucket, createdAtMs: bucketStartMs(bucket), value: admin.firestore.FieldValue.increment(value) }, (labels ? { labels } : {})), { updatedAt: admin.firestore.FieldValue.serverTimestamp() }), { merge: true });
+    }
+    await batch.commit();
+}
+async function sumOpsMetricSince(params) {
+    const { db, metricKey, sinceMs } = params;
+    const snap = await db
+        .collection('opsMetrics')
+        .doc(metricKey)
+        .collection('points')
+        .where('createdAtMs', '>=', sinceMs)
+        .get();
+    return snap.docs.reduce((acc, doc) => {
+        const raw = doc.get('value');
+        return acc + (typeof raw === 'number' && Number.isFinite(raw) ? raw : 0);
+    }, 0);
+}
+async function updateOpsStateAfterRun(params) {
+    const { db } = params;
+    const ref = db.collection('opsState').doc(params.jobName);
+    return await db.runTransaction(async (tx) => {
+        var _a;
+        const snap = await tx.get(ref);
+        const prev = (_a = (snap.exists ? snap.data() : null)) !== null && _a !== void 0 ? _a : {};
+        const prevConsecutive = typeof prev.consecutiveFailures === 'number' ? Math.max(0, Math.trunc(prev.consecutiveFailures)) : 0;
+        const prevBacklogRuns = typeof prev.backlogAboveThresholdRuns === 'number' ? Math.max(0, Math.trunc(prev.backlogAboveThresholdRuns)) : 0;
+        const nextConsecutive = params.success ? 0 : prevConsecutive + 1;
+        const backlogAbove = params.backlogSize > params.backlogThreshold;
+        const nextBacklogRuns = backlogAbove ? prevBacklogRuns + 1 : 0;
+        const prevLastSuccessAtMs = typeof prev.lastSuccessAtMs === 'number' ? prev.lastSuccessAtMs : null;
+        const nextLastSuccessAtMs = params.success ? params.nowMs : prevLastSuccessAtMs;
+        const payload = Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ jobName: params.jobName, lastRunAtMs: params.nowMs }, (params.success ? { lastSuccessAtMs: params.nowMs } : { lastFailureAtMs: params.nowMs })), { lastDurationMs: Math.max(0, Math.trunc(params.durationMs)), lastBacklogSize: Math.max(0, Math.trunc(params.backlogSize)), lastProcessed: Math.max(0, Math.trunc(params.processed)), lastFailed: Math.max(0, Math.trunc(params.failed)) }), (typeof params.sent === 'number' ? { lastSent: Math.max(0, Math.trunc(params.sent)) } : {})), (typeof params.shardCount === 'number' ? { lastShardCount: Math.max(0, Math.trunc(params.shardCount)) } : {})), (typeof params.stoppedByBacklogGuard === 'boolean'
+            ? { lastStoppedByBacklogGuard: params.stoppedByBacklogGuard }
+            : {})), (typeof params.stopThresholdHit === 'boolean' ? { lastStopThresholdHit: params.stopThresholdHit } : {})), { consecutiveFailures: nextConsecutive, backlogAboveThresholdRuns: nextBacklogRuns, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+        tx.set(ref, payload, { merge: true });
+        return {
+            consecutiveFailures: nextConsecutive,
+            backlogAboveThresholdRuns: nextBacklogRuns,
+            lastSuccessAtMs: nextLastSuccessAtMs,
+        };
+    });
+}
+function opsLogsUrl(functionName) {
+    const projectId = readEnvString('GCLOUD_PROJECT') || readEnvString('GCP_PROJECT');
+    if (!projectId)
+        return 'https://console.cloud.google.com/logs/query';
+    return `https://console.cloud.google.com/logs/query?project=${encodeURIComponent(projectId)}&query=${encodeURIComponent(`resource.type=\"cloud_function\"\nlabels.function_name=\"${functionName}\"`)}`;
+}
+async function sendOpsAlertEmail(params) {
+    if (params.recipients.length === 0)
+        return false;
+    const resolved = getSmtpEnv();
+    if (!resolved) {
+        console.warn('ops.alert.email.skipped_missing_smtp', { functionName: params.functionName });
+        return false;
+    }
+    const { env } = resolved;
+    const transporter = nodemailer.createTransport({
+        host: env.host,
+        port: env.port,
+        secure: env.port === 465,
+        requireTLS: env.port === 587,
+        tls: { minVersion: 'TLSv1.2' },
+        auth: {
+            user: env.user,
+            pass: env.pass,
+        },
+    });
+    const html = `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111;">${params.lines
+        .map((line) => `<p style="margin:0 0 10px;">${escapeHtml(line)}</p>`)
+        .join('')}</div>`;
+    await transporter.sendMail({
+        from: env.from,
+        to: params.recipients.join(','),
+        replyTo: env.from,
+        subject: params.subject,
+        html,
+    });
+    return true;
+}
+async function sendOpsAlertSlack(params) {
+    const webhookUrl = readEnvString('SLACK_WEBHOOK_URL');
+    if (!webhookUrl)
+        return false;
+    const text = [params.title, ...params.lines].join('\n');
+    const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text }),
+    });
+    if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        throw new Error(`Slack webhook failed (${response.status}): ${body}`);
+    }
+    return true;
+}
+async function maybeDispatchOpsAlert(params) {
+    const cooldownMs = opsAlertCooldownMs();
+    const alertRef = params.db.collection('opsAlerts').doc(params.alertKey);
+    const txResult = await params.db.runTransaction(async (tx) => {
+        const snap = await tx.get(alertRef);
+        const data = snap.exists ? snap.data() : null;
+        const lastSentAtMs = typeof (data === null || data === void 0 ? void 0 : data.lastSentAtMs) === 'number' ? data.lastSentAtMs : 0;
+        const sentCount = typeof (data === null || data === void 0 ? void 0 : data.sentCount) === 'number' ? Math.max(0, Math.trunc(data.sentCount)) : 0;
+        const cooldownRemainingMs = lastSentAtMs + cooldownMs - params.nowMs;
+        if (cooldownRemainingMs > 0) {
+            return { shouldSend: false, sentCount, lastSentAtMs };
+        }
+        tx.set(alertRef, {
+            alertKey: params.alertKey,
+            jobName: params.functionName,
+            lastTitle: params.title,
+            lastMessage: params.lines.join(' | '),
+            lastSentAtMs: params.nowMs,
+            sentCount: sentCount + 1,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+        return { shouldSend: true, sentCount: sentCount + 1, lastSentAtMs: params.nowMs };
+    });
+    if (!txResult.shouldSend)
+        return;
+    const recipients = getOpsAlertRecipients();
+    const lines = [...params.lines, `Logs: ${opsLogsUrl(params.functionName)}`];
+    let emailSent = false;
+    let slackSent = false;
+    let emailError = null;
+    let slackError = null;
+    try {
+        emailSent = await sendOpsAlertEmail({
+            subject: params.title,
+            lines,
+            recipients,
+            functionName: params.functionName,
+        });
+    }
+    catch (err) {
+        emailError = err instanceof Error ? err.message : String(err);
+    }
+    try {
+        slackSent = await sendOpsAlertSlack({ title: params.title, lines, functionName: params.functionName });
+    }
+    catch (err) {
+        slackError = err instanceof Error ? err.message : String(err);
+    }
+    console.warn('ops.alert.dispatched', {
+        alertKey: params.alertKey,
+        functionName: params.functionName,
+        emailSent,
+        slackSent,
+        emailError,
+        slackError,
+    });
+}
+async function writeOpsJobSnapshot(input) {
+    const db = admin.firestore();
+    const now = new Date();
+    const nowMs = now.getTime();
+    const labels = { jobName: input.functionName };
+    const metricWrites = [
+        upsertOpsMetricBuckets({ db, metricKey: `ops.job.${input.functionName}.processed`, value: input.processed, labels, now }),
+        upsertOpsMetricBuckets({ db, metricKey: `ops.job.${input.functionName}.failed`, value: input.failed, labels, now }),
+        upsertOpsMetricBuckets({ db, metricKey: `ops.job.${input.functionName}.backlogSize`, value: input.backlogSize, labels, now }),
+        upsertOpsMetricBuckets({ db, metricKey: `ops.job.${input.functionName}.durationMs`, value: input.durationMs, labels, now }),
+    ];
+    if (typeof input.sent === 'number') {
+        metricWrites.push(upsertOpsMetricBuckets({ db, metricKey: `ops.job.${input.functionName}.sent`, value: input.sent, labels, now }));
+    }
+    if (typeof input.shardCount === 'number') {
+        metricWrites.push(upsertOpsMetricBuckets({ db, metricKey: `ops.job.${input.functionName}.shardCount`, value: input.shardCount, labels, now }));
+    }
+    if (input.stoppedByBacklogGuard) {
+        metricWrites.push(upsertOpsMetricBuckets({
+            db,
+            metricKey: `ops.job.${input.functionName}.stoppedByBacklogGuard`,
+            value: 1,
+            labels,
+            now,
+        }));
+    }
+    if (input.stopThresholdHit) {
+        metricWrites.push(upsertOpsMetricBuckets({ db, metricKey: `ops.job.${input.functionName}.stopThresholdHit`, value: 1, labels, now }));
+    }
+    await Promise.all(metricWrites);
+    const backlogThreshold = input.functionName === 'checkAndSendReminders' ? opsReminderBacklogThreshold() : opsAssistantBacklogThreshold();
+    const state = await updateOpsStateAfterRun({
+        db,
+        jobName: input.functionName,
+        nowMs,
+        success: input.success,
+        durationMs: input.durationMs,
+        backlogSize: input.backlogSize,
+        backlogThreshold,
+        processed: input.processed,
+        failed: input.failed,
+        sent: input.sent,
+        shardCount: input.shardCount,
+        stoppedByBacklogGuard: input.stoppedByBacklogGuard,
+        stopThresholdHit: input.stopThresholdHit,
+    });
+    const sinceMs = nowMs - 10 * 60 * 1000;
+    const [processed10m, failed10m, googleGuardHits10m] = await Promise.all([
+        sumOpsMetricSince({ db, metricKey: `ops.job.${input.functionName}.processed`, sinceMs }),
+        sumOpsMetricSince({ db, metricKey: `ops.job.${input.functionName}.failed`, sinceMs }),
+        sumOpsMetricSince({ db, metricKey: 'ops.metric.google_quota.globalGuardHits', sinceMs }),
+    ]);
+    const errorRateBase = processed10m + failed10m;
+    const errorRate10m = errorRateBase > 0 ? failed10m / errorRateBase : 0;
+    if (errorRateBase >= 5 && errorRate10m > opsErrorRateThreshold()) {
+        await maybeDispatchOpsAlert({
+            db,
+            alertKey: `${input.functionName}:error-rate-10m`,
+            functionName: input.functionName,
+            title: `[Smart Notes][Ops] Taux d'erreur élevé sur ${input.functionName}`,
+            lines: [
+                `Le taux d'erreur sur 10 min est ${Math.round(errorRate10m * 100)}% (seuil ${Math.round(opsErrorRateThreshold() * 100)}%).`,
+                `processed=${processed10m}, failed=${failed10m}, requestId=${input.requestId}`,
+            ],
+            nowMs,
+        });
+    }
+    if (state.backlogAboveThresholdRuns >= 3) {
+        await maybeDispatchOpsAlert({
+            db,
+            alertKey: `${input.functionName}:backlog-persistent`,
+            functionName: input.functionName,
+            title: `[Smart Notes][Ops] Backlog persistant sur ${input.functionName}`,
+            lines: [
+                `Le backlog (${input.backlogSize}) dépasse le seuil (${backlogThreshold}) depuis ${state.backlogAboveThresholdRuns} runs.`,
+                `Action: vérifier les logs du scheduler et les quotas Firebase/OpenAI.`,
+            ],
+            nowMs,
+        });
+    }
+    if (state.consecutiveFailures >= opsConsecutiveFailThreshold()) {
+        await maybeDispatchOpsAlert({
+            db,
+            alertKey: `${input.functionName}:consecutive-failures`,
+            functionName: input.functionName,
+            title: `[Smart Notes][Ops] Échecs consécutifs sur ${input.functionName}`,
+            lines: [
+                `${state.consecutiveFailures} échecs consécutifs détectés (seuil ${opsConsecutiveFailThreshold()}).`,
+                `Dernier requestId=${input.requestId}.`,
+            ],
+            nowMs,
+        });
+    }
+    if (state.lastSuccessAtMs && nowMs - state.lastSuccessAtMs > opsRunStaleThresholdMs()) {
+        await maybeDispatchOpsAlert({
+            db,
+            alertKey: `${input.functionName}:stale-success`,
+            functionName: input.functionName,
+            title: `[Smart Notes][Ops] Pas de succès récent pour ${input.functionName}`,
+            lines: [
+                `Aucun run réussi depuis ${Math.round((nowMs - state.lastSuccessAtMs) / 60000)} min.`,
+                `Seuil actuel: ${Math.round(opsRunStaleThresholdMs() / 60000)} min.`,
+            ],
+            nowMs,
+        });
+    }
+    if (googleGuardHits10m >= opsGoogleGuardThreshold()) {
+        await maybeDispatchOpsAlert({
+            db,
+            alertKey: 'google-quota-global-guard-high',
+            functionName: input.functionName,
+            title: `[Smart Notes][Ops] Guard quota Google élevé`,
+            lines: [
+                `${googleGuardHits10m} hits du guard Google quota sur 10 min (seuil ${opsGoogleGuardThreshold()}).`,
+                `Action: réduire la cadence des appels Calendar ou vérifier les quotas API.`
+            ],
+            nowMs,
+        });
+    }
+}
+function backlogOldestAgeMs(docs, field) {
+    const values = docs
+        .map((d) => d.get(field))
+        .filter((v) => typeof v === 'object' && v !== null && typeof v.toMillis === 'function')
+        .map((v) => v.toMillis());
+    if (values.length === 0)
+        return null;
+    const min = Math.min(...values);
+    return Math.max(0, Date.now() - min);
+}
 const ASSISTANT_REANALYSIS_FREE_DAILY_LIMIT = 10;
 const ASSISTANT_REANALYSIS_PRO_DAILY_LIMIT = 200;
 const ASSISTANT_AI_ANALYSIS_FREE_DAILY_LIMIT = 2;
@@ -79,6 +483,53 @@ function normalizeAssistantText(raw) {
         return s.toLowerCase().replace(/\s+/g, ' ').trim();
     }
 }
+function decodeBasicHtmlEntities(raw) {
+    return raw
+        .replace(/&(nbsp|amp|lt|gt|#39|apos|quot);/gi, (match) => {
+        const k = match.toLowerCase();
+        if (k === '&nbsp;')
+            return ' ';
+        if (k === '&amp;')
+            return '&';
+        if (k === '&lt;')
+            return '<';
+        if (k === '&gt;')
+            return '>';
+        if (k === '&#39;' || k === '&apos;')
+            return "'";
+        if (k === '&quot;')
+            return '"';
+        return match;
+    })
+        .replace(/&#(\d+);/g, (_, dec) => {
+        const code = Number(dec);
+        if (!Number.isFinite(code) || code <= 0 || code > 0x10ffff)
+            return '';
+        return String.fromCodePoint(code);
+    })
+        .replace(/&#x([0-9a-f]+);/gi, (_, hex) => {
+        const code = Number.parseInt(hex, 16);
+        if (!Number.isFinite(code) || code <= 0 || code > 0x10ffff)
+            return '';
+        return String.fromCodePoint(code);
+    });
+}
+function sanitizeAssistantSnippet(raw) {
+    const input = typeof raw === 'string' ? raw : '';
+    const decoded = decodeBasicHtmlEntities(input.replace(/\r\n?/g, '\n'));
+    return decoded
+        .replace(/<style[\s\S]*?(<\/style>|$)/gi, ' ')
+        .replace(/<script[\s\S]*?(<\/script>|$)/gi, ' ')
+        .replace(/<\s*br\s*\/?>/gi, '\n')
+        .replace(/<\s*\/?\s*(div|p|li|h[1-6]|section|article|blockquote|pre|ul|ol|tr)\b[^>]*>/gi, '\n')
+        .replace(/<\/?[a-z][^>\n]*>/gi, ' ')
+        .replace(/<\/?[a-z][^>\n]*$/gim, ' ')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n[ \t]+/g, '\n')
+        .replace(/[ \t]{2,}/g, ' ')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
 function sha256Hex(input) {
     return (0, crypto_1.createHash)('sha256').update(input).digest('hex');
 }
@@ -130,7 +581,7 @@ async function callOpenAIWhisperTranscription(params) {
     return { text };
 }
 function clampFromText(raw, maxLen) {
-    const s = (raw !== null && raw !== void 0 ? raw : '').trim();
+    const s = sanitizeAssistantSnippet(raw !== null && raw !== void 0 ? raw : '');
     if (s.length <= maxLen)
         return s;
     return `${s.slice(0, maxLen - 1).trim()}…`;
@@ -891,7 +1342,7 @@ function extractBundleTaskTitlesFromText(rawText) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     const out = [];
     const add = (title, originFromText) => {
-        const t = title.replace(/\s+/g, ' ').trim();
+        const t = sanitizeAssistantSnippet(title).replace(/\s+/g, ' ').trim();
         if (!t)
             return;
         out.push({ title: t, originFromText: clampFromText(originFromText, 120) });
@@ -1389,12 +1840,26 @@ async function claimReminder(params) {
 exports.checkAndSendReminders = functions.pubsub
     .schedule('every 1 minutes')
     .onRun(async (context) => {
+    const requestId = typeof (context === null || context === void 0 ? void 0 : context.eventId) === 'string' && context.eventId
+        ? String(context.eventId)
+        : crypto.randomUUID();
+    const obs = beginFunctionObserve({
+        functionName: 'checkAndSendReminders',
+        requestId,
+        meta: { jobType: 'reminders' },
+    });
     const now = new Date();
     const nowIso = now.toISOString();
     const processingTtlMs = 2 * 60 * 1000;
     const processingBy = typeof (context === null || context === void 0 ? void 0 : context.eventId) === 'string' && context.eventId
         ? String(context.eventId)
         : `run:${nowIso}`;
+    let processedCount = 0;
+    let failedCount = 0;
+    let sentCount = 0;
+    let backlogSize = 0;
+    let shardCount = 0;
+    const stoppedByBacklogGuard = false;
     try {
         const db = admin.firestore();
         const remindersSnapshot = await db
@@ -1404,6 +1869,22 @@ exports.checkAndSendReminders = functions.pubsub
             .orderBy('reminderTime', 'asc')
             .limit(200)
             .get();
+        backlogSize = remindersSnapshot.size;
+        shardCount = new Set(remindersSnapshot.docs
+            .map((doc) => doc.get('queueShard'))
+            .filter((value) => typeof value === 'string' && value.length > 0)).size;
+        const oldestReminderMs = remindersSnapshot.docs
+            .map((d) => {
+            const raw = d.data().reminderTime;
+            return typeof raw === 'string' ? Date.parse(raw) : NaN;
+        })
+            .filter((v) => Number.isFinite(v));
+        const oldestReminderAgeMs = oldestReminderMs.length > 0 ? Math.max(0, Date.now() - Math.min(...oldestReminderMs)) : null;
+        console.info('ops.metric.queue_backlog', {
+            queue: 'taskReminders',
+            pending: remindersSnapshot.size,
+            oldestAgeMs: oldestReminderAgeMs,
+        });
         console.log(`checkAndSendReminders: now=${nowIso} reminders=${remindersSnapshot.size}`);
         const reminderPromises = remindersSnapshot.docs.map(async (doc) => {
             var _a, _b;
@@ -1418,6 +1899,7 @@ exports.checkAndSendReminders = functions.pubsub
             if (!claimed) {
                 return;
             }
+            processedCount += 1;
             // Get the task details
             const taskDoc = await db.collection('tasks').doc(reminder.taskId).get();
             if (!taskDoc.exists) {
@@ -1525,8 +2007,10 @@ exports.checkAndSendReminders = functions.pubsub
                     processingAt: admin.firestore.FieldValue.delete(),
                     processingBy: admin.firestore.FieldValue.delete(),
                 });
+                sentCount += 1;
             }
             else {
+                failedCount += 1;
                 // Allow retry on next run (but only after TTL, enforced by claimReminder).
                 try {
                     await doc.ref.update({ processingAt: admin.firestore.Timestamp.fromDate(now), processingBy });
@@ -1538,9 +2022,41 @@ exports.checkAndSendReminders = functions.pubsub
         });
         await Promise.all(reminderPromises);
         console.log('Reminder check completed successfully');
+        await endFunctionObserve(obs, 'success', {
+            jobType: 'reminders',
+            batchSize: remindersSnapshot.size,
+        });
+        await writeOpsJobSnapshot({
+            functionName: 'checkAndSendReminders',
+            requestId: obs.requestId,
+            success: true,
+            durationMs: Date.now() - obs.startMs,
+            processed: processedCount,
+            failed: failedCount,
+            backlogSize,
+            sent: sentCount,
+            shardCount,
+            stoppedByBacklogGuard,
+        });
     }
     catch (error) {
         console.error('Error processing reminders:', error instanceof Error ? error.message : 'Unknown error');
+        await endFunctionObserve(obs, 'error', {
+            jobType: 'reminders',
+            errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        });
+        await writeOpsJobSnapshot({
+            functionName: 'checkAndSendReminders',
+            requestId: obs.requestId,
+            success: false,
+            durationMs: Date.now() - obs.startMs,
+            processed: processedCount,
+            failed: Math.max(1, failedCount),
+            backlogSize,
+            sent: sentCount,
+            shardCount,
+            stoppedByBacklogGuard,
+        });
     }
 });
 exports.assistantExpireSuggestions = functions.pubsub
@@ -1952,193 +2468,249 @@ async function claimAssistantJob(params) {
 exports.assistantRunJobQueue = functions.pubsub
     .schedule('every 1 minutes')
     .onRun(async (context) => {
+    const requestId = typeof (context === null || context === void 0 ? void 0 : context.eventId) === 'string' && context.eventId
+        ? String(context.eventId)
+        : crypto.randomUUID();
+    const obs = beginFunctionObserve({
+        functionName: 'assistantRunJobQueue',
+        requestId,
+        meta: { jobType: 'assistant_queue' },
+    });
     const db = admin.firestore();
     const nowDate = new Date();
     const nowTs = admin.firestore.Timestamp.fromDate(nowDate);
-    const snap = await db
-        .collectionGroup('assistantJobs')
-        .where('status', '==', 'queued')
-        .where('lockedUntil', '<=', nowTs)
-        .orderBy('lockedUntil', 'asc')
-        .limit(25)
-        .get();
-    if (snap.empty) {
-        console.log('assistantRunJobQueue: no queued jobs');
-        return;
-    }
-    console.log(`assistantRunJobQueue: queued=${snap.size}`);
-    const tasks = snap.docs.map(async (jobDoc) => {
-        var _a;
-        const userRef = jobDoc.ref.parent.parent;
-        const userId = userRef === null || userRef === void 0 ? void 0 : userRef.id;
-        if (!userId)
-            return;
-        const assistantSettings = await getAssistantSettingsForUser(db, userId);
-        if (!assistantSettings.enabled)
-            return;
-        const jtbdPreset = assistantSettings.jtbdPreset;
-        const claimed = await claimAssistantJob({ db, ref: jobDoc.ref, now: nowTs });
-        if (!claimed)
-            return;
-        const objectId = typeof claimed.objectId === 'string' ? claimed.objectId : null;
-        if (!objectId)
-            return;
-        const objectRef = db.collection('users').doc(userId).collection('assistantObjects').doc(objectId);
-        try {
-            await objectRef.set({
-                status: 'processing',
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            }, { merge: true });
-        }
-        catch (_b) {
-            // ignore
-        }
-        try {
-            console.log('assistant job processing', {
-                userId,
-                jobId: jobDoc.id,
-                objectId,
-                jobType: claimed.jobType,
-                pipelineVersion: claimed.pipelineVersion,
+    let processedCount = 0;
+    let failedCount = 0;
+    let backlogSize = 0;
+    const stopThresholdHit = false;
+    try {
+        const snap = await db
+            .collectionGroup('assistantJobs')
+            .where('status', '==', 'queued')
+            .where('lockedUntil', '<=', nowTs)
+            .orderBy('lockedUntil', 'asc')
+            .limit(25)
+            .get();
+        backlogSize = snap.size;
+        if (snap.empty) {
+            console.log('assistantRunJobQueue: no queued jobs');
+            console.info('ops.metric.queue_backlog', {
+                queue: 'assistantJobs',
+                pending: 0,
+                oldestAgeMs: null,
             });
-            const metricsRef = assistantMetricsRef(db, userId);
-            let processedTextHash = typeof (claimed === null || claimed === void 0 ? void 0 : claimed.pendingTextHash) === 'string' ? String(claimed.pendingTextHash) : null;
-            let resultCandidates = 0;
-            let resultCreated = 0;
-            let resultUpdated = 0;
-            let resultSkippedProposed = 0;
-            let resultSkippedAccepted = 0;
-            if (claimed.jobType === 'analyze_intents_v1' || claimed.jobType === 'analyze_intents_v2') {
-                const objectSnap = await objectRef.get();
-                const objectData = objectSnap.exists ? objectSnap.data() : null;
-                const coreRef = objectData === null || objectData === void 0 ? void 0 : objectData.coreRef;
-                const sourceCollection = coreRef === null || coreRef === void 0 ? void 0 : coreRef.collection;
-                const sourceId = typeof (coreRef === null || coreRef === void 0 ? void 0 : coreRef.id) === 'string' ? coreRef.id : null;
-                if ((sourceCollection === 'notes' || sourceCollection === 'todos') && sourceId) {
-                    const sourceType = sourceCollection === 'todos' ? 'todo' : 'note';
-                    let sourceText = '';
-                    if (sourceType === 'note') {
-                        const noteSnap = await db.collection('notes').doc(sourceId).get();
-                        const note = noteSnap.exists ? noteSnap.data() : null;
-                        const noteUserId = typeof (note === null || note === void 0 ? void 0 : note.userId) === 'string' ? note.userId : null;
-                        if (note && noteUserId === userId) {
-                            const noteTitle = typeof (note === null || note === void 0 ? void 0 : note.title) === 'string' ? note.title : '';
-                            const noteContent = typeof (note === null || note === void 0 ? void 0 : note.content) === 'string' ? note.content : '';
-                            sourceText = `${noteTitle}\n${noteContent}`;
-                        }
-                    }
-                    else {
-                        const todoSnap = await db.collection('todos').doc(sourceId).get();
-                        const todo = todoSnap.exists ? todoSnap.data() : null;
-                        const todoUserId = typeof (todo === null || todo === void 0 ? void 0 : todo.userId) === 'string' ? todo.userId : null;
-                        if (todo && todoUserId === userId) {
-                            sourceText = buildTodoAssistantText(todo);
-                        }
-                    }
-                    if (sourceText) {
-                        const [sourceTitle, ...restLines] = sourceText.split('\n');
-                        const sourceContent = restLines.join('\n');
-                        const normalized = normalizeAssistantText(sourceText);
-                        processedTextHash = sha256Hex(normalized);
-                        let memoryDefaults = undefined;
-                        try {
-                            const memSnap = await assistantMemoryLiteRef(db, userId).get();
-                            if (memSnap.exists) {
-                                const mem = memSnap.data();
-                                const dp = mem === null || mem === void 0 ? void 0 : mem.defaultPriority;
-                                const drh = mem === null || mem === void 0 ? void 0 : mem.defaultReminderHour;
-                                memoryDefaults = Object.assign(Object.assign({}, (dp === 'low' || dp === 'medium' || dp === 'high' ? { defaultPriority: dp } : {})), (typeof drh === 'number' && Number.isFinite(drh) ? { defaultReminderHour: Math.trunc(drh) } : {}));
+            await endFunctionObserve(obs, 'success', {
+                jobType: 'assistant_queue',
+                batchSize: 0,
+            });
+            await writeOpsJobSnapshot({
+                functionName: 'assistantRunJobQueue',
+                requestId: obs.requestId,
+                success: true,
+                durationMs: Date.now() - obs.startMs,
+                processed: 0,
+                failed: 0,
+                backlogSize: 0,
+                stopThresholdHit,
+            });
+            return;
+        }
+        console.info('ops.metric.queue_backlog', {
+            queue: 'assistantJobs',
+            pending: snap.size,
+            oldestAgeMs: backlogOldestAgeMs(snap.docs, 'lockedUntil'),
+        });
+        console.log(`assistantRunJobQueue: queued=${snap.size}`);
+        const tasks = snap.docs.map(async (jobDoc) => {
+            var _a;
+            const userRef = jobDoc.ref.parent.parent;
+            const userId = userRef === null || userRef === void 0 ? void 0 : userRef.id;
+            if (!userId)
+                return;
+            const assistantSettings = await getAssistantSettingsForUser(db, userId);
+            if (!assistantSettings.enabled)
+                return;
+            const jtbdPreset = assistantSettings.jtbdPreset;
+            const claimed = await claimAssistantJob({ db, ref: jobDoc.ref, now: nowTs });
+            if (!claimed)
+                return;
+            processedCount += 1;
+            const objectId = typeof claimed.objectId === 'string' ? claimed.objectId : null;
+            if (!objectId)
+                return;
+            const objectRef = db.collection('users').doc(userId).collection('assistantObjects').doc(objectId);
+            try {
+                await objectRef.set({
+                    status: 'processing',
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                }, { merge: true });
+            }
+            catch (_b) {
+                // ignore
+            }
+            try {
+                console.log('assistant job processing', {
+                    userId,
+                    jobId: jobDoc.id,
+                    objectId,
+                    jobType: claimed.jobType,
+                    pipelineVersion: claimed.pipelineVersion,
+                });
+                const metricsRef = assistantMetricsRef(db, userId);
+                let processedTextHash = typeof (claimed === null || claimed === void 0 ? void 0 : claimed.pendingTextHash) === 'string' ? String(claimed.pendingTextHash) : null;
+                let resultCandidates = 0;
+                let resultCreated = 0;
+                let resultUpdated = 0;
+                let resultSkippedProposed = 0;
+                let resultSkippedAccepted = 0;
+                if (claimed.jobType === 'analyze_intents_v1' || claimed.jobType === 'analyze_intents_v2') {
+                    const objectSnap = await objectRef.get();
+                    const objectData = objectSnap.exists ? objectSnap.data() : null;
+                    const coreRef = objectData === null || objectData === void 0 ? void 0 : objectData.coreRef;
+                    const sourceCollection = coreRef === null || coreRef === void 0 ? void 0 : coreRef.collection;
+                    const sourceId = typeof (coreRef === null || coreRef === void 0 ? void 0 : coreRef.id) === 'string' ? coreRef.id : null;
+                    if ((sourceCollection === 'notes' || sourceCollection === 'todos') && sourceId) {
+                        const sourceType = sourceCollection === 'todos' ? 'todo' : 'note';
+                        let sourceText = '';
+                        if (sourceType === 'note') {
+                            const noteSnap = await db.collection('notes').doc(sourceId).get();
+                            const note = noteSnap.exists ? noteSnap.data() : null;
+                            const noteUserId = typeof (note === null || note === void 0 ? void 0 : note.userId) === 'string' ? note.userId : null;
+                            if (note && noteUserId === userId) {
+                                const noteTitle = typeof (note === null || note === void 0 ? void 0 : note.title) === 'string' ? note.title : '';
+                                const noteContent = typeof (note === null || note === void 0 ? void 0 : note.content) === 'string' ? note.content : '';
+                                sourceText = `${noteTitle}\n${noteContent}`;
                             }
                         }
-                        catch (_c) {
-                            // ignore
-                        }
-                        const v2 = detectIntentsV2({ title: sourceTitle !== null && sourceTitle !== void 0 ? sourceTitle : '', content: sourceContent, now: nowDate, memory: memoryDefaults });
-                        const detectedSingle = v2.single ? [v2.single] : [];
-                        const detectedBundle = v2.bundle;
-                        console.log('assistant intents detected', {
-                            userId,
-                            sourceType,
-                            sourceId,
-                            objectId,
-                            hasSingle: detectedSingle.length > 0,
-                            hasBundle: !!detectedBundle,
-                        });
-                        if (detectedSingle.length > 0 || detectedBundle) {
-                            const suggestionsCol = db.collection('users').doc(userId).collection('assistantSuggestions');
-                            const expiresAt = admin.firestore.Timestamp.fromMillis(nowDate.getTime() + 14 * 24 * 60 * 60 * 1000);
-                            const nowServer = admin.firestore.FieldValue.serverTimestamp();
-                            const candidates = [];
-                            if (detectedBundle) {
-                                const dedupeKey = buildBundleDedupeKey({ objectId, minimal: detectedBundle.dedupeMinimal });
-                                const payload = Object.assign(Object.assign({ title: detectedBundle.title, tasks: detectedBundle.tasks, bundleMode: detectedBundle.bundleMode }, (sourceType === 'note' ? { noteId: sourceId } : {})), { origin: { fromText: detectedBundle.originFromText }, confidence: detectedBundle.confidence, explanation: detectedBundle.explanation });
-                                const rankScore = computeAssistantSuggestionRankScore({
-                                    jtbdPreset,
-                                    kind: 'create_task_bundle',
-                                    sourceType,
-                                    payload,
-                                });
-                                candidates.push({
-                                    kind: 'create_task_bundle',
-                                    payload,
-                                    dedupeKey,
-                                    rankScore,
-                                    metricsInc: {
-                                        bundlesCreated: 1,
-                                        defaultPriorityAppliedCount: detectedBundle.appliedDefaultPriority ? 1 : 0,
-                                    },
-                                });
+                        else {
+                            const todoSnap = await db.collection('todos').doc(sourceId).get();
+                            const todo = todoSnap.exists ? todoSnap.data() : null;
+                            const todoUserId = typeof (todo === null || todo === void 0 ? void 0 : todo.userId) === 'string' ? todo.userId : null;
+                            if (todo && todoUserId === userId) {
+                                sourceText = buildTodoAssistantText(todo);
                             }
-                            else {
-                                for (const d of detectedSingle) {
-                                    const dedupeKey = buildSuggestionDedupeKey({ objectId, kind: d.kind, minimal: d.dedupeMinimal });
-                                    const payload = Object.assign(Object.assign(Object.assign(Object.assign({ title: d.title }, (d.dueDate ? { dueDate: d.dueDate } : {})), (d.remindAt ? { remindAt: d.remindAt } : {})), (d.priority ? { priority: d.priority } : {})), { origin: {
-                                            fromText: d.originFromText,
-                                        }, confidence: d.confidence, explanation: d.explanation });
-                                    const rankScore = computeAssistantSuggestionRankScore({
-                                        jtbdPreset,
-                                        kind: d.kind,
-                                        sourceType,
-                                        payload,
-                                    });
-                                    candidates.push({
-                                        kind: d.kind,
-                                        payload,
-                                        dedupeKey,
-                                        rankScore,
-                                        metricsInc: {
-                                            suggestionsCreated: 1,
-                                            defaultPriorityAppliedCount: d.appliedDefaultPriority ? 1 : 0,
-                                            defaultReminderHourAppliedCount: d.appliedDefaultReminderHour ? 1 : 0,
-                                        },
-                                    });
+                        }
+                        if (sourceText) {
+                            const [sourceTitle, ...restLines] = sourceText.split('\n');
+                            const sourceContent = restLines.join('\n');
+                            const normalized = normalizeAssistantText(sourceText);
+                            processedTextHash = sha256Hex(normalized);
+                            let memoryDefaults = undefined;
+                            try {
+                                const memSnap = await assistantMemoryLiteRef(db, userId).get();
+                                if (memSnap.exists) {
+                                    const mem = memSnap.data();
+                                    const dp = mem === null || mem === void 0 ? void 0 : mem.defaultPriority;
+                                    const drh = mem === null || mem === void 0 ? void 0 : mem.defaultReminderHour;
+                                    memoryDefaults = Object.assign(Object.assign({}, (dp === 'low' || dp === 'medium' || dp === 'high' ? { defaultPriority: dp } : {})), (typeof drh === 'number' && Number.isFinite(drh) ? { defaultReminderHour: Math.trunc(drh) } : {}));
                                 }
                             }
-                            console.log('assistant suggestions candidates', {
+                            catch (_c) {
+                                // ignore
+                            }
+                            const v2 = detectIntentsV2({ title: sourceTitle !== null && sourceTitle !== void 0 ? sourceTitle : '', content: sourceContent, now: nowDate, memory: memoryDefaults });
+                            const detectedSingle = v2.single ? [v2.single] : [];
+                            const detectedBundle = v2.bundle;
+                            console.log('assistant intents detected', {
                                 userId,
                                 sourceType,
                                 sourceId,
                                 objectId,
-                                candidates: candidates.length,
-                                bundleMode: !!detectedBundle ? detectedBundle.bundleMode : null,
+                                hasSingle: detectedSingle.length > 0,
+                                hasBundle: !!detectedBundle,
                             });
-                            resultCandidates = candidates.length;
-                            for (const c of candidates) {
-                                const sugRef = suggestionsCol.doc(c.dedupeKey);
-                                await db.runTransaction(async (tx) => {
-                                    var _a;
-                                    const existing = await tx.get(sugRef);
-                                    if (existing.exists) {
-                                        const st = (_a = existing.data()) === null || _a === void 0 ? void 0 : _a.status;
-                                        if (st === 'proposed') {
-                                            resultSkippedProposed += 1;
+                            if (detectedSingle.length > 0 || detectedBundle) {
+                                const suggestionsCol = db.collection('users').doc(userId).collection('assistantSuggestions');
+                                const expiresAt = admin.firestore.Timestamp.fromMillis(nowDate.getTime() + 14 * 24 * 60 * 60 * 1000);
+                                const nowServer = admin.firestore.FieldValue.serverTimestamp();
+                                const candidates = [];
+                                if (detectedBundle) {
+                                    const dedupeKey = buildBundleDedupeKey({ objectId, minimal: detectedBundle.dedupeMinimal });
+                                    const payload = Object.assign(Object.assign({ title: detectedBundle.title, tasks: detectedBundle.tasks, bundleMode: detectedBundle.bundleMode }, (sourceType === 'note' ? { noteId: sourceId } : {})), { origin: { fromText: detectedBundle.originFromText }, confidence: detectedBundle.confidence, explanation: detectedBundle.explanation });
+                                    const rankScore = computeAssistantSuggestionRankScore({
+                                        jtbdPreset,
+                                        kind: 'create_task_bundle',
+                                        sourceType,
+                                        payload,
+                                    });
+                                    candidates.push({
+                                        kind: 'create_task_bundle',
+                                        payload,
+                                        dedupeKey,
+                                        rankScore,
+                                        metricsInc: {
+                                            bundlesCreated: 1,
+                                            defaultPriorityAppliedCount: detectedBundle.appliedDefaultPriority ? 1 : 0,
+                                        },
+                                    });
+                                }
+                                else {
+                                    for (const d of detectedSingle) {
+                                        const dedupeKey = buildSuggestionDedupeKey({ objectId, kind: d.kind, minimal: d.dedupeMinimal });
+                                        const payload = Object.assign(Object.assign(Object.assign(Object.assign({ title: d.title }, (d.dueDate ? { dueDate: d.dueDate } : {})), (d.remindAt ? { remindAt: d.remindAt } : {})), (d.priority ? { priority: d.priority } : {})), { origin: {
+                                                fromText: d.originFromText,
+                                            }, confidence: d.confidence, explanation: d.explanation });
+                                        const rankScore = computeAssistantSuggestionRankScore({
+                                            jtbdPreset,
+                                            kind: d.kind,
+                                            sourceType,
+                                            payload,
+                                        });
+                                        candidates.push({
+                                            kind: d.kind,
+                                            payload,
+                                            dedupeKey,
+                                            rankScore,
+                                            metricsInc: {
+                                                suggestionsCreated: 1,
+                                                defaultPriorityAppliedCount: d.appliedDefaultPriority ? 1 : 0,
+                                                defaultReminderHourAppliedCount: d.appliedDefaultReminderHour ? 1 : 0,
+                                            },
+                                        });
+                                    }
+                                }
+                                console.log('assistant suggestions candidates', {
+                                    userId,
+                                    sourceType,
+                                    sourceId,
+                                    objectId,
+                                    candidates: candidates.length,
+                                    bundleMode: !!detectedBundle ? detectedBundle.bundleMode : null,
+                                });
+                                resultCandidates = candidates.length;
+                                for (const c of candidates) {
+                                    const sugRef = suggestionsCol.doc(c.dedupeKey);
+                                    await db.runTransaction(async (tx) => {
+                                        var _a;
+                                        const existing = await tx.get(sugRef);
+                                        if (existing.exists) {
+                                            const st = (_a = existing.data()) === null || _a === void 0 ? void 0 : _a.status;
+                                            if (st === 'proposed') {
+                                                resultSkippedProposed += 1;
+                                                return;
+                                            }
+                                            if (st === 'accepted') {
+                                                resultSkippedAccepted += 1;
+                                                return;
+                                            }
+                                            tx.update(sugRef, {
+                                                objectId,
+                                                source: { type: sourceType, id: sourceId },
+                                                kind: c.kind,
+                                                payload: c.payload,
+                                                rankScore: c.rankScore,
+                                                rankPreset: jtbdPreset,
+                                                status: 'proposed',
+                                                pipelineVersion: 1,
+                                                dedupeKey: c.dedupeKey,
+                                                updatedAt: nowServer,
+                                                expiresAt,
+                                            });
+                                            resultUpdated += 1;
+                                            tx.set(metricsRef, metricsIncrements(c.metricsInc), { merge: true });
                                             return;
                                         }
-                                        if (st === 'accepted') {
-                                            resultSkippedAccepted += 1;
-                                            return;
-                                        }
-                                        tx.update(sugRef, {
+                                        const doc = {
                                             objectId,
                                             source: { type: sourceType, id: sourceId },
                                             kind: c.kind,
@@ -2148,126 +2720,141 @@ exports.assistantRunJobQueue = functions.pubsub
                                             status: 'proposed',
                                             pipelineVersion: 1,
                                             dedupeKey: c.dedupeKey,
+                                            createdAt: nowServer,
                                             updatedAt: nowServer,
                                             expiresAt,
-                                        });
-                                        resultUpdated += 1;
+                                        };
+                                        tx.create(sugRef, doc);
+                                        resultCreated += 1;
                                         tx.set(metricsRef, metricsIncrements(c.metricsInc), { merge: true });
-                                        return;
-                                    }
-                                    const doc = {
-                                        objectId,
-                                        source: { type: sourceType, id: sourceId },
-                                        kind: c.kind,
-                                        payload: c.payload,
-                                        rankScore: c.rankScore,
-                                        rankPreset: jtbdPreset,
-                                        status: 'proposed',
-                                        pipelineVersion: 1,
-                                        dedupeKey: c.dedupeKey,
-                                        createdAt: nowServer,
-                                        updatedAt: nowServer,
-                                        expiresAt,
-                                    };
-                                    tx.create(sugRef, doc);
-                                    resultCreated += 1;
-                                    tx.set(metricsRef, metricsIncrements(c.metricsInc), { merge: true });
-                                });
+                                    });
+                                }
                             }
+                            await objectRef.set({
+                                textHash: processedTextHash,
+                            }, { merge: true });
                         }
-                        await objectRef.set({
-                            textHash: processedTextHash,
-                        }, { merge: true });
                     }
                 }
+                const objectAfter = await objectRef.get();
+                const pendingAfter = objectAfter.exists && typeof ((_a = objectAfter.data()) === null || _a === void 0 ? void 0 : _a.pendingTextHash) === 'string'
+                    ? String(objectAfter.data().pendingTextHash)
+                    : null;
+                if (pendingAfter && (!processedTextHash || pendingAfter !== processedTextHash)) {
+                    await jobDoc.ref.update({
+                        status: 'queued',
+                        lockedUntil: admin.firestore.Timestamp.fromMillis(0),
+                        pendingTextHash: pendingAfter,
+                        result: {
+                            candidates: resultCandidates,
+                            created: resultCreated,
+                            updated: resultUpdated,
+                            skippedProposed: resultSkippedProposed,
+                            skippedAccepted: resultSkippedAccepted,
+                        },
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    });
+                    await objectRef.set({
+                        status: 'queued',
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    }, { merge: true });
+                }
+                else {
+                    await jobDoc.ref.update({
+                        status: 'done',
+                        lockedUntil: admin.firestore.Timestamp.fromMillis(0),
+                        pendingTextHash: null,
+                        result: {
+                            candidates: resultCandidates,
+                            created: resultCreated,
+                            updated: resultUpdated,
+                            skippedProposed: resultSkippedProposed,
+                            skippedAccepted: resultSkippedAccepted,
+                        },
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    });
+                    await objectRef.set({
+                        status: 'done',
+                        lastAnalyzedAt: admin.firestore.FieldValue.serverTimestamp(),
+                        pendingTextHash: null,
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    }, { merge: true });
+                }
+                try {
+                    await metricsRef.set(metricsIncrements({ jobsProcessed: 1 }), { merge: true });
+                }
+                catch (_d) {
+                    // ignore
+                }
             }
-            const objectAfter = await objectRef.get();
-            const pendingAfter = objectAfter.exists && typeof ((_a = objectAfter.data()) === null || _a === void 0 ? void 0 : _a.pendingTextHash) === 'string'
-                ? String(objectAfter.data().pendingTextHash)
-                : null;
-            if (pendingAfter && (!processedTextHash || pendingAfter !== processedTextHash)) {
-                await jobDoc.ref.update({
-                    status: 'queued',
-                    lockedUntil: admin.firestore.Timestamp.fromMillis(0),
-                    pendingTextHash: pendingAfter,
-                    result: {
-                        candidates: resultCandidates,
-                        created: resultCreated,
-                        updated: resultUpdated,
-                        skippedProposed: resultSkippedProposed,
-                        skippedAccepted: resultSkippedAccepted,
-                    },
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            catch (e) {
+                failedCount += 1;
+                console.error('assistant job failed', {
+                    userId,
+                    jobId: jobDoc.id,
+                    error: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : e,
                 });
-                await objectRef.set({
-                    status: 'queued',
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                }, { merge: true });
+                try {
+                    await jobDoc.ref.update({
+                        status: 'error',
+                        lockedUntil: admin.firestore.Timestamp.fromMillis(0),
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    });
+                }
+                catch (_e) {
+                    // ignore
+                }
+                try {
+                    const objectRef = db.collection('users').doc(userId).collection('assistantObjects').doc(objectId);
+                    await objectRef.set({
+                        status: 'error',
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    }, { merge: true });
+                }
+                catch (_f) {
+                    // ignore
+                }
+                try {
+                    const metricsRef = assistantMetricsRef(db, userId);
+                    await metricsRef.set(metricsIncrements({ jobsProcessed: 1, jobErrors: 1 }), { merge: true });
+                }
+                catch (_g) {
+                    // ignore
+                }
             }
-            else {
-                await jobDoc.ref.update({
-                    status: 'done',
-                    lockedUntil: admin.firestore.Timestamp.fromMillis(0),
-                    pendingTextHash: null,
-                    result: {
-                        candidates: resultCandidates,
-                        created: resultCreated,
-                        updated: resultUpdated,
-                        skippedProposed: resultSkippedProposed,
-                        skippedAccepted: resultSkippedAccepted,
-                    },
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                });
-                await objectRef.set({
-                    status: 'done',
-                    lastAnalyzedAt: admin.firestore.FieldValue.serverTimestamp(),
-                    pendingTextHash: null,
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                }, { merge: true });
-            }
-            try {
-                await metricsRef.set(metricsIncrements({ jobsProcessed: 1 }), { merge: true });
-            }
-            catch (_d) {
-                // ignore
-            }
-        }
-        catch (e) {
-            console.error('assistant job failed', {
-                userId,
-                jobId: jobDoc.id,
-                error: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : e,
-            });
-            try {
-                await jobDoc.ref.update({
-                    status: 'error',
-                    lockedUntil: admin.firestore.Timestamp.fromMillis(0),
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                });
-            }
-            catch (_e) {
-                // ignore
-            }
-            try {
-                const objectRef = db.collection('users').doc(userId).collection('assistantObjects').doc(objectId);
-                await objectRef.set({
-                    status: 'error',
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                }, { merge: true });
-            }
-            catch (_f) {
-                // ignore
-            }
-            try {
-                const metricsRef = assistantMetricsRef(db, userId);
-                await metricsRef.set(metricsIncrements({ jobsProcessed: 1, jobErrors: 1 }), { merge: true });
-            }
-            catch (_g) {
-                // ignore
-            }
-        }
-    });
-    await Promise.all(tasks);
+        });
+        await Promise.all(tasks);
+        await endFunctionObserve(obs, 'success', {
+            jobType: 'assistant_queue',
+            batchSize: snap.size,
+        });
+        await writeOpsJobSnapshot({
+            functionName: 'assistantRunJobQueue',
+            requestId: obs.requestId,
+            success: true,
+            durationMs: Date.now() - obs.startMs,
+            processed: processedCount,
+            failed: failedCount,
+            backlogSize,
+            stopThresholdHit,
+        });
+    }
+    catch (error) {
+        await endFunctionObserve(obs, 'error', {
+            jobType: 'assistant_queue',
+            errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        });
+        await writeOpsJobSnapshot({
+            functionName: 'assistantRunJobQueue',
+            requestId: obs.requestId,
+            success: false,
+            durationMs: Date.now() - obs.startMs,
+            processed: processedCount,
+            failed: Math.max(1, failedCount),
+            backlogSize,
+            stopThresholdHit,
+        });
+    }
 });
 exports.assistantApplySuggestion = functions.https.onCall(async (data, context) => {
     var _a;
@@ -3798,173 +4385,199 @@ exports.assistantRequestVoiceTranscription = functions
     }
 });
 exports.assistantExecuteIntent = functions.https.onCall(async (data, context) => {
-    var _a, _b, _c, _d, _e, _f, _g;
-    const userId = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid;
-    if (!userId) {
-        throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
-    }
-    const transcriptRaw = typeof (data === null || data === void 0 ? void 0 : data.transcript) === 'string' ? String(data.transcript) : '';
-    const transcript = transcriptRaw.trim();
-    if (!transcript) {
-        throw new functions.https.HttpsError('invalid-argument', 'Missing transcript.');
-    }
-    if (transcript.length > 4000) {
-        throw new functions.https.HttpsError('invalid-argument', 'Transcript too long.');
-    }
-    const execute = (data === null || data === void 0 ? void 0 : data.execute) === true;
-    const db = admin.firestore();
-    const enabled = await isAssistantEnabledForUser(db, userId);
-    if (!enabled) {
-        throw new functions.https.HttpsError('failed-precondition', 'Assistant disabled.');
-    }
-    const now = new Date();
-    const parsed = (0, voiceIntent_1.parseAssistantVoiceIntent)(transcript, now);
-    const parsedRemindAtTs = parsed.remindAt ? admin.firestore.Timestamp.fromDate(parsed.remindAt) : null;
-    const remindAtIso = parsedRemindAtTs ? parsedRemindAtTs.toDate().toISOString() : null;
-    const missingFields = Array.isArray(parsed.missingFields) ? parsed.missingFields : [];
-    const needsClarification = missingFields.length > 0;
-    const responseBase = {
-        intent: {
-            kind: parsed.kind,
-            title: parsed.title,
-            confidence: parsed.confidence,
-            requiresConfirmation: parsed.requiresConfirmation,
-            requiresConfirmationReason: (_b = parsed.requiresConfirmationReason) !== null && _b !== void 0 ? _b : null,
-            remindAtIso,
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
+    const requestIdRaw = (_b = (_a = context === null || context === void 0 ? void 0 : context.rawRequest) === null || _a === void 0 ? void 0 : _a.headers) === null || _b === void 0 ? void 0 : _b['x-request-id'];
+    const requestId = typeof requestIdRaw === 'string' && requestIdRaw ? requestIdRaw : crypto.randomUUID();
+    const obs = beginFunctionObserve({
+        functionName: 'assistantExecuteIntent',
+        requestId,
+        meta: {
+            jobType: 'assistant_intent',
+            uid: (_d = (_c = context.auth) === null || _c === void 0 ? void 0 : _c.uid) !== null && _d !== void 0 ? _d : 'anonymous',
         },
-        needsClarification,
-        missingFields,
-        clarificationQuestion: (_c = parsed.clarificationQuestion) !== null && _c !== void 0 ? _c : null,
-        executed: false,
-        createdCoreObjects: [],
-        message: needsClarification
-            ? ((_d = parsed.clarificationQuestion) !== null && _d !== void 0 ? _d : 'Il me manque une information.')
-            : !execute && parsed.kind === 'schedule_meeting'
-                ? ((_e = parsed.requiresConfirmationReason) !== null && _e !== void 0 ? _e : 'Confirme pour créer la réunion.')
-                : execute
-                    ? 'Action non exécutée.'
-                    : 'Intention analysée. Prête à exécuter.',
-    };
-    if (!execute) {
+    });
+    let obsStatus = 'success';
+    let obsErrorMessage = null;
+    try {
+        const userId = (_e = context.auth) === null || _e === void 0 ? void 0 : _e.uid;
+        if (!userId) {
+            throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+        }
+        const transcriptRaw = typeof (data === null || data === void 0 ? void 0 : data.transcript) === 'string' ? String(data.transcript) : '';
+        const transcript = transcriptRaw.trim();
+        if (!transcript) {
+            throw new functions.https.HttpsError('invalid-argument', 'Missing transcript.');
+        }
+        if (transcript.length > 4000) {
+            throw new functions.https.HttpsError('invalid-argument', 'Transcript too long.');
+        }
+        const execute = (data === null || data === void 0 ? void 0 : data.execute) === true;
+        const db = admin.firestore();
+        const enabled = await isAssistantEnabledForUser(db, userId);
+        if (!enabled) {
+            throw new functions.https.HttpsError('failed-precondition', 'Assistant disabled.');
+        }
+        const now = new Date();
+        const parsed = (0, voiceIntent_1.parseAssistantVoiceIntent)(transcript, now);
+        const parsedRemindAtTs = parsed.remindAt ? admin.firestore.Timestamp.fromDate(parsed.remindAt) : null;
+        const remindAtIso = parsedRemindAtTs ? parsedRemindAtTs.toDate().toISOString() : null;
+        const missingFields = Array.isArray(parsed.missingFields) ? parsed.missingFields : [];
+        const needsClarification = missingFields.length > 0;
+        const responseBase = {
+            intent: {
+                kind: parsed.kind,
+                title: parsed.title,
+                confidence: parsed.confidence,
+                requiresConfirmation: parsed.requiresConfirmation,
+                requiresConfirmationReason: (_f = parsed.requiresConfirmationReason) !== null && _f !== void 0 ? _f : null,
+                remindAtIso,
+            },
+            needsClarification,
+            missingFields,
+            clarificationQuestion: (_g = parsed.clarificationQuestion) !== null && _g !== void 0 ? _g : null,
+            executed: false,
+            createdCoreObjects: [],
+            message: needsClarification
+                ? ((_h = parsed.clarificationQuestion) !== null && _h !== void 0 ? _h : 'Il me manque une information.')
+                : !execute && parsed.kind === 'schedule_meeting'
+                    ? ((_j = parsed.requiresConfirmationReason) !== null && _j !== void 0 ? _j : 'Confirme pour créer la réunion.')
+                    : execute
+                        ? 'Action non exécutée.'
+                        : 'Intention analysée. Prête à exécuter.',
+        };
+        if (!execute) {
+            return responseBase;
+        }
+        if (needsClarification) {
+            return Object.assign(Object.assign({}, responseBase), { executed: false, message: (_k = parsed.clarificationQuestion) !== null && _k !== void 0 ? _k : 'Il me manque une information pour exécuter cette action.' });
+        }
+        const userRef = db.collection('users').doc(userId);
+        const userSnap = await userRef.get();
+        const userPlan = userSnap.exists && typeof ((_l = userSnap.data()) === null || _l === void 0 ? void 0 : _l.plan) === 'string' ? String(userSnap.data().plan) : 'free';
+        const isPro = userPlan === 'pro';
+        const createdAt = admin.firestore.FieldValue.serverTimestamp();
+        const updatedAt = admin.firestore.FieldValue.serverTimestamp();
+        if (parsed.kind === 'create_todo') {
+            const todoRef = db.collection('todos').doc();
+            await todoRef.create({
+                userId,
+                workspaceId: null,
+                title: parsed.title,
+                items: [],
+                dueDate: null,
+                priority: null,
+                completed: false,
+                favorite: false,
+                source: {
+                    assistant: true,
+                    channel: 'voice_intent',
+                },
+                createdAt,
+                updatedAt,
+            });
+            return Object.assign(Object.assign({}, responseBase), { executed: true, createdCoreObjects: [{ type: 'todo', id: todoRef.id }], message: 'ToDo créé.' });
+        }
+        if (parsed.kind === 'create_task') {
+            const taskRef = db.collection('tasks').doc();
+            await taskRef.create({
+                userId,
+                title: parsed.title,
+                status: 'todo',
+                workspaceId: null,
+                startDate: null,
+                dueDate: null,
+                priority: null,
+                favorite: false,
+                archived: false,
+                source: {
+                    assistant: true,
+                    channel: 'voice_intent',
+                },
+                createdAt,
+                updatedAt,
+            });
+            return Object.assign(Object.assign({}, responseBase), { executed: true, createdCoreObjects: [{ type: 'task', id: taskRef.id }], message: 'Tâche créée.' });
+        }
+        if (parsed.kind === 'create_reminder') {
+            if (!isPro) {
+                return Object.assign(Object.assign({}, responseBase), { executed: false, message: 'Le rappel automatique nécessite le plan Pro.' });
+            }
+            const remindAt = parsedRemindAtTs !== null && parsedRemindAtTs !== void 0 ? parsedRemindAtTs : admin.firestore.Timestamp.fromDate(new Date(Date.now() + 60 * 60 * 1000));
+            const remindAtIsoEffective = remindAt.toDate().toISOString();
+            const taskRef = db.collection('tasks').doc();
+            const reminderRef = db.collection('taskReminders').doc();
+            const batch = db.batch();
+            batch.create(taskRef, {
+                userId,
+                title: parsed.title,
+                status: 'todo',
+                workspaceId: null,
+                startDate: null,
+                dueDate: remindAt,
+                priority: null,
+                favorite: false,
+                archived: false,
+                source: {
+                    assistant: true,
+                    channel: 'voice_intent',
+                },
+                createdAt,
+                updatedAt,
+            });
+            batch.create(reminderRef, {
+                userId,
+                taskId: taskRef.id,
+                dueDate: remindAtIsoEffective,
+                reminderTime: remindAtIsoEffective,
+                sent: false,
+                createdAt,
+                updatedAt,
+                source: {
+                    assistant: true,
+                    channel: 'voice_intent',
+                },
+            });
+            await batch.commit();
+            return Object.assign(Object.assign({}, responseBase), { executed: true, createdCoreObjects: [
+                    { type: 'task', id: taskRef.id },
+                    { type: 'taskReminder', id: reminderRef.id },
+                ], message: 'Rappel créé.' });
+        }
+        if (parsed.kind === 'schedule_meeting') {
+            const taskRef = db.collection('tasks').doc();
+            await taskRef.create({
+                userId,
+                title: `Réunion: ${parsed.title}`,
+                status: 'todo',
+                workspaceId: null,
+                startDate: parsedRemindAtTs !== null && parsedRemindAtTs !== void 0 ? parsedRemindAtTs : null,
+                dueDate: parsedRemindAtTs !== null && parsedRemindAtTs !== void 0 ? parsedRemindAtTs : null,
+                priority: null,
+                favorite: false,
+                archived: false,
+                source: {
+                    assistant: true,
+                    channel: 'voice_intent',
+                },
+                createdAt,
+                updatedAt,
+            });
+            return Object.assign(Object.assign({}, responseBase), { executed: true, createdCoreObjects: [{ type: 'task', id: taskRef.id }], message: 'Réunion préparée. Tu peux la retrouver dans tes tâches.' });
+        }
         return responseBase;
     }
-    if (needsClarification) {
-        return Object.assign(Object.assign({}, responseBase), { executed: false, message: (_f = parsed.clarificationQuestion) !== null && _f !== void 0 ? _f : 'Il me manque une information pour exécuter cette action.' });
+    catch (error) {
+        obsStatus = 'error';
+        obsErrorMessage = error instanceof Error ? error.message : 'Unknown error';
+        throw error;
     }
-    const userRef = db.collection('users').doc(userId);
-    const userSnap = await userRef.get();
-    const userPlan = userSnap.exists && typeof ((_g = userSnap.data()) === null || _g === void 0 ? void 0 : _g.plan) === 'string' ? String(userSnap.data().plan) : 'free';
-    const isPro = userPlan === 'pro';
-    const createdAt = admin.firestore.FieldValue.serverTimestamp();
-    const updatedAt = admin.firestore.FieldValue.serverTimestamp();
-    if (parsed.kind === 'create_todo') {
-        const todoRef = db.collection('todos').doc();
-        await todoRef.create({
-            userId,
-            workspaceId: null,
-            title: parsed.title,
-            items: [],
-            dueDate: null,
-            priority: null,
-            completed: false,
-            favorite: false,
-            source: {
-                assistant: true,
-                channel: 'voice_intent',
-            },
-            createdAt,
-            updatedAt,
+    finally {
+        await endFunctionObserve(obs, obsStatus, {
+            jobType: 'assistant_intent',
+            uid: (_o = (_m = context.auth) === null || _m === void 0 ? void 0 : _m.uid) !== null && _o !== void 0 ? _o : 'anonymous',
+            errorMessage: obsErrorMessage,
         });
-        return Object.assign(Object.assign({}, responseBase), { executed: true, createdCoreObjects: [{ type: 'todo', id: todoRef.id }], message: 'ToDo créé.' });
     }
-    if (parsed.kind === 'create_task') {
-        const taskRef = db.collection('tasks').doc();
-        await taskRef.create({
-            userId,
-            title: parsed.title,
-            status: 'todo',
-            workspaceId: null,
-            startDate: null,
-            dueDate: null,
-            priority: null,
-            favorite: false,
-            archived: false,
-            source: {
-                assistant: true,
-                channel: 'voice_intent',
-            },
-            createdAt,
-            updatedAt,
-        });
-        return Object.assign(Object.assign({}, responseBase), { executed: true, createdCoreObjects: [{ type: 'task', id: taskRef.id }], message: 'Tâche créée.' });
-    }
-    if (parsed.kind === 'create_reminder') {
-        if (!isPro) {
-            return Object.assign(Object.assign({}, responseBase), { executed: false, message: 'Le rappel automatique nécessite le plan Pro.' });
-        }
-        const remindAt = parsedRemindAtTs !== null && parsedRemindAtTs !== void 0 ? parsedRemindAtTs : admin.firestore.Timestamp.fromDate(new Date(Date.now() + 60 * 60 * 1000));
-        const remindAtIsoEffective = remindAt.toDate().toISOString();
-        const taskRef = db.collection('tasks').doc();
-        const reminderRef = db.collection('taskReminders').doc();
-        const batch = db.batch();
-        batch.create(taskRef, {
-            userId,
-            title: parsed.title,
-            status: 'todo',
-            workspaceId: null,
-            startDate: null,
-            dueDate: remindAt,
-            priority: null,
-            favorite: false,
-            archived: false,
-            source: {
-                assistant: true,
-                channel: 'voice_intent',
-            },
-            createdAt,
-            updatedAt,
-        });
-        batch.create(reminderRef, {
-            userId,
-            taskId: taskRef.id,
-            dueDate: remindAtIsoEffective,
-            reminderTime: remindAtIsoEffective,
-            sent: false,
-            createdAt,
-            updatedAt,
-            source: {
-                assistant: true,
-                channel: 'voice_intent',
-            },
-        });
-        await batch.commit();
-        return Object.assign(Object.assign({}, responseBase), { executed: true, createdCoreObjects: [
-                { type: 'task', id: taskRef.id },
-                { type: 'taskReminder', id: reminderRef.id },
-            ], message: 'Rappel créé.' });
-    }
-    if (parsed.kind === 'schedule_meeting') {
-        const taskRef = db.collection('tasks').doc();
-        await taskRef.create({
-            userId,
-            title: `Réunion: ${parsed.title}`,
-            status: 'todo',
-            workspaceId: null,
-            startDate: parsedRemindAtTs !== null && parsedRemindAtTs !== void 0 ? parsedRemindAtTs : null,
-            dueDate: parsedRemindAtTs !== null && parsedRemindAtTs !== void 0 ? parsedRemindAtTs : null,
-            priority: null,
-            favorite: false,
-            archived: false,
-            source: {
-                assistant: true,
-                channel: 'voice_intent',
-            },
-            createdAt,
-            updatedAt,
-        });
-        return Object.assign(Object.assign({}, responseBase), { executed: true, createdCoreObjects: [{ type: 'task', id: taskRef.id }], message: 'Réunion préparée. Tu peux la retrouver dans tes tâches.' });
-    }
-    return responseBase;
 });
 exports.assistantPurgeExpiredVoiceData = functions.pubsub
     .schedule('every monday 03:00')
@@ -4047,7 +4660,7 @@ async function processAssistantAIJob(params) {
     const { db, userId, jobDoc, nowDate, nowTs } = params;
     const claimed = await claimAssistantAIJob({ db, ref: jobDoc.ref, now: nowTs });
     if (!claimed)
-        return;
+        return { processed: false, failed: false };
     const noteId = typeof (claimed === null || claimed === void 0 ? void 0 : claimed.noteId) === 'string' ? String(claimed.noteId) : null;
     const objectId = typeof claimed.objectId === 'string' ? claimed.objectId : null;
     const requestedModel = normalizeAssistantAIModel(claimed === null || claimed === void 0 ? void 0 : claimed.model);
@@ -4055,7 +4668,7 @@ async function processAssistantAIJob(params) {
     const modes = Array.isArray(claimed === null || claimed === void 0 ? void 0 : claimed.modes) ? claimed.modes.filter((m) => typeof m === 'string').map((m) => String(m)) : [];
     const rewriteInstruction = typeof (claimed === null || claimed === void 0 ? void 0 : claimed.rewriteInstruction) === 'string' ? String(claimed.rewriteInstruction).trim().slice(0, 280) : '';
     if (!noteId || !objectId)
-        return;
+        return { processed: true, failed: true };
     const metricsRef = assistantMetricsRef(db, userId);
     const userRef = db.collection('users').doc(userId);
     let primaryModel = null;
@@ -4068,7 +4681,7 @@ async function processAssistantAIJob(params) {
         const noteUserId = typeof (note === null || note === void 0 ? void 0 : note.userId) === 'string' ? note.userId : null;
         if (!note || noteUserId !== userId) {
             await jobDoc.ref.update({ status: 'error', lockedUntil: admin.firestore.Timestamp.fromMillis(0), error: 'Note not accessible', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-            return;
+            return { processed: true, failed: true };
         }
         const title = typeof (note === null || note === void 0 ? void 0 : note.title) === 'string' ? note.title : '';
         const content = typeof (note === null || note === void 0 ? void 0 : note.content) === 'string' ? note.content : '';
@@ -4167,7 +4780,7 @@ async function processAssistantAIJob(params) {
                 error: null,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
-            return;
+            return { processed: true, failed: false };
         }
         if (fallbackResultRef && existingFallback && existingFallback.exists) {
             await jobDoc.ref.update({
@@ -4181,7 +4794,7 @@ async function processAssistantAIJob(params) {
                 error: null,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
-            return;
+            return { processed: true, failed: false };
         }
         const requestedModes = new Set(modes.length > 0 ? modes : ['summary', 'actions', 'hooks', 'rewrite', 'entities']);
         const instructions = [
@@ -4467,6 +5080,7 @@ async function processAssistantAIJob(params) {
             error: null,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
+        return { processed: true, failed: false };
     }
     catch (e) {
         if (e instanceof OpenAIHttpError) {
@@ -4504,34 +5118,109 @@ async function processAssistantAIJob(params) {
         catch (_j) {
             // ignore
         }
+        return { processed: true, failed: true };
     }
 }
 exports.assistantRunAIJobQueue = functions.pubsub
     .schedule('every 1 minutes')
-    .onRun(async () => {
+    .onRun(async (context) => {
+    const requestId = typeof (context === null || context === void 0 ? void 0 : context.eventId) === 'string' && context.eventId
+        ? String(context.eventId)
+        : crypto.randomUUID();
+    const obs = beginFunctionObserve({
+        functionName: 'assistantRunAIJobQueue',
+        requestId,
+        meta: { jobType: 'assistant_ai_queue' },
+    });
     const db = admin.firestore();
     const nowDate = new Date();
     const nowTs = admin.firestore.Timestamp.fromDate(nowDate);
-    const snap = await db
-        .collectionGroup('assistantAIJobs')
-        .where('status', '==', 'queued')
-        .where('lockedUntil', '<=', nowTs)
-        .orderBy('lockedUntil', 'asc')
-        .limit(10)
-        .get();
-    if (snap.empty) {
-        return;
+    let processedCount = 0;
+    let failedCount = 0;
+    let backlogSize = 0;
+    const stopThresholdHit = false;
+    try {
+        const snap = await db
+            .collectionGroup('assistantAIJobs')
+            .where('status', '==', 'queued')
+            .where('lockedUntil', '<=', nowTs)
+            .orderBy('lockedUntil', 'asc')
+            .limit(10)
+            .get();
+        backlogSize = snap.size;
+        if (snap.empty) {
+            console.info('ops.metric.queue_backlog', {
+                queue: 'assistantAIJobs',
+                pending: 0,
+                oldestAgeMs: null,
+            });
+            await endFunctionObserve(obs, 'success', {
+                jobType: 'assistant_ai_queue',
+                batchSize: 0,
+            });
+            await writeOpsJobSnapshot({
+                functionName: 'assistantRunAIJobQueue',
+                requestId: obs.requestId,
+                success: true,
+                durationMs: Date.now() - obs.startMs,
+                processed: 0,
+                failed: 0,
+                backlogSize: 0,
+                stopThresholdHit,
+            });
+            return;
+        }
+        console.info('ops.metric.queue_backlog', {
+            queue: 'assistantAIJobs',
+            pending: snap.size,
+            oldestAgeMs: backlogOldestAgeMs(snap.docs, 'lockedUntil'),
+        });
+        const tasks = snap.docs.map(async (jobDoc) => {
+            const userRef = jobDoc.ref.parent.parent;
+            const userId = userRef === null || userRef === void 0 ? void 0 : userRef.id;
+            if (!userId)
+                return;
+            const enabled = await isAssistantEnabledForUser(db, userId);
+            if (!enabled)
+                return;
+            const result = await processAssistantAIJob({ db, userId, jobDoc, nowDate, nowTs });
+            if (result.processed) {
+                processedCount += 1;
+                if (result.failed)
+                    failedCount += 1;
+            }
+        });
+        await Promise.all(tasks);
+        await endFunctionObserve(obs, 'success', {
+            jobType: 'assistant_ai_queue',
+            batchSize: snap.size,
+        });
+        await writeOpsJobSnapshot({
+            functionName: 'assistantRunAIJobQueue',
+            requestId: obs.requestId,
+            success: true,
+            durationMs: Date.now() - obs.startMs,
+            processed: processedCount,
+            failed: failedCount,
+            backlogSize,
+            stopThresholdHit,
+        });
     }
-    const tasks = snap.docs.map(async (jobDoc) => {
-        const userRef = jobDoc.ref.parent.parent;
-        const userId = userRef === null || userRef === void 0 ? void 0 : userRef.id;
-        if (!userId)
-            return;
-        const enabled = await isAssistantEnabledForUser(db, userId);
-        if (!enabled)
-            return;
-        await processAssistantAIJob({ db, userId, jobDoc, nowDate, nowTs });
-    });
-    await Promise.all(tasks);
+    catch (error) {
+        await endFunctionObserve(obs, 'error', {
+            jobType: 'assistant_ai_queue',
+            errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        });
+        await writeOpsJobSnapshot({
+            functionName: 'assistantRunAIJobQueue',
+            requestId: obs.requestId,
+            success: false,
+            durationMs: Date.now() - obs.startMs,
+            processed: processedCount,
+            failed: Math.max(1, failedCount),
+            backlogSize,
+            stopThresholdHit,
+        });
+    }
 });
 //# sourceMappingURL=index.js.map

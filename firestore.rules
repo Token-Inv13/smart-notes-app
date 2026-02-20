@@ -262,6 +262,27 @@ service cloud.firestore {
         isOwner(resource.data.ownerId);
     }
 
+    // PR-12 ops telemetry collections (server-written; admin-read only)
+    match /opsMetrics/{metricKey} {
+      allow read: if isAdmin();
+      allow write: if false;
+
+      match /points/{bucket} {
+        allow read: if isAdmin();
+        allow write: if false;
+      }
+    }
+
+    match /opsState/{jobName} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /opsAlerts/{alertKey} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // Admin observability collections (read-only from admin UI)
     match /adminUsersIndex/{uid} {
       allow read: if isAdmin();
