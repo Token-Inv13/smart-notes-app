@@ -703,7 +703,7 @@ export default function DashboardPage() {
             )}
             {!tasksLoading && !tasksError && favoriteAgendaItems.length > 0 && (
               <ul className="space-y-1">
-                {favoriteAgendaItems.map(({ task, projection }) => {
+                {favoriteAgendaItems.map(({ task, projection }, index) => {
                   const href = task.id ? `/tasks/${encodeURIComponent(task.id)}${suffix}` : null;
                   const dueLabel = formatFrDateTime(task.dueDate ?? null);
                   const startLabel = formatFrDate(task.startDate ?? null);
@@ -725,7 +725,7 @@ export default function DashboardPage() {
                   })();
                   return (
                     <li
-                      key={task.id}
+                      key={task.id ?? `favorite-${index}-${task.title}`}
                       className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 relative ${
                         task.id ? "cursor-pointer" : ""
                       }`}

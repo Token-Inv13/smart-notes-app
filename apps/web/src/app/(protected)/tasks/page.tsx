@@ -285,6 +285,22 @@ export default function TasksPage() {
   const [calendarRange, setCalendarRange] = useState<{ start: Date; end: Date } | null>(null);
   const [flashHighlightTaskId, setFlashHighlightTaskId] = useState<string | null>(null);
 
+  const handleCalendarVisibleRangeChange = useCallback((range: { start: Date; end: Date }) => {
+    const bufferedStart = new Date(range.start.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const bufferedEnd = new Date(range.end.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    setCalendarRange((prev) => {
+      if (
+        prev &&
+        prev.start.getTime() === bufferedStart.getTime() &&
+        prev.end.getTime() === bufferedEnd.getTime()
+      ) {
+        return prev;
+      }
+      return { start: bufferedStart, end: bufferedEnd };
+    });
+  }, []);
+
   const [editError, setEditError] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [pushStatus, setPushStatus] = useState<string | null>(null);
@@ -335,14 +351,6 @@ export default function TasksPage() {
     for (const task of calendarWindowStartTasks) {
       if (!task.id) continue;
       byId.set(task.id, task);
-    }
-
-    if (process.env.NODE_ENV !== "production") {
-      console.info("agenda.calendar.window_query.merge_count", {
-        dueQueryCount: calendarWindowDueTasks.length,
-        startQueryCount: calendarWindowStartTasks.length,
-        mergedCount: byId.size,
-      });
     }
 
     return Array.from(byId.values());
@@ -1350,7 +1358,7 @@ export default function TasksPage() {
             })();
 
             return (
-              <li key={task.id}>
+              <li key={task.id ?? `archived-${task.title}-${toMillisSafe(task.updatedAt)}`}>
                 <div
                   className="sn-card sn-card--task sn-card--muted p-4 cursor-pointer"
                   onClick={() => {
@@ -1407,11 +1415,7 @@ export default function TasksPage() {
           onCreateEvent={handleCalendarCreate}
           onUpdateEvent={handleCalendarUpdate}
           onSkipOccurrence={handleSkipOccurrence}
-          onVisibleRangeChange={(range) => {
-            const bufferedStart = new Date(range.start.getTime() - 7 * 24 * 60 * 60 * 1000);
-            const bufferedEnd = new Date(range.end.getTime() + 7 * 24 * 60 * 60 * 1000);
-            setCalendarRange({ start: bufferedStart, end: bufferedEnd });
-          }}
+          onVisibleRangeChange={handleCalendarVisibleRangeChange}
           onOpenTask={(taskId) => {
             const qs = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
             router.push(`/tasks/${taskId}${qs}`);
@@ -1430,7 +1434,7 @@ export default function TasksPage() {
             const startLabel = formatStartDate(task.startDate ?? null);
 
             return (
-              <li key={task.id} id={task.id ? `task-${task.id}` : undefined}>
+              <li key={task.id ?? `list-${task.title}-${toMillisSafe(task.updatedAt)}`} id={task.id ? `task-${task.id}` : undefined}>
                 <div
                   className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 ${
                     task.id && task.id === highlightedTaskId
@@ -1509,7 +1513,7 @@ export default function TasksPage() {
 
             return (
               <div
-                key={task.id}
+                key={task.id ?? `grid-${task.title}-${toMillisSafe(task.updatedAt)}`}
                 id={task.id ? `task-${task.id}` : undefined}
                 className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 min-w-0 ${
                   task.id && task.id === highlightedTaskId
@@ -1646,7 +1650,7 @@ export default function TasksPage() {
 
                     return (
                       <div
-                        key={task.id}
+                        key={task.id ?? `kanban-${status}-${task.title}-${toMillisSafe(task.updatedAt)}`}
                         id={task.id ? `task-${task.id}` : undefined}
                         draggable={!!task.id}
                         onDragStart={(e) => {
@@ -1762,7 +1766,7 @@ export default function TasksPage() {
           <ul className="space-y-2">
             {completedTasks.map((task) => (
               <li
-                key={task.id}
+                key={task.id ?? `completed-${task.title}-${toMillisSafe(task.updatedAt)}`}
                 id={task.id ? `task-${task.id}` : undefined}
                 className={`sn-card sn-card--task sn-card--muted p-4 ${task.favorite ? " sn-card--favorite" : ""} ${
                   task.id && task.id === highlightedTaskId

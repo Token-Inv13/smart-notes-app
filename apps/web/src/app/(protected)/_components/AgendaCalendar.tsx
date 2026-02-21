@@ -200,6 +200,7 @@ export default function AgendaCalendar({
   const [googleCalendarEvents, setGoogleCalendarEvents] = useState<GoogleCalendarEvent[]>([]);
   const [planningAnchorDate, setPlanningAnchorDate] = useState<Date>(new Date());
   const [userTimezone, setUserTimezone] = useState<string>("UTC");
+  const [focusPulseActive, setFocusPulseActive] = useState(false);
 
   const planningWindow = useMemo(
     () => computePlanningWindow(planningAnchorDate, viewMode),
@@ -341,6 +342,15 @@ export default function AgendaCalendar({
     }
   }, [displayMode, initialAnchorDate]);
 
+  useEffect(() => {
+    if (!initialAnchorDate || Number.isNaN(initialAnchorDate.getTime())) return;
+    if (displayMode !== "calendar") return;
+
+    setFocusPulseActive(true);
+    const timer = window.setTimeout(() => setFocusPulseActive(false), 1800);
+    return () => window.clearTimeout(timer);
+  }, [displayMode, initialAnchorDate]);
+
   const calendarData = useMemo(() => {
     const rangeStart = effectiveVisibleRange?.start ?? new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
     const rangeEnd = effectiveVisibleRange?.end ?? new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
@@ -350,12 +360,6 @@ export default function AgendaCalendar({
       window: { start: rangeStart, end: rangeEnd },
     });
     const withDates = [...projected.events];
-
-    if (process.env.NODE_ENV !== "production" && projected.excluded.length > 0) {
-      console.info("agenda.event_projection.excluded_count", {
-        excludedCount: projected.excluded.length,
-      });
-    }
 
     withDates.sort((a, b) => a.start.getTime() - b.start.getTime());
 
@@ -669,11 +673,18 @@ export default function AgendaCalendar({
 
       {error && <div className="sn-alert sn-alert--error">{error}</div>}
 
+      {!error && displayMode === "calendar" && agendaEvents.length === 0 && (
+        <div className="sn-empty">
+          <div className="sn-empty-title">Aucun événement dans cette fenêtre</div>
+          <div className="sn-empty-desc">Ajoute un élément ou élargis la période affichée.</div>
+        </div>
+      )}
+
       <div className="space-y-0">
         <div className="sn-card p-2 bg-[radial-gradient(900px_circle_at_100%_-10%,rgba(59,130,246,0.08),transparent_50%),linear-gradient(180deg,rgba(15,23,42,0.14),transparent_42%)]">
           {displayMode === "calendar" ? (
             <div
-              className={`agenda-premium-calendar ${isCompactDensity ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"}`}
+              className={`agenda-premium-calendar ${isCompactDensity ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"} ${focusPulseActive ? "ring-2 ring-primary/45 transition-shadow" : ""}`}
               data-user-timezone={userTimezone}
               onTouchStart={handleCalendarTouchStart}
               onTouchEnd={handleCalendarTouchEnd}

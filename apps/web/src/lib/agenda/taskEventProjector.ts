@@ -5,7 +5,9 @@ export type TaskProjectionReason =
   | "missing_dates"
   | "invalid_start"
   | "invalid_due"
-  | "invalid_interval";
+  | "invalid_interval"
+  | "invalid_until"
+  | "invalid_window";
 
 export type ProjectedTaskEvent = {
   eventId: string;
@@ -90,6 +92,20 @@ export function projectTasksToEvents(input: {
   const rangeStart = window.start;
   const rangeEnd = window.end;
 
+  if (
+    Number.isNaN(rangeStart.getTime()) ||
+    Number.isNaN(rangeEnd.getTime()) ||
+    rangeEnd.getTime() <= rangeStart.getTime()
+  ) {
+    return {
+      events: [],
+      excluded: tasks.map((task) => ({
+        taskId: typeof task.id === "string" && task.id ? task.id : null,
+        reason: "invalid_window" as const,
+      })),
+    };
+  }
+
   const events: ProjectedTaskEvent[] = [];
   const excluded: TaskProjectionExclusion[] = [];
 
@@ -131,6 +147,10 @@ export function projectTasksToEvents(input: {
     }
 
     const until = recurrence.until?.toDate?.() ?? null;
+    if (until && Number.isNaN(until.getTime())) {
+      excluded.push({ taskId, reason: "invalid_until" });
+      continue;
+    }
     const exceptions = new Set(Array.isArray(recurrence.exceptions) ? recurrence.exceptions : []);
 
     let cursorStart = new Date(start);

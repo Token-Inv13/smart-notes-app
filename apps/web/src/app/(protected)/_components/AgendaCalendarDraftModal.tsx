@@ -81,15 +81,17 @@ export default function AgendaCalendarDraftModal({
             onChange={(e) =>
               setDraft((prev) => {
                 if (!prev) return prev;
+                const nextAllDay = e.target.checked;
                 const start = parseDateFromDraft(prev.startLocal, prev.allDay) ?? new Date();
                 const end =
                   parseDateFromDraft(prev.endLocal, prev.allDay) ??
                   new Date(start.getTime() + 60 * 60 * 1000);
+                const safeTimedEnd = end.getTime() > start.getTime() ? end : new Date(start.getTime() + 60 * 60 * 1000);
                 return {
                   ...prev,
-                  allDay: e.target.checked,
-                  startLocal: e.target.checked ? toLocalDateInputValue(start) : toLocalInputValue(start),
-                  endLocal: e.target.checked ? toLocalDateInputValue(end) : toLocalInputValue(end),
+                  allDay: nextAllDay,
+                  startLocal: nextAllDay ? toLocalDateInputValue(start) : toLocalInputValue(start),
+                  endLocal: nextAllDay ? toLocalDateInputValue(end) : toLocalInputValue(safeTimedEnd),
                 };
               })
             }

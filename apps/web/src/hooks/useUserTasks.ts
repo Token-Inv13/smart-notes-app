@@ -48,6 +48,10 @@ export function useUserTasks(params?: UseUserTasksParams) {
       constraints.push(where('favorite', '==', true));
     }
 
+    if (params?.status) {
+      constraints.push(where('status', '==', params.status));
+    }
+
     if (params?.startDateFrom) {
       constraints.push(where('startDate', '>=', params.startDateFrom));
     }
@@ -77,6 +81,7 @@ export function useUserTasks(params?: UseUserTasksParams) {
     params?.enabled,
     params?.workspaceId,
     params?.favoriteOnly,
+    params?.status,
     params?.limit,
     params?.startDateFrom,
     params?.startDateTo,
