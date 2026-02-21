@@ -7,7 +7,7 @@ import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
-import { parseLocalDateTimeToTimestamp, parseLocalDateToTimestamp } from "@/lib/datetime";
+import { isExactAllDayWindow, parseLocalDateTimeToTimestamp, parseLocalDateToTimestamp } from "@/lib/datetime";
 import { toUserErrorMessage } from "@/lib/userError";
 import type { TaskDoc } from "@/types/firestore";
 import DictationMicButton from "./DictationMicButton";
@@ -219,11 +219,17 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
       const canFavoriteNow =
         initialFavorite === true ? isPro || activeFavoriteCount < 15 : false;
 
+      const explicitAllDay =
+        startTimestamp && dueTimestamp
+          ? isExactAllDayWindow(startTimestamp.toDate(), dueTimestamp.toDate())
+          : false;
+
       const payload: Omit<TaskDoc, "id"> = {
         userId: user.uid,
         title: validation.data.title,
         status: validation.data.status,
         workspaceId: validation.data.workspaceId ?? null,
+        allDay: explicitAllDay,
         startDate: startTimestamp,
         dueDate: dueTimestamp,
         priority: validation.data.priority ?? null,

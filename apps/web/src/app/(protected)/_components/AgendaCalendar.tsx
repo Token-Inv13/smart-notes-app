@@ -29,6 +29,7 @@ import AgendaCalendarPlanningView from "./AgendaCalendarPlanningView";
 import CreateButton from "./CreateButton";
 import VoiceAgentButton from "./assistant/VoiceAgentButton";
 import { projectTasksToEvents } from "@/lib/agenda/taskEventProjector";
+import { getUserTimezone } from "@/lib/datetime";
 import type { TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq } from "@/types/firestore";
 
 type CalendarViewMode = "dayGridMonth" | "timeGridWeek" | "timeGridDay";
@@ -198,6 +199,7 @@ export default function AgendaCalendar({
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [googleCalendarEvents, setGoogleCalendarEvents] = useState<GoogleCalendarEvent[]>([]);
   const [planningAnchorDate, setPlanningAnchorDate] = useState<Date>(new Date());
+  const [userTimezone, setUserTimezone] = useState<string>("UTC");
 
   const planningWindow = useMemo(
     () => computePlanningWindow(planningAnchorDate, viewMode),
@@ -208,6 +210,10 @@ export default function AgendaCalendar({
     () => (displayMode === "planning" ? planningWindow : visibleRange),
     [displayMode, planningWindow, visibleRange],
   );
+
+  useEffect(() => {
+    setUserTimezone(getUserTimezone());
+  }, []);
 
   useEffect(() => {
     try {
@@ -668,6 +674,7 @@ export default function AgendaCalendar({
           {displayMode === "calendar" ? (
             <div
               className={`agenda-premium-calendar ${isCompactDensity ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"}`}
+              data-user-timezone={userTimezone}
               onTouchStart={handleCalendarTouchStart}
               onTouchEnd={handleCalendarTouchEnd}
             >
@@ -709,7 +716,7 @@ export default function AgendaCalendar({
               eventDrop={handleMoveOrResize}
               eventResize={handleMoveOrResize}
               eventContent={eventContent}
-              timeZone="Europe/Paris"
+              timeZone={userTimezone}
               />
               <p className="mt-2 px-1 text-[11px] text-muted-foreground md:hidden">
                 Astuce: glissez gauche/droite pour changer de période.

@@ -1,5 +1,61 @@
 import { Timestamp } from 'firebase/firestore';
 
+export function getUserTimezone(): string {
+  if (typeof window !== 'undefined') {
+    const maybeWindow = window as Window & { __SMARTNOTES_TEST_TIMEZONE__?: unknown };
+    if (typeof maybeWindow.__SMARTNOTES_TEST_TIMEZONE__ === 'string' && maybeWindow.__SMARTNOTES_TEST_TIMEZONE__.trim()) {
+      return maybeWindow.__SMARTNOTES_TEST_TIMEZONE__;
+    }
+  }
+
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (typeof tz === 'string' && tz.trim()) return tz;
+  } catch {
+    // ignore runtime Intl issues
+  }
+
+  return 'UTC';
+}
+
+export function normalizeDateForFirestore(date: Date | null | undefined): Timestamp | null {
+  if (!date || Number.isNaN(date.getTime())) return null;
+  return Timestamp.fromDate(new Date(date.getTime()));
+}
+
+export function isExactAllDayWindow(start: Date, end: Date) {
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return false;
+  if (start.getHours() !== 0 || start.getMinutes() !== 0 || start.getSeconds() !== 0 || start.getMilliseconds() !== 0) {
+    return false;
+  }
+  if (end.getHours() !== 0 || end.getMinutes() !== 0 || end.getSeconds() !== 0 || end.getMilliseconds() !== 0) {
+    return false;
+  }
+  return end.getTime() - start.getTime() === 24 * 60 * 60 * 1000;
+}
+
+export function normalizeAgendaWindowForFirestore(input: { start: Date; end: Date; allDay: boolean }) {
+  const { start, end, allDay } = input;
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+
+  if (allDay) {
+    const normalizedStart = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0);
+    const normalizedEnd = new Date(normalizedStart.getTime() + 24 * 60 * 60 * 1000);
+    return {
+      startDate: normalizeDateForFirestore(normalizedStart),
+      dueDate: normalizeDateForFirestore(normalizedEnd),
+      allDay: true,
+    };
+  }
+
+  const normalizedEnd = end.getTime() > start.getTime() ? new Date(end.getTime()) : new Date(start.getTime() + 60 * 60 * 1000);
+  return {
+    startDate: normalizeDateForFirestore(start),
+    dueDate: normalizeDateForFirestore(normalizedEnd),
+    allDay: false,
+  };
+}
+
 /**
  * Parse an HTML datetime-local string (e.g. "2025-11-16T20:30")
  * into a Firestore Timestamp. Returns null if empty/invalid.
@@ -41,7 +97,7 @@ export function parseLocalDateTimeToTimestamp(value: string): Timestamp | null {
     return null;
   }
 
-  return Timestamp.fromDate(date);
+  return normalizeDateForFirestore(date);
 }
 
 /**
@@ -81,7 +137,7 @@ export function parseLocalDateToTimestamp(value: string): Timestamp | null {
   if (!yyyy || !mm || !dd) return null;
   const d = new Date(yyyy, mm - 1, dd, 0, 0, 0, 0);
   if (Number.isNaN(d.getTime())) return null;
-  return Timestamp.fromDate(d);
+  return normalizeDateForFirestore(d);
 }
 
 export function formatTimestampForDateInput(ts: Timestamp | null | undefined): string {

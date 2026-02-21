@@ -46,3 +46,34 @@ test("agenda_favorite_shows_in_dashboard_favoris", async ({ page }) => {
   await page.getByRole("button", { name: /Favoris agenda/ }).click();
   await expect(page.getByText(title).first()).toBeVisible({ timeout: 15000 });
 });
+
+test("agenda_uses_overridden_user_timezone", async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as Window & { __SMARTNOTES_TEST_TIMEZONE__?: string }).__SMARTNOTES_TEST_TIMEZONE__ = "America/New_York";
+  });
+
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  await expect(page.locator(".agenda-premium-calendar")).toHaveAttribute("data-user-timezone", "America/New_York");
+});
+
+test("agenda_all_day_event_stays_all_day_after_save", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  await page.goto("/tasks?view=calendar");
+  await page.getByRole("button", { name: "Mois" }).click();
+  await page.locator(".fc-daygrid-day").nth(10).click();
+
+  const dialog = page.getByRole("dialog", { name: "Éditeur agenda" });
+  await expect(dialog).toBeVisible();
+  const title = uniqueAgendaTitle("allday");
+  await dialog.getByLabel("Titre").fill(title);
+  await dialog.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(dialog).toBeHidden();
+
+  await page.getByText(title).first().click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("Toute la journée")).toBeChecked();
+});

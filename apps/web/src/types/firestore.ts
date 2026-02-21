@@ -112,6 +112,7 @@ export interface TaskDoc {
   title: string;
   description?: string;
   status?: 'todo' | 'doing' | 'done';
+  allDay?: boolean;
   startDate?: Timestamp | null;
   dueDate?: Timestamp | null;
   priority?: Priority | null;

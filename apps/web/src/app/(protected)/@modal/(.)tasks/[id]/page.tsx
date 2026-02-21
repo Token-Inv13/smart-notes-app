@@ -24,6 +24,7 @@ import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidatio
 import {
   formatTimestampForDateInput,
   formatTimestampForInput,
+  isExactAllDayWindow,
   parseLocalDateTimeToTimestamp,
   parseLocalDateToTimestamp,
 } from "@/lib/datetime";
@@ -649,6 +650,10 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     const dueTimestamp = validation.data.dueDate
       ? parseLocalDateTimeToTimestamp(validation.data.dueDate)
       : null;
+    const explicitAllDay =
+      startTimestamp && dueTimestamp
+        ? isExactAllDayWindow(startTimestamp.toDate(), dueTimestamp.toDate())
+        : false;
     const priority = validation.data.priority ?? null;
 
     setSaving(true);
@@ -664,6 +669,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
         title: validation.data.title,
         status: validation.data.status,
         workspaceId: validation.data.workspaceId ?? null,
+        allDay: explicitAllDay,
         startDate: startTimestamp,
         dueDate: dueTimestamp,
         priority,
@@ -728,6 +734,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
               title: validation.data.title,
               status: validation.data.status,
               workspaceId: validation.data.workspaceId ?? null,
+              allDay: explicitAllDay,
               startDate: startTimestamp,
               dueDate: dueTimestamp,
               priority,

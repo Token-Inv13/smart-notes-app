@@ -28,15 +28,6 @@ function toLocalDateInputValue(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-function isMidnightLocal(d: Date) {
-  return d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0 && d.getMilliseconds() === 0;
-}
-
-function isMultipleOfDaysMs(ms: number) {
-  const dayMs = 24 * 60 * 60 * 1000;
-  return ms > 0 && ms % dayMs === 0;
-}
-
 function overlapsRange(start: Date, end: Date, rangeStart: Date, rangeEnd: Date) {
   return end.getTime() > rangeStart.getTime() && start.getTime() < rangeEnd.getTime();
 }
@@ -62,21 +53,28 @@ export function projectTaskToEvent(task: TaskDoc): {
   const start = startRaw ?? dueRaw;
   if (!start) return { event: null, reason: "missing_dates" };
 
+  const explicitAllDay = task.allDay === true;
+  if (explicitAllDay) {
+    const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0);
+    const endDay = new Date(startDay.getTime() + 24 * 60 * 60 * 1000);
+    return {
+      event: {
+        start: startDay,
+        end: endDay,
+        allDay: true,
+      },
+    };
+  }
+
   const fallbackTimedEnd = new Date(start.getTime() + 60 * 60 * 1000);
-  const fallbackAllDayEnd = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-
   const dueAfterStart = dueRaw && dueRaw.getTime() > start.getTime() ? dueRaw : null;
-  const inferredAllDay = Boolean(
-    startRaw && dueRaw && isMidnightLocal(startRaw) && isMidnightLocal(dueRaw) && isMultipleOfDaysMs(dueRaw.getTime() - startRaw.getTime()),
-  );
-
-  const end = inferredAllDay ? dueAfterStart ?? fallbackAllDayEnd : dueAfterStart ?? fallbackTimedEnd;
+  const end = dueAfterStart ?? fallbackTimedEnd;
 
   return {
     event: {
       start,
       end,
-      allDay: inferredAllDay,
+      allDay: false,
     },
   };
 }

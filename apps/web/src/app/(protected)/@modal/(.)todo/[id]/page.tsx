@@ -1,9 +1,9 @@
 "use client";
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
-import { addDoc, collection, deleteDoc, doc, getDoc, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { formatTimestampForDateInput, parseLocalDateToTimestamp } from "@/lib/datetime";
+import { formatTimestampForDateInput, normalizeAgendaWindowForFirestore, parseLocalDateToTimestamp } from "@/lib/datetime";
 import { toUserErrorMessage } from "@/lib/userError";
 import type { TaskDoc, TodoDoc } from "@/types/firestore";
 import { useRouter } from "next/navigation";
@@ -310,6 +310,10 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
       }
 
       const agendaWindow = mapChecklistDueDateToAgendaWindow(todo.dueDate ?? null);
+      const normalizedWindow = normalizeAgendaWindowForFirestore(agendaWindow);
+      if (!normalizedWindow?.startDate || !normalizedWindow?.dueDate) {
+        throw new Error("Date invalide pour l’ajout à l’agenda.");
+      }
 
       const taskPayload: Omit<TaskDoc, "id"> = {
         userId: user.uid,
@@ -317,8 +321,9 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
         title: todo.title?.trim() || "Checklist",
         description: buildAgendaDescription(todo),
         status: "todo",
-        startDate: Timestamp.fromDate(agendaWindow.start),
-        dueDate: Timestamp.fromDate(agendaWindow.end),
+        allDay: normalizedWindow.allDay,
+        startDate: normalizedWindow.startDate,
+        dueDate: normalizedWindow.dueDate,
         priority: todo.priority ?? null,
         recurrence: null,
         favorite: false,

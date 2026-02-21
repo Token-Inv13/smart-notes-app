@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addDoc, arrayUnion, collection, doc, Timestamp, updateDoc, serverTimestamp } from "firebase/firestore";
+import { addDoc, arrayUnion, collection, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserNotes } from "@/hooks/useUserNotes";
@@ -20,6 +20,7 @@ import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
+import { normalizeAgendaWindowForFirestore, normalizeDateForFirestore } from "@/lib/datetime";
 import { registerFcmToken } from "@/lib/fcm";
 import type { Priority, TaskDoc } from "@/types/firestore";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -138,20 +139,31 @@ export default function TasksPage() {
       return;
     }
 
+    const normalizedWindow = normalizeAgendaWindowForFirestore({
+      start: input.start,
+      end: input.end,
+      allDay: input.allDay,
+    });
+    if (!normalizedWindow?.startDate || !normalizedWindow?.dueDate) {
+      setEditError("Date invalide pour cet élément d’agenda.");
+      return;
+    }
+
     await addDoc(collection(db, "tasks"), {
       userId: user.uid,
       title: input.title,
       description: "",
       status: "todo",
-      startDate: Timestamp.fromDate(input.start),
-      dueDate: Timestamp.fromDate(input.end),
+      allDay: normalizedWindow.allDay,
+      startDate: normalizedWindow.startDate,
+      dueDate: normalizedWindow.dueDate,
       workspaceId: input.workspaceId ?? null,
       priority: input.priority ?? null,
       recurrence: input.recurrence
         ? {
             freq: input.recurrence.freq,
             interval: input.recurrence.interval ?? 1,
-            until: input.recurrence.until ? Timestamp.fromDate(input.recurrence.until) : null,
+            until: normalizeDateForFirestore(input.recurrence.until ?? null),
             exceptions: input.recurrence.exceptions ?? [],
           }
         : null,
@@ -201,10 +213,21 @@ export default function TasksPage() {
       return;
     }
 
+    const normalizedWindow = normalizeAgendaWindowForFirestore({
+      start: input.start,
+      end: input.end,
+      allDay: input.allDay,
+    });
+    if (!normalizedWindow?.startDate || !normalizedWindow?.dueDate) {
+      setEditError("Date invalide pour cet élément d’agenda.");
+      return;
+    }
+
     await updateDoc(doc(db, "tasks", input.taskId), {
       title: input.title ?? current.title,
-      startDate: Timestamp.fromDate(input.start),
-      dueDate: Timestamp.fromDate(input.end),
+      allDay: normalizedWindow.allDay,
+      startDate: normalizedWindow.startDate,
+      dueDate: normalizedWindow.dueDate,
       workspaceId: input.workspaceId ?? current.workspaceId ?? null,
       priority: input.priority ?? current.priority ?? null,
       recurrence:
@@ -214,7 +237,7 @@ export default function TasksPage() {
             ? {
                 freq: input.recurrence.freq,
                 interval: input.recurrence.interval ?? 1,
-                until: input.recurrence.until ? Timestamp.fromDate(input.recurrence.until) : null,
+                until: normalizeDateForFirestore(input.recurrence.until ?? null),
                 exceptions: input.recurrence.exceptions ?? [],
               }
             : null,
@@ -279,11 +302,11 @@ export default function TasksPage() {
   const initialCalendarAnchorDate = useMemo(() => parseDateOnlyParam(focusDateParam), [focusDateParam]);
 
   const calendarRangeFromTs = useMemo(
-    () => (calendarRange ? Timestamp.fromDate(calendarRange.start) : undefined),
+    () => (calendarRange ? (normalizeDateForFirestore(calendarRange.start) ?? undefined) : undefined),
     [calendarRange],
   );
   const calendarRangeToTs = useMemo(
-    () => (calendarRange ? Timestamp.fromDate(calendarRange.end) : undefined),
+    () => (calendarRange ? (normalizeDateForFirestore(calendarRange.end) ?? undefined) : undefined),
     [calendarRange],
   );
 
