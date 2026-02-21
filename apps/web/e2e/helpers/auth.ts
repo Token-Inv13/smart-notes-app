@@ -11,6 +11,13 @@ export type E2EUsers = {
   viewer: E2EUser;
 };
 
+const LOGIN_TIMEOUT_MS =
+  process.env.E2E_LOGIN_TIMEOUT_MS && Number.isFinite(Number(process.env.E2E_LOGIN_TIMEOUT_MS))
+    ? Math.max(5_000, Math.trunc(Number(process.env.E2E_LOGIN_TIMEOUT_MS)))
+    : process.env.CI === "true"
+      ? 45_000
+      : 20_000;
+
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) {
@@ -45,23 +52,35 @@ export async function loginViaUi(page: Page, user: E2EUser, nextPath = "/dashboa
 
   const emailInput = page.locator("#email");
   const passwordInput = page.locator("#password");
+  const feedbackMessage = page.locator("p[aria-live='polite']").first();
 
-  await expect(emailInput).toBeVisible({ timeout: 20_000 });
-  await expect(passwordInput).toBeVisible({ timeout: 20_000 });
+  await expect(emailInput).toBeVisible({ timeout: LOGIN_TIMEOUT_MS });
+  await expect(passwordInput).toBeVisible({ timeout: LOGIN_TIMEOUT_MS });
 
   await emailInput.fill(user.email);
   await passwordInput.fill(user.password);
 
-  await Promise.all([
-    page.waitForURL((url) => !url.pathname.includes("/login"), { timeout: 20_000 }),
-    page.getByRole("button", { name: "Se connecter", exact: true }).click(),
-  ]);
+  await page.getByRole("button", { name: "Se connecter", exact: true }).click();
+
+  await Promise.race([
+    page.waitForURL((url) => !url.pathname.includes("/login"), { timeout: LOGIN_TIMEOUT_MS }),
+    feedbackMessage.waitFor({ state: "visible", timeout: LOGIN_TIMEOUT_MS }),
+  ]).catch(() => undefined);
+
+  if (page.url().includes("/login")) {
+    const uiError = (await feedbackMessage.textContent().catch(() => ""))?.trim() || null;
+    throw new Error(
+      uiError
+        ? `Login did not navigate away from /login. UI message: ${uiError}`
+        : "Login did not navigate away from /login.",
+    );
+  }
 
   await expect
     .poll(
       () => page.url(),
       {
-        timeout: 20_000,
+        timeout: LOGIN_TIMEOUT_MS,
         message: "Login did not navigate away from /login",
       },
     )

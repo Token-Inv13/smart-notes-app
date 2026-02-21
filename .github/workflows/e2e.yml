@@ -53,6 +53,7 @@ jobs:
           )
 
           missing=0
+          invalid=0
           for key in "${required[@]}"; do
             if [ -z "${!key}" ]; then
               echo "::notice title=E2E skipped::Missing $key"
@@ -61,6 +62,35 @@ jobs:
           done
 
           if [ "$missing" -eq 0 ]; then
+            email_keys=(E2E_OWNER_EMAIL E2E_EDITOR_EMAIL E2E_VIEWER_EMAIL)
+            for key in "${email_keys[@]}"; do
+              value="${!key}"
+              if [[ "$value" != *"@"* ]]; then
+                echo "::notice title=E2E skipped::Invalid email format for $key"
+                invalid=1
+              fi
+              lower_value="$(echo "$value" | tr '[:upper:]' '[:lower:]')"
+              if [[ "$lower_value" == *"example.com"* ]]; then
+                echo "::notice title=E2E skipped::$key looks like a placeholder (example.com)"
+                invalid=1
+              fi
+            done
+
+            password_keys=(E2E_OWNER_PASSWORD E2E_EDITOR_PASSWORD E2E_VIEWER_PASSWORD)
+            for key in "${password_keys[@]}"; do
+              value="${!key}"
+              if [ "${#value}" -lt 6 ]; then
+                echo "::notice title=E2E skipped::$key is too short"
+                invalid=1
+              fi
+              if [ "$value" = "***" ] || [ "$value" = "password" ]; then
+                echo "::notice title=E2E skipped::$key looks like a placeholder"
+                invalid=1
+              fi
+            done
+          fi
+
+          if [ "$missing" -eq 0 ] && [ "$invalid" -eq 0 ]; then
             echo "run_e2e=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_e2e=false" >> "$GITHUB_OUTPUT"
