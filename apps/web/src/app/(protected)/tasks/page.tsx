@@ -1324,11 +1324,25 @@ export default function TasksPage() {
       {error && <div className="sn-alert sn-alert--error">Impossible de charger l’agenda pour le moment.</div>}
 
       {!loading && !error && archiveView === "active" && mainTasks.length === 0 && (
-        <div className="sn-empty">
+        <div className="sn-empty sn-empty--premium sn-animate-in">
           <div className="sn-empty-title">{hasActiveSearchOrFilters ? "Aucun résultat" : "Aucun élément d’agenda pour le moment"}</div>
           <div className="sn-empty-desc">
             {hasActiveSearchOrFilters ? "Essaie d’effacer la recherche ou de réinitialiser les filtres." : "Commence par ajouter un élément à l’agenda."}
           </div>
+          {!hasActiveSearchOrFilters && (
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const qs = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
+                  router.push(`/tasks/new${qs}`);
+                }}
+                className="inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 transition-opacity"
+              >
+                Créer une tâche
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1439,7 +1453,7 @@ export default function TasksPage() {
                   className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 ${
                     task.id && task.id === highlightedTaskId
                       ? flashHighlightTaskId === task.id
-                        ? "border-primary ring-2 ring-primary/40"
+                        ? "sn-highlight-soft"
                         : "border-primary"
                       : ""
                   }`}
@@ -1518,7 +1532,7 @@ export default function TasksPage() {
                 className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 min-w-0 ${
                   task.id && task.id === highlightedTaskId
                     ? flashHighlightTaskId === task.id
-                      ? "border-primary ring-2 ring-primary/40"
+                      ? "sn-highlight-soft"
                       : "border-primary"
                     : ""
                 }`}
@@ -1672,7 +1686,7 @@ export default function TasksPage() {
                             ? "opacity-60 ring-2 ring-primary/40"
                             : task.id && task.id === highlightedTaskId
                               ? flashHighlightTaskId === task.id
-                                ? "border-primary ring-2 ring-primary/40"
+                                ? "sn-highlight-soft"
                                 : "border-primary"
                               : ""
                         }`}
@@ -1771,7 +1785,7 @@ export default function TasksPage() {
                 className={`sn-card sn-card--task sn-card--muted p-4 ${task.favorite ? " sn-card--favorite" : ""} ${
                   task.id && task.id === highlightedTaskId
                     ? flashHighlightTaskId === task.id
-                      ? "border-primary ring-2 ring-primary/40"
+                      ? "sn-highlight-soft"
                       : "border-primary"
                     : ""
                 }`}

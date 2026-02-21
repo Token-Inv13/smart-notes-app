@@ -371,25 +371,25 @@ export default function DashboardPage() {
       </header>
 
       <div className="sticky top-0 z-10 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
+        <div className="inline-flex rounded-md border border-border bg-background overflow-hidden max-w-full">
           <button
             type="button"
             onClick={() => scrollToSlide(0)}
-            className={`px-3 py-1 text-sm ${activeSlideIndex === 0 ? 'bg-accent font-semibold' : ''}`}
+            className={`px-3 py-1 text-sm transition-colors ${activeSlideIndex === 0 ? 'bg-accent font-semibold' : 'hover:bg-accent/60'}`}
           >
             Checklist ({todoFavoriteCount})
           </button>
           <button
             type="button"
             onClick={() => scrollToSlide(1)}
-            className={`px-3 py-1 text-sm ${activeSlideIndex === 1 ? 'bg-accent font-semibold' : ''}`}
+            className={`px-3 py-1 text-sm transition-colors ${activeSlideIndex === 1 ? 'bg-accent font-semibold' : 'hover:bg-accent/60'}`}
           >
             Notes ({notesFavoriteCount})
           </button>
           <button
             type="button"
             onClick={() => scrollToSlide(2)}
-            className={`px-3 py-1 text-sm ${activeSlideIndex === 2 ? 'bg-accent font-semibold' : ''}`}
+            className={`px-3 py-1 text-sm transition-colors ${activeSlideIndex === 2 ? 'bg-accent font-semibold' : 'hover:bg-accent/60'}`}
           >
             Favoris agenda ({tasksFavoriteCount})
           </button>
@@ -443,7 +443,7 @@ export default function DashboardPage() {
 
       <div
         ref={slidesContainerRef}
-        className="flex overflow-x-auto snap-x snap-mandatory gap-6"
+        className="flex overflow-x-auto overscroll-x-contain snap-x snap-mandatory gap-6 pb-1"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onTouchCancel={() => {
@@ -455,7 +455,7 @@ export default function DashboardPage() {
             slideRefs.current[0] = el;
           }}
           data-slide-index="0"
-          className="flex-none w-full snap-start"
+          className="flex-none w-full min-w-0 snap-start"
         >
           <section>
             <h2 className="text-lg font-semibold mb-2">Ta checklist importante</h2>
@@ -544,7 +544,7 @@ export default function DashboardPage() {
             slideRefs.current[1] = el;
           }}
           data-slide-index="1"
-          className="flex-none w-full snap-start"
+          className="flex-none w-full min-w-0 snap-start"
         >
           <section>
             <h2 className="text-lg font-semibold mb-2">Tes notes importantes</h2>
@@ -654,14 +654,14 @@ export default function DashboardPage() {
             slideRefs.current[2] = el;
           }}
           data-slide-index="2"
-          className="flex-none w-full snap-start"
+          className="flex-none w-full min-w-0 snap-start"
         >
           <section>
             <div className="mb-2 flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold">Favoris agenda</h2>
               <Link
                 href={tasksCalendarHref}
-                className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1.5 text-sm hover:bg-accent"
+                className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1.5 text-sm hover:bg-accent/70 transition-colors"
               >
                 Voir dans le calendrier
               </Link>
@@ -696,9 +696,17 @@ export default function DashboardPage() {
               </div>
             )}
             {!tasksLoading && !tasksError && activeFavoriteTasks.length === 0 && (
-              <div className="sn-empty">
+              <div className="sn-empty sn-empty--premium sn-animate-in">
                 <div className="sn-empty-title">Aucun favori pour l’instant</div>
-                <div className="sn-empty-desc">Depuis Agenda, épingle les priorités ⭐ pour les retrouver ici.</div>
+                <div className="sn-empty-desc">Depuis Agenda, épingle les priorités ⭐ pour les retrouver ici en un clic.</div>
+                <div className="mt-3">
+                  <Link
+                    href={tasksCalendarHref}
+                    className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 transition-opacity"
+                  >
+                    Ouvrir le calendrier
+                  </Link>
+                </div>
               </div>
             )}
             {!tasksLoading && !tasksError && favoriteAgendaItems.length > 0 && (

@@ -48,6 +48,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
   const [newPriority, setNewPriority] = useState<"" | NonNullable<TaskDoc["priority"]>>("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [createFeedback, setCreateFeedback] = useState<string | null>(null);
 
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const [dictationStatus, setDictationStatus] = useState<"idle" | "listening" | "stopped" | "error">("idle");
@@ -60,6 +61,18 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
   useEffect(() => {
     setNewWorkspaceId(initialWorkspaceId ?? "");
   }, [initialWorkspaceId]);
+
+  useEffect(() => {
+    window.requestAnimationFrame(() => {
+      titleInputRef.current?.focus();
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!createFeedback) return;
+    const timer = window.setTimeout(() => setCreateFeedback(null), 1800);
+    return () => window.clearTimeout(timer);
+  }, [createFeedback]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -199,6 +212,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
     }
 
     setCreateError(null);
+    setCreateFeedback(null);
 
     const startTimestamp = validation.data.startDate ? parseLocalDateToTimestamp(validation.data.startDate) : null;
     const dueTimestamp = validation.data.dueDate ? parseLocalDateTimeToTimestamp(validation.data.dueDate) : null;
@@ -283,6 +297,11 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
       setNewStartDate("");
       setNewDueDate("");
       setNewPriority("");
+      setCreateFeedback("Élément ajouté à l’agenda.");
+
+      window.requestAnimationFrame(() => {
+        titleInputRef.current?.focus();
+      });
 
       onCreated?.();
     } catch (e) {
@@ -307,7 +326,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
               type="text"
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
-              className="flex-1 w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+              className="flex-1 w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm transition-colors focus-visible:border-primary/60"
               placeholder="Ex : Payer le loyer"
               disabled={creating}
             />
@@ -470,12 +489,13 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
           type="button"
           onClick={handleCreateTask}
           disabled={creating || !canCreate}
-          className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50"
+          className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
         >
           {creating ? "Création…" : "Créer dans l’agenda"}
         </button>
       </div>
 
+      {createFeedback && <div className="sn-alert sn-alert--success sn-animate-in" role="status" aria-live="polite">{createFeedback}</div>}
       {createError && <div className="sn-alert sn-alert--error">{createError}</div>}
     </div>
   );

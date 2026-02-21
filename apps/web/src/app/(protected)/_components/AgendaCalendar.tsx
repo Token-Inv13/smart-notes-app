@@ -177,6 +177,7 @@ export default function AgendaCalendar({
   initialAnchorDate,
 }: AgendaCalendarProps) {
   const calendarRef = useRef<FullCalendar | null>(null);
+  const calendarShellRef = useRef<HTMLElement | null>(null);
   const [viewMode, setViewMode] = useState<CalendarViewMode>("timeGridWeek");
   const [displayMode, setDisplayMode] = useState<AgendaDisplayMode>("calendar");
   const [prefsHydrated, setPrefsHydrated] = useState(false);
@@ -201,6 +202,7 @@ export default function AgendaCalendar({
   const [planningAnchorDate, setPlanningAnchorDate] = useState<Date>(new Date());
   const [userTimezone, setUserTimezone] = useState<string>("UTC");
   const [focusPulseActive, setFocusPulseActive] = useState(false);
+  const [viewTransitioning, setViewTransitioning] = useState(false);
 
   const planningWindow = useMemo(
     () => computePlanningWindow(planningAnchorDate, viewMode),
@@ -340,6 +342,8 @@ export default function AgendaCalendar({
     if (displayMode === "calendar") {
       calendarRef.current?.getApi().gotoDate(initialAnchorDate);
     }
+
+    calendarShellRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [displayMode, initialAnchorDate]);
 
   useEffect(() => {
@@ -347,9 +351,14 @@ export default function AgendaCalendar({
     if (displayMode !== "calendar") return;
 
     setFocusPulseActive(true);
-    const timer = window.setTimeout(() => setFocusPulseActive(false), 1800);
+    const timer = window.setTimeout(() => setFocusPulseActive(false), 2100);
     return () => window.clearTimeout(timer);
   }, [displayMode, initialAnchorDate]);
+
+  const triggerViewTransition = useCallback(() => {
+    setViewTransitioning(true);
+    window.setTimeout(() => setViewTransitioning(false), 220);
+  }, []);
 
   const calendarData = useMemo(() => {
     const rangeStart = effectiveVisibleRange?.start ?? new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
@@ -489,6 +498,7 @@ export default function AgendaCalendar({
   });
 
   const changeView = (next: CalendarViewMode) => {
+    triggerViewTransition();
     setViewMode(next);
     if (displayMode === "calendar") {
       calendarRef.current?.getApi().changeView(next);
@@ -500,6 +510,7 @@ export default function AgendaCalendar({
     setVisibleRange({ start: arg.start, end: arg.end });
     setPlanningAnchorDate(arg.start);
     onVisibleRangeChange?.({ start: arg.start, end: arg.end });
+    window.setTimeout(() => setViewTransitioning(false), 80);
   };
 
   useEffect(() => {
@@ -560,12 +571,21 @@ export default function AgendaCalendar({
   });
 
   return (
-    <section className="space-y-3">
+    <section ref={calendarShellRef} className="space-y-3 overflow-x-hidden">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit">
-          <button type="button" className="px-3 py-1.5 text-sm" onClick={() => jump("today")}>Aujourd’hui</button>
-          <button type="button" className="px-3 py-1.5 text-sm border-l border-border" onClick={() => jump("prev")}>←</button>
-          <button type="button" className="px-3 py-1.5 text-sm border-l border-border" onClick={() => jump("next")}>→</button>
+        <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit max-w-full">
+          <button type="button" className="px-3 py-1.5 text-sm hover:bg-accent/60 transition-colors" onClick={() => {
+            triggerViewTransition();
+            jump("today");
+          }}>Aujourd’hui</button>
+          <button type="button" className="px-3 py-1.5 text-sm border-l border-border hover:bg-accent/60 transition-colors" onClick={() => {
+            triggerViewTransition();
+            jump("prev");
+          }}>←</button>
+          <button type="button" className="px-3 py-1.5 text-sm border-l border-border hover:bg-accent/60 transition-colors" onClick={() => {
+            triggerViewTransition();
+            jump("next");
+          }}>→</button>
         </div>
 
         <div className="text-sm font-semibold">{label}</div>
@@ -605,41 +625,47 @@ export default function AgendaCalendar({
             />
           </div>
 
-          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit">
+          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit max-w-full">
           <button
             type="button"
-            className={`px-3 py-1.5 text-sm ${displayMode === "calendar" ? "bg-accent font-semibold" : ""}`}
-            onClick={() => setDisplayMode("calendar")}
+            className={`px-3 py-1.5 text-sm transition-colors ${displayMode === "calendar" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
+            onClick={() => {
+              triggerViewTransition();
+              setDisplayMode("calendar");
+            }}
           >
             Calendrier
           </button>
           <button
             type="button"
-            className={`px-3 py-1.5 text-sm border-l border-border ${displayMode === "planning" ? "bg-accent font-semibold" : ""}`}
-            onClick={() => setDisplayMode("planning")}
+            className={`px-3 py-1.5 text-sm border-l border-border transition-colors ${displayMode === "planning" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
+            onClick={() => {
+              triggerViewTransition();
+              setDisplayMode("planning");
+            }}
           >
             Liste du jour (lecture)
           </button>
           </div>
 
-          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit">
+          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit max-w-full">
           <button
             type="button"
-            className={`px-3 py-1.5 text-sm ${viewMode === "dayGridMonth" ? "bg-accent font-semibold" : ""}`}
+            className={`px-3 py-1.5 text-sm transition-colors ${viewMode === "dayGridMonth" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
             onClick={() => changeView("dayGridMonth")}
           >
             Mois
           </button>
           <button
             type="button"
-            className={`px-3 py-1.5 text-sm border-l border-border ${viewMode === "timeGridWeek" ? "bg-accent font-semibold" : ""}`}
+            className={`px-3 py-1.5 text-sm border-l border-border transition-colors ${viewMode === "timeGridWeek" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
             onClick={() => changeView("timeGridWeek")}
           >
             Semaine
           </button>
           <button
             type="button"
-            className={`px-3 py-1.5 text-sm border-l border-border ${viewMode === "timeGridDay" ? "bg-accent font-semibold" : ""}`}
+            className={`px-3 py-1.5 text-sm border-l border-border transition-colors ${viewMode === "timeGridDay" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
             onClick={() => changeView("timeGridDay")}
           >
             Jour
@@ -674,9 +700,18 @@ export default function AgendaCalendar({
       {error && <div className="sn-alert sn-alert--error">{error}</div>}
 
       {!error && displayMode === "calendar" && agendaEvents.length === 0 && (
-        <div className="sn-empty">
+        <div className="sn-empty sn-empty--premium sn-animate-in">
           <div className="sn-empty-title">Aucun événement dans cette fenêtre</div>
-          <div className="sn-empty-desc">Ajoute un élément ou élargis la période affichée.</div>
+          <div className="sn-empty-desc">Ajoute un élément pour démarrer, ou navigue vers une autre période.</div>
+          <div className="mt-3">
+            <button
+              type="button"
+              className="inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 transition-opacity"
+              onClick={openQuickDraft}
+            >
+              Créer une tâche
+            </button>
+          </div>
         </div>
       )}
 
@@ -684,7 +719,7 @@ export default function AgendaCalendar({
         <div className="sn-card p-2 bg-[radial-gradient(900px_circle_at_100%_-10%,rgba(59,130,246,0.08),transparent_50%),linear-gradient(180deg,rgba(15,23,42,0.14),transparent_42%)]">
           {displayMode === "calendar" ? (
             <div
-              className={`agenda-premium-calendar ${isCompactDensity ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"} ${focusPulseActive ? "ring-2 ring-primary/45 transition-shadow" : ""}`}
+              className={`agenda-premium-calendar ${isCompactDensity ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"} ${viewTransitioning ? "agenda-transitioning" : ""} ${focusPulseActive ? "sn-highlight-soft" : ""}`}
               data-user-timezone={userTimezone}
               onTouchStart={handleCalendarTouchStart}
               onTouchEnd={handleCalendarTouchEnd}
@@ -737,7 +772,10 @@ export default function AgendaCalendar({
             <AgendaCalendarPlanningView
               planningSections={planningSections}
               planningAvailabilityByDate={planningAvailabilityByDate}
-              onSwitchToCalendar={() => setDisplayMode("calendar")}
+              onSwitchToCalendar={() => {
+                triggerViewTransition();
+                setDisplayMode("calendar");
+              }}
               showPlanningAvailability={showPlanningAvailability}
               planningAvailabilityTargetMinutes={planningAvailabilityTargetMinutes}
               onTogglePlanningAvailability={() => setShowPlanningAvailability((prev) => !prev)}

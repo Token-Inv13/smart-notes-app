@@ -1,6 +1,6 @@
 "use client";
 
-import type { Dispatch, SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { Priority, TaskRecurrenceFreq, WorkspaceDoc } from "@/types/firestore";
 import {
   parseDateFromDraft,
@@ -34,17 +34,38 @@ export default function AgendaCalendarDraftModal({
   saveDraft,
   saving,
 }: AgendaCalendarDraftModalProps) {
+  const [closing, setClosing] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
+  const hadDraftRef = useRef(false);
+
+  useEffect(() => {
+    const hasDraft = Boolean(draft);
+    if (hasDraft && !hadDraftRef.current) {
+      setClosing(false);
+      window.requestAnimationFrame(() => {
+        titleInputRef.current?.focus();
+        titleInputRef.current?.select();
+      });
+    }
+    hadDraftRef.current = hasDraft;
+  }, [draft]);
+
+  const requestClose = () => {
+    setClosing(true);
+    window.setTimeout(() => setDraft(null), 160);
+  };
+
   if (!draft) return null;
 
   return (
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Éditeur agenda">
       <button
         type="button"
-        className="absolute inset-0 bg-black/40"
-        onClick={() => setDraft(null)}
+        className="absolute inset-0 bg-black/40 sn-modal-backdrop"
+        onClick={requestClose}
         aria-label="Fermer"
       />
-      <div className="absolute bottom-0 left-0 right-0 sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:right-auto sm:w-[min(92vw,560px)] sm:-translate-x-1/2 sm:-translate-y-1/2 rounded-t-lg sm:rounded-lg border border-border bg-card shadow-lg p-4 space-y-3">
+      <div className={`absolute bottom-0 left-0 right-0 sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:right-auto sm:w-[min(92vw,560px)] sm:-translate-x-1/2 sm:-translate-y-1/2 rounded-t-lg sm:rounded-lg border border-border bg-card shadow-lg p-4 space-y-3 sn-modal-panel transition-opacity ${closing ? "opacity-0" : "opacity-100"}`}>
         <div className="text-sm font-semibold">{draft.taskId ? "Modifier l’élément d’agenda" : "Nouvel élément d’agenda"}</div>
 
         {draft.taskId && draft.instanceDate && draft.recurrenceFreq && (
@@ -67,6 +88,7 @@ export default function AgendaCalendarDraftModal({
         )}
 
         <input
+          ref={titleInputRef}
           value={draft.title}
           onChange={(e) => setDraft((prev) => (prev ? { ...prev, title: e.target.value } : prev))}
           placeholder="Titre"
@@ -199,7 +221,7 @@ export default function AgendaCalendarDraftModal({
           )}
 
           <div className="inline-flex items-center gap-2">
-            <button type="button" className="sn-text-btn" onClick={() => setDraft(null)}>
+            <button type="button" className="sn-text-btn" onClick={requestClose}>
               Annuler
             </button>
             <button
