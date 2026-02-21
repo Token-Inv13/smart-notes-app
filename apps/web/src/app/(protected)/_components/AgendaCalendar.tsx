@@ -11,11 +11,8 @@ import type {
   EventInput,
 } from "@fullcalendar/core";
 import {
-  addRecurrenceStep,
   CALENDAR_PREFERENCES_STORAGE_KEY,
-  overlapsRange,
   priorityColor,
-  taskToAgendaEventWindow,
   toLocalDateInputValue,
 } from "./agendaCalendarUtils";
 import { useAgendaCalendarFilters } from "./useAgendaCalendarFilters";
@@ -31,6 +28,7 @@ import AgendaCalendarDraftModal from "./AgendaCalendarDraftModal";
 import AgendaCalendarPlanningView from "./AgendaCalendarPlanningView";
 import CreateButton from "./CreateButton";
 import VoiceAgentButton from "./assistant/VoiceAgentButton";
+import { projectTasksToEvents } from "@/lib/agenda/taskEventProjector";
 import type { TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq } from "@/types/firestore";
 
 type CalendarViewMode = "dayGridMonth" | "timeGridWeek" | "timeGridDay";
@@ -85,6 +83,7 @@ interface AgendaCalendarProps {
   onVisibleRangeChange?: (range: { start: Date; end: Date }) => void;
   initialPreferences?: Partial<AgendaCalendarPreferences> | null;
   onPreferencesChange?: (prefs: AgendaCalendarPreferences) => void;
+  initialAnchorDate?: Date | null;
 }
 
 function normalizePreferences(raw: Partial<AgendaCalendarPreferences> | null | undefined): AgendaCalendarPreferences | null {
@@ -174,6 +173,7 @@ export default function AgendaCalendar({
   onVisibleRangeChange,
   initialPreferences,
   onPreferencesChange,
+  initialAnchorDate,
 }: AgendaCalendarProps) {
   const calendarRef = useRef<FullCalendar | null>(null);
   const [viewMode, setViewMode] = useState<CalendarViewMode>("timeGridWeek");
@@ -326,71 +326,29 @@ export default function AgendaCalendar({
     void loadGoogleCalendarEvents();
   }, [loadGoogleCalendarEvents]);
 
+  useEffect(() => {
+    if (!initialAnchorDate || Number.isNaN(initialAnchorDate.getTime())) return;
+
+    setPlanningAnchorDate(initialAnchorDate);
+    if (displayMode === "calendar") {
+      calendarRef.current?.getApi().gotoDate(initialAnchorDate);
+    }
+  }, [displayMode, initialAnchorDate]);
+
   const calendarData = useMemo(() => {
     const rangeStart = effectiveVisibleRange?.start ?? new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
     const rangeEnd = effectiveVisibleRange?.end ?? new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
 
-    const withDates = [] as Array<{
-      eventId: string;
-      taskId: string;
-      task: TaskDoc;
-      start: Date;
-      end: Date;
-      allDay: boolean;
-      recurrence: TaskDoc["recurrence"] | null;
-      instanceDate?: string;
-    }>;
+    const projected = projectTasksToEvents({
+      tasks,
+      window: { start: rangeStart, end: rangeEnd },
+    });
+    const withDates = [...projected.events];
 
-    for (const task of tasks) {
-      if (!task.id) continue;
-      const window = taskToAgendaEventWindow(task);
-      const start = window.start;
-      const end = window.end;
-      if (!start || !end) continue;
-
-      const recurrence = task.recurrence ?? null;
-      if (!recurrence?.freq) {
-        if (overlapsRange(start, end, rangeStart, rangeEnd)) {
-          withDates.push({
-            eventId: task.id,
-            taskId: task.id,
-            task,
-            start,
-            end,
-            allDay: window.allDay,
-            recurrence: null,
-          });
-        }
-        continue;
-      }
-
-      const interval = Math.max(1, Number(recurrence.interval ?? 1));
-      const until = recurrence.until?.toDate?.() ?? null;
-      const exceptions = new Set(Array.isArray(recurrence.exceptions) ? recurrence.exceptions : []);
-
-      let cursorStart = new Date(start);
-      let cursorEnd = new Date(end);
-      for (let i = 0; i < 400; i += 1) {
-        if (until && cursorStart.getTime() > until.getTime()) break;
-        if (cursorStart.getTime() > rangeEnd.getTime()) break;
-
-        const instanceDate = toLocalDateInputValue(cursorStart);
-        if (!exceptions.has(instanceDate) && overlapsRange(cursorStart, cursorEnd, rangeStart, rangeEnd)) {
-          withDates.push({
-            eventId: `${task.id}__${cursorStart.toISOString()}`,
-            taskId: task.id,
-            task,
-            start: new Date(cursorStart),
-            end: new Date(cursorEnd),
-            allDay: window.allDay,
-            recurrence,
-            instanceDate,
-          });
-        }
-
-        cursorStart = addRecurrenceStep(cursorStart, recurrence.freq, interval);
-        cursorEnd = addRecurrenceStep(cursorEnd, recurrence.freq, interval);
-      }
+    if (process.env.NODE_ENV !== "production" && projected.excluded.length > 0) {
+      console.info("agenda.event_projection.excluded_count", {
+        excludedCount: projected.excluded.length,
+      });
     }
 
     withDates.sort((a, b) => a.start.getTime() - b.start.getTime());
@@ -603,37 +561,39 @@ export default function AgendaCalendar({
         <div className="text-sm font-semibold">{label}</div>
 
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          {displayMode === "calendar" ? (
-            <div className="inline-flex items-center rounded-md border border-border bg-background/90 shadow-sm overflow-hidden">
-              <VoiceAgentButton
-                renderCustomTrigger={({ onClick, ariaLabel, title }) => (
-                  <button
-                    type="button"
-                    onClick={onClick}
-                    aria-label={ariaLabel}
-                    title={title}
-                    className="h-9 w-10 text-base text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
-                  >
-                    🎤
-                  </button>
-                )}
-              />
-              <div className="h-6 w-px bg-border" aria-hidden="true" />
-              <CreateButton
-                renderCustomTrigger={({ onClick, ariaLabel, title }) => (
-                  <button
-                    type="button"
-                    onClick={onClick}
-                    aria-label={ariaLabel}
-                    title={title}
-                    className="h-9 w-10 text-lg font-semibold leading-none text-primary hover:bg-primary/10 transition-colors"
-                  >
-                    +
-                  </button>
-                )}
-              />
-            </div>
-          ) : null}
+          <div className="inline-flex items-center rounded-md border border-border bg-background/90 shadow-sm overflow-hidden">
+            {displayMode === "calendar" ? (
+              <>
+                <VoiceAgentButton
+                  renderCustomTrigger={({ onClick, ariaLabel, title }) => (
+                    <button
+                      type="button"
+                      onClick={onClick}
+                      aria-label={ariaLabel}
+                      title={title}
+                      className="h-9 w-10 text-base text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+                    >
+                      🎤
+                    </button>
+                  )}
+                />
+                <div className="h-6 w-px bg-border" aria-hidden="true" />
+              </>
+            ) : null}
+            <CreateButton
+              renderCustomTrigger={({ onClick, ariaLabel, title }) => (
+                <button
+                  type="button"
+                  onClick={onClick}
+                  aria-label={ariaLabel}
+                  title={title}
+                  className="h-9 w-10 text-lg font-semibold leading-none text-primary hover:bg-primary/10 transition-colors"
+                >
+                  +
+                </button>
+              )}
+            />
+          </div>
 
           <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit">
           <button
@@ -648,7 +608,7 @@ export default function AgendaCalendar({
             className={`px-3 py-1.5 text-sm border-l border-border ${displayMode === "planning" ? "bg-accent font-semibold" : ""}`}
             onClick={() => setDisplayMode("planning")}
           >
-            Planning
+            Liste du jour (lecture)
           </button>
           </div>
 
@@ -759,6 +719,7 @@ export default function AgendaCalendar({
             <AgendaCalendarPlanningView
               planningSections={planningSections}
               planningAvailabilityByDate={planningAvailabilityByDate}
+              onSwitchToCalendar={() => setDisplayMode("calendar")}
               showPlanningAvailability={showPlanningAvailability}
               planningAvailabilityTargetMinutes={planningAvailabilityTargetMinutes}
               onTogglePlanningAvailability={() => setShowPlanningAvailability((prev) => !prev)}

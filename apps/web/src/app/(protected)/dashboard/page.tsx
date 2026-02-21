@@ -14,6 +14,7 @@ import { useUserInboxMessages } from '@/hooks/useUserInboxMessages';
 import type { NoteDoc, TaskDoc, TodoDoc } from '@/types/firestore';
 import Link from 'next/link';
 import { trackEvent } from '@/lib/analytics';
+import { projectTaskToEvent } from '@/lib/agenda/taskEventProjector';
 
 const INBOX_FALLBACK_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -124,6 +125,17 @@ export default function DashboardPage() {
 
   const activeFavoriteNotes = notes.filter((n) => n.completed !== true && n.archived !== true);
   const activeFavoriteTasks = tasks.filter((t) => (t.status ?? 'todo') !== 'done' && t.archived !== true);
+  const favoriteAgendaItems = useMemo(
+    () =>
+      activeFavoriteTasks.map((task) => {
+        const projected = projectTaskToEvent(task);
+        return {
+          task,
+          projection: projected.event,
+        };
+      }),
+    [activeFavoriteTasks],
+  );
 
   const todoFavoriteCount = favoriteTodos.length;
   const notesFavoriteCount = activeFavoriteNotes.length;
@@ -379,7 +391,7 @@ export default function DashboardPage() {
             onClick={() => scrollToSlide(2)}
             className={`px-3 py-1 text-sm ${activeSlideIndex === 2 ? 'bg-accent font-semibold' : ''}`}
           >
-            Agenda ({tasksFavoriteCount})
+            Favoris agenda ({tasksFavoriteCount})
           </button>
         </div>
       </div>
@@ -646,14 +658,17 @@ export default function DashboardPage() {
         >
           <section>
             <div className="mb-2 flex items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold">Ton agenda important</h2>
+              <h2 className="text-lg font-semibold">Favoris agenda</h2>
               <Link
                 href={tasksCalendarHref}
                 className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1.5 text-sm hover:bg-accent"
               >
-                Ouvrir calendrier
+                Voir dans le calendrier
               </Link>
             </div>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Affiche uniquement les tâches datées marquées en favoris.
+            </p>
             {tasksLoading && (
               <div className="sn-empty sn-animate-in">
                 <div className="space-y-3">
@@ -686,13 +701,28 @@ export default function DashboardPage() {
                 <div className="sn-empty-desc">Depuis Agenda, épingle les priorités ⭐ pour les retrouver ici.</div>
               </div>
             )}
-            {!tasksLoading && !tasksError && activeFavoriteTasks.length > 0 && (
+            {!tasksLoading && !tasksError && favoriteAgendaItems.length > 0 && (
               <ul className="space-y-1">
-                {activeFavoriteTasks.map((task) => {
+                {favoriteAgendaItems.map(({ task, projection }) => {
                   const href = task.id ? `/tasks/${encodeURIComponent(task.id)}${suffix}` : null;
                   const dueLabel = formatFrDateTime(task.dueDate ?? null);
                   const startLabel = formatFrDate(task.startDate ?? null);
                   const prioText = task.priority ? priorityLabel(task.priority) : '';
+                  const calendarHref = (() => {
+                    const params = new URLSearchParams();
+                    if (workspaceId) params.set('workspaceId', workspaceId);
+                    params.set('view', 'calendar');
+                    if (task.id) params.set('taskId', task.id);
+                    if (projection) {
+                      const pad = (n: number) => String(n).padStart(2, '0');
+                      const focusDate = `${projection.start.getFullYear()}-${pad(projection.start.getMonth() + 1)}-${pad(
+                        projection.start.getDate(),
+                      )}`;
+                      params.set('focusDate', focusDate);
+                    }
+                    const qs = params.toString();
+                    return qs ? `/tasks?${qs}` : '/tasks?view=calendar';
+                  })();
                   return (
                     <li
                       key={task.id}
@@ -730,11 +760,23 @@ export default function DashboardPage() {
                                   <span>Priorité: {prioText}</span>
                                 </span>
                               )}
+                              {!projection && <span className="sn-badge">Non planifiée</span>}
                               {task.favorite && <span className="sn-badge">Favori</span>}
                             </div>
                           </div>
 
                           <div className="sn-card-actions sn-card-actions-secondary shrink-0 relative z-20">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                router.push(calendarHref);
+                              }}
+                              className="inline-flex items-center rounded-md border border-border bg-background px-2 py-1 text-xs"
+                            >
+                              Voir calendrier
+                            </button>
                             <button
                               type="button"
                               onClick={(e) => {

@@ -72,12 +72,35 @@ function normalizeAgendaCalendarPreferences(raw: unknown): AgendaCalendarPrefere
   };
 }
 
+function parseDateOnlyParam(raw: string | null): Date | null {
+  if (!raw) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+
+  const parsed = new Date(year, month - 1, day, 12, 0, 0, 0);
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
+    return null;
+  }
+  return parsed;
+}
+
 export default function TasksPage() {
   const router = useRouter();
   const pathname = usePathname();
   const { data: allTasks, loading, error } = useUserTasks();
   const searchParams = useSearchParams();
   const highlightedTaskId = searchParams.get("taskId");
+  const focusDateParam = searchParams.get("focusDate");
   const workspaceIdParam = searchParams.get("workspaceId");
   const createParam = searchParams.get("create");
   const viewParam = searchParams.get("view");
@@ -253,6 +276,8 @@ export default function TasksPage() {
   const [kanbanMobileStatus, setKanbanMobileStatus] = useState<TaskStatus>("todo");
   const kanbanScrollRef = useRef<HTMLDivElement | null>(null);
 
+  const initialCalendarAnchorDate = useMemo(() => parseDateOnlyParam(focusDateParam), [focusDateParam]);
+
   const calendarRangeFromTs = useMemo(
     () => (calendarRange ? Timestamp.fromDate(calendarRange.start) : undefined),
     [calendarRange],
@@ -262,12 +287,43 @@ export default function TasksPage() {
     [calendarRange],
   );
 
-  const { data: calendarWindowTasks } = useUserTasks({
+  const { data: calendarWindowDueTasks } = useUserTasks({
     enabled: viewMode === "calendar",
     workspaceId: workspaceFilter !== "all" ? workspaceFilter : undefined,
     dueDateFrom: calendarRangeFromTs,
     dueDateTo: calendarRangeToTs,
+    limit: 500,
   });
+
+  const { data: calendarWindowStartTasks } = useUserTasks({
+    enabled: viewMode === "calendar",
+    workspaceId: workspaceFilter !== "all" ? workspaceFilter : undefined,
+    startDateFrom: calendarRangeFromTs,
+    startDateTo: calendarRangeToTs,
+    limit: 500,
+  });
+
+  const calendarWindowTasks = useMemo(() => {
+    const byId = new Map<string, TaskDoc>();
+    for (const task of calendarWindowDueTasks) {
+      if (!task.id) continue;
+      byId.set(task.id, task);
+    }
+    for (const task of calendarWindowStartTasks) {
+      if (!task.id) continue;
+      byId.set(task.id, task);
+    }
+
+    if (process.env.NODE_ENV !== "production") {
+      console.info("agenda.calendar.window_query.merge_count", {
+        dueQueryCount: calendarWindowDueTasks.length,
+        startQueryCount: calendarWindowStartTasks.length,
+        mergedCount: byId.size,
+      });
+    }
+
+    return Array.from(byId.values());
+  }, [calendarWindowDueTasks, calendarWindowStartTasks]);
 
   const tasks = viewMode === "calendar" ? calendarWindowTasks : allTasks;
 
@@ -1322,6 +1378,7 @@ export default function TasksPage() {
         <AgendaCalendar
           tasks={mainTasks}
           workspaces={workspaces}
+          initialAnchorDate={initialCalendarAnchorDate}
           initialPreferences={calendarInitialPreferences}
           onPreferencesChange={handleAgendaCalendarPreferencesChange}
           onCreateEvent={handleCalendarCreate}

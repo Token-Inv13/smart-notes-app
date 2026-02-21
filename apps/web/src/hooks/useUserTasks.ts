@@ -23,6 +23,8 @@ interface UseUserTasksParams {
   status?: 'todo' | 'doing' | 'done';
   favoriteOnly?: boolean;
   limit?: number;
+  startDateFrom?: Timestamp;
+  startDateTo?: Timestamp;
   dueDateFrom?: Timestamp;
   dueDateTo?: Timestamp;
 }
@@ -46,6 +48,14 @@ export function useUserTasks(params?: UseUserTasksParams) {
       constraints.push(where('favorite', '==', true));
     }
 
+    if (params?.startDateFrom) {
+      constraints.push(where('startDate', '>=', params.startDateFrom));
+    }
+
+    if (params?.startDateTo) {
+      constraints.push(where('startDate', '<=', params.startDateTo));
+    }
+
     if (params?.dueDateFrom) {
       constraints.push(where('dueDate', '>=', params.dueDateFrom));
     }
@@ -54,8 +64,8 @@ export function useUserTasks(params?: UseUserTasksParams) {
       constraints.push(where('dueDate', '<=', params.dueDateTo));
     }
 
-    // We order by dueDate only (index exists). Fallback by updatedAt will be handled client-side.
-    constraints.push(orderBy('dueDate', 'asc'));
+    const orderField = params?.startDateFrom || params?.startDateTo ? 'startDate' : 'dueDate';
+    constraints.push(orderBy(orderField, 'asc'));
 
     if (params?.limit && params.limit > 0) {
       constraints.push(fsLimit(params.limit));
@@ -68,6 +78,8 @@ export function useUserTasks(params?: UseUserTasksParams) {
     params?.workspaceId,
     params?.favoriteOnly,
     params?.limit,
+    params?.startDateFrom,
+    params?.startDateTo,
     params?.dueDateFrom,
     params?.dueDateTo,
   ]);

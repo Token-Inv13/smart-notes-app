@@ -8,6 +8,7 @@ import type { PlanningSection, PlanningAvailabilitySlot } from "./useAgendaPlann
 type AgendaCalendarPlanningViewProps = {
   planningSections: PlanningSection[];
   planningAvailabilityByDate: Map<string, PlanningAvailabilitySlot[]>;
+  onSwitchToCalendar: () => void;
   showPlanningAvailability: boolean;
   planningAvailabilityTargetMinutes: number;
   onTogglePlanningAvailability: () => void;
@@ -56,6 +57,7 @@ function formatConflictBadge(conflictSource: "local" | "google" | "mix" | null, 
 export default function AgendaCalendarPlanningView({
   planningSections,
   planningAvailabilityByDate,
+  onSwitchToCalendar,
   showPlanningAvailability,
   planningAvailabilityTargetMinutes,
   onTogglePlanningAvailability,
@@ -74,6 +76,19 @@ export default function AgendaCalendarPlanningView({
 
   return (
     <div className="space-y-4 p-2">
+      <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+        <p className="text-xs text-muted-foreground">
+          Affichage lecture — utilise le calendrier pour ajouter ou modifier des éléments.
+        </p>
+        <button
+          type="button"
+          className="mt-2 h-8 rounded-md border border-border bg-background px-3 text-xs"
+          onClick={onSwitchToCalendar}
+        >
+          Aller au calendrier
+        </button>
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs text-muted-foreground">Sélection: {selectedPlanningIds.length}</span>
         <button
