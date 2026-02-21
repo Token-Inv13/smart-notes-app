@@ -26,49 +26,25 @@ Les alias explicites existent aussi :
 - `pnpm web:typecheck`
 - `pnpm e2e:install`
 - `pnpm e2e`
+- `pnpm e2e:agenda`
+- `pnpm e2e:smoke`
 
 ## E2E Playwright
 
-Le runner E2E lit `E2E_BASE_URL`.
+Scripts disponibles:
 
-- En local, si `E2E_BASE_URL` est absent, la base URL par défaut est `http://127.0.0.1:3000`.
-- En CI (`CI=true`), `E2E_BASE_URL` est **obligatoire** et le workflow échoue si la variable est absente.
+- `pnpm e2e`
+- `pnpm e2e:agenda`
+- `pnpm e2e:smoke`
 
-Variables requises pour la suite complète:
+Ces scripts passent par `scripts/e2e-precheck.mjs`:
 
-- `E2E_BASE_URL`
-- `E2E_OWNER_EMAIL`
-- `E2E_OWNER_PASSWORD`
-- `E2E_EDITOR_EMAIL`
-- `E2E_EDITOR_PASSWORD`
-- `E2E_VIEWER_EMAIL`
-- `E2E_VIEWER_PASSWORD`
+- si les variables E2E requises sont présentes et valides, Playwright s'exécute normalement;
+- si elles sont absentes/invalides, le script affiche un message de skip clair et sort avec `exit 0`.
 
-Exemples d'export local:
+Template local sans secrets: `/.env.e2e.example`
 
-PowerShell:
-
-```powershell
-$env:E2E_BASE_URL="https://app.tachesnotes.com"
-$env:E2E_OWNER_EMAIL="owner@example.com"
-$env:E2E_OWNER_PASSWORD="***"
-$env:E2E_EDITOR_EMAIL="editor@example.com"
-$env:E2E_EDITOR_PASSWORD="***"
-$env:E2E_VIEWER_EMAIL="viewer@example.com"
-$env:E2E_VIEWER_PASSWORD="***"
-```
-
-bash:
-
-```bash
-export E2E_BASE_URL="https://app.tachesnotes.com"
-export E2E_OWNER_EMAIL="owner@example.com"
-export E2E_OWNER_PASSWORD="***"
-export E2E_EDITOR_EMAIL="editor@example.com"
-export E2E_EDITOR_PASSWORD="***"
-export E2E_VIEWER_EMAIL="viewer@example.com"
-export E2E_VIEWER_PASSWORD="***"
-```
+Guide détaillé (secrets GitHub + commandes PowerShell/bash): `docs/e2e-secrets.md`
 
 ## Cloud Functions
 
