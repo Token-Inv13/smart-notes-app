@@ -3,21 +3,29 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Smart Notes — Notes, tâches et to-do dans une app simple</title>
-    <meta name="description" content="Notes, tâches et to-do réunies dans une seule application simple, rapide et fiable. Commence gratuitement et garde tout au même endroit." />
-
+    <title>Smart Notes — Le copilote d'organisation pour entrepreneurs solo</title>
+    <meta
+      name="description"
+      content="Smart Notes aide les entrepreneurs solo à garder tâches et agenda cohérents, collaborer sans friction, et avancer vite avec un copilote d'organisation intelligent."
+    />
     <link rel="canonical" href="https://www.tachesnotes.com/" />
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Smart Notes" />
-    <meta property="og:title" content="Smart Notes — Notes, tâches et to-do dans une app simple" />
-    <meta property="og:description" content="Notes, tâches et to-do réunies dans une seule application simple, rapide et fiable. Commence gratuitement et garde tout au même endroit." />
+    <meta property="og:title" content="Smart Notes — Le copilote d'organisation pour entrepreneurs solo" />
+    <meta
+      property="og:description"
+      content="Agenda fiable, favoris agenda, collaboration simple et saisie ultra-rapide. Organise ton activité sans friction."
+    />
     <meta property="og:url" content="https://www.tachesnotes.com/" />
     <meta property="og:image" content="https://www.tachesnotes.com/og-image.svg" />
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Smart Notes — Notes, tâches et to-do dans une app simple" />
-    <meta name="twitter:description" content="Notes, tâches et to-do réunies dans une seule application simple, rapide et fiable. Commence gratuitement et garde tout au même endroit." />
+    <meta name="twitter:title" content="Smart Notes — Le copilote d'organisation pour entrepreneurs solo" />
+    <meta
+      name="twitter:description"
+      content="Tâches + agenda cohérents, saisie rapide, collaboration simple. Commence gratuitement."
+    />
     <meta name="twitter:image" content="https://www.tachesnotes.com/og-image.svg" />
 
     <script type="application/ld+json">
@@ -25,20 +33,20 @@
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "Smart Notes",
-        "applicationCategory": "ProductivityApplication",
+        "applicationCategory": "BusinessApplication",
         "operatingSystem": "Web, Android",
         "url": "https://www.tachesnotes.com/",
         "offers": [
           {
             "@type": "Offer",
-            "name": "Smart Notes Free",
+            "name": "Smart Notes Gratuit",
             "price": "0",
             "priceCurrency": "EUR"
           },
           {
             "@type": "Offer",
             "name": "Smart Notes Pro",
-            "price": "1.99",
+            "price": "4.99",
             "priceCurrency": "EUR",
             "priceSpecification": {
               "@type": "UnitPriceSpecification",
@@ -60,303 +68,391 @@
         };
     </script>
     <script defer data-domain="www.tachesnotes.com" src="https://plausible.io/js/script.js"></script>
-    <link rel="preload" href="/styles.css?v=20260125" as="style" />
-    <link rel="stylesheet" href="/styles.css?v=20260125" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Sora:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="preload" href="/styles.css?v=20260222" as="style" />
+    <link rel="stylesheet" href="/styles.css?v=20260222" />
   </head>
 
   <body>
     <header class="site-header" id="top">
-      <div class="container header__inner">
+      <div class="container nav-wrap">
         <a class="brand" href="#top" aria-label="Smart Notes">
           <img src="/logo.svg" width="160" height="40" alt="Smart Notes" class="brand__logo" />
         </a>
 
-        <nav class="header__nav" aria-label="Navigation">
+        <nav class="nav" aria-label="Navigation principale">
           <a href="#features">Fonctionnalités</a>
-          <a href="#pricing">Abonnement</a>
-          <a href="#for">Pour qui</a>
+          <a href="#collaboration">Collaboration</a>
+          <a href="#pricing">Tarifs</a>
+          <a href="#faq">FAQ</a>
         </nav>
 
-        <div class="header__cta">
-          <a class="btn btn--primary" href="https://app.tachesnotes.com/register" target="_blank" rel="noopener noreferrer" data-cta="start" data-cta-location="header">Commencer gratuitement</a>
+        <div class="nav-actions">
+          <a
+            class="btn btn--ghost"
+            href="https://app.tachesnotes.com/login"
+            target="_blank"
+            rel="noopener noreferrer"
+            data-cta="open_app"
+            data-cta-location="header"
+            >Ouvrir l'app</a
+          >
+          <a
+            class="btn btn--primary"
+            href="https://app.tachesnotes.com/register"
+            target="_blank"
+            rel="noopener noreferrer"
+            data-cta="start_free"
+            data-cta-location="header"
+            >Essayer gratuitement</a
+          >
         </div>
       </div>
     </header>
 
     <main>
-      <section class="hero" aria-label="Introduction">
-        <div class="container hero2">
-          <div class="hero2__copy">
-            <h1 class="hero2__title">Tout ce qu’il te faut pour noter, organiser et ne rien oublier.</h1>
-            <p class="hero2__subtitle">Notes, tâches et to-do réunies dans une seule application simple, rapide et fiable.</p>
-            <div class="hero2__cta">
-              <a class="btn btn--primary btn--lg" href="https://app.tachesnotes.com/register" target="_blank" rel="noopener noreferrer" data-cta="start" data-cta-location="hero">Commencer gratuitement</a>
-              <a class="btn btn--outline btn--lg" href="#features" data-cta="features" data-cta-location="hero">Découvrir les fonctionnalités</a>
+      <section class="hero" aria-label="Hero Smart Notes">
+        <div class="container hero-layout">
+          <div class="hero-copy">
+            <p class="eyebrow">Organisation premium, sans friction</p>
+            <h1>Le copilote d’organisation pour entrepreneurs solo.</h1>
+            <p class="hero-subtitle">
+              Tâches + agenda cohérents, saisie ultra-rapide, collaboration simple. Tout au même endroit.
+            </p>
+            <ul class="hero-bullets">
+              <li>Agenda fiable (timezone &amp; all-day corrects)</li>
+              <li>Favoris agenda pour ce qui compte</li>
+              <li>Invitations workspace en 1 clic</li>
+            </ul>
+            <div class="hero-cta">
+              <a
+                class="btn btn--primary btn--lg"
+                href="https://app.tachesnotes.com/register"
+                target="_blank"
+                rel="noopener noreferrer"
+                data-cta="start_free"
+                data-cta-location="hero"
+                >Essayer gratuitement</a
+              >
+              <a class="btn btn--outline btn--lg" href="#tour" data-cta="see_how" data-cta-location="hero"
+                >Voir comment ça marche</a
+              >
             </div>
-            <p class="hero2__hint">Simple, rassurant, pensé pour un usage quotidien — sur web et mobile.</p>
           </div>
-          <div class="hero2__media">
-            <figure class="shot">
-              <img src="/assets/screens/hero.png" alt="Aperçu de Smart Notes sur ordinateur et mobile" loading="eager" decoding="async" />
-            </figure>
+
+          <div class="hero-visual" aria-label="Mock interface Smart Notes">
+            <article class="mock-card mock-card--main">
+              <p class="mock-title">Agenda semaine</p>
+              <div class="mock-grid">
+                <span class="mock-slot">Lun 09:00 — Revue pipeline</span>
+                <span class="mock-slot">Mar 14:00 — Livraison client</span>
+                <span class="mock-slot">Mer all-day — Admin</span>
+                <span class="mock-slot">Jeu 11:30 — Focus produit</span>
+              </div>
+            </article>
+            <article class="mock-card mock-card--accent">
+              <p class="mock-title">Favoris agenda</p>
+              <p class="mock-line">3 priorités visibles immédiatement</p>
+              <p class="mock-line">Accès direct au bon jour</p>
+            </article>
+            <article class="mock-card mock-card--light">
+              <p class="mock-title">Capture rapide</p>
+              <p class="mock-line">"Préparer devis + call mardi"</p>
+              <p class="mock-line">→ tâche planifiée en 1 action</p>
+            </article>
           </div>
         </div>
       </section>
 
-      <section class="section" id="why" aria-label="Pourquoi Smart Notes">
+      <section class="section section--proof" aria-label="Preuve sociale">
         <div class="container">
-          <div class="section__head">
-            <h2>Pourquoi Smart Notes ?</h2>
-            <p>Une seule app, une interface claire, et l’essentiel au bon endroit.</p>
+          <div class="section-head">
+            <h2>Pensé pour travailler vite, sans friction.</h2>
           </div>
+          <div class="logos" aria-label="Logos clients placeholder">
+            <span>Studio Nova</span>
+            <span>PME Orion</span>
+            <span>Freelance Lab</span>
+            <span>Creator Flow</span>
+            <span>Build &amp; Ship</span>
+            <span>Team Solo+</span>
+          </div>
+          <div class="stats">
+            <article class="stat-card">
+              <p class="stat-value">120k+</p>
+              <p class="stat-label">tâches créées</p>
+            </article>
+            <article class="stat-card">
+              <p class="stat-value">2.4k+</p>
+              <p class="stat-label">utilisateurs actifs</p>
+            </article>
+            <article class="stat-card">
+              <p class="stat-value">18 min</p>
+              <p class="stat-label">gagnées / jour (estimation)</p>
+            </article>
+          </div>
+          <blockquote class="quote">
+            "Enfin une app où mon agenda et mes tâches racontent la même histoire."
+            <cite>— Placeholder testimonial, dirigeante PME</cite>
+          </blockquote>
+        </div>
+      </section>
 
-          <div class="grid3">
-            <div class="card feature">
-              <div class="feature__icon">🧭</div>
-              <h3>Clarté</h3>
-              <p>Notes, tâches et to-do au même endroit, dans une interface lisible.</p>
-            </div>
-            <div class="card feature">
-              <div class="feature__icon">⚡</div>
-              <h3>Rapidité</h3>
-              <p>Créer en quelques secondes, retrouver facilement, avancer sans friction.</p>
-            </div>
-            <div class="card feature">
-              <div class="feature__icon">🔒</div>
-              <h3>Fiabilité</h3>
-              <p>Données sécurisées, abonnement transparent, annulable en un clic.</p>
-            </div>
+      <section class="section" id="tour" aria-label="Tour produit">
+        <div class="container">
+          <div class="section-head">
+            <h2>Un workflow clair en 3 étapes.</h2>
+          </div>
+          <div class="tour-grid">
+            <article class="tour-step">
+              <p class="tour-index">01</p>
+              <h3>Capture</h3>
+              <p>Note une idée, transforme-la en tâche/checklist, puis planifie sans friction.</p>
+            </article>
+            <article class="tour-step">
+              <p class="tour-index">02</p>
+              <h3>Priorise</h3>
+              <p>Marque les éléments clés en favoris agenda pour ne jamais perdre le fil.</p>
+            </article>
+            <article class="tour-step">
+              <p class="tour-index">03</p>
+              <h3>Exécute</h3>
+              <p>Travaille en solo ou à plusieurs avec un cadre simple, stable et lisible.</p>
+            </article>
           </div>
         </div>
       </section>
 
       <section class="section section--soft" id="features" aria-label="Fonctionnalités">
-        <div class="container">
-          <div class="section__head">
-            <h2>Fonctionnalités</h2>
-            <p>Tout ce qu’il faut pour une organisation simple — sans complexité.</p>
-          </div>
+        <div class="container feature-stack">
+          <article class="feature-panel" id="agenda">
+            <h2>Un agenda cohérent et fiable</h2>
+            <ul>
+              <li>Création par clic sur un créneau</li>
+              <li>All-day et heures sans décalage</li>
+              <li>Option Google Calendar (si connecté)</li>
+            </ul>
+            <p class="feature-note">Emplacement screenshot: vue semaine + all-day.</p>
+          </article>
 
-          <div class="steps">
-            <div class="step">
-              <div class="step__copy">
-                <h3>Notes</h3>
-                <p>Création rapide, mise en forme simple, favoris, dossiers, archivage.</p>
-              </div>
-              <figure class="shot shot--tight">
-                <img src="/assets/screens/capture.png" alt="Créer une note rapidement dans Smart Notes" loading="lazy" decoding="async" />
-              </figure>
-            </div>
+          <article class="feature-panel" id="favorites">
+            <h2>Favoris agenda : tes priorités visibles immédiatement</h2>
+            <ul>
+              <li>Marque une tâche planifiée en favori</li>
+              <li>Retrouve l’essentiel sur le dashboard</li>
+              <li>Accès direct au calendrier au bon jour</li>
+            </ul>
+            <p class="feature-note">Emplacement screenshot: bloc favoris dashboard.</p>
+          </article>
 
-            <div class="step step--reverse">
-              <div class="step__copy">
-                <h3>Organisation</h3>
-                <p>Dossiers personnalisés, navigation fluide, tout au bon endroit.</p>
-              </div>
-              <figure class="shot">
-                <img src="/assets/screens/notes.png" alt="Organiser ses notes par dossiers dans Smart Notes" loading="lazy" decoding="async" />
-              </figure>
-            </div>
+          <article class="feature-panel" id="capture">
+            <h2>Saisie rapide et intelligente</h2>
+            <ul>
+              <li>Transformer une note en tâches/checklists</li>
+              <li>Entrée rapide au clavier</li>
+              <li>Moins de clics, plus d’action</li>
+            </ul>
+            <p class="feature-note">Emplacement screenshot: création rapide / modal.</p>
+          </article>
 
-            <div class="step">
-              <div class="step__copy">
-                <h3>Tâches &amp; To-Do</h3>
-                <p>To-do quotidiennes, tâches avec statut, favoris, rappels (version Pro).</p>
-              </div>
-              <figure class="shot">
-                <img src="/assets/screens/tasks.png" alt="Transformer une note en tâche dans Smart Notes" loading="lazy" decoding="async" />
-              </figure>
-            </div>
+          <article class="feature-panel" id="collaboration">
+            <h2>Collaboration simple (workspace)</h2>
+            <ul>
+              <li>Invite par email</li>
+              <li>Rôles viewer/editor</li>
+              <li>Onboarding d’activation guidé</li>
+            </ul>
+            <p class="feature-note">Emplacement screenshot: écran invitation membres.</p>
+          </article>
 
-            <div class="step step--reverse">
-              <div class="step__copy">
-                <h3>Import, manuscrit &amp; export</h3>
-                <p>Import d’images/PDF/vidéos (Pro jusqu’à 350 Mo), manuscrit sur mobile, export PDF.</p>
-              </div>
-              <figure class="shot shot--portrait">
-                <img src="/assets/screens/reminders.png" alt="Rappel sur mobile avec Smart Notes" loading="lazy" decoding="async" />
-              </figure>
-            </div>
-          </div>
+          <article class="feature-panel" id="stability">
+            <h2>Stabilité &amp; sécurité dès le départ</h2>
+            <ul>
+              <li>Monitoring jobs critiques</li>
+              <li>Alertes anti-spam</li>
+              <li>Sécurité rules Firestore</li>
+            </ul>
+            <p class="feature-note">Emplacement screenshot: dashboard monitoring.</p>
+          </article>
         </div>
       </section>
 
-      <section class="section" id="how" aria-label="Comment ça fonctionne">
-        <div class="container">
-          <div class="section__head">
-            <h2>Comment ça fonctionne</h2>
-            <p>En 3 étapes simples.</p>
-          </div>
-          <div class="grid3">
-            <div class="card feature">
-              <div class="feature__icon">✍️</div>
-              <h3>Écrire</h3>
-              <p>Une note rapide, une idée, une liste.</p>
-            </div>
-            <div class="card feature">
-              <div class="feature__icon">📁</div>
-              <h3>Organiser</h3>
-              <p>Par dossier, pour retrouver sans chercher.</p>
-            </div>
-            <div class="card feature">
-              <div class="feature__icon">⏰</div>
-              <h3>Être rappelé</h3>
-              <p>Un rappel quand c’est important. Rien de plus.</p>
-            </div>
-          </div>
+      <section class="section" aria-label="Compatibilité mobile et Google Calendar">
+        <div class="container compatibility-grid">
+          <article class="compat-card">
+            <h2>Compatible mobile / PWA</h2>
+            <p>Conçu pour desktop et smartphone, avec CTA accessibles et navigation fluide.</p>
+          </article>
+          <article class="compat-card">
+            <h2>Google Calendar optionnel</h2>
+            <p>Tu gardes ton workflow actuel. Connecte ton calendrier si tu en as besoin, sinon reste 100% Smart Notes.</p>
+          </article>
         </div>
       </section>
 
-      <section class="section section--soft" id="pricing" aria-label="Abonnement">
+      <section class="section section--soft" id="pricing" aria-label="Tarifs">
         <div class="container">
-          <div class="section__head">
-            <h2>Abonnement</h2>
-            <p>Commence gratuitement, puis passe Pro si tu as besoin des rappels et des imports lourds.</p>
+          <div class="section-head">
+            <h2>Tarifs simples</h2>
           </div>
-
-          <div class="pricing">
-            <div class="card plan">
-              <div class="plan__head">
-                <div class="plan__name">Free</div>
-                <div class="plan__price">0€ <span>/ mois</span></div>
-                <div class="plan__note">Pour démarrer et s’organiser simplement.</div>
-              </div>
-              <ul class="plan__list">
-                <li>Notes, tâches, to-do</li>
-                <li>Organisation par dossiers</li>
-                <li>Import limité</li>
-                <li>Sans rappels</li>
+          <div class="pricing-grid">
+            <article class="price-card">
+              <h3>Gratuit</h3>
+              <p class="price">0€</p>
+              <ul>
+                <li>Notes, tâches, checklists</li>
+                <li>Agenda de base</li>
+                <li>Collaboration limitée</li>
+                <li>Copilote limité</li>
               </ul>
-              <a class="btn btn--primary" href="https://app.tachesnotes.com/register" target="_blank" rel="noopener noreferrer" data-cta="start" data-cta-location="pricing_free">Créer un compte gratuit</a>
-              <div class="plan__fineprint">Sans engagement.</div>
-            </div>
+              <a
+                class="btn btn--outline"
+                href="https://app.tachesnotes.com/register"
+                target="_blank"
+                rel="noopener noreferrer"
+                data-cta="pricing_free"
+                data-cta-location="pricing"
+                >Commencer gratuitement</a
+              >
+            </article>
 
-            <div class="card plan plan--pro">
-              <div class="plan__badge">Recommandé</div>
-              <div class="plan__head">
-                <div class="plan__name">Pro</div>
-                <div class="plan__price">1,99€ <span>/ mois</span></div>
-                <div class="plan__note">Pour aller plus loin : rappels + imports lourds.</div>
-              </div>
-              <ul class="plan__list">
-                <li>Import fichiers lourds (jusqu’à 350 Mo)</li>
-                <li>Rappels activés</li>
-                <li>Accès prioritaire aux futures fonctionnalités</li>
+            <article class="price-card price-card--pro">
+              <p class="price-badge">Le plus choisi</p>
+              <h3>Pro</h3>
+              <p class="price">4,99€ / mois</p>
+              <ul>
+                <li>Copilote illimité</li>
+                <li>Collaboration complète</li>
+                <li>Fonctionnalités avancées agenda</li>
+                <li>Limites augmentées</li>
               </ul>
-              <a class="btn btn--primary" href="https://app.tachesnotes.com/register?next=%2Fupgrade" target="_blank" rel="noopener noreferrer" data-cta="pro" data-cta-location="pricing_pro">Passer à Pro</a>
-              <div class="plan__subhint">Paiement sécurisé • Annulation en un clic • Aucun engagement</div>
-            </div>
+              <a
+                class="btn btn--primary"
+                href="https://app.tachesnotes.com/register?next=%2Fupgrade"
+                target="_blank"
+                rel="noopener noreferrer"
+                data-cta="pricing_pro"
+                data-cta-location="pricing"
+                >Passer Pro</a
+              >
+            </article>
           </div>
+          <p class="pricing-notes">Annulation à tout moment • Paiement sécurisé (Stripe)</p>
         </div>
       </section>
 
-      <section class="section section--soft" id="for" aria-label="Pour qui">
+      <section class="section" id="faq" aria-label="Questions fréquentes">
         <div class="container">
-          <div class="section__head">
-            <h2>Pour qui ?</h2>
-            <p>Pour celles et ceux qui veulent une organisation fiable, sans surcharge.</p>
+          <div class="section-head">
+            <h2>FAQ</h2>
           </div>
-          <div class="grid3">
-            <div class="card feature">
-              <div class="feature__icon">🎓</div>
-              <h3>Étudiants</h3>
-              <p>Notes de cours, to-do et rappels au même endroit.</p>
-            </div>
-            <div class="card feature">
-              <div class="feature__icon">👨‍👩‍👧‍👦</div>
-              <h3>Parents</h3>
-              <p>Listes, tâches du quotidien et organisation familiale.</p>
-            </div>
-            <div class="card feature">
-              <div class="feature__icon">💼</div>
-              <h3>Freelances</h3>
-              <p>Centralise projets, tâches et documents sans te disperser.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="section" id="why2" aria-label="Pourquoi Smart Notes">
-        <div class="container">
-          <div class="section__head">
-            <h2>Pourquoi Smart Notes</h2>
-            <p>Simple, clair, conçu pour l’usage réel.</p>
-          </div>
-          <div class="grid2">
-            <div class="card pitem">
-              <h3>Simplicité d’usage</h3>
-              <p>Pas de jargon. Pas d’écrans inutiles. Vous avancez.</p>
-            </div>
-            <div class="card pitem">
-              <h3>Fiabilité des rappels</h3>
-              <p>Des rappels qui arrivent quand vous en avez besoin.</p>
-            </div>
-            <div class="card pitem">
-              <h3>Interface claire</h3>
-              <p>Lisible sur desktop et mobile (PWA).</p>
-            </div>
-            <div class="card pitem">
-              <h3>Pas de gadgets</h3>
-              <p>L’essentiel, bien fait : notes, tâches, dossiers, rappels.</p>
-            </div>
+          <div class="faq-grid">
+            <article class="faq-item">
+              <h3>Smart Notes remplace Notion ou Todoist ?</h3>
+              <p>Smart Notes est plus simple et orienté action + agenda. Tu avances vite, sans couche de complexité.</p>
+            </article>
+            <article class="faq-item">
+              <h3>Puis-je connecter Google Calendar ?</h3>
+              <p>Oui, c’est optionnel et activable depuis les paramètres.</p>
+            </article>
+            <article class="faq-item">
+              <h3>C’est pour qui ?</h3>
+              <p>Entrepreneurs solo, freelances tech, créateurs et dirigeants PME.</p>
+            </article>
+            <article class="faq-item">
+              <h3>Freemium : quelles limites ?</h3>
+              <p>Le plan gratuit couvre l’essentiel; le plan Pro étend le copilote, la collaboration et les capacités avancées.</p>
+            </article>
+            <article class="faq-item">
+              <h3>Mes données sont-elles sécurisées ?</h3>
+              <p>Auth + rules Firestore + monitoring des jobs critiques + suppression de compte disponible.</p>
+            </article>
+            <article class="faq-item">
+              <h3>Ça fonctionne sur mobile ?</h3>
+              <p>Oui, l’interface est optimisée mobile et disponible en mode PWA.</p>
+            </article>
+            <article class="faq-item">
+              <h3>Puis-je collaborer avec un client ou un associé ?</h3>
+              <p>Oui, via workspaces, invitations email et rôles viewer/editor.</p>
+            </article>
           </div>
         </div>
       </section>
 
-      <section class="section section--soft" id="cta" aria-label="Essai gratuit">
-        <div class="container">
-          <div class="cta card">
-            <div class="cta__content">
-              <h2>Commence à t’organiser simplement, dès aujourd’hui.</h2>
-              <p>Crée ton compte gratuitement et garde l’essentiel sous contrôle.</p>
-              <div class="cta__actions">
-                <a class="btn btn--primary btn--lg" href="https://app.tachesnotes.com/register" target="_blank" rel="noopener noreferrer" data-cta="start" data-cta-location="final">Créer un compte gratuitement</a>
-              </div>
-              <p class="cta__hint">Paiement sécurisé • Annulation en un clic • Aucun engagement</p>
-            </div>
-          </div>
+      <section class="section section--final" aria-label="Call to action final">
+        <div class="container final-cta">
+          <h2>Passe de "je dois m’organiser" à "c’est déjà cadré".</h2>
+          <p>Crée ton espace gratuitement en moins de 2 minutes.</p>
+          <a
+            class="btn btn--primary btn--lg"
+            href="https://app.tachesnotes.com/register"
+            target="_blank"
+            rel="noopener noreferrer"
+            data-cta="start_free"
+            data-cta-location="final"
+            >Essayer gratuitement</a
+          >
         </div>
       </section>
-
-      <footer class="footer" aria-label="Pied de page">
-        <div class="container footer__inner">
-          <div class="footer__brand">
-            <img src="/logo.svg" width="160" height="40" alt="Smart Notes" class="footer__logo" />
-            <div class="footer__copy">Notes & tâches — simplement.</div>
-          </div>
-          <div class="footer__cols">
-            <div class="footer__col">
-              <div class="footer__title">Liens</div>
-              <a href="#top">Accueil</a>
-              <a href="/organiser-ses-taches-simplement/">Guides</a>
-            </div>
-            <div class="footer__col">
-              <div class="footer__title">Contact</div>
-              <a href="mailto:demande-service@tachesnotes.com">demande-service@tachesnotes.com</a>
-            </div>
-          </div>
-          <div class="footer__legal">© <span id="y"></span> Smart Notes.</div>
-        </div>
-      </footer>
     </main>
 
-    <script>
-      document.getElementById('y').textContent = new Date().getFullYear();
+    <footer class="site-footer" aria-label="Pied de page">
+      <div class="container footer-grid">
+        <div>
+          <img src="/logo.svg" width="160" height="40" alt="Smart Notes" class="brand__logo" />
+          <p class="footer-copy">Simple, rapide, intelligent — sans complexité.</p>
+        </div>
+        <div class="footer-links">
+          <a href="https://app.tachesnotes.com/privacy" target="_blank" rel="noopener noreferrer">Privacy</a>
+          <a href="mailto:contact@tachesnotes.com?subject=Smart%20Notes%20Terms">Terms</a>
+          <a href="https://app.tachesnotes.com/delete-account" target="_blank" rel="noopener noreferrer">Delete account</a>
+          <a href="mailto:contact@tachesnotes.com">Contact</a>
+        </div>
+      </div>
+      <div class="container footer-legal">© <span id="y"></span> Smart Notes.</div>
+    </footer>
 
-      document.querySelectorAll('a[data-cta]').forEach((el) => {
-        el.addEventListener('click', () => {
-          const cta = el.getAttribute('data-cta') || 'unknown';
-          const location = el.getAttribute('data-cta-location') || 'unknown';
-          const eventName = `cta_${cta}`;
-          window.plausible(eventName, { props: { location } });
+    <div class="mobile-cta" aria-label="Call to action mobile sticky">
+      <a
+        class="btn btn--primary mobile-cta__btn"
+        href="https://app.tachesnotes.com/register"
+        target="_blank"
+        rel="noopener noreferrer"
+        data-cta="start_free"
+        data-cta-location="mobile_sticky"
+        >Essayer gratuitement</a
+      >
+    </div>
+
+    <script>
+      document.getElementById("y").textContent = new Date().getFullYear();
+
+      function trackConversion(eventName, props) {
+        try {
+          if (typeof window.plausible === "function") {
+            window.plausible(eventName, { props: props || {} });
+            return;
+          }
+        } catch (_) {
+          // no-op
+        }
+        if (typeof console !== "undefined" && typeof console.debug === "function") {
+          console.debug("[landing-conversion]", eventName, props || {});
+        }
+      }
+
+      document.querySelectorAll("a[data-cta]").forEach((el) => {
+        el.addEventListener("click", () => {
+          const cta = el.getAttribute("data-cta") || "unknown";
+          const location = el.getAttribute("data-cta-location") || "unknown";
+          trackConversion("landing_cta_click", { cta: cta, location: location });
         });
       });
     </script>
-
-    <div class="mobile-cta" aria-label="Actions rapides">
-      <div class="mobile-cta__inner">
-        <a class="btn btn--primary mobile-cta__btn" href="https://app.tachesnotes.com/register" target="_blank" rel="noopener noreferrer" data-cta="start" data-cta-location="mobile_sticky">Commencer gratuitement</a>
-      </div>
-    </div>
   </body>
 </html>
