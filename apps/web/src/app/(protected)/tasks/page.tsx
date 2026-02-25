@@ -21,6 +21,7 @@ import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import { normalizeAgendaWindowForFirestore, normalizeDateForFirestore } from "@/lib/datetime";
+import { FEATURE_FLAGS } from "@/lib/featureFlags";
 import { registerFcmToken } from "@/lib/fcm";
 import type { Priority, TaskDoc } from "@/types/firestore";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -37,7 +38,7 @@ type TaskStatus = "todo" | "doing" | "done";
 type TaskStatusFilter = "all" | TaskStatus;
 type WorkspaceFilter = "all" | string;
 type TaskViewMode = "list" | "grid" | "kanban" | "calendar";
-const AGENDA_GRID_ENABLED = process.env.NEXT_PUBLIC_AGENDA_ENABLE_GRID === "1";
+const AGENDA_GRID_ENABLED = FEATURE_FLAGS.agendaGridEnabled;
 type CalendarRecurrenceInput = {
   freq: "daily" | "weekly" | "monthly";
   interval?: number;
@@ -1088,7 +1089,7 @@ export default function TasksPage() {
               onClick={() => applyViewMode("calendar")}
               className={`px-3 py-1 text-sm border-l border-border ${viewMode === "calendar" ? "bg-accent" : ""}`}
             >
-              Calendrier
+              Agenda
             </button>
           </div>
         </div>
