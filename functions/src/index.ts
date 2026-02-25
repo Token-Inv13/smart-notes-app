@@ -5702,6 +5702,7 @@ export const assistantRequestVoiceTranscription = functions
       const durationMs = Date.now() - callableStartedMs;
       console.info('ops.metric.assistant_voice_transcription_duration', {
         metric: 'assistant.voice.transcription.duration_ms',
+        phase: 'voice_transcription',
         requestId,
         uid: context.auth?.uid ?? 'anonymous',
         durationMs,
@@ -5710,6 +5711,7 @@ export const assistantRequestVoiceTranscription = functions
 
       console.info('ops.metric.assistant_callable_latency', {
         functionName: 'assistantRequestVoiceTranscription',
+        phase: 'voice_transcription',
         requestId,
         uid: context.auth?.uid ?? 'anonymous',
         durationMs,
@@ -5965,6 +5967,7 @@ export const assistantExecuteIntent = functions.https.onCall(async (data, contex
     const durationMs = Date.now() - callableStartedMs;
     console.info('ops.metric.assistant_intent_duration', {
       metric: 'assistant.voice.intent.duration_ms',
+      phase: 'voice_intent',
       requestId,
       uid: context.auth?.uid ?? 'anonymous',
       durationMs,
@@ -5973,6 +5976,7 @@ export const assistantExecuteIntent = functions.https.onCall(async (data, contex
 
     console.info('ops.metric.assistant_callable_latency', {
       functionName: 'assistantExecuteIntent',
+      phase: 'voice_intent',
       requestId,
       uid: context.auth?.uid ?? 'anonymous',
       durationMs,
