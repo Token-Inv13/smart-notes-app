@@ -634,7 +634,7 @@ export default function AgendaCalendar({
               setDisplayMode("calendar");
             }}
           >
-            Calendrier
+            Agenda
           </button>
           <button
             type="button"

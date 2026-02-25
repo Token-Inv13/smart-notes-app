@@ -31,7 +31,7 @@ import { CALENDAR_PREFERENCES_STORAGE_KEY } from "../_components/agendaCalendarU
 import type { AgendaCalendarPreferences } from "../_components/AgendaCalendar";
 
 const AgendaCalendar = dynamic(() => import("../_components/AgendaCalendar"), {
-  loading: () => <div className="sn-empty">Chargement du calendrier…</div>,
+  loading: () => <div className="sn-empty">Chargement de l’Agenda…</div>,
 });
 
 type TaskStatus = "todo" | "doing" | "done";

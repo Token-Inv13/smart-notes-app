@@ -78,14 +78,14 @@ export default function AgendaCalendarPlanningView({
     <div className="space-y-4 p-2">
       <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
         <p className="text-xs text-muted-foreground">
-          Affichage lecture — utilise le calendrier pour ajouter ou modifier des éléments.
+          Affichage lecture — utilise l’Agenda pour ajouter ou modifier des éléments.
         </p>
         <button
           type="button"
           className="mt-2 h-8 rounded-md border border-border bg-background px-3 text-xs"
           onClick={onSwitchToCalendar}
         >
-          Aller au calendrier
+          Aller à l’Agenda
         </button>
       </div>
 
