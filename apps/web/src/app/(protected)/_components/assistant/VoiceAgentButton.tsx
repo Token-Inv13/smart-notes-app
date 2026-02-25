@@ -1182,6 +1182,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
         const intentReadyMs = Date.now();
         voiceTimelineRef.current.intentReadyMs = intentReadyMs;
         trackVoiceFlowEvent("voice_intent_ready", {
+          phase: "voice_intent",
           intent_kind: res.data.intent.kind,
           needs_clarification: res.data.needsClarification === true,
           intent_call_ms: Math.max(0, intentReadyMs - intentCallStartedMs),
@@ -1193,6 +1194,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
         const actionDoneMs = Date.now();
         voiceTimelineRef.current.actionDoneMs = actionDoneMs;
         trackVoiceFlowEvent("voice_action_done", {
+          phase: "voice_action",
           intent_kind: res.data.intent.kind,
           created_objects_count: res.data.createdCoreObjects.length,
           execute_call_ms: Math.max(0, actionDoneMs - intentCallStartedMs),
@@ -1245,6 +1247,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
       const uploadDoneMs = Date.now();
       voiceTimelineRef.current.uploadDoneMs = uploadDoneMs;
       trackVoiceFlowEvent("voice_upload_done", {
+        phase: "voice_upload",
         audio_bytes: blob.size,
         stop_to_upload_ms: safeDeltaMs(voiceTimelineRef.current.recordStopMs, uploadDoneMs),
       });
@@ -1323,6 +1326,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
         const recordStopMs = Date.now();
         voiceTimelineRef.current.recordStopMs = recordStopMs;
         trackVoiceFlowEvent("voice_record_stop", {
+          phase: "voice_record",
           heard_voice: heardVoiceRef.current,
           record_duration_ms: safeDeltaMs(voiceTimelineRef.current.recordStartMs, recordStopMs),
         });
@@ -1337,6 +1341,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
       startedAtRef.current = Date.now();
       voiceTimelineRef.current.recordStartMs = startedAtRef.current;
       trackVoiceFlowEvent("voice_record_start", {
+        phase: "voice_record",
         auto_started: startedAutomaticallyRef.current,
       });
 
@@ -1524,6 +1529,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
       const transcriptReadyMs = Date.now();
       voiceTimelineRef.current.transcriptReadyMs = transcriptReadyMs;
       trackVoiceFlowEvent("voice_transcript_ready", {
+        phase: "voice_transcription",
         transcript_chars: nextTranscript.length,
         upload_to_transcript_ms: safeDeltaMs(voiceTimelineRef.current.uploadDoneMs, transcriptReadyMs),
         stop_to_transcript_ms: safeDeltaMs(voiceTimelineRef.current.recordStopMs, transcriptReadyMs),
