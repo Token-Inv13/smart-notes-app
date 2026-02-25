@@ -5450,6 +5450,23 @@ export const assistantCreateVoiceJob = functions.https.onCall(async (data, conte
 export const assistantRequestVoiceTranscription = functions
   .runWith({ timeoutSeconds: 540, memory: '1GB' })
   .https.onCall(async (data, context) => {
+    const requestIdRaw = (context as { rawRequest?: { headers?: Record<string, unknown> } })?.rawRequest?.headers?.[
+      'x-request-id'
+    ];
+    const requestId = typeof requestIdRaw === 'string' && requestIdRaw ? requestIdRaw : crypto.randomUUID();
+    const callableStartedMs = Date.now();
+    const obs = beginFunctionObserve({
+      functionName: 'assistantRequestVoiceTranscription',
+      requestId,
+      meta: {
+        jobType: 'assistant_voice_transcription',
+        uid: context.auth?.uid ?? 'anonymous',
+      },
+    });
+    let obsStatus: ObserveStatus = 'success';
+    let obsErrorMessage: string | null = null;
+
+    try {
     const userId = context.auth?.uid;
     if (!userId) {
       throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
@@ -5677,6 +5694,35 @@ export const assistantRequestVoiceTranscription = functions
 
       throw new functions.https.HttpsError('internal', e instanceof Error ? e.message : 'Voice transcription error');
     }
+    } catch (error) {
+      obsStatus = 'error';
+      obsErrorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw error;
+    } finally {
+      const durationMs = Date.now() - callableStartedMs;
+      console.info('ops.metric.assistant_voice_transcription_duration', {
+        metric: 'assistant.voice.transcription.duration_ms',
+        requestId,
+        uid: context.auth?.uid ?? 'anonymous',
+        durationMs,
+        status: obsStatus,
+      });
+
+      console.info('ops.metric.assistant_callable_latency', {
+        functionName: 'assistantRequestVoiceTranscription',
+        requestId,
+        uid: context.auth?.uid ?? 'anonymous',
+        durationMs,
+        status: obsStatus,
+        errorMessage: obsErrorMessage,
+      });
+
+      await endFunctionObserve(obs, obsStatus, {
+        jobType: 'assistant_voice_transcription',
+        uid: context.auth?.uid ?? 'anonymous',
+        errorMessage: obsErrorMessage,
+      });
+    }
   });
 
 export const assistantExecuteIntent = functions.https.onCall(async (data, context) => {
@@ -5684,6 +5730,7 @@ export const assistantExecuteIntent = functions.https.onCall(async (data, contex
     'x-request-id'
   ];
   const requestId = typeof requestIdRaw === 'string' && requestIdRaw ? requestIdRaw : crypto.randomUUID();
+  const callableStartedMs = Date.now();
   const obs = beginFunctionObserve({
     functionName: 'assistantExecuteIntent',
     requestId,
@@ -5915,6 +5962,24 @@ export const assistantExecuteIntent = functions.https.onCall(async (data, contex
     obsErrorMessage = error instanceof Error ? error.message : 'Unknown error';
     throw error;
   } finally {
+    const durationMs = Date.now() - callableStartedMs;
+    console.info('ops.metric.assistant_intent_duration', {
+      metric: 'assistant.voice.intent.duration_ms',
+      requestId,
+      uid: context.auth?.uid ?? 'anonymous',
+      durationMs,
+      status: obsStatus,
+    });
+
+    console.info('ops.metric.assistant_callable_latency', {
+      functionName: 'assistantExecuteIntent',
+      requestId,
+      uid: context.auth?.uid ?? 'anonymous',
+      durationMs,
+      status: obsStatus,
+      errorMessage: obsErrorMessage,
+    });
+
     await endFunctionObserve(obs, obsStatus, {
       jobType: 'assistant_intent',
       uid: context.auth?.uid ?? 'anonymous',

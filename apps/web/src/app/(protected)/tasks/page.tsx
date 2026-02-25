@@ -37,6 +37,7 @@ type TaskStatus = "todo" | "doing" | "done";
 type TaskStatusFilter = "all" | TaskStatus;
 type WorkspaceFilter = "all" | string;
 type TaskViewMode = "list" | "grid" | "kanban" | "calendar";
+const AGENDA_GRID_ENABLED = process.env.NEXT_PUBLIC_AGENDA_ENABLE_GRID === "1";
 type CalendarRecurrenceInput = {
   freq: "daily" | "weekly" | "monthly";
   interval?: number;
@@ -281,7 +282,7 @@ export default function TasksPage() {
   const [workspaceFilter, setWorkspaceFilter] = useState<WorkspaceFilter>("all");
   const [archiveView, setArchiveView] = useState<"active" | "archived">("active");
 
-  const [viewMode, setViewMode] = useState<TaskViewMode>("list");
+  const [viewMode, setViewMode] = useState<TaskViewMode>("calendar");
   const [calendarRange, setCalendarRange] = useState<{ start: Date; end: Date } | null>(null);
   const [flashHighlightTaskId, setFlashHighlightTaskId] = useState<string | null>(null);
 
@@ -451,7 +452,8 @@ export default function TasksPage() {
     try {
       const raw = window.localStorage.getItem("tasksViewMode");
       if (raw === "list" || raw === "grid" || raw === "kanban" || raw === "calendar") {
-        setViewMode(raw as TaskViewMode);
+        const next = raw === "grid" && !AGENDA_GRID_ENABLED ? "calendar" : raw;
+        setViewMode(next as TaskViewMode);
       }
     } catch {
       // ignore
@@ -459,9 +461,10 @@ export default function TasksPage() {
   }, []);
 
   const applyViewMode = useCallback((next: TaskViewMode) => {
-    setViewMode(next);
+    const safeNext = next === "grid" && !AGENDA_GRID_ENABLED ? "calendar" : next;
+    setViewMode(safeNext);
     try {
-      window.localStorage.setItem("tasksViewMode", next);
+      window.localStorage.setItem("tasksViewMode", safeNext);
     } catch {
       // ignore localStorage errors
     }
@@ -524,7 +527,8 @@ export default function TasksPage() {
   useEffect(() => {
     if (hasAppliedViewParamRef.current) return;
     if (viewParam === "calendar" || viewParam === "list" || viewParam === "grid" || viewParam === "kanban") {
-      applyViewMode(viewParam);
+      const safeFromQuery = viewParam === "grid" && !AGENDA_GRID_ENABLED ? "calendar" : viewParam;
+      applyViewMode(safeFromQuery);
       hasAppliedViewParamRef.current = true;
       return;
     }
@@ -1065,18 +1069,20 @@ export default function TasksPage() {
             </button>
             <button
               type="button"
-              onClick={() => applyViewMode("grid")}
-              className={`px-3 py-1 text-sm border-l border-border ${viewMode === "grid" ? "bg-accent" : ""}`}
-            >
-              Grille
-            </button>
-            <button
-              type="button"
               onClick={() => applyViewMode("kanban")}
               className={`px-3 py-1 text-sm border-l border-border ${viewMode === "kanban" ? "bg-accent" : ""}`}
             >
-              Kanban
+              Kanban (avancé)
             </button>
+            {AGENDA_GRID_ENABLED && (
+              <button
+                type="button"
+                onClick={() => applyViewMode("grid")}
+                className={`px-3 py-1 text-sm border-l border-border ${viewMode === "grid" ? "bg-accent" : ""}`}
+              >
+                Grille (avancé)
+              </button>
+            )}
             <button
               type="button"
               onClick={() => applyViewMode("calendar")}
@@ -1515,7 +1521,7 @@ export default function TasksPage() {
         </ul>
       )}
 
-      {!loading && !error && archiveView === "active" && viewMode === "grid" && mainTasks.length > 0 && (
+      {!loading && !error && archiveView === "active" && AGENDA_GRID_ENABLED && viewMode === "grid" && mainTasks.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {mainTasks.map((task) => {
             const status = (task.status as TaskStatus | undefined) ?? "todo";

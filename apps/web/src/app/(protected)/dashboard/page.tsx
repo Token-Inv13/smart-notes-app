@@ -663,7 +663,7 @@ export default function DashboardPage() {
                 href={tasksCalendarHref}
                 className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1.5 text-sm hover:bg-accent/70 transition-colors"
               >
-                Voir dans le calendrier
+                Ouvrir l’Agenda
               </Link>
             </div>
             <p className="mb-3 text-xs text-muted-foreground">
@@ -704,7 +704,7 @@ export default function DashboardPage() {
                     href={tasksCalendarHref}
                     className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 transition-opacity"
                   >
-                    Ouvrir le calendrier
+                    Ouvrir l’Agenda
                   </Link>
                 </div>
               </div>
@@ -783,7 +783,7 @@ export default function DashboardPage() {
                               }}
                               className="inline-flex items-center rounded-md border border-border bg-background px-2 py-1 text-xs"
                             >
-                              Voir calendrier
+                              Ouvrir l’Agenda
                             </button>
                             <button
                               type="button"
