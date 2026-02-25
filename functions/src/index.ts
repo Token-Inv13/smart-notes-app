@@ -5872,15 +5872,35 @@ export const assistantExecuteIntent = functions.https.onCall(async (data, contex
   }
 
   if (parsed.kind === 'create_reminder') {
+    const remindAt = parsedRemindAtTs ?? admin.firestore.Timestamp.fromDate(new Date(Date.now() + 60 * 60 * 1000));
+
     if (!isPro) {
+      const taskRef = db.collection('tasks').doc();
+      await taskRef.create({
+        userId,
+        title: parsed.title,
+        status: 'todo',
+        workspaceId: null,
+        startDate: null,
+        dueDate: remindAt,
+        priority: null,
+        favorite: false,
+        archived: false,
+        source: {
+          assistant: true,
+          channel: 'voice_intent',
+        },
+        createdAt,
+        updatedAt,
+      });
+
       return {
         ...responseBase,
-        executed: false,
-        message: 'Le rappel automatique nécessite le plan Pro.',
+        executed: true,
+        createdCoreObjects: [{ type: 'task' as const, id: taskRef.id }],
+        message: 'Rappel enregistré dans l’Agenda. Les rappels automatiques nécessitent le plan Pro.',
       };
     }
-
-    const remindAt = parsedRemindAtTs ?? admin.firestore.Timestamp.fromDate(new Date(Date.now() + 60 * 60 * 1000));
     const remindAtIsoEffective = remindAt.toDate().toISOString();
 
     const taskRef = db.collection('tasks').doc();
