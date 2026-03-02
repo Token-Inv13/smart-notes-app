@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FirebaseError } from "firebase/app";
 import { httpsCallable } from "firebase/functions";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { collection, doc, serverTimestamp, writeBatch } from "firebase/firestore";
 import { auth, db, functions as fbFunctions } from "@/lib/firebase";
+import { scheduleChecklistItem, type ChecklistItemScheduleData } from "@/lib/checklistAgenda";
 import { parseLocalDateToTimestamp } from "@/lib/datetime";
 import { toUserErrorMessage } from "@/lib/userError";
-import type { TodoDoc } from "@/types/firestore";
+import type { TodoDoc, TodoItemDoc } from "@/types/firestore";
 import DictationMicButton from "./DictationMicButton";
 import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
 
@@ -55,7 +56,21 @@ const ASSISTANT_ACTIONS: Record<AssistantActionId, { label: string; instruction:
   },
 };
 
-function todoDraftToAssistantText(title: string, items: NonNullable<TodoDoc["items"]>): string {
+type TodoDraftItem = TodoItemDoc & {
+  draftSchedule?: ChecklistItemScheduleData | null;
+};
+
+function toPersistedTodoItem(item: TodoDraftItem): TodoItemDoc {
+  return {
+    id: item.id,
+    text: item.text.trim(),
+    done: item.done === true,
+    createdAt: typeof item.createdAt === "number" ? item.createdAt : Date.now(),
+    agendaPlan: item.agendaPlan ?? null,
+  };
+}
+
+function todoDraftToAssistantText(title: string, items: TodoDraftItem[]): string {
   const safeTitle = title.trim() || "Checklist";
   const lines = [safeTitle, "", "Éléments actifs:"];
   if (items.length === 0) lines.push("- Aucun");
@@ -66,7 +81,7 @@ function todoDraftToAssistantText(title: string, items: NonNullable<TodoDoc["ite
   return lines.join("\n");
 }
 
-function parseAssistantTodoText(raw: string, fallbackTitle: string): { title: string; items: NonNullable<TodoDoc["items"]> } {
+function parseAssistantTodoText(raw: string, fallbackTitle: string): { title: string; items: TodoDraftItem[] } {
   const lines = raw
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -81,7 +96,14 @@ function parseAssistantTodoText(raw: string, fallbackTitle: string): { title: st
     .filter((line) => line.length > 0 && !/^éléments actifs:?$/i.test(line) && !/^terminés:?$/i.test(line) && !/^aucun$/i.test(line));
 
   const uniq = Array.from(new Set(bulletItems)).slice(0, 60);
-  const itemsOut = uniq.map((text) => ({ id: `it_${Math.random().toString(36).slice(2)}_${Date.now()}`, text, done: false, createdAt: Date.now() }));
+  const itemsOut = uniq.map((text) => ({
+    id: `it_${Math.random().toString(36).slice(2)}_${Date.now()}`,
+    text,
+    done: false,
+    createdAt: Date.now(),
+    agendaPlan: null,
+    draftSchedule: null,
+  }));
   return { title, items: itemsOut };
 }
 
@@ -106,7 +128,7 @@ export default function TodoCreateForm({
 }: Props) {
   const [title, setTitle] = useState("");
   const [newItemText, setNewItemText] = useState("");
-  const [itemsDraft, setItemsDraft] = useState<NonNullable<TodoDoc["items"]>>([]);
+  const [itemsDraft, setItemsDraft] = useState<TodoDraftItem[]>([]);
   const [itemsOpen, setItemsOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [dueDateDraft, setDueDateDraft] = useState("");
@@ -167,7 +189,16 @@ export default function TodoCreateForm({
     const text = newItemText.trim();
     if (!text) return;
 
-    setItemsDraft((prev) => prev.concat({ id: safeItemId(), text, done: false, createdAt: Date.now() }));
+    setItemsDraft((prev) =>
+      prev.concat({
+        id: safeItemId(),
+        text,
+        done: false,
+        createdAt: Date.now(),
+        agendaPlan: null,
+        draftSchedule: null,
+      }),
+    );
     setNewItemText("");
     window.setTimeout(() => itemInputRef.current?.focus(), 0);
   };
@@ -234,12 +265,44 @@ export default function TodoCreateForm({
     setCreating(true);
     try {
       const dueTimestamp = dueDateDraft ? parseLocalDateToTimestamp(dueDateDraft) : null;
+      const workspaceId = typeof initialWorkspaceId === "string" ? initialWorkspaceId : null;
+      const todoRef = doc(collection(db, "todos"));
+      const batch = writeBatch(db);
+
+      let persistedItems = itemsDraft.map(toPersistedTodoItem);
+
+      for (const draftItem of itemsDraft) {
+        if (!draftItem.draftSchedule) continue;
+        const sourceItem = persistedItems.find((it) => it.id === draftItem.id);
+        if (!sourceItem) continue;
+
+        const agendaPlan = await scheduleChecklistItem({
+          db,
+          batch,
+          userId: user.uid,
+          todoId: todoRef.id,
+          todoTitle: trimmed,
+          workspaceId,
+          priority: priorityDraft || null,
+          item: sourceItem,
+          schedule: draftItem.draftSchedule,
+        });
+
+        persistedItems = persistedItems.map((it) =>
+          it.id === draftItem.id
+            ? {
+                ...it,
+                agendaPlan,
+              }
+            : it,
+        );
+      }
 
       const payload: Omit<TodoDoc, "id"> = {
         userId: user.uid,
-        workspaceId: typeof initialWorkspaceId === "string" ? initialWorkspaceId : null,
+        workspaceId,
         title: trimmed,
-        items: itemsDraft,
+        items: persistedItems,
         dueDate: dueTimestamp,
         priority: priorityDraft || null,
         completed: false,
@@ -247,14 +310,15 @@ export default function TodoCreateForm({
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
+      batch.set(todoRef, payload);
+      await batch.commit();
 
-      const ref = await addDoc(collection(db, "todos"), payload);
       setTitle("");
       setNewItemText("");
       setItemsDraft([]);
       setDueDateDraft("");
       setPriorityDraft("");
-      onCreated?.(ref.id);
+      onCreated?.(todoRef.id);
     } catch (e) {
       console.error("Error creating todo", e);
       setCreateError(toUserErrorMessage(e, "Impossible de créer la checklist."));

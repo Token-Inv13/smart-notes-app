@@ -121,9 +121,27 @@ export interface TaskDoc {
   completed?: boolean;
   archived?: boolean;
   archivedAt?: Timestamp | FieldValue | null;
+  sourceType?: 'checklist_item' | null;
+  sourceTodoId?: string | null;
+  sourceTodoItemId?: string | null;
   createdAt?: Timestamp | FieldValue;
   updatedAt?: Timestamp | FieldValue;
   [key: string]: unknown;
+}
+
+export interface TodoItemAgendaPlanDoc {
+  taskId: string;
+  allDay: boolean;
+  startDate?: Timestamp | null;
+  dueDate?: Timestamp | null;
+}
+
+export interface TodoItemDoc {
+  id: string;
+  text: string;
+  done: boolean;
+  createdAt?: number;
+  agendaPlan?: TodoItemAgendaPlanDoc | null;
 }
 
 export interface TodoDoc {
@@ -131,12 +149,7 @@ export interface TodoDoc {
   userId: string;
   workspaceId?: string | null;
   title: string;
-  items?: {
-    id: string;
-    text: string;
-    done: boolean;
-    createdAt?: number;
-  }[];
+  items?: TodoItemDoc[];
   dueDate?: Timestamp | null;
   priority?: Priority | null;
   completed?: boolean;

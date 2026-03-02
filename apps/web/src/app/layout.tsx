@@ -45,6 +45,9 @@ export default function RootLayout(props: RootLayoutProps) {
   const { children } = props;
   return (
     <html lang="fr" suppressHydrationWarning>
+      <head>
+        <meta charSet="utf-8" />
+      </head>
       <body className="min-h-screen bg-background text-foreground antialiased">
         <ThemeClientProvider>{children}</ThemeClientProvider>
       </body>
