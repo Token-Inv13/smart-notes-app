@@ -20,7 +20,12 @@ import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
-import { normalizeAgendaWindowForFirestore, normalizeDateForFirestore } from "@/lib/datetime";
+import {
+  formatTimestampToDateFr,
+  formatTimestampToDateTimeFr,
+  normalizeAgendaWindowForFirestore,
+  normalizeDateForFirestore,
+} from "@/lib/datetime";
 import { FEATURE_FLAGS } from "@/lib/featureFlags";
 import { registerFcmToken } from "@/lib/fcm";
 import type { Priority, TaskDoc } from "@/types/firestore";
@@ -29,6 +34,7 @@ import dynamic from "next/dynamic";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
 import { CALENDAR_PREFERENCES_STORAGE_KEY } from "../_components/agendaCalendarUtils";
 import type { AgendaCalendarPreferences } from "../_components/AgendaCalendar";
+import AgendaActionBar from "../_components/AgendaActionBar";
 
 const AgendaCalendar = dynamic(() => import("../_components/AgendaCalendar"), {
   loading: () => <div className="sn-empty">Chargement de l’Agenda…</div>,
@@ -120,7 +126,7 @@ export default function TasksPage() {
   const formatDueDate = (ts: TaskDoc["dueDate"] | null | undefined) => {
     if (!ts) return "";
     try {
-      return ts.toDate().toLocaleString();
+      return formatTimestampToDateTimeFr(ts);
     } catch {
       return "";
     }
@@ -250,7 +256,7 @@ export default function TasksPage() {
   const formatStartDate = (ts: TaskDoc["startDate"] | null | undefined) => {
     if (!ts) return "";
     try {
-      return ts.toDate().toLocaleDateString();
+      return formatTimestampToDateFr(ts);
     } catch {
       return "";
     }
@@ -549,6 +555,15 @@ export default function TasksPage() {
     return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
   };
 
+  const statusForTask = useCallback(
+    (task: TaskDoc): TaskStatus => {
+      const optimistic = task.id ? optimisticStatusById[task.id] : undefined;
+      if (optimistic !== undefined) return optimistic;
+      return (((task.status as TaskStatus | undefined) ?? "todo") as TaskStatus) || "todo";
+    },
+    [optimisticStatusById],
+  );
+
   const filteredTasks = useMemo(() => {
     const now = new Date();
     const q = normalizeText(debouncedSearch);
@@ -575,7 +590,7 @@ export default function TasksPage() {
 
     if (dueFilter !== "all") {
       result = result.filter((task) => {
-        const status = ((task.status as TaskStatus | undefined) ?? "todo") as TaskStatus;
+        const status = statusForTask(task);
         if (status === "done") return false;
         if (!task.dueDate) return false;
         let due: Date;
@@ -592,7 +607,7 @@ export default function TasksPage() {
 
     if (statusFilter !== "all") {
       result = result.filter((task) => {
-        const status = ((task.status as TaskStatus | undefined) ?? "todo") as TaskStatus;
+        const status = statusForTask(task);
         return status === statusFilter;
       });
     }
@@ -627,7 +642,7 @@ export default function TasksPage() {
     });
 
     return sorted;
-  }, [tasks, archiveView, workspaceFilter, priorityFilter, debouncedSearch, dueFilter, statusFilter, sortBy, workspaceNameById]);
+  }, [tasks, archiveView, workspaceFilter, priorityFilter, debouncedSearch, dueFilter, statusFilter, sortBy, workspaceNameById, statusForTask]);
 
   useEffect(() => {
     setOptimisticStatusById((prev) => {
@@ -657,15 +672,6 @@ export default function TasksPage() {
       return changed ? next : prev;
     });
   }, [tasks]);
-
-  const statusForTask = useCallback(
-    (task: TaskDoc): TaskStatus => {
-      const optimistic = task.id ? optimisticStatusById[task.id] : undefined;
-      if (optimistic !== undefined) return optimistic;
-      return (((task.status as TaskStatus | undefined) ?? "todo") as TaskStatus) || "todo";
-    },
-    [optimisticStatusById],
-  );
 
   const activeTasks = useMemo(() => {
     return filteredTasks.filter((t) => statusForTask(t) !== "done");
@@ -705,22 +711,6 @@ export default function TasksPage() {
     () => todosForCounter.length,
     [todosForCounter.length],
   );
-
-  const activeArchiveCount = useMemo(() => {
-    let result = allTasks.filter((t) => t.archived !== true);
-    if (workspaceFilter !== "all") {
-      result = result.filter((task) => task.workspaceId === workspaceFilter);
-    }
-    return result.length;
-  }, [allTasks, workspaceFilter]);
-
-  const archivedArchiveCount = useMemo(() => {
-    let result = allTasks.filter((t) => t.archived === true);
-    if (workspaceFilter !== "all") {
-      result = result.filter((task) => task.workspaceId === workspaceFilter);
-    }
-    return result.length;
-  }, [allTasks, workspaceFilter]);
 
   const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
 
@@ -1039,91 +1029,16 @@ export default function TasksPage() {
           <div id="sn-create-slot" data-task-view-mode={viewMode} />
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-          <div
-            className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap w-fit"
-            {...archiveTabsSwipeHandlers}
-          >
-            <button
-              type="button"
-              onClick={() => setArchiveView("active")}
-              className={`px-3 py-1 text-sm ${archiveView === "active" ? "bg-accent" : ""}`}
-            >
-              Actives ({activeArchiveCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setArchiveView("archived")}
-              className={`px-3 py-1 text-sm ${archiveView === "archived" ? "bg-accent" : ""}`}
-            >
-              Archivées ({archivedArchiveCount})
-            </button>
-          </div>
-
-          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap w-fit">
-            <button
-              type="button"
-              onClick={() => applyViewMode("list")}
-              className={`px-3 py-1 text-sm ${viewMode === "list" ? "bg-accent" : ""}`}
-            >
-              Liste
-            </button>
-            <button
-              type="button"
-              onClick={() => applyViewMode("kanban")}
-              className={`px-3 py-1 text-sm border-l border-border ${viewMode === "kanban" ? "bg-accent" : ""}`}
-            >
-              Kanban (avancé)
-            </button>
-            {AGENDA_GRID_ENABLED && (
-              <button
-                type="button"
-                onClick={() => applyViewMode("grid")}
-                className={`px-3 py-1 text-sm border-l border-border ${viewMode === "grid" ? "bg-accent" : ""}`}
-              >
-                Grille (avancé)
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => applyViewMode("calendar")}
-              className={`px-3 py-1 text-sm border-l border-border ${viewMode === "calendar" ? "bg-accent" : ""}`}
-            >
-              Agenda
-            </button>
-          </div>
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-          <div className="relative flex-1 min-w-0">
-            <input
-              id="tasks-search-input"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Rechercher (titre, contenu, dossier)…"
-              className="w-full border border-input rounded-md px-3 py-2 pr-10 bg-background text-sm"
-              aria-label="Rechercher dans l’agenda"
-            />
-            {searchInput.trim().length > 0 && (
-              <button
-                type="button"
-                onClick={() => setSearchInput("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 sn-icon-btn"
-                aria-label="Effacer la recherche"
-                title="Effacer"
-              >
-                ×
-              </button>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setFiltersOpen(true)}
-            className="inline-flex items-center justify-center h-10 px-3 rounded-md border border-border bg-background hover:bg-accent text-sm"
-          >
-            Filtrer
-          </button>
+        <div className="w-full" {...archiveTabsSwipeHandlers}>
+          <AgendaActionBar
+            archiveView={archiveView}
+            viewMode={viewMode}
+            onArchiveViewChange={setArchiveView}
+            onViewModeChange={applyViewMode}
+            searchValue={searchInput}
+            onSearchChange={setSearchInput}
+            onFilterToggle={() => setFiltersOpen(true)}
+          />
         </div>
 
         {filtersOpen && (

@@ -1,0 +1,345 @@
+{
+  "projectPath": "C:\\Users\\token\\Documents\\Projets Cascade\\smart-notes-app",
+  "updatedAt": "2026-03-02T20:38:19.344Z",
+  "commands": [
+    {
+      "id": "112922d8-77f5-4326-a3b8-da31a7affcdd",
+      "title": "Structure projet",
+      "description": "Lister les dossiers du repo",
+      "command": "Get-ChildItem -Force",
+      "terminal": "POWERSHELL",
+      "tags": [
+        "Analyse"
+      ],
+      "favorite": false
+    },
+    {
+      "id": "5b8ac299-3090-4268-a076-ad875ae6207a",
+      "title": "Scripts package",
+      "description": "Voir les scripts npm",
+      "command": "if (Test-Path package.json) { (Get-Content package.json -Raw | ConvertFrom-Json).scripts }",
+      "terminal": "POWERSHELL",
+      "tags": [
+        "Analyse"
+      ],
+      "favorite": false
+    },
+    {
+      "id": "10aa0369-f5ef-4e1b-bf41-7a41ebd201de",
+      "title": "Recherche erreurs",
+      "description": "Scanner TODO/FIXME/ERROR",
+      "command": "rg -n \"TODO|FIXME|ERROR|WARN\" .",
+      "terminal": "POWERSHELL",
+      "tags": [
+        "Debug"
+      ],
+      "favorite": false
+    },
+    {
+      "id": "05c1ebd6-32ca-4be8-a0e3-f50b0b4bb304",
+      "title": "Tests verbeux",
+      "description": "Relancer les tests avec detail",
+      "command": "npm test -- --runInBand --verbose",
+      "terminal": "POWERSHELL",
+      "tags": [
+        "Debug"
+      ],
+      "favorite": false
+    },
+    {
+      "id": "6fd6fd83-9066-4957-884a-af130f8a3c70",
+      "title": "Nouvelle branche",
+      "description": "Creer une branche feature",
+      "command": "git checkout -b feature/ma-feature",
+      "terminal": "POWERSHELL",
+      "tags": [
+        "Feature"
+      ],
+      "favorite": false
+    },
+    {
+      "id": "a69ccf20-c41c-41cf-9853-57936731d410",
+      "title": "Validation locale",
+      "description": "Lancer lint + tests",
+      "command": "npm run lint && npm test",
+      "terminal": "POWERSHELL",
+      "tags": [
+        "Feature"
+      ],
+      "favorite": false
+    },
+    {
+      "id": "2ed872d6-568f-48fe-b9de-b82518aaba01",
+      "title": "Build mesure",
+      "description": "Mesurer le temps de build",
+      "command": "Measure-Command { npm run build }",
+      "terminal": "POWERSHELL",
+      "tags": [
+        "Performance"
+      ],
+      "favorite": false
+    },
+    {
+      "id": "21ff2e19-a81d-4ab5-9ee5-805876a3147f",
+      "title": "Dependances obsoletes",
+      "description": "Verifier les updates",
+      "command": "npm outdated",
+      "terminal": "POWERSHELL",
+      "tags": [
+        "Performance"
+      ],
+      "favorite": false
+    },
+    {
+      "id": "72918815-7030-41a6-929c-2cc2f2db1448",
+      "title": "Audit npm",
+      "description": "Scanner les vuln",
+      "command": "npm audit",
+      "terminal": "POWERSHELL",
+      "tags": [
+        "Securite"
+      ],
+      "favorite": false
+    },
+    {
+      "id": "07c9bb29-039c-435d-9438-55c73afbb4f5",
+      "title": "Fix audit",
+      "description": "Appliquer les fixes non cassants",
+      "command": "npm audit fix",
+      "terminal": "POWERSHELL",
+      "tags": [
+        "Securite"
+      ],
+      "favorite": false
+    },
+    {
+      "id": "c6c1674d-d5bc-450c-8321-ca7945c84975",
+      "title": "Statut du repo",
+      "description": "Voir les fichiers modifies",
+      "command": "git status",
+      "terminal": "POWERSHELL",
+      "tags": [
+        "Git"
+      ],
+      "favorite": false
+    },
+    {
+      "id": "d085240c-890f-4027-b596-8a517ae7b136",
+      "title": "Historique court",
+      "description": "Voir les derniers commits",
+      "command": "git log --oneline -n 15",
+      "terminal": "POWERSHELL",
+      "tags": [
+        "Git"
+      ],
+      "favorite": false
+    },
+    {
+      "id": "52c39cec-d356-4733-ba48-ddd3e8e06801",
+      "title": "Install propre",
+      "description": "Reinstaller depuis lockfile",
+      "command": "npm ci",
+      "terminal": "POWERSHELL",
+      "tags": [
+        "Node"
+      ],
+      "favorite": false
+    },
+    {
+      "id": "d94b9a70-ddd4-4c79-a6f0-08b7227cd7e4",
+      "title": "Demarrage dev",
+      "description": "Lancer le mode developpement",
+      "command": "npm run dev",
+      "terminal": "POWERSHELL",
+      "tags": [
+        "Node"
+      ],
+      "favorite": false
+    },
+    {
+      "id": "4595d62b-4884-471a-a94b-ea78f879c08c",
+      "title": "Demarrer Codex",
+      "description": "Lancer l'assistant",
+      "command": "codex",
+      "terminal": "CODEX",
+      "tags": [
+        "Codex"
+      ],
+      "favorite": false
+    },
+    {
+      "id": "20353c5f-4310-4e55-918f-58b364e85546",
+      "title": "Demander revue",
+      "description": "Instruction de revue rapide",
+      "command": "Passe en revue les changements et liste les risques de regression.",
+      "terminal": "CODEX",
+      "tags": [
+        "Codex"
+      ],
+      "favorite": false
+    }
+  ],
+  "prompts": [
+    {
+      "id": "254abec9-7892-44be-adfe-73a4394b7258",
+      "title": "Audit rapide du repo",
+      "description": "Comprendre rapidement la structure du code",
+      "content": "Analyse la structure du projet, les dependances, les scripts et les zones de risque. Donne un plan d'onboarding en 5 points.",
+      "favorite": false,
+      "tags": [
+        "Analyse"
+      ]
+    },
+    {
+      "id": "a189bf04-f5e7-4245-b1d1-fa2783c45cd5",
+      "title": "Cartographie du flux",
+      "description": "Suivre une fonctionnalite de bout en bout",
+      "content": "Trace le flux complet de la fonctionnalite cible: entree, logique, persistance, sortie. Liste les points de couplage.",
+      "favorite": false,
+      "tags": [
+        "Analyse"
+      ]
+    },
+    {
+      "id": "62bd8da0-c463-4486-b511-514170a89aa1",
+      "title": "Hypotheses de bug",
+      "description": "Structurer le diagnostic",
+      "content": "Propose 3 hypotheses classees par probabilite avec verification, signal attendu et correctif minimal.",
+      "favorite": false,
+      "tags": [
+        "Debug"
+      ]
+    },
+    {
+      "id": "e954dee8-fdce-420a-a9b1-b4fe8d112357",
+      "title": "Fix + regression",
+      "description": "Corriger sans casser",
+      "content": "Propose le correctif le plus petit possible, les impacts secondaires et les tests de regression indispensables.",
+      "favorite": false,
+      "tags": [
+        "Debug"
+      ]
+    },
+    {
+      "id": "fbdcedbd-3d53-4f0a-8561-d71b0d7f9b6e",
+      "title": "Plan incremental",
+      "description": "Decouper une grosse demande",
+      "content": "Transforme la demande en increments livrables avec scope, risques, criteres d'acceptation et ordre d'implementation.",
+      "favorite": false,
+      "tags": [
+        "Feature"
+      ]
+    },
+    {
+      "id": "650ce7fd-b953-4a43-a50d-7880a89a67d0",
+      "title": "Spec technique concise",
+      "description": "Fixer la direction avant code",
+      "content": "Redige une mini spec: contexte, options, choix retenu, compromis, impacts API/UI/data, plan de test.",
+      "favorite": false,
+      "tags": [
+        "Feature"
+      ]
+    },
+    {
+      "id": "31a2c689-bf8e-4b8e-8510-4bc436992672",
+      "title": "Checklist perf backend",
+      "description": "Trouver les goulots",
+      "content": "Passe en revue N+1, SQL, cache, I/O, logs et contention. Priorise les 3 optimisations a plus fort impact.",
+      "favorite": false,
+      "tags": [
+        "Performance"
+      ]
+    },
+    {
+      "id": "344a37b7-b3bb-4f03-951e-21f8f56b1c06",
+      "title": "Profiling frontend",
+      "description": "Diagnostiquer une UI lente",
+      "content": "Propose un protocole de profiling frontend et un plan d'optimisation graduel (render, memo, lazy, split).",
+      "favorite": false,
+      "tags": [
+        "Performance"
+      ]
+    },
+    {
+      "id": "6de11d46-77f4-4bee-a77f-895677a8b46c",
+      "title": "Revue securite express",
+      "description": "Identifier les failles probables",
+      "content": "Passe le code sur auth, validation, permissions, secrets et exposition de donnees. Donne les actions prioritaires.",
+      "favorite": false,
+      "tags": [
+        "Securite"
+      ]
+    },
+    {
+      "id": "a1fcab97-3196-424d-b7bb-71b4b452e920",
+      "title": "Threat model simple",
+      "description": "Cartographier les risques",
+      "content": "Construit un mini modele de menace: actifs, attaquants, vecteurs, controles existants et controles manquants.",
+      "favorite": false,
+      "tags": [
+        "Securite"
+      ]
+    },
+    {
+      "id": "e00f7900-a47e-43e6-a266-dd54b130c6e0",
+      "title": "Preparation PR",
+      "description": "Nettoyer avant revue",
+      "content": "Prepare une PR propre: scope, commits, tests, risques, points de revue prioritaires.",
+      "favorite": false,
+      "tags": [
+        "Git"
+      ]
+    },
+    {
+      "id": "12ed111f-503b-43e3-a4c6-26d72d737ff4",
+      "title": "Resolution conflit",
+      "description": "Resoudre proprement",
+      "content": "Guide la resolution des conflits en preservant l'intention des branches et en verifiant le diff final.",
+      "favorite": false,
+      "tags": [
+        "Git"
+      ]
+    },
+    {
+      "id": "cba1f03f-3ff2-4970-9839-2ecbf31e8b0c",
+      "title": "Mise a jour dependances",
+      "description": "Mettre a jour sans casse",
+      "content": "Propose une strategie de mise a jour Node/npm par lots avec verification compatibilite et rollback.",
+      "favorite": true,
+      "tags": [
+        "Node"
+      ]
+    },
+    {
+      "id": "a34f93be-18c2-44c2-ae3e-730e1604b70c",
+      "title": "Diagnostic build Node",
+      "description": "Trouver la cause d'un build KO",
+      "content": "Analyse versions, lockfile, scripts et environnement pour proposer une sequence de debug minimale.",
+      "favorite": false,
+      "tags": [
+        "Node"
+      ]
+    },
+    {
+      "id": "5a94f1f1-9dd5-4fbc-b4fe-d305df5b3fc1",
+      "title": "Implementation complete",
+      "description": "Deleguer un changement de bout en bout",
+      "content": "Implemente la demande de bout en bout avec verification locale et resume des risques residuels.",
+      "favorite": false,
+      "tags": [
+        "Codex"
+      ]
+    },
+    {
+      "id": "85f9d9e3-dc42-42aa-b965-5f96cb6b5a02",
+      "title": "Revue orientee risques",
+      "description": "Verifier la robustesse",
+      "content": "Fais une revue orientee bugs, regressions et tests manquants. Classe les findings par severite.",
+      "favorite": false,
+      "tags": [
+        "Codex"
+      ]
+    }
+  ],
+  "shortcuts": []
+}

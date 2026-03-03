@@ -191,7 +191,7 @@ function opsLogsUrl(functionName) {
     const projectId = readEnvString('GCLOUD_PROJECT') || readEnvString('GCP_PROJECT');
     if (!projectId)
         return 'https://console.cloud.google.com/logs/query';
-    return `https://console.cloud.google.com/logs/query?project=${encodeURIComponent(projectId)}&query=${encodeURIComponent(`resource.type=\"cloud_function\"\nlabels.function_name=\"${functionName}\"`)}`;
+    return `https://console.cloud.google.com/logs/query?project=${encodeURIComponent(projectId)}&query=${encodeURIComponent(`resource.type="cloud_function"\nlabels.function_name="${functionName}"`)}`;
 }
 async function sendOpsAlertEmail(params) {
     if (params.recipients.length === 0)
@@ -2675,7 +2675,7 @@ exports.assistantRunJobQueue = functions.pubsub
                                     sourceId,
                                     objectId,
                                     candidates: candidates.length,
-                                    bundleMode: !!detectedBundle ? detectedBundle.bundleMode : null,
+                                    bundleMode: detectedBundle ? detectedBundle.bundleMode : null,
                                 });
                                 resultCandidates = candidates.length;
                                 for (const c of candidates) {
@@ -4198,196 +4198,242 @@ exports.assistantCreateVoiceJob = functions.https.onCall(async (data, context) =
 exports.assistantRequestVoiceTranscription = functions
     .runWith({ timeoutSeconds: 540, memory: '1GB' })
     .https.onCall(async (data, context) => {
-    var _a, _b, _c;
-    const userId = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid;
-    if (!userId) {
-        throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
-    }
-    const jobId = typeof (data === null || data === void 0 ? void 0 : data.jobId) === 'string' ? String(data.jobId) : null;
-    if (!jobId) {
-        throw new functions.https.HttpsError('invalid-argument', 'Missing jobId.');
-    }
-    const db = admin.firestore();
-    const enabled = await isAssistantEnabledForUser(db, userId);
-    if (!enabled) {
-        throw new functions.https.HttpsError('failed-precondition', 'Assistant disabled.');
-    }
-    const userRef = db.collection('users').doc(userId);
-    const jobRef = userRef.collection('assistantVoiceJobs').doc(jobId);
-    const jobSnap = await jobRef.get();
-    if (!jobSnap.exists) {
-        throw new functions.https.HttpsError('not-found', 'Voice job not found.');
-    }
-    const jobData = jobSnap.data();
-    const storagePath = typeof (jobData === null || jobData === void 0 ? void 0 : jobData.storagePath) === 'string' ? String(jobData.storagePath) : '';
-    if (!storagePath) {
-        throw new functions.https.HttpsError('failed-precondition', 'Missing storagePath.');
-    }
-    const bucket = admin.storage().bucket();
-    const file = bucket.file(storagePath);
-    let meta;
-    try {
-        const arr = await file.getMetadata();
-        meta = Array.isArray(arr) ? arr[0] : null;
-    }
-    catch (e) {
-        throw new functions.https.HttpsError('failed-precondition', 'Audio file missing.');
-    }
-    const size = typeof (meta === null || meta === void 0 ? void 0 : meta.size) === 'string' ? Number(meta.size) : typeof (meta === null || meta === void 0 ? void 0 : meta.size) === 'number' ? Number(meta.size) : null;
-    if (!size || !Number.isFinite(size) || size <= 0) {
-        throw new functions.https.HttpsError('failed-precondition', 'Audio file invalid.');
-    }
-    if (size > ASSISTANT_VOICE_MAX_BYTES) {
-        throw new functions.https.HttpsError('invalid-argument', 'Audio file too large.');
-    }
-    const contentType = typeof (meta === null || meta === void 0 ? void 0 : meta.contentType) === 'string' ? String(meta.contentType) : 'audio/webm';
-    const dl = await file.download();
-    const buffer = Array.isArray(dl) ? dl[0] : dl;
-    const fileHash = sha256HexBuffer(buffer);
-    const model = 'whisper-1';
-    const schemaVersion = ASSISTANT_VOICE_SCHEMA_VERSION;
-    const resultId = sha256Hex(`${jobId}|${fileHash}|${model}|schema:${schemaVersion}`);
-    const resultRef = userRef.collection('assistantVoiceResults').doc(resultId);
-    const nowDate = new Date();
-    const dayKey = utcDayKey(nowDate);
-    const usageRef = assistantUsageRef(db, userId, dayKey);
-    const nowTs = admin.firestore.Timestamp.fromDate(nowDate);
-    const lockMs = 6 * 60 * 1000;
-    const lockedUntilNext = admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + lockMs);
-    const lockedUntilReady = admin.firestore.Timestamp.fromMillis(0);
-    const nowServer = admin.firestore.FieldValue.serverTimestamp();
-    const expiresAt = admin.firestore.Timestamp.fromMillis(nowDate.getTime() + 7 * 24 * 60 * 60 * 1000);
-    let shouldTranscribe = true;
-    await db.runTransaction(async (tx) => {
-        var _a, _b, _c;
-        const [userSnap, usageSnap, freshJobSnap, existingResultSnap] = await Promise.all([
-            tx.get(userRef),
-            tx.get(usageRef),
-            tx.get(jobRef),
-            tx.get(resultRef),
-        ]);
-        if (existingResultSnap.exists) {
-            tx.set(jobRef, {
-                status: 'done',
-                lockedUntil: lockedUntilReady,
-                fileHash,
-                model,
-                schemaVersion,
-                resultId,
-                errorMessage: null,
-                updatedAt: nowServer,
-            }, { merge: true });
-            shouldTranscribe = false;
-            return;
-        }
-        const job = freshJobSnap.exists ? freshJobSnap.data() : null;
-        const st = job === null || job === void 0 ? void 0 : job.status;
-        const lockedUntil = (_a = job === null || job === void 0 ? void 0 : job.lockedUntil) !== null && _a !== void 0 ? _a : null;
-        if ((st === 'transcribing') && lockedUntil && lockedUntil.toMillis() > nowTs.toMillis()) {
-            throw new functions.https.HttpsError('failed-precondition', 'Transcription already in progress.');
-        }
-        const plan = userSnap.exists && typeof ((_b = userSnap.data()) === null || _b === void 0 ? void 0 : _b.plan) === 'string' ? String(userSnap.data().plan) : 'free';
-        const dailyLimit = plan === 'pro' ? ASSISTANT_VOICE_TRANSCRIPT_PRO_DAILY_LIMIT : ASSISTANT_VOICE_TRANSCRIPT_FREE_DAILY_LIMIT;
-        const prevCount = usageSnap.exists && typeof ((_c = usageSnap.data()) === null || _c === void 0 ? void 0 : _c.aiTranscriptionsCount) === 'number' ? Number(usageSnap.data().aiTranscriptionsCount) : 0;
-        const countedHash = typeof (job === null || job === void 0 ? void 0 : job.usageCountedHash) === 'string' ? String(job.usageCountedHash) : null;
-        const needCount = countedHash !== fileHash;
-        if (needCount && prevCount >= dailyLimit) {
-            throw new functions.https.HttpsError('resource-exhausted', 'Daily transcription limit reached.');
-        }
-        if (needCount) {
-            tx.set(usageRef, {
-                aiTranscriptionsCount: admin.firestore.FieldValue.increment(1),
-                lastUpdatedAt: nowServer,
-            }, { merge: true });
-        }
-        tx.set(jobRef, {
-            status: 'transcribing',
-            lockedUntil: lockedUntilNext,
-            fileHash,
-            usageCountedHash: fileHash,
-            model,
-            schemaVersion,
-            errorMessage: null,
-            updatedAt: nowServer,
-            expiresAt,
-        }, { merge: true });
-    });
-    if (!shouldTranscribe) {
-        return { jobId, resultId };
-    }
-    try {
-        console.log('assistant.voice.transcription_start', { userId, jobId, storagePath, bytes: size, contentType });
-    }
-    catch (_d) {
-        // ignore
-    }
-    try {
-        const whisper = await callOpenAIWhisperTranscription({
-            buffer,
-            filename: `${jobId}.webm`,
-            contentType,
-            language: null,
-        });
-        const transcript = clampFromText((_b = whisper.text) !== null && _b !== void 0 ? _b : '', 20000);
-        const resultDoc = {
-            jobId,
-            noteId: (_c = jobData === null || jobData === void 0 ? void 0 : jobData.noteId) !== null && _c !== void 0 ? _c : null,
-            mode: (jobData === null || jobData === void 0 ? void 0 : jobData.mode) === 'append_to_note' ? 'append_to_note' : 'standalone',
-            storagePath,
-            fileHash,
-            model,
-            schemaVersion,
-            transcript,
-            expiresAt,
-            createdAt: nowServer,
-            updatedAt: nowServer,
-        };
-        try {
-            await resultRef.create(resultDoc);
-        }
-        catch (_e) {
-            // already exists
-        }
-        await jobRef.set({
-            status: 'done',
-            lockedUntil: lockedUntilReady,
-            resultId,
-            errorMessage: null,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-        try {
-            console.log('assistant.voice.transcription_done', { userId, jobId, resultId, chars: transcript.length });
-        }
-        catch (_f) {
-            // ignore
-        }
-        return { jobId, resultId };
-    }
-    catch (e) {
-        try {
-            console.error('assistant.voice.transcription_failed', {
-                userId,
-                jobId,
-                message: e instanceof Error ? e.message : String(e),
-                stack: e instanceof Error ? e.stack : undefined,
-            });
-        }
-        catch (_g) {
-            // ignore
-        }
-        await jobRef.set({
-            status: 'error',
-            lockedUntil: lockedUntilReady,
-            errorMessage: e instanceof Error ? e.message : 'Voice transcription error',
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-        throw new functions.https.HttpsError('internal', e instanceof Error ? e.message : 'Voice transcription error');
-    }
-});
-exports.assistantExecuteIntent = functions.https.onCall(async (data, context) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
     const requestIdRaw = (_b = (_a = context === null || context === void 0 ? void 0 : context.rawRequest) === null || _a === void 0 ? void 0 : _a.headers) === null || _b === void 0 ? void 0 : _b['x-request-id'];
     const requestId = typeof requestIdRaw === 'string' && requestIdRaw ? requestIdRaw : crypto.randomUUID();
+    const callableStartedMs = Date.now();
+    const obs = beginFunctionObserve({
+        functionName: 'assistantRequestVoiceTranscription',
+        requestId,
+        meta: {
+            jobType: 'assistant_voice_transcription',
+            uid: (_d = (_c = context.auth) === null || _c === void 0 ? void 0 : _c.uid) !== null && _d !== void 0 ? _d : 'anonymous',
+        },
+    });
+    let obsStatus = 'success';
+    let obsErrorMessage = null;
+    try {
+        const userId = (_e = context.auth) === null || _e === void 0 ? void 0 : _e.uid;
+        if (!userId) {
+            throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+        }
+        const jobId = typeof (data === null || data === void 0 ? void 0 : data.jobId) === 'string' ? String(data.jobId) : null;
+        if (!jobId) {
+            throw new functions.https.HttpsError('invalid-argument', 'Missing jobId.');
+        }
+        const db = admin.firestore();
+        const enabled = await isAssistantEnabledForUser(db, userId);
+        if (!enabled) {
+            throw new functions.https.HttpsError('failed-precondition', 'Assistant disabled.');
+        }
+        const userRef = db.collection('users').doc(userId);
+        const jobRef = userRef.collection('assistantVoiceJobs').doc(jobId);
+        const jobSnap = await jobRef.get();
+        if (!jobSnap.exists) {
+            throw new functions.https.HttpsError('not-found', 'Voice job not found.');
+        }
+        const jobData = jobSnap.data();
+        const storagePath = typeof (jobData === null || jobData === void 0 ? void 0 : jobData.storagePath) === 'string' ? String(jobData.storagePath) : '';
+        if (!storagePath) {
+            throw new functions.https.HttpsError('failed-precondition', 'Missing storagePath.');
+        }
+        const bucket = admin.storage().bucket();
+        const file = bucket.file(storagePath);
+        let meta;
+        try {
+            const arr = await file.getMetadata();
+            meta = Array.isArray(arr) ? arr[0] : null;
+        }
+        catch (e) {
+            throw new functions.https.HttpsError('failed-precondition', 'Audio file missing.');
+        }
+        const size = typeof (meta === null || meta === void 0 ? void 0 : meta.size) === 'string' ? Number(meta.size) : typeof (meta === null || meta === void 0 ? void 0 : meta.size) === 'number' ? Number(meta.size) : null;
+        if (!size || !Number.isFinite(size) || size <= 0) {
+            throw new functions.https.HttpsError('failed-precondition', 'Audio file invalid.');
+        }
+        if (size > ASSISTANT_VOICE_MAX_BYTES) {
+            throw new functions.https.HttpsError('invalid-argument', 'Audio file too large.');
+        }
+        const contentType = typeof (meta === null || meta === void 0 ? void 0 : meta.contentType) === 'string' ? String(meta.contentType) : 'audio/webm';
+        const dl = await file.download();
+        const buffer = Array.isArray(dl) ? dl[0] : dl;
+        const fileHash = sha256HexBuffer(buffer);
+        const model = 'whisper-1';
+        const schemaVersion = ASSISTANT_VOICE_SCHEMA_VERSION;
+        const resultId = sha256Hex(`${jobId}|${fileHash}|${model}|schema:${schemaVersion}`);
+        const resultRef = userRef.collection('assistantVoiceResults').doc(resultId);
+        const nowDate = new Date();
+        const dayKey = utcDayKey(nowDate);
+        const usageRef = assistantUsageRef(db, userId, dayKey);
+        const nowTs = admin.firestore.Timestamp.fromDate(nowDate);
+        const lockMs = 6 * 60 * 1000;
+        const lockedUntilNext = admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + lockMs);
+        const lockedUntilReady = admin.firestore.Timestamp.fromMillis(0);
+        const nowServer = admin.firestore.FieldValue.serverTimestamp();
+        const expiresAt = admin.firestore.Timestamp.fromMillis(nowDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+        let shouldTranscribe = true;
+        await db.runTransaction(async (tx) => {
+            var _a, _b, _c;
+            const [userSnap, usageSnap, freshJobSnap, existingResultSnap] = await Promise.all([
+                tx.get(userRef),
+                tx.get(usageRef),
+                tx.get(jobRef),
+                tx.get(resultRef),
+            ]);
+            if (existingResultSnap.exists) {
+                tx.set(jobRef, {
+                    status: 'done',
+                    lockedUntil: lockedUntilReady,
+                    fileHash,
+                    model,
+                    schemaVersion,
+                    resultId,
+                    errorMessage: null,
+                    updatedAt: nowServer,
+                }, { merge: true });
+                shouldTranscribe = false;
+                return;
+            }
+            const job = freshJobSnap.exists ? freshJobSnap.data() : null;
+            const st = job === null || job === void 0 ? void 0 : job.status;
+            const lockedUntil = (_a = job === null || job === void 0 ? void 0 : job.lockedUntil) !== null && _a !== void 0 ? _a : null;
+            if ((st === 'transcribing') && lockedUntil && lockedUntil.toMillis() > nowTs.toMillis()) {
+                throw new functions.https.HttpsError('failed-precondition', 'Transcription already in progress.');
+            }
+            const plan = userSnap.exists && typeof ((_b = userSnap.data()) === null || _b === void 0 ? void 0 : _b.plan) === 'string' ? String(userSnap.data().plan) : 'free';
+            const dailyLimit = plan === 'pro' ? ASSISTANT_VOICE_TRANSCRIPT_PRO_DAILY_LIMIT : ASSISTANT_VOICE_TRANSCRIPT_FREE_DAILY_LIMIT;
+            const prevCount = usageSnap.exists && typeof ((_c = usageSnap.data()) === null || _c === void 0 ? void 0 : _c.aiTranscriptionsCount) === 'number' ? Number(usageSnap.data().aiTranscriptionsCount) : 0;
+            const countedHash = typeof (job === null || job === void 0 ? void 0 : job.usageCountedHash) === 'string' ? String(job.usageCountedHash) : null;
+            const needCount = countedHash !== fileHash;
+            if (needCount && prevCount >= dailyLimit) {
+                throw new functions.https.HttpsError('resource-exhausted', 'Daily transcription limit reached.');
+            }
+            if (needCount) {
+                tx.set(usageRef, {
+                    aiTranscriptionsCount: admin.firestore.FieldValue.increment(1),
+                    lastUpdatedAt: nowServer,
+                }, { merge: true });
+            }
+            tx.set(jobRef, {
+                status: 'transcribing',
+                lockedUntil: lockedUntilNext,
+                fileHash,
+                usageCountedHash: fileHash,
+                model,
+                schemaVersion,
+                errorMessage: null,
+                updatedAt: nowServer,
+                expiresAt,
+            }, { merge: true });
+        });
+        if (!shouldTranscribe) {
+            return { jobId, resultId };
+        }
+        try {
+            console.log('assistant.voice.transcription_start', { userId, jobId, storagePath, bytes: size, contentType });
+        }
+        catch (_p) {
+            // ignore
+        }
+        try {
+            const whisper = await callOpenAIWhisperTranscription({
+                buffer,
+                filename: `${jobId}.webm`,
+                contentType,
+                language: null,
+            });
+            const transcript = clampFromText((_f = whisper.text) !== null && _f !== void 0 ? _f : '', 20000);
+            const resultDoc = {
+                jobId,
+                noteId: (_g = jobData === null || jobData === void 0 ? void 0 : jobData.noteId) !== null && _g !== void 0 ? _g : null,
+                mode: (jobData === null || jobData === void 0 ? void 0 : jobData.mode) === 'append_to_note' ? 'append_to_note' : 'standalone',
+                storagePath,
+                fileHash,
+                model,
+                schemaVersion,
+                transcript,
+                expiresAt,
+                createdAt: nowServer,
+                updatedAt: nowServer,
+            };
+            try {
+                await resultRef.create(resultDoc);
+            }
+            catch (_q) {
+                // already exists
+            }
+            await jobRef.set({
+                status: 'done',
+                lockedUntil: lockedUntilReady,
+                resultId,
+                errorMessage: null,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }, { merge: true });
+            try {
+                console.log('assistant.voice.transcription_done', { userId, jobId, resultId, chars: transcript.length });
+            }
+            catch (_r) {
+                // ignore
+            }
+            return { jobId, resultId };
+        }
+        catch (e) {
+            try {
+                console.error('assistant.voice.transcription_failed', {
+                    userId,
+                    jobId,
+                    message: e instanceof Error ? e.message : String(e),
+                    stack: e instanceof Error ? e.stack : undefined,
+                });
+            }
+            catch (_s) {
+                // ignore
+            }
+            await jobRef.set({
+                status: 'error',
+                lockedUntil: lockedUntilReady,
+                errorMessage: e instanceof Error ? e.message : 'Voice transcription error',
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }, { merge: true });
+            throw new functions.https.HttpsError('internal', e instanceof Error ? e.message : 'Voice transcription error');
+        }
+    }
+    catch (error) {
+        obsStatus = 'error';
+        obsErrorMessage = error instanceof Error ? error.message : 'Unknown error';
+        throw error;
+    }
+    finally {
+        const durationMs = Date.now() - callableStartedMs;
+        console.info('ops.metric.assistant_voice_transcription_duration', {
+            metric: 'assistant.voice.transcription.duration_ms',
+            phase: 'voice_transcription',
+            requestId,
+            uid: (_j = (_h = context.auth) === null || _h === void 0 ? void 0 : _h.uid) !== null && _j !== void 0 ? _j : 'anonymous',
+            durationMs,
+            status: obsStatus,
+        });
+        console.info('ops.metric.assistant_callable_latency', {
+            functionName: 'assistantRequestVoiceTranscription',
+            phase: 'voice_transcription',
+            requestId,
+            uid: (_l = (_k = context.auth) === null || _k === void 0 ? void 0 : _k.uid) !== null && _l !== void 0 ? _l : 'anonymous',
+            durationMs,
+            status: obsStatus,
+            errorMessage: obsErrorMessage,
+        });
+        await endFunctionObserve(obs, obsStatus, {
+            jobType: 'assistant_voice_transcription',
+            uid: (_o = (_m = context.auth) === null || _m === void 0 ? void 0 : _m.uid) !== null && _o !== void 0 ? _o : 'anonymous',
+            errorMessage: obsErrorMessage,
+        });
+    }
+});
+exports.assistantExecuteIntent = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s;
+    const requestIdRaw = (_b = (_a = context === null || context === void 0 ? void 0 : context.rawRequest) === null || _a === void 0 ? void 0 : _a.headers) === null || _b === void 0 ? void 0 : _b['x-request-id'];
+    const requestId = typeof requestIdRaw === 'string' && requestIdRaw ? requestIdRaw : crypto.randomUUID();
+    const callableStartedMs = Date.now();
     const obs = beginFunctionObserve({
         functionName: 'assistantExecuteIntent',
         requestId,
@@ -4499,10 +4545,28 @@ exports.assistantExecuteIntent = functions.https.onCall(async (data, context) =>
             return Object.assign(Object.assign({}, responseBase), { executed: true, createdCoreObjects: [{ type: 'task', id: taskRef.id }], message: 'Tâche créée.' });
         }
         if (parsed.kind === 'create_reminder') {
-            if (!isPro) {
-                return Object.assign(Object.assign({}, responseBase), { executed: false, message: 'Le rappel automatique nécessite le plan Pro.' });
-            }
             const remindAt = parsedRemindAtTs !== null && parsedRemindAtTs !== void 0 ? parsedRemindAtTs : admin.firestore.Timestamp.fromDate(new Date(Date.now() + 60 * 60 * 1000));
+            if (!isPro) {
+                const taskRef = db.collection('tasks').doc();
+                await taskRef.create({
+                    userId,
+                    title: parsed.title,
+                    status: 'todo',
+                    workspaceId: null,
+                    startDate: null,
+                    dueDate: remindAt,
+                    priority: null,
+                    favorite: false,
+                    archived: false,
+                    source: {
+                        assistant: true,
+                        channel: 'voice_intent',
+                    },
+                    createdAt,
+                    updatedAt,
+                });
+                return Object.assign(Object.assign({}, responseBase), { executed: true, createdCoreObjects: [{ type: 'task', id: taskRef.id }], message: 'Rappel enregistré dans l’Agenda. Les rappels automatiques nécessitent le plan Pro.' });
+            }
             const remindAtIsoEffective = remindAt.toDate().toISOString();
             const taskRef = db.collection('tasks').doc();
             const reminderRef = db.collection('taskReminders').doc();
@@ -4572,9 +4636,27 @@ exports.assistantExecuteIntent = functions.https.onCall(async (data, context) =>
         throw error;
     }
     finally {
+        const durationMs = Date.now() - callableStartedMs;
+        console.info('ops.metric.assistant_intent_duration', {
+            metric: 'assistant.voice.intent.duration_ms',
+            phase: 'voice_intent',
+            requestId,
+            uid: (_o = (_m = context.auth) === null || _m === void 0 ? void 0 : _m.uid) !== null && _o !== void 0 ? _o : 'anonymous',
+            durationMs,
+            status: obsStatus,
+        });
+        console.info('ops.metric.assistant_callable_latency', {
+            functionName: 'assistantExecuteIntent',
+            phase: 'voice_intent',
+            requestId,
+            uid: (_q = (_p = context.auth) === null || _p === void 0 ? void 0 : _p.uid) !== null && _q !== void 0 ? _q : 'anonymous',
+            durationMs,
+            status: obsStatus,
+            errorMessage: obsErrorMessage,
+        });
         await endFunctionObserve(obs, obsStatus, {
             jobType: 'assistant_intent',
-            uid: (_o = (_m = context.auth) === null || _m === void 0 ? void 0 : _m.uid) !== null && _o !== void 0 ? _o : 'anonymous',
+            uid: (_s = (_r = context.auth) === null || _r === void 0 ? void 0 : _r.uid) !== null && _s !== void 0 ? _s : 'anonymous',
             errorMessage: obsErrorMessage,
         });
     }

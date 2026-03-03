@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "projectType": "node",
+  "runCommands": [
+    "pnpm dev",
+    "pnpm preview",
+    "pnpm build"
+  ],
+  "launch": {
+    "dev": {
+      "command": "pnpm dev",
+      "source": "context",
+      "updatedAt": "2026-03-02T16:50:14.626Z"
+    }
+  },
+  "decisionHistory": [
+    {
+      "id": "e9c25fa3-410d-4adc-90ce-9a69fda0f153",
+      "at": "2026-03-02T00:52:01.558Z",
+      "text": "Type de projet detecte: node."
+    }
+  ],
+  "autoNotes": [
+    {
+      "id": "97c772db-674a-4677-90b6-37c36f6f0b42",
+      "at": "2026-03-02T00:52:01.572Z",
+      "text": "3 commande(s) run ajoutee(s) automatiquement."
+    },
+    {
+      "id": "acb300a4-5a1e-4966-a49c-fc0668f34e0f",
+      "at": "2026-03-02T00:52:01.572Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "144c97f1-0037-4170-9e4b-c1f1a6f3f5b8",
+      "at": "2026-03-02T00:53:32.087Z",
+      "text": "Commande envoyee vers codex: Analyse la structure du projet, les dependances, les scripts et les zones de risque. Donne un plan d'onboarding en 5 points."
+    },
+    {
+      "id": "2678ea0c-65b5-41ba-8807-432b230a8a6f",
+      "at": "2026-03-02T00:53:39.865Z",
+      "text": "Commande envoyee vers codex: Voici l'état réel du projet. Analyse ces informations et donne un diagnostic fiable, les causes probables et les actions à effectuer dans l'ordre. Rapport diagnostic projet - Type projet probable: Vite - Chemin:"
+    },
+    {
+      "id": "c97a62e8-775b-42eb-80a9-537b0318cd8f",
+      "at": "2026-03-02T01:03:09.462Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "0ffc7e6c-7c41-463e-9f73-677c6d6c7ec3",
+      "at": "2026-03-02T01:14:05.168Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "9f24d300-3701-40aa-b8f9-e1b059d44f0d",
+      "at": "2026-03-02T01:17:09.590Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "473d5143-14b7-4d6c-a703-a57f2a41068d",
+      "at": "2026-03-02T12:29:10.818Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "477c1068-2433-430a-9cb4-597d53a6f22f",
+      "at": "2026-03-02T12:29:13.148Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "8bc545a4-20c7-4b4e-acae-7231f17b81bc",
+      "at": "2026-03-02T12:48:16.938Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "0625aebd-cad5-432e-9b85-0addaba01b6a",
+      "at": "2026-03-02T12:48:20.236Z",
+      "text": "Commande envoyee vers codex: Voici l'état réel du projet. Analyse ces informations et donne un diagnostic fiable, les causes probables et les actions à effectuer dans l'ordre. Rapport diagnostic projet - Type projet probable: Vite - Chemin:"
+    },
+    {
+      "id": "12285a1e-ebc4-4973-beab-fee19eb5645d",
+      "at": "2026-03-02T12:51:47.896Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "216c41cf-a1b8-40f9-af9b-43a03a5ef4a0",
+      "at": "2026-03-02T13:06:38.139Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "900ed513-c13a-4dee-9df9-f424351c4955",
+      "at": "2026-03-02T14:40:34.242Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "aeb4807e-c29f-4934-9dc6-6cc44e501002",
+      "at": "2026-03-02T14:41:23.211Z",
+      "text": "Commande envoyee vers codex: Voici l'état réel du projet. Analyse ces informations et donne un diagnostic fiable, les causes probables et les actions à effectuer dans l'ordre. Rapport diagnostic projet - Type projet probable: Vite - Chemin:"
+    },
+    {
+      "id": "cabb1821-115d-44ea-a1ed-2ef8d39ee533",
+      "at": "2026-03-02T14:42:17.438Z",
+      "text": "Commande envoyee vers codex: Analyse la structure du projet, les dependances, les scripts et les zones de risque. Donne un plan d'onboarding en 5 points."
+    },
+    {
+      "id": "dee18745-fc2c-4ce7-8d02-32c0a8ba22d1",
+      "at": "2026-03-02T14:43:54.937Z",
+      "text": "Commande envoyee vers codex: Analyse la structure du projet, les dependances, les scripts et les zones de risque. Donne un plan d'onboarding en 5 points."
+    },
+    {
+      "id": "560069dd-4b63-411d-9f0e-148fdcca40d9",
+      "at": "2026-03-02T14:44:31.817Z",
+      "text": "Commande envoyee vers codex: Analyse la structure du projet, les dependances, les scripts et les zones de risque. Donne un plan d'onboarding en 5 points."
+    },
+    {
+      "id": "6f99afe7-17e7-4a9d-b36e-26cb77c4d226",
+      "at": "2026-03-02T16:16:12.234Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "c33eab76-6368-45d0-a357-feecd16ae910",
+      "at": "2026-03-02T16:49:07.613Z",
+      "text": "Commande de lancement retenue (Vite): pnpm dev"
+    },
+    {
+      "id": "f82e391a-fca0-4255-87ea-6e6f1a22905f",
+      "at": "2026-03-02T16:50:14.626Z",
+      "text": "Commande de lancement retenue (Vite): pnpm dev"
+    },
+    {
+      "id": "462918ae-1fdd-4fc2-8c79-b8ecd2fc3359",
+      "at": "2026-03-02T20:37:02.620Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "bf86aa84-c9b0-405b-abc1-b4841ff1f726",
+      "at": "2026-03-02T21:18:54.584Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "865b999a-67c5-4f3a-b3d3-05f75cbd45c5",
+      "at": "2026-03-02T21:23:57.145Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "0d933075-51fd-464c-bb05-f0e660f6e697",
+      "at": "2026-03-02T23:12:21.493Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "882bff0a-a8a9-4dcd-b58e-26a239de2ac5",
+      "at": "2026-03-03T17:24:28.614Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "011f8c0e-70ec-4e88-9d81-c08af08bdd16",
+      "at": "2026-03-03T17:24:45.092Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "494c3a26-311e-4543-a00d-03e2dd11b83f",
+      "at": "2026-03-03T17:44:40.279Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "688f337c-4642-4ffb-aa4b-b7983d5ba5ae",
+      "at": "2026-03-03T18:02:20.268Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    }
+  ],
+  "updatedAt": "2026-03-03T18:02:20.269Z"
+}

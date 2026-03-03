@@ -7,7 +7,15 @@ import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
-import { isExactAllDayWindow, parseLocalDateTimeToTimestamp, parseLocalDateToTimestamp } from "@/lib/datetime";
+import {
+  DATETIME_PLACEHOLDER_FR,
+  DATE_PLACEHOLDER_FR,
+  formatTimestampToDateFr,
+  formatTimestampToDateTimeFr,
+  isExactAllDayWindow,
+  parseLocalDateTimeToTimestamp,
+  parseLocalDateToTimestamp,
+} from "@/lib/datetime";
 import { toUserErrorMessage } from "@/lib/userError";
 import type { TaskDoc } from "@/types/firestore";
 import DictationMicButton from "./DictationMicButton";
@@ -160,12 +168,12 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
     if (!ts) {
       return {
         tone: "error" as const,
-        text: "Format attendu: AAAA-MM-JJTHH:MM.",
+        text: `Format attendu: ${DATETIME_PLACEHOLDER_FR}.`,
       };
     }
     return {
       tone: "muted" as const,
-      text: `Échéance: ${ts.toDate().toLocaleString("fr-FR")}`,
+      text: `Échéance: ${formatTimestampToDateTimeFr(ts)}`,
     };
   }, [newDueDate]);
 
@@ -175,12 +183,12 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
     if (!ts) {
       return {
         tone: "error" as const,
-        text: "Format attendu: AAAA-MM-JJ.",
+        text: `Format attendu: ${DATE_PLACEHOLDER_FR}.`,
       };
     }
     return {
       tone: "muted" as const,
-      text: `Début: ${ts.toDate().toLocaleDateString("fr-FR")}`,
+      text: `Début: ${formatTimestampToDateFr(ts)}`,
     };
   }, [newStartDate]);
 
@@ -218,12 +226,12 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
     const dueTimestamp = validation.data.dueDate ? parseLocalDateTimeToTimestamp(validation.data.dueDate) : null;
 
     if (validation.data.startDate && !startTimestamp) {
-      setCreateError("Date de début invalide (format attendu: AAAA-MM-JJ).");
+      setCreateError(`Date de début invalide (format attendu: ${DATE_PLACEHOLDER_FR}).`);
       return;
     }
 
     if (validation.data.dueDate && !dueTimestamp) {
-      setCreateError("Date d’échéance invalide (format attendu: AAAA-MM-JJTHH:MM).");
+      setCreateError(`Date d'échéance invalide (format attendu: ${DATETIME_PLACEHOLDER_FR}).`);
       return;
     }
 
@@ -314,8 +322,8 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 items-end">
-        <div className="space-y-1 lg:col-span-2">
+      <div className="grid grid-cols-1 lg:grid-cols-6 gap-3 items-end">
+        <div className="space-y-1 lg:col-span-3">
           <label className="text-sm font-medium" htmlFor="task-new-title">
             Titre
           </label>
@@ -371,7 +379,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
           </div>
         </div>
 
-        <div className="space-y-1">
+        <div className="space-y-1 lg:col-span-1">
           <label className="text-sm font-medium" htmlFor="task-new-status">
             Statut
           </label>
@@ -387,7 +395,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
           </select>
         </div>
 
-        <div className="space-y-1">
+        <div className="space-y-1 lg:col-span-2">
           <label className="text-sm font-medium" htmlFor="task-new-due">
             Date de fin / échéance
           </label>
@@ -396,13 +404,15 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
             type="datetime-local"
             value={newDueDate}
             onChange={(e) => setNewDueDate(e.target.value)}
+            placeholder={DATETIME_PLACEHOLDER_FR}
+            title={`Format: ${DATETIME_PLACEHOLDER_FR}`}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
                 (e.currentTarget as HTMLInputElement).blur();
               }
             }}
-            className={`w-full px-3 py-2 border rounded-md bg-background text-foreground text-sm ${dateWarning ? "border-destructive" : "border-input"}`}
+            className={`w-full min-w-[16rem] px-3 py-2 border rounded-md bg-background text-foreground text-sm ${dateWarning ? "border-destructive" : "border-input"}`}
           />
           {dueDateFeedback ? (
             <div className={`text-xs ${dueDateFeedback.tone === "error" ? "text-destructive" : "text-muted-foreground"}`}>
@@ -422,13 +432,15 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
             type="date"
             value={newStartDate}
             onChange={(e) => setNewStartDate(e.target.value)}
+            placeholder={DATE_PLACEHOLDER_FR}
+            title={`Format: ${DATE_PLACEHOLDER_FR}`}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
                 (e.currentTarget as HTMLInputElement).blur();
               }
             }}
-            className={`w-full px-3 py-2 border rounded-md bg-background text-foreground text-sm ${dateWarning ? "border-destructive" : "border-input"}`}
+            className={`w-full min-w-[11rem] px-3 py-2 border rounded-md bg-background text-foreground text-sm ${dateWarning ? "border-destructive" : "border-input"}`}
           />
           {startDateFeedback ? (
             <div className={`text-xs ${startDateFeedback.tone === "error" ? "text-destructive" : "text-muted-foreground"}`}>

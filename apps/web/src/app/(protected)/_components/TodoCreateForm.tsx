@@ -6,7 +6,7 @@ import { httpsCallable } from "firebase/functions";
 import { collection, doc, serverTimestamp, writeBatch } from "firebase/firestore";
 import { auth, db, functions as fbFunctions } from "@/lib/firebase";
 import { scheduleChecklistItem, type ChecklistItemScheduleData } from "@/lib/checklistAgenda";
-import { parseLocalDateToTimestamp } from "@/lib/datetime";
+import { DATE_PLACEHOLDER_FR, formatTimestampToDateFr, parseLocalDateToTimestamp } from "@/lib/datetime";
 import { toUserErrorMessage } from "@/lib/userError";
 import type { TodoDoc, TodoItemDoc } from "@/types/firestore";
 import DictationMicButton from "./DictationMicButton";
@@ -176,12 +176,12 @@ export default function TodoCreateForm({
     if (!ts) {
       return {
         tone: "error" as const,
-        text: "Format attendu: AAAA-MM-JJ.",
+        text: `Format attendu: ${DATE_PLACEHOLDER_FR}.`,
       };
     }
     return {
       tone: "muted" as const,
-      text: `Échéance: ${ts.toDate().toLocaleDateString("fr-FR")}`,
+      text: `Échéance: ${formatTimestampToDateFr(ts)}`,
     };
   }, [dueDateDraft]);
 
@@ -276,6 +276,7 @@ export default function TodoCreateForm({
         const sourceItem = persistedItems.find((it) => it.id === draftItem.id);
         if (!sourceItem) continue;
 
+        // If draftSchedule.allDay is false and no time is provided, scheduling defaults to 09:00 (local).
         const agendaPlan = await scheduleChecklistItem({
           db,
           batch,
@@ -483,13 +484,15 @@ export default function TodoCreateForm({
                 type="date"
                 value={dueDateDraft}
                 onChange={(e) => setDueDateDraft(e.target.value)}
+                placeholder={DATE_PLACEHOLDER_FR}
+                title={`Format: ${DATE_PLACEHOLDER_FR}`}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
                     (e.currentTarget as HTMLInputElement).blur();
                   }
                 }}
-                className={`w-full px-3 py-2 border rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary ${dueDateFeedback?.tone === "error" ? "border-destructive" : "border-input"}`}
+                className={`w-full min-w-[11rem] px-3 py-2 border rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary ${dueDateFeedback?.tone === "error" ? "border-destructive" : "border-input"}`}
                 disabled={creating}
               />
               {dueDateFeedback ? (

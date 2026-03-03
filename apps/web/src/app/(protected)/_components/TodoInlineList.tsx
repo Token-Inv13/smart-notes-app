@@ -7,6 +7,7 @@ import { auth, db } from "@/lib/firebase";
 import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
+import { formatTimestampToDateFr } from "@/lib/datetime";
 import { toUserErrorMessage } from "@/lib/userError";
 import type { TodoDoc } from "@/types/firestore";
 
@@ -101,7 +102,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
   const formatDueDate = (ts: TodoDoc["dueDate"] | null | undefined) => {
     if (!ts) return "";
     try {
-      return ts.toDate().toLocaleDateString();
+      return formatTimestampToDateFr(ts);
     } catch {
       return "";
     }

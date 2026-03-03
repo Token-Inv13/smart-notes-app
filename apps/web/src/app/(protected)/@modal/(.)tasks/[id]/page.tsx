@@ -22,6 +22,11 @@ import { useUserSettings } from "@/hooks/useUserSettings";
 import { exportTaskPdf } from "@/lib/pdf/exportPdf";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import {
+  DATETIME_PLACEHOLDER_FR,
+  DATE_PLACEHOLDER_FR,
+  formatDateTimeFr,
+  formatTimestampToDateFr,
+  formatTimestampToDateTimeFr,
   formatTimestampForDateInput,
   formatTimestampForInput,
   isExactAllDayWindow,
@@ -35,17 +40,11 @@ import Modal from "../../../Modal";
 import ItemActionsMenu from "../../../ItemActionsMenu";
 
 function formatFrDateTime(ts?: TaskDoc["dueDate"] | null) {
-  if (!ts) return "";
-  const d = ts.toDate();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return formatTimestampToDateTimeFr(ts ?? null);
 }
 
 function formatFrDate(ts?: TaskDoc["startDate"] | null) {
-  if (!ts) return "";
-  const d = ts.toDate();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  return formatTimestampToDateFr(ts ?? null);
 }
 
 function formatIsoForDateTimeInput(iso: string | null | undefined): string {
@@ -65,7 +64,7 @@ function formatReminderDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "Date invalide";
-  return date.toLocaleString("fr-FR");
+  return formatDateTimeFr(date);
 }
 
 function priorityLabel(p?: TaskDoc["priority"] | null) {
@@ -136,7 +135,8 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
   const [editDueDate, setEditDueDate] = useState("");
   const [editPriority, setEditPriority] = useState<"" | NonNullable<TaskDoc["priority"]>>("");
   const [saving, setSaving] = useState(false);
-  const [, setDeleting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
   const [sharedUrl, setSharedUrl] = useState<string | null>(null);
@@ -310,7 +310,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     lines.push(`# ${task.title ?? ""}`);
     lines.push(`Statut: ${statusLabel(status)}`);
     if (task.dueDate) lines.push(`Échéance: ${formatFrDateTime(task.dueDate)}`);
-    if (workspaceName) lines.push(`Workspace: ${workspaceName}`);
+    if (workspaceName) lines.push(`Dossier: ${workspaceName}`);
     lines.push("");
     if (task.description) {
       lines.push(task.description);
@@ -416,12 +416,12 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     if (!ts) {
       return {
         tone: "error" as const,
-        text: "Format attendu: AAAA-MM-JJTHH:MM.",
+        text: `Format attendu: ${DATETIME_PLACEHOLDER_FR}.`,
       };
     }
     return {
       tone: "muted" as const,
-      text: `Échéance: ${ts.toDate().toLocaleString("fr-FR")}`,
+      text: `Échéance: ${formatTimestampToDateTimeFr(ts)}`,
     };
   }, [editDueDate]);
 
@@ -431,12 +431,12 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     if (!ts) {
       return {
         tone: "error" as const,
-        text: "Format attendu: AAAA-MM-JJ.",
+        text: `Format attendu: ${DATE_PLACEHOLDER_FR}.`,
       };
     }
     return {
       tone: "muted" as const,
-      text: `Début: ${ts.toDate().toLocaleDateString("fr-FR")}`,
+      text: `Début: ${formatTimestampToDateFr(ts)}`,
     };
   }, [editStartDate]);
 
@@ -520,7 +520,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
     const reminderDate = new Date(reminderDraft);
     if (Number.isNaN(reminderDate.getTime())) {
-      setEditError("Date de rappel invalide (format attendu: AAAA-MM-JJTHH:MM).");
+      setEditError(`Date de rappel invalide (format attendu: ${DATETIME_PLACEHOLDER_FR}).`);
       return;
     }
 
@@ -817,8 +817,6 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       return;
     }
 
-    if (!confirm("Supprimer cet élément d’agenda ?")) return;
-
     setDeleting(true);
     setEditError(null);
 
@@ -830,7 +828,13 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       setEditError(toUserErrorMessage(e, "Erreur lors de la suppression de l’élément d’agenda."));
     } finally {
       setDeleting(false);
+      setConfirmingDelete(false);
     }
+  };
+
+  const openDeleteConfirmation = () => {
+    setEditError(null);
+    setConfirmingDelete(true);
   };
 
   return (
@@ -894,6 +898,31 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
           {snoozeFeedback && <div className="sn-alert">{snoozeFeedback}</div>}
           {reminderFeedback && <div className="sn-alert">{reminderFeedback}</div>}
           {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
+          {confirmingDelete && (
+            <div className="sn-card border border-red-300 bg-red-50 p-3 space-y-2">
+              <div className="text-sm text-red-800">
+                Supprimer définitivement cette tâche ? Cette action est irréversible.
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="px-3 py-2 rounded-md text-sm border border-border bg-background"
+                  onClick={() => setConfirmingDelete(false)}
+                  disabled={deleting}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  className="px-3 py-2 rounded-md text-sm bg-red-600 text-white disabled:opacity-50"
+                  onClick={() => void handleDelete()}
+                  disabled={deleting}
+                >
+                  {deleting ? "Suppression…" : "Supprimer définitivement"}
+                </button>
+              </div>
+            </div>
+          )}
           <div className="sn-card p-4 space-y-3">
             <div className="sn-modal-header-safe">
               <div className="min-w-0 flex-1">
@@ -913,7 +942,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                     onExportPdf={handleExportPdf}
                     onExportMarkdown={handleExport}
                     archived={task.archived === true}
-                    onDelete={handleDelete}
+                    onDelete={openDeleteConfirmation}
                   />
                 ) : (
                   <>
@@ -1014,13 +1043,15 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                           type="datetime-local"
                           value={reminderDraft}
                           onChange={(e) => setReminderDraft(e.target.value)}
+                          placeholder={DATETIME_PLACEHOLDER_FR}
+                          title={`Format: ${DATETIME_PLACEHOLDER_FR}`}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") {
                               e.preventDefault();
                               void handleAddReminder();
                             }
                           }}
-                          className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                          className="w-full min-w-[16rem] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                           disabled={addingReminder || Boolean(busyReminderId) || saving}
                         />
                       </div>
@@ -1196,13 +1227,15 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                         });
                         setDirty(snap !== lastSavedSnapshotRef.current);
                       }}
+                      placeholder={DATETIME_PLACEHOLDER_FR}
+                      title={`Format: ${DATETIME_PLACEHOLDER_FR}`}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
                           (e.currentTarget as HTMLInputElement).blur();
                         }
                       }}
-                      className={`w-full px-3 py-2 border rounded-md bg-background text-foreground text-sm ${editDateWarning ? "border-destructive" : "border-input"}`}
+                      className={`w-full min-w-[16rem] px-3 py-2 border rounded-md bg-background text-foreground text-sm ${editDateWarning ? "border-destructive" : "border-input"}`}
                     />
                     {editDueDateFeedback ? (
                       <div className={`text-xs ${editDueDateFeedback.tone === "error" ? "text-destructive" : "text-muted-foreground"}`}>
@@ -1234,13 +1267,15 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                         });
                         setDirty(snap !== lastSavedSnapshotRef.current);
                       }}
+                      placeholder={DATE_PLACEHOLDER_FR}
+                      title={`Format: ${DATE_PLACEHOLDER_FR}`}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
                           (e.currentTarget as HTMLInputElement).blur();
                         }
                       }}
-                      className={`w-full px-3 py-2 border rounded-md bg-background text-foreground text-sm ${editDateWarning ? "border-destructive" : "border-input"}`}
+                      className={`w-full min-w-[11rem] px-3 py-2 border rounded-md bg-background text-foreground text-sm ${editDateWarning ? "border-destructive" : "border-input"}`}
                     />
                     {editStartDateFeedback ? (
                       <div className={`text-xs ${editStartDateFeedback.tone === "error" ? "text-destructive" : "text-muted-foreground"}`}>

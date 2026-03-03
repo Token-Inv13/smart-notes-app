@@ -3,7 +3,13 @@
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import { addDoc, collection, deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { formatTimestampForDateInput, normalizeAgendaWindowForFirestore, parseLocalDateToTimestamp } from "@/lib/datetime";
+import {
+  DATE_PLACEHOLDER_FR,
+  formatTimestampForDateInput,
+  formatTimestampToDateFr,
+  normalizeAgendaWindowForFirestore,
+  parseLocalDateToTimestamp,
+} from "@/lib/datetime";
 import { toUserErrorMessage } from "@/lib/userError";
 import type { TaskDoc, TodoDoc } from "@/types/firestore";
 import { useRouter } from "next/navigation";
@@ -272,12 +278,12 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
     if (!ts) {
       return {
         tone: "error" as const,
-        text: "Format attendu: AAAA-MM-JJ.",
+        text: `Format attendu: ${DATE_PLACEHOLDER_FR}.`,
       };
     }
     return {
       tone: "muted" as const,
-      text: `Échéance: ${ts.toDate().toLocaleDateString("fr-FR")}`,
+      text: `Échéance: ${formatTimestampToDateFr(ts)}`,
     };
   }, [dueDateDraft]);
 
@@ -533,6 +539,8 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                       type="date"
                       value={dueDateDraft}
                       onChange={(e) => setDueDateDraft(e.target.value)}
+                      placeholder={DATE_PLACEHOLDER_FR}
+                      title={`Format: ${DATE_PLACEHOLDER_FR}`}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
@@ -545,7 +553,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                         }
                       }}
                       onBlur={() => void commitDueDate()}
-                      className={`w-full px-3 py-2 border rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary ${dueDateFeedback?.tone === "error" ? "border-destructive" : "border-input"}`}
+                      className={`w-full min-w-[11rem] px-3 py-2 border rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary ${dueDateFeedback?.tone === "error" ? "border-destructive" : "border-input"}`}
                       disabled={saving}
                     />
                     {dueDateFeedback ? (
@@ -756,6 +764,15 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                             </div>
                             <button
                               type="button"
+                              className="sn-text-btn shrink-0"
+                              aria-label="Restaurer l��l�ment"
+                              onClick={() => void toggleItemDone(it.id, false)}
+                              disabled={saving}
+                            >
+                              Restaurer
+                            </button>
+                            <button
+                              type="button"
                               className="sn-icon-btn shrink-0"
                               aria-label="Supprimer définitivement l’élément"
                               title="Supprimer"
@@ -787,7 +804,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                 {confirmingDelete && (
                   <div className="space-y-2">
                     <div className="text-sm text-muted-foreground">
-                      Supprimer définitivement cette ToDo ? Cette action est irréversible.
+                      Supprimer d�finitivement cette checklist ? Cette action est irr�versible.
                     </div>
                     <div className="flex items-center justify-end gap-2">
                       <button

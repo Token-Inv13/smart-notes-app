@@ -1,5 +1,21 @@
 import { Timestamp } from 'firebase/firestore';
 
+const DISPLAY_LOCALE_FR = 'fr-FR';
+const FR_DATE_FORMAT: Intl.DateTimeFormatOptions = {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+};
+const FR_DATE_TIME_FORMAT: Intl.DateTimeFormatOptions = {
+  ...FR_DATE_FORMAT,
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+};
+
+export const DATE_PLACEHOLDER_FR = 'JJ/MM/AAAA';
+export const DATETIME_PLACEHOLDER_FR = 'JJ/MM/AAAA HH:mm';
+
 export function getUserTimezone(): string {
   if (typeof window !== 'undefined') {
     const maybeWindow = window as Window & { __SMARTNOTES_TEST_TIMEZONE__?: unknown };
@@ -106,7 +122,27 @@ export function parseLocalDateTimeToTimestamp(value: string): Timestamp | null {
  */
 export function formatTimestampToLocalString(ts: Timestamp | null | undefined): string {
   if (!ts) return '';
-  return ts.toDate().toLocaleString();
+  return formatDateTimeFr(ts.toDate());
+}
+
+export function formatDateFr(value: Date | null | undefined): string {
+  if (!value || Number.isNaN(value.getTime())) return '';
+  return value.toLocaleDateString(DISPLAY_LOCALE_FR, FR_DATE_FORMAT);
+}
+
+export function formatDateTimeFr(value: Date | null | undefined): string {
+  if (!value || Number.isNaN(value.getTime())) return '';
+  return value.toLocaleString(DISPLAY_LOCALE_FR, FR_DATE_TIME_FORMAT);
+}
+
+export function formatTimestampToDateFr(ts: Timestamp | null | undefined): string {
+  if (!ts) return '';
+  return formatDateFr(ts.toDate());
+}
+
+export function formatTimestampToDateTimeFr(ts: Timestamp | null | undefined): string {
+  if (!ts) return '';
+  return formatDateTimeFr(ts.toDate());
 }
 
 /**

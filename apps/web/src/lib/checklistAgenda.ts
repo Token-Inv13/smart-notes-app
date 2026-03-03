@@ -10,6 +10,8 @@ import {
 import { normalizeAgendaWindowForFirestore, parseLocalDateToTimestamp } from "@/lib/datetime";
 import type { TaskDoc, TodoDoc } from "@/types/firestore";
 
+const DEFAULT_CHECKLIST_TIME = "09:00";
+
 export type ChecklistItemScheduleData = {
   date: string;
   time?: string;
@@ -61,11 +63,11 @@ export async function scheduleChecklistItem(input: ScheduleChecklistItemInput): 
 
   // Manual test hook for PR-UX-1c: force a scheduling error before commit.
   if (process.env.NODE_ENV !== "production" && item.text.includes("[SIMULATE_SCHEDULING_ERROR]")) {
-    throw new Error("Erreur de planification simulee.");
+    throw new Error("Erreur de planification simulée.");
   }
 
   if (schedule.timezone !== "Europe/Paris") {
-    throw new Error("Fuseau horaire non supporte.");
+    throw new Error("Fuseau horaire non supporté.");
   }
 
   const dayTs = parseLocalDateToTimestamp(schedule.date);
@@ -77,7 +79,8 @@ export async function scheduleChecklistItem(input: ScheduleChecklistItemInput): 
   let start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, 0, 0, 0);
   let end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1, 0, 0, 0, 0);
   if (!schedule.allDay) {
-    const timedStart = parseDateAndTime(schedule.date, schedule.time ?? "09:00");
+    // If no time is provided for a non all-day task, default to 09:00 local time.
+    const timedStart = parseDateAndTime(schedule.date, schedule.time ?? DEFAULT_CHECKLIST_TIME);
     if (!timedStart) {
       throw new Error("Heure invalide.");
     }
@@ -98,7 +101,7 @@ export async function scheduleChecklistItem(input: ScheduleChecklistItemInput): 
   const payload: Omit<TaskDoc, "id"> = {
     userId,
     workspaceId: typeof workspaceId === "string" ? workspaceId : null,
-    title: item.text.trim() || "Checklist item",
+    title: item.text.trim() || "Élément de checklist",
     description: `Checklist: ${todoTitle}`,
     status: item.done ? "done" : "todo",
     allDay: normalizedWindow.allDay,
