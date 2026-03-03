@@ -765,7 +765,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                             <button
                               type="button"
                               className="sn-text-btn shrink-0"
-                              aria-label="Restaurer l’élément"
+                              aria-label="Restaurer l'element"
                               onClick={() => void toggleItemDone(it.id, false)}
                               disabled={saving}
                             >
@@ -804,7 +804,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                 {confirmingDelete && (
                   <div className="space-y-2">
                     <div className="text-sm text-muted-foreground">
-                      Supprimer définitivement cette checklist ? Cette action est irréversible.
+                      Supprimer definitivement cette checklist ? Cette action est irreversible.
                     </div>
                     <div className="flex items-center justify-end gap-2">
                       <button
