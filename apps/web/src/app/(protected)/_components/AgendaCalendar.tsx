@@ -824,7 +824,7 @@ export default function AgendaCalendar({
 
   return (
     <section ref={calendarShellRef} className="space-y-3 overflow-x-hidden">
-      <div className="relative flex flex-wrap items-center gap-1 rounded-md border border-border bg-background p-1.5">
+      <div className="relative flex flex-wrap items-center gap-1 rounded-md border border-border bg-background p-1">
         <div className="inline-flex max-w-full overflow-hidden rounded-md border border-border bg-background">
           <button
             type="button"
@@ -860,7 +860,7 @@ export default function AgendaCalendar({
           </button>
         </div>
 
-        <div className="min-w-[150px] flex-1 px-1 text-xs font-semibold sm:text-sm">{label}</div>
+        <div className="min-w-[120px] flex-1 px-1 text-xs font-semibold sm:text-sm">{label}</div>
 
         <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
           <div className="inline-flex items-center overflow-hidden rounded-md border border-border bg-background/90 shadow-sm">
@@ -962,7 +962,7 @@ export default function AgendaCalendar({
         {optionsOpen && (
           <div
             ref={optionsPanelRef}
-            className="absolute right-1 top-[calc(100%+0.3rem)] z-20 w-[min(94vw,520px)] rounded-md border border-border bg-card p-2 shadow-lg"
+            className="absolute left-1 right-1 top-[calc(100%+0.3rem)] z-20 rounded-md border border-border bg-card p-2 shadow-lg sm:left-auto sm:w-[min(94vw,520px)]"
           >
             <AgendaCalendarFiltersBar
               showRecurringOnly={showRecurringOnly}
