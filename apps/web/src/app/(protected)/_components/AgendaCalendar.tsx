@@ -1,19 +1,16 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
-import type {
-  DateSelectArg,
-  DatesSetArg,
-  EventInput,
-} from "@fullcalendar/core";
+import type { DateSelectArg, DatesSetArg, EventInput } from "@fullcalendar/core";
+import type { DateClickArg } from "@fullcalendar/interaction";
 import {
   CALENDAR_PREFERENCES_STORAGE_KEY,
-  priorityColor,
   toLocalDateInputValue,
+  toLocalInputValue,
 } from "./agendaCalendarUtils";
 import { useAgendaCalendarFilters } from "./useAgendaCalendarFilters";
 import { useAgendaPlanningData } from "./useAgendaPlanningData";
@@ -22,6 +19,7 @@ import { useAgendaDraftManager } from "./useAgendaDraftManager";
 import { useAgendaEventMutation } from "./useAgendaEventMutation";
 import { useAgendaCalendarNavigation } from "./useAgendaCalendarNavigation";
 import { useAgendaMergedEvents } from "./useAgendaMergedEvents";
+import { getFolderColor } from "./agendaColors";
 import { renderAgendaCalendarEventContent } from "./AgendaCalendarEventContent";
 import AgendaCalendarFiltersBar from "./AgendaCalendarFiltersBar";
 import AgendaCalendarDraftModal from "./AgendaCalendarDraftModal";
@@ -56,6 +54,27 @@ type CalendarRecurrenceInput = {
   until?: Date | null;
   exceptions?: string[];
 } | null;
+
+type QuickAddDraft = {
+  title: string;
+  start: Date;
+  end: Date;
+  anchorX: number;
+  anchorY: number;
+};
+
+type EventHoverPreview = {
+  eventId: string;
+  title: string;
+  timeLabel: string;
+  workspaceLabel: string;
+  sourceLabel: "LOCAL" | "Google";
+  left: number;
+  top: number;
+};
+
+const QUICK_ADD_DEFAULT_DURATION_MS = 60 * 60 * 1000;
+const DOUBLE_CLICK_DELAY_MS = 240;
 
 interface AgendaCalendarProps {
   tasks: TaskDoc[];
@@ -155,13 +174,56 @@ function formatPlanningLabel(windowRange: { start: Date; end: Date }, mode: Cale
     const endInclusive = new Date(windowRange.end.getTime() - 1);
     const startLabel = windowRange.start.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
     const endLabel = endInclusive.toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
-    return `Semaine ${startLabel} → ${endLabel}`;
+    return `Semaine ${startLabel} â†’ ${endLabel}`;
   }
 
   return windowRange.start.toLocaleDateString("fr-FR", {
     month: "long",
     year: "numeric",
   });
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function pad2(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+function buildScrollTimeForNow(reference: Date) {
+  const hourOffset = reference.getHours() - 2;
+  if (hourOffset <= 0) return "00:00:00";
+  if (hourOffset >= 23) return "23:00:00";
+  return `${pad2(hourOffset)}:${pad2(reference.getMinutes())}:00`;
+}
+
+function toTimeInputValue(date: Date) {
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+function mergeDateWithTime(baseDate: Date, timeValue: string) {
+  const [hoursRaw, minutesRaw] = timeValue.split(":");
+  const hours = Number(hoursRaw);
+  const minutes = Number(minutesRaw);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+
+  const merged = new Date(baseDate);
+  merged.setHours(clamp(Math.floor(hours), 0, 23), clamp(Math.floor(minutes), 0, 59), 0, 0);
+  return merged;
+}
+
+function formatEventPreviewTime(start: Date | null, end: Date | null, allDay: boolean) {
+  if (allDay) return "Journee complete";
+  if (!(start instanceof Date)) return "Horaire";
+
+  const formatClock = new Intl.DateTimeFormat("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const startLabel = formatClock.format(start);
+  if (!(end instanceof Date) || end.getTime() <= start.getTime()) return startLabel;
+  return `${startLabel}-${formatClock.format(end)}`;
 }
 
 export default function AgendaCalendar({
@@ -178,6 +240,17 @@ export default function AgendaCalendar({
 }: AgendaCalendarProps) {
   const calendarRef = useRef<FullCalendar | null>(null);
   const calendarShellRef = useRef<HTMLElement | null>(null);
+  const optionsPanelRef = useRef<HTMLDivElement | null>(null);
+  const optionsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const quickAddPanelRef = useRef<HTMLDivElement | null>(null);
+  const quickAddTitleRef = useRef<HTMLInputElement | null>(null);
+  const timeGridDateClickTimerRef = useRef<number | null>(null);
+  const lastTimeGridDateClickRef = useRef<{ timestamp: number; dateMs: number; viewType: string } | null>(null);
+  const dragHoverCellRef = useRef<HTMLElement | null>(null);
+  const dragMoveRafRef = useRef<number | null>(null);
+  const autoScrollPendingRef = useRef(true);
+  const autoScrollTimeRef = useRef<string>(buildScrollTimeForNow(new Date()));
+  const initialScrollTime = useMemo(() => buildScrollTimeForNow(new Date()), []);
   const [viewMode, setViewMode] = useState<CalendarViewMode>("timeGridWeek");
   const [displayMode, setDisplayMode] = useState<AgendaDisplayMode>("calendar");
   const [prefsHydrated, setPrefsHydrated] = useState(false);
@@ -203,6 +276,11 @@ export default function AgendaCalendar({
   const [userTimezone, setUserTimezone] = useState<string>("UTC");
   const [focusPulseActive, setFocusPulseActive] = useState(false);
   const [viewTransitioning, setViewTransitioning] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [quickAddDraft, setQuickAddDraft] = useState<QuickAddDraft | null>(null);
+  const [quickAddError, setQuickAddError] = useState<string | null>(null);
+  const [eventHoverPreview, setEventHoverPreview] = useState<EventHoverPreview | null>(null);
+  const [eventDragging, setEventDragging] = useState(false);
 
   const planningWindow = useMemo(
     () => computePlanningWindow(planningAnchorDate, viewMode),
@@ -410,6 +488,8 @@ export default function AgendaCalendar({
 
       const fcStart = allDay ? toLocalDateInputValue(start) : start;
       const fcEnd = allDay ? toLocalDateInputValue(end) : end;
+      const workspaceName = (task.workspaceId ? workspaceNameById.get(task.workspaceId) : null) ?? "Sans dossier";
+      const folderColor = getFolderColor(task.workspaceId ?? "", workspaceName);
 
       output.push({
         id: eventId,
@@ -417,17 +497,20 @@ export default function AgendaCalendar({
         start: fcStart,
         end: fcEnd,
         allDay,
-        backgroundColor: priorityColor(itemPriority),
-        borderColor: priorityColor(itemPriority),
+        backgroundColor: folderColor.backgroundColor,
+        borderColor: folderColor.borderColor,
+        textColor: folderColor.textColor,
         classNames: ["agenda-event", "agenda-event-local", `agenda-priority-${itemPriority || "none"}`],
         extendedProps: {
           taskId,
           workspaceId: task.workspaceId ?? "",
-          workspaceName: (task.workspaceId ? workspaceNameById.get(task.workspaceId) : null) ?? "Sans dossier",
+          workspaceName,
           priority: itemPriority,
           recurrence,
           instanceDate,
           conflict: itemHasConflict,
+          source: "local",
+          textTone: folderColor.textTone,
         },
       });
     }
@@ -479,6 +562,11 @@ export default function AgendaCalendar({
     calendarRef,
     displayMode,
     openQuickDraft,
+    onBeforeJump: () => {
+      if (displayMode !== "calendar") return;
+      autoScrollPendingRef.current = true;
+      autoScrollTimeRef.current = buildScrollTimeForNow(new Date());
+    },
     onPlanningJump: (action) => {
       setPlanningAnchorDate((prev) => {
         if (action === "today") return new Date();
@@ -497,19 +585,187 @@ export default function AgendaCalendar({
     },
   });
 
+  const closeQuickAdd = useCallback(() => {
+    setQuickAddDraft(null);
+    setQuickAddError(null);
+    calendarRef.current?.getApi().unselect();
+    if (timeGridDateClickTimerRef.current !== null) {
+      window.clearTimeout(timeGridDateClickTimerRef.current);
+      timeGridDateClickTimerRef.current = null;
+    }
+    lastTimeGridDateClickRef.current = null;
+  }, []);
+
+  const openQuickAddFromRange = useCallback(
+    (start: Date, end: Date, jsEvent?: MouseEvent | null) => {
+      const shellRect = calendarShellRef.current?.getBoundingClientRect();
+      const fallbackX = shellRect ? shellRect.width - 28 : 420;
+      const fallbackY = shellRect ? 180 : 180;
+      const anchorX = jsEvent && shellRect ? clamp(jsEvent.clientX - shellRect.left, 18, shellRect.width - 18) : fallbackX;
+      const anchorY = jsEvent && shellRect ? clamp(jsEvent.clientY - shellRect.top, 18, shellRect.height - 18) : fallbackY;
+
+      const normalizedEnd = end.getTime() > start.getTime() ? end : new Date(start.getTime() + QUICK_ADD_DEFAULT_DURATION_MS);
+      setQuickAddError(null);
+      setQuickAddDraft({
+        title: "",
+        start: new Date(start),
+        end: new Date(normalizedEnd),
+        anchorX,
+        anchorY,
+      });
+    },
+    [],
+  );
+
+  const openFullDraftFromQuickAdd = useCallback(() => {
+    if (!quickAddDraft) return;
+    setEditScope("series");
+    setDraft({
+      title: quickAddDraft.title,
+      startLocal: toLocalInputValue(quickAddDraft.start),
+      endLocal: toLocalInputValue(quickAddDraft.end),
+      allDay: false,
+      workspaceId: "",
+      priority: "",
+      recurrenceFreq: "",
+      recurrenceUntil: "",
+    });
+    closeQuickAdd();
+  }, [closeQuickAdd, quickAddDraft, setDraft, setEditScope]);
+
+  const submitQuickAdd = useCallback(async () => {
+    if (!quickAddDraft) return;
+    const title = quickAddDraft.title.trim();
+    if (!title) {
+      setQuickAddError("Le titre est obligatoire.");
+      return;
+    }
+    if (quickAddDraft.end.getTime() <= quickAddDraft.start.getTime()) {
+      setQuickAddError("La fin doit etre apres le debut.");
+      return;
+    }
+
+    try {
+      setError(null);
+      await onCreateEvent({
+        title,
+        start: quickAddDraft.start,
+        end: quickAddDraft.end,
+        allDay: false,
+        workspaceId: null,
+        priority: null,
+        recurrence: null,
+      });
+      closeQuickAdd();
+    } catch {
+      setQuickAddError("Impossible de creer cet element rapidement.");
+    }
+  }, [closeQuickAdd, onCreateEvent, quickAddDraft, setError]);
+
+  const handleCalendarSelect = useCallback(
+    (arg: DateSelectArg) => {
+      if (timeGridDateClickTimerRef.current !== null) {
+        window.clearTimeout(timeGridDateClickTimerRef.current);
+        timeGridDateClickTimerRef.current = null;
+      }
+      lastTimeGridDateClickRef.current = null;
+      const isTimeGridSelection = arg.view.type === "timeGridWeek" || arg.view.type === "timeGridDay";
+      if (!arg.allDay && isTimeGridSelection) {
+        openQuickAddFromRange(arg.start, arg.end, arg.jsEvent as MouseEvent | null);
+        return;
+      }
+      openDraftFromSelect(arg);
+    },
+    [openDraftFromSelect, openQuickAddFromRange],
+  );
+
+  const handleCalendarDateClick = useCallback(
+    (arg: DateClickArg) => {
+      const isTimeGridSelection = arg.view.type === "timeGridWeek" || arg.view.type === "timeGridDay";
+      if (!arg.allDay && isTimeGridSelection) {
+        const mouseEvent = arg.jsEvent as MouseEvent | null;
+        const now = Date.now();
+        const dateMs = arg.date.getTime();
+        const clickDetail = typeof mouseEvent?.detail === "number" ? mouseEvent.detail : 1;
+        const lastClick = lastTimeGridDateClickRef.current;
+        const sameSlotAsPrevious =
+          lastClick &&
+          lastClick.dateMs === dateMs &&
+          lastClick.viewType === arg.view.type &&
+          now - lastClick.timestamp <= DOUBLE_CLICK_DELAY_MS;
+
+        if (timeGridDateClickTimerRef.current !== null) {
+          window.clearTimeout(timeGridDateClickTimerRef.current);
+          timeGridDateClickTimerRef.current = null;
+        }
+
+        if (clickDetail >= 2 || sameSlotAsPrevious) {
+          lastTimeGridDateClickRef.current = null;
+          openQuickAddFromRange(arg.date, new Date(arg.date.getTime() + QUICK_ADD_DEFAULT_DURATION_MS), mouseEvent);
+          return;
+        }
+
+        lastTimeGridDateClickRef.current = {
+          timestamp: now,
+          dateMs,
+          viewType: arg.view.type,
+        };
+        timeGridDateClickTimerRef.current = window.setTimeout(() => {
+          openQuickAddFromRange(arg.date, new Date(arg.date.getTime() + QUICK_ADD_DEFAULT_DURATION_MS), mouseEvent);
+          timeGridDateClickTimerRef.current = null;
+          lastTimeGridDateClickRef.current = null;
+        }, DOUBLE_CLICK_DELAY_MS);
+        return;
+      }
+
+      openDraftFromSelect({
+        allDay: arg.allDay,
+        end: arg.allDay
+          ? new Date(arg.date.getFullYear(), arg.date.getMonth(), arg.date.getDate() + 1)
+          : new Date(arg.date.getTime() + QUICK_ADD_DEFAULT_DURATION_MS),
+        endStr: "",
+        jsEvent: arg.jsEvent,
+        start: arg.date,
+        startStr: "",
+        view: arg.view,
+      } as DateSelectArg);
+    },
+    [openDraftFromSelect, openQuickAddFromRange],
+  );
+
   const changeView = (next: CalendarViewMode) => {
     triggerViewTransition();
     setViewMode(next);
+    if (displayMode === "calendar" && next !== "dayGridMonth") {
+      autoScrollPendingRef.current = true;
+      autoScrollTimeRef.current = buildScrollTimeForNow(new Date());
+    }
     if (displayMode === "calendar") {
       calendarRef.current?.getApi().changeView(next);
     }
   };
+
+  const clearDragHoverCell = useCallback(() => {
+    dragHoverCellRef.current?.classList.remove("agenda-drop-hover-cell", "agenda-drop-hover-col");
+    dragHoverCellRef.current = null;
+  }, []);
 
   const onDatesSet = (arg: DatesSetArg) => {
     setLabel(arg.view.title);
     setVisibleRange({ start: arg.start, end: arg.end });
     setPlanningAnchorDate(arg.start);
     onVisibleRangeChange?.({ start: arg.start, end: arg.end });
+
+    const isTimeGridView = arg.view.type === "timeGridWeek" || arg.view.type === "timeGridDay";
+    if (isTimeGridView && autoScrollPendingRef.current) {
+      const scrollTarget = autoScrollTimeRef.current || buildScrollTimeForNow(new Date());
+      window.requestAnimationFrame(() => {
+        const api = calendarRef.current?.getApi();
+        if (!api) return;
+        api.scrollToTime(scrollTarget);
+      });
+      autoScrollPendingRef.current = false;
+    }
     window.setTimeout(() => setViewTransitioning(false), 80);
   };
 
@@ -529,6 +785,84 @@ export default function AgendaCalendar({
     calendarRef.current?.getApi().changeView(viewMode);
   }, [displayMode, viewMode]);
 
+  useEffect(() => {
+    autoScrollPendingRef.current = true;
+    autoScrollTimeRef.current = buildScrollTimeForNow(new Date());
+  }, []);
+
+  useEffect(() => {
+    if (!quickAddDraft) return;
+    window.requestAnimationFrame(() => quickAddTitleRef.current?.focus());
+  }, [quickAddDraft]);
+
+  useEffect(() => {
+    if (!quickAddDraft) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && quickAddPanelRef.current?.contains(target)) return;
+      closeQuickAdd();
+    };
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => window.removeEventListener("pointerdown", onPointerDown);
+  }, [closeQuickAdd, quickAddDraft]);
+
+  useEffect(() => {
+    if (!optionsOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && optionsPanelRef.current?.contains(target)) return;
+      if (target && optionsTriggerRef.current?.contains(target)) return;
+      setOptionsOpen(false);
+    };
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => window.removeEventListener("pointerdown", onPointerDown);
+  }, [optionsOpen]);
+
+  useEffect(() => {
+    if (!eventDragging) return;
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (dragMoveRafRef.current !== null) return;
+      dragMoveRafRef.current = window.requestAnimationFrame(() => {
+        dragMoveRafRef.current = null;
+        const target = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null;
+        const hoveredCell = target?.closest(".fc-timegrid-slot-lane, .fc-timegrid-col, .fc-daygrid-day") as HTMLElement | null;
+        if (!hoveredCell || hoveredCell === dragHoverCellRef.current) return;
+
+        clearDragHoverCell();
+        hoveredCell.classList.add("agenda-drop-hover-cell");
+        if (hoveredCell.classList.contains("fc-timegrid-col") || hoveredCell.classList.contains("fc-daygrid-day")) {
+          hoveredCell.classList.add("agenda-drop-hover-col");
+        }
+        dragHoverCellRef.current = hoveredCell;
+      });
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      if (dragMoveRafRef.current !== null) {
+        window.cancelAnimationFrame(dragMoveRafRef.current);
+        dragMoveRafRef.current = null;
+      }
+      clearDragHoverCell();
+    };
+  }, [clearDragHoverCell, eventDragging]);
+
+  useEffect(() => {
+    return () => {
+      if (timeGridDateClickTimerRef.current !== null) {
+        window.clearTimeout(timeGridDateClickTimerRef.current);
+        timeGridDateClickTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!quickAddDraft) return;
+    setEventHoverPreview(null);
+  }, [quickAddDraft]);
+
   const { agendaEvents, agendaConflictCount, isCompactDensity } = useAgendaMergedEvents({
     calendarData,
     googleCalendarEvents,
@@ -539,6 +873,53 @@ export default function AgendaCalendar({
       renderAgendaCalendarEventContent(arg, isCompactDensity),
     [isCompactDensity],
   );
+
+  const handleEventDidMount = useCallback((arg: { el: HTMLElement; event: { id: string } }) => {
+    arg.el.setAttribute("data-agenda-event-id", String(arg.event.id));
+  }, []);
+
+  const handleEventMouseEnter = useCallback((arg: {
+    event: {
+      id: string;
+      title: string;
+      start: Date | null;
+      end: Date | null;
+      allDay: boolean;
+      extendedProps: Record<string, unknown>;
+    };
+    el: HTMLElement;
+    jsEvent: MouseEvent;
+  }) => {
+    const workspaceName = typeof arg.event.extendedProps.workspaceName === "string" ? arg.event.extendedProps.workspaceName : "";
+    const sourceLabel = arg.event.extendedProps.source === "google-calendar" ? "Google" : "LOCAL";
+    const workspaceLabel = workspaceName.trim() || "Sans dossier";
+    const timeLabel = formatEventPreviewTime(arg.event.start, arg.event.end, arg.event.allDay);
+
+    const bounds = arg.el.getBoundingClientRect();
+    const pointerX = Number.isFinite(arg.jsEvent?.clientX) ? arg.jsEvent.clientX : bounds.left + bounds.width / 2;
+    const pointerY = Number.isFinite(arg.jsEvent?.clientY) ? arg.jsEvent.clientY : bounds.top + bounds.height / 2;
+    const tooltipWidth = Math.min(260, window.innerWidth - 16);
+    const tooltipHeight = 98;
+    const left = clamp(pointerX + 10, 8, Math.max(8, window.innerWidth - tooltipWidth - 8));
+    const suggestedTop = pointerY + 10;
+    const top = suggestedTop + tooltipHeight <= window.innerHeight - 8
+      ? clamp(suggestedTop, 8, Math.max(8, window.innerHeight - tooltipHeight - 8))
+      : clamp(bounds.top - tooltipHeight - 10, 8, Math.max(8, window.innerHeight - tooltipHeight - 8));
+
+    setEventHoverPreview({
+      eventId: arg.event.id,
+      title: arg.event.title,
+      timeLabel,
+      workspaceLabel,
+      sourceLabel,
+      left,
+      top,
+    });
+  }, []);
+
+  const handleEventMouseLeave = useCallback(() => {
+    setEventHoverPreview(null);
+  }, []);
 
   const { planningSections, planningAvailabilityByDate } = useAgendaPlanningData({
     agendaEvents,
@@ -570,28 +951,55 @@ export default function AgendaCalendar({
     setError,
   });
 
+  const quickAddPosition = quickAddDraft
+    ? {
+        left: clamp(quickAddDraft.anchorX + 8, 8, Math.max(8, (calendarShellRef.current?.clientWidth ?? 360) - 300)),
+        top: clamp(quickAddDraft.anchorY + 8, 8, Math.max(8, (calendarShellRef.current?.clientHeight ?? 640) - 200)),
+      }
+    : { left: 16, top: 16 };
+
   return (
     <section ref={calendarShellRef} className="space-y-3 overflow-x-hidden">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit max-w-full">
-          <button type="button" className="px-3 py-1.5 text-sm hover:bg-accent/60 transition-colors" onClick={() => {
-            triggerViewTransition();
-            jump("today");
-          }}>Aujourd’hui</button>
-          <button type="button" className="px-3 py-1.5 text-sm border-l border-border hover:bg-accent/60 transition-colors" onClick={() => {
-            triggerViewTransition();
-            jump("prev");
-          }}>←</button>
-          <button type="button" className="px-3 py-1.5 text-sm border-l border-border hover:bg-accent/60 transition-colors" onClick={() => {
-            triggerViewTransition();
-            jump("next");
-          }}>→</button>
+      <div className="relative flex flex-wrap items-center gap-1 rounded-md border border-border bg-background p-1">
+        <div className="inline-flex max-w-full overflow-hidden rounded-md border border-border bg-background">
+          <button
+            type="button"
+            className="px-2 py-1 text-xs transition-colors hover:bg-accent/60"
+            onClick={() => {
+              triggerViewTransition();
+              jump("today");
+            }}
+          >
+            Aujourd'hui
+          </button>
+          <button
+            type="button"
+            className="border-l border-border px-2 py-1 text-xs transition-colors hover:bg-accent/60"
+            onClick={() => {
+              triggerViewTransition();
+              jump("prev");
+            }}
+            aria-label="Periode precedente"
+          >
+            Prev
+          </button>
+          <button
+            type="button"
+            className="border-l border-border px-2 py-1 text-xs transition-colors hover:bg-accent/60"
+            onClick={() => {
+              triggerViewTransition();
+              jump("next");
+            }}
+            aria-label="Periode suivante"
+          >
+            Next
+          </button>
         </div>
 
-        <div className="text-sm font-semibold">{label}</div>
+        <div className="min-w-[120px] flex-1 px-1 text-xs font-semibold sm:text-sm">{label}</div>
 
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          <div className="inline-flex items-center rounded-md border border-border bg-background/90 shadow-sm overflow-hidden">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
+          <div className="inline-flex items-center overflow-hidden rounded-md border border-border bg-background/90 shadow-sm">
             {displayMode === "calendar" ? (
               <>
                 <VoiceAgentButton
@@ -601,13 +1009,13 @@ export default function AgendaCalendar({
                       onClick={onClick}
                       aria-label={ariaLabel}
                       title={title}
-                      className="h-9 w-10 text-base text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+                      className="h-7 w-8 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
                     >
-                      🎤
+                      Mic
                     </button>
                   )}
                 />
-                <div className="h-6 w-px bg-border" aria-hidden="true" />
+                <div className="h-5 w-px bg-border" aria-hidden="true" />
               </>
             ) : null}
             <CreateButton
@@ -617,7 +1025,7 @@ export default function AgendaCalendar({
                   onClick={onClick}
                   aria-label={ariaLabel}
                   title={title}
-                  className="h-9 w-10 text-lg font-semibold leading-none text-primary hover:bg-primary/10 transition-colors"
+                  className="h-7 w-8 text-base font-semibold leading-none text-primary transition-colors hover:bg-primary/10"
                 >
                   +
                 </button>
@@ -625,91 +1033,108 @@ export default function AgendaCalendar({
             />
           </div>
 
-          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit max-w-full">
-          <button
-            type="button"
-            className={`px-3 py-1.5 text-sm transition-colors ${displayMode === "calendar" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
-            onClick={() => {
-              triggerViewTransition();
-              setDisplayMode("calendar");
-            }}
-          >
-            Agenda
-          </button>
-          <button
-            type="button"
-            className={`px-3 py-1.5 text-sm border-l border-border transition-colors ${displayMode === "planning" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
-            onClick={() => {
-              triggerViewTransition();
-              setDisplayMode("planning");
-            }}
-          >
-            Liste du jour (lecture)
-          </button>
+          <div className="inline-flex max-w-full overflow-hidden rounded-md border border-border bg-background">
+            <button
+              type="button"
+              className={`px-2 py-1 text-xs transition-colors ${displayMode === "calendar" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
+              onClick={() => {
+                triggerViewTransition();
+                autoScrollPendingRef.current = viewMode !== "dayGridMonth";
+                autoScrollTimeRef.current = buildScrollTimeForNow(new Date());
+                setDisplayMode("calendar");
+              }}
+            >
+              Agenda
+            </button>
+            <button
+              type="button"
+              className={`border-l border-border px-2 py-1 text-xs transition-colors ${displayMode === "planning" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
+              onClick={() => {
+                triggerViewTransition();
+                closeQuickAdd();
+                setDisplayMode("planning");
+              }}
+            >
+              Planning
+            </button>
           </div>
 
-          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit max-w-full">
-          <button
-            type="button"
-            className={`px-3 py-1.5 text-sm transition-colors ${viewMode === "dayGridMonth" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
-            onClick={() => changeView("dayGridMonth")}
-          >
-            Mois
-          </button>
-          <button
-            type="button"
-            className={`px-3 py-1.5 text-sm border-l border-border transition-colors ${viewMode === "timeGridWeek" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
-            onClick={() => changeView("timeGridWeek")}
-          >
-            Semaine
-          </button>
-          <button
-            type="button"
-            className={`px-3 py-1.5 text-sm border-l border-border transition-colors ${viewMode === "timeGridDay" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
-            onClick={() => changeView("timeGridDay")}
-          >
-            Jour
-          </button>
+          <div className="inline-flex max-w-full overflow-hidden rounded-md border border-border bg-background">
+            <button
+              type="button"
+              className={`px-2 py-1 text-xs transition-colors ${viewMode === "dayGridMonth" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
+              onClick={() => changeView("dayGridMonth")}
+            >
+              Mois
+            </button>
+            <button
+              type="button"
+              className={`border-l border-border px-2 py-1 text-xs transition-colors ${viewMode === "timeGridWeek" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
+              onClick={() => changeView("timeGridWeek")}
+            >
+              Semaine
+            </button>
+            <button
+              type="button"
+              className={`border-l border-border px-2 py-1 text-xs transition-colors ${viewMode === "timeGridDay" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
+              onClick={() => changeView("timeGridDay")}
+            >
+              Jour
+            </button>
           </div>
+
+          <button
+            ref={optionsTriggerRef}
+            type="button"
+            className={`inline-flex h-7 items-center rounded-md border border-border px-2 text-xs transition-colors ${optionsOpen ? "bg-accent font-medium" : "bg-background hover:bg-accent/60"}`}
+            onClick={() => setOptionsOpen((prev) => !prev)}
+            aria-expanded={optionsOpen}
+            aria-label="Afficher les options agenda"
+          >
+            Options
+          </button>
         </div>
-      </div>
 
-      <AgendaCalendarFiltersBar
-        showRecurringOnly={showRecurringOnly}
-        showConflictsOnly={showConflictsOnly}
-        priorityFilter={priorityFilter}
-        timeWindowFilter={timeWindowFilter}
-        onToggleRecurringOnly={() => setShowRecurringOnly((prev) => !prev)}
-        onToggleConflictsOnly={() => setShowConflictsOnly((prev) => !prev)}
-        onPriorityFilterChange={setPriorityFilter}
-        onTimeWindowFilterChange={setTimeWindowFilter}
-        onReset={clearFilters}
-      />
-
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span className="sn-badge">Affichés: {agendaEvents.length}</span>
-        <span className="sn-badge">Conflits: {agendaConflictCount}</span>
-        <span className="sn-badge hidden sm:inline-flex">Total local: {calendarData.stats.total}</span>
-        <span className="sn-badge hidden sm:inline-flex">Google: {googleCalendarEvents.length}</span>
-        <span className="sn-badge hidden sm:inline-flex">Récurrents: {calendarData.stats.recurring}</span>
-        {isCompactDensity && (
-          <span className="sn-badge">Auto compact (conflits élevés)</span>
+        {optionsOpen && (
+          <div
+            ref={optionsPanelRef}
+            className="absolute left-1 right-1 top-[calc(100%+0.3rem)] z-20 rounded-md border border-border bg-card p-2 shadow-lg sm:left-auto sm:w-[min(94vw,520px)]"
+          >
+            <AgendaCalendarFiltersBar
+              showRecurringOnly={showRecurringOnly}
+              showConflictsOnly={showConflictsOnly}
+              priorityFilter={priorityFilter}
+              timeWindowFilter={timeWindowFilter}
+              onToggleRecurringOnly={() => setShowRecurringOnly((prev) => !prev)}
+              onToggleConflictsOnly={() => setShowConflictsOnly((prev) => !prev)}
+              onPriorityFilterChange={setPriorityFilter}
+              onTimeWindowFilterChange={setTimeWindowFilter}
+              onReset={clearFilters}
+            />
+            <div className="mt-2 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+              <span className="sn-badge">Affiches: {agendaEvents.length}</span>
+              <span className="sn-badge">Conflits: {agendaConflictCount}</span>
+              <span className="sn-badge">Local: {calendarData.stats.total}</span>
+              <span className="sn-badge">Google: {googleCalendarEvents.length}</span>
+              <span className="sn-badge">Recurrents: {calendarData.stats.recurring}</span>
+              {isCompactDensity && <span className="sn-badge">Mode compact auto</span>}
+            </div>
+          </div>
         )}
       </div>
-
       {error && <div className="sn-alert sn-alert--error">{error}</div>}
 
       {!error && displayMode === "calendar" && agendaEvents.length === 0 && (
         <div className="sn-empty sn-empty--premium sn-animate-in">
-          <div className="sn-empty-title">Aucun événement dans cette fenêtre</div>
-          <div className="sn-empty-desc">Ajoute un élément pour démarrer, ou navigue vers une autre période.</div>
+          <div className="sn-empty-title">Aucun Ã©vÃ©nement dans cette fenÃªtre</div>
+          <div className="sn-empty-desc">Ajoute un Ã©lÃ©ment pour dÃ©marrer, ou navigue vers une autre pÃ©riode.</div>
           <div className="mt-3">
             <button
               type="button"
               className="inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 transition-opacity"
               onClick={openQuickDraft}
             >
-              Créer une tâche
+              CrÃ©er une tÃ¢che
             </button>
           </div>
         </div>
@@ -719,7 +1144,7 @@ export default function AgendaCalendar({
         <div className="sn-card p-2 bg-[radial-gradient(900px_circle_at_100%_-10%,rgba(59,130,246,0.08),transparent_50%),linear-gradient(180deg,rgba(15,23,42,0.14),transparent_42%)]">
           {displayMode === "calendar" ? (
             <div
-              className={`agenda-premium-calendar ${isCompactDensity ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"} ${viewTransitioning ? "agenda-transitioning" : ""} ${focusPulseActive ? "sn-highlight-soft" : ""}`}
+              className={`agenda-premium-calendar relative ${isCompactDensity ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"} ${viewTransitioning ? "agenda-transitioning" : ""} ${focusPulseActive ? "sn-highlight-soft" : ""} ${eventDragging ? "agenda-dragging" : ""}`}
               data-user-timezone={userTimezone}
               onTouchStart={handleCalendarTouchStart}
               onTouchEnd={handleCalendarTouchEnd}
@@ -731,10 +1156,12 @@ export default function AgendaCalendar({
               headerToolbar={false}
               locale="fr"
               firstDay={1}
-              nowIndicator
+              nowIndicator={viewMode !== "dayGridMonth"}
               selectable
               selectMirror
               editable
+              eventDurationEditable
+              eventResizableFromStart
               dayMaxEvents
               allDayMaintainDuration
               eventDisplay="block"
@@ -742,30 +1169,137 @@ export default function AgendaCalendar({
               eventShortHeight={22}
               slotMinTime="06:00:00"
               slotMaxTime="23:30:00"
+              scrollTime={initialScrollTime}
+              scrollTimeReset={false}
               events={agendaEvents}
               datesSet={onDatesSet}
-              select={openDraftFromSelect}
-              dateClick={(arg) =>
-                openDraftFromSelect({
-                  allDay: arg.allDay,
-                  end: arg.allDay
-                    ? new Date(arg.date.getFullYear(), arg.date.getMonth(), arg.date.getDate() + 1)
-                    : new Date(arg.date.getTime() + 60 * 60 * 1000),
-                  endStr: "",
-                  jsEvent: arg.jsEvent,
-                  start: arg.date,
-                  startStr: "",
-                  view: arg.view,
-                } as DateSelectArg)
-              }
+              select={handleCalendarSelect}
+              dateClick={handleCalendarDateClick}
               eventClick={openDraftFromEvent}
+              eventDragStart={() => {
+                setEventHoverPreview(null);
+                setEventDragging(true);
+              }}
+              eventDragStop={() => {
+                setEventDragging(false);
+                clearDragHoverCell();
+              }}
               eventDrop={handleMoveOrResize}
               eventResize={handleMoveOrResize}
+              eventDidMount={handleEventDidMount}
+              eventMouseEnter={handleEventMouseEnter}
+              eventMouseLeave={handleEventMouseLeave}
               eventContent={eventContent}
               timeZone={userTimezone}
               />
+              {quickAddDraft && (
+                <div
+                  ref={quickAddPanelRef}
+                  className="absolute z-30 w-[min(92vw,290px)] rounded-md border border-border bg-card p-3 shadow-xl"
+                  style={{ left: `${quickAddPosition.left}px`, top: `${quickAddPosition.top}px` }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      closeQuickAdd();
+                      return;
+                    }
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      void submitQuickAdd();
+                    }
+                  }}
+                  data-no-calendar-swipe
+                >
+                  <div className="text-xs font-semibold">Nouvelle tache rapide</div>
+                  <input
+                    ref={quickAddTitleRef}
+                    value={quickAddDraft.title}
+                    onChange={(event) => {
+                      const nextTitle = event.target.value;
+                      setQuickAddDraft((prev) => (prev ? { ...prev, title: nextTitle } : prev));
+                      if (quickAddError) setQuickAddError(null);
+                    }}
+                    placeholder="Titre"
+                    className="mt-2 h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                    aria-label="Titre de la tache rapide"
+                  />
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <input
+                      type="time"
+                      value={toTimeInputValue(quickAddDraft.start)}
+                      onChange={(event) => {
+                        const nextTime = mergeDateWithTime(quickAddDraft.start, event.target.value);
+                        if (!nextTime) return;
+                        setQuickAddDraft((prev) => {
+                          if (!prev) return prev;
+                          let nextEnd = prev.end;
+                          if (nextEnd.getTime() <= nextTime.getTime()) {
+                            nextEnd = new Date(nextTime.getTime() + 60 * 60 * 1000);
+                          }
+                          return { ...prev, start: nextTime, end: nextEnd };
+                        });
+                      }}
+                      className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                      aria-label="Heure de debut"
+                    />
+                    <input
+                      type="time"
+                      value={toTimeInputValue(quickAddDraft.end)}
+                      onChange={(event) => {
+                        const nextTime = mergeDateWithTime(quickAddDraft.end, event.target.value);
+                        if (!nextTime) return;
+                        setQuickAddDraft((prev) => {
+                          if (!prev) return prev;
+                          const safeEnd = nextTime.getTime() <= prev.start.getTime() ? new Date(prev.start.getTime() + 60 * 60 * 1000) : nextTime;
+                          return { ...prev, end: safeEnd };
+                        });
+                      }}
+                      className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                      aria-label="Heure de fin"
+                    />
+                  </div>
+                  {quickAddError && <div className="mt-2 text-[11px] text-red-500">{quickAddError}</div>}
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={openFullDraftFromQuickAdd}
+                      className="text-xs text-muted-foreground underline underline-offset-2"
+                    >
+                      Plus d'options
+                    </button>
+                    <div className="inline-flex items-center gap-2">
+                      <button type="button" onClick={closeQuickAdd} className="text-xs text-muted-foreground">
+                        Annuler
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void submitQuickAdd()}
+                        className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground"
+                      >
+                        Creer
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {eventHoverPreview && (
+                <div
+                  className="pointer-events-none fixed z-40 w-[min(92vw,260px)] rounded-md border border-border bg-card/95 px-2.5 py-2 text-[11px] text-foreground shadow-xl backdrop-blur-sm"
+                  style={{ left: `${eventHoverPreview.left}px`, top: `${eventHoverPreview.top}px` }}
+                  aria-hidden="true"
+                >
+                  <div className="truncate text-xs font-semibold">{eventHoverPreview.title || "Sans titre"}</div>
+                  <div className="mt-1 text-[10px] text-muted-foreground">{eventHoverPreview.timeLabel}</div>
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <span className="truncate text-[10px] text-muted-foreground">{eventHoverPreview.workspaceLabel}</span>
+                    <span className="rounded-full border border-border bg-background/90 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide">
+                      {eventHoverPreview.sourceLabel}
+                    </span>
+                  </div>
+                </div>
+              )}
               <p className="mt-2 px-1 text-[11px] text-muted-foreground md:hidden">
-                Astuce: glissez gauche/droite pour changer de période.
+                Astuce: glissez gauche/droite pour changer de pÃ©riode.
               </p>
             </div>
           ) : (
@@ -774,6 +1308,8 @@ export default function AgendaCalendar({
               planningAvailabilityByDate={planningAvailabilityByDate}
               onSwitchToCalendar={() => {
                 triggerViewTransition();
+                autoScrollPendingRef.current = viewMode !== "dayGridMonth";
+                autoScrollTimeRef.current = buildScrollTimeForNow(new Date());
                 setDisplayMode("calendar");
               }}
               showPlanningAvailability={showPlanningAvailability}
@@ -795,7 +1331,7 @@ export default function AgendaCalendar({
       </div>
 
       <div className="text-xs text-muted-foreground">
-        Raccourcis: N (nouvel élément), / (recherche), ←/→ (navigation).
+        Raccourcis: N (nouvel Ã©lÃ©ment), / (recherche), â†/â†’ (navigation).
       </div>
 
       <AgendaCalendarDraftModal
@@ -813,3 +1349,4 @@ export default function AgendaCalendar({
     </section>
   );
 }
+

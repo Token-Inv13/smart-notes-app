@@ -1,6 +1,6 @@
 {
   "projectPath": "C:\\Users\\token\\Documents\\Projets Cascade\\smart-notes-app",
-  "updatedAt": "2026-03-02T20:38:19.344Z",
+  "updatedAt": "2026-03-04T01:28:27.222Z",
   "commands": [
     {
       "id": "112922d8-77f5-4326-a3b8-da31a7affcdd",
@@ -177,6 +177,30 @@
         "Codex"
       ],
       "favorite": false
+    },
+    {
+      "id": "f308947a-93fb-4467-a5fa-ac8093d239a6",
+      "title": "Script build",
+      "description": "Script \"build\" detecte dans package.json",
+      "command": "npm run build",
+      "terminal": "POWERSHELL",
+      "tags": [
+        "node",
+        "build"
+      ],
+      "favorite": false
+    },
+    {
+      "id": "fa5d6ee7-d4ff-48bc-b89e-17455df19433",
+      "title": "Script lint",
+      "description": "Script \"lint\" detecte dans package.json",
+      "command": "npm run lint",
+      "terminal": "POWERSHELL",
+      "tags": [
+        "node",
+        "lint"
+      ],
+      "favorite": false
     }
   ],
   "prompts": [
@@ -341,5 +365,42 @@
       ]
     }
   ],
-  "shortcuts": []
+  "shortcuts": [
+    {
+      "id": "036d92d0-7caf-4471-807c-f958922e0553",
+      "title": "Lancer dev",
+      "description": "Raccourci dev detecte",
+      "command": "npm run dev",
+      "terminal": "POWERSHELL",
+      "tags": [
+        "node",
+        "dev"
+      ],
+      "favorite": false
+    },
+    {
+      "id": "8de84ead-9425-4f37-a582-47f8a736c117",
+      "title": "Lancer build",
+      "description": "Raccourci build detecte",
+      "command": "npm run build",
+      "terminal": "POWERSHELL",
+      "tags": [
+        "node",
+        "build"
+      ],
+      "favorite": false
+    },
+    {
+      "id": "54d59b0a-c76d-4b59-8f38-94617f0c8050",
+      "title": "Lancer lint",
+      "description": "Raccourci lint detecte",
+      "command": "npm run lint",
+      "terminal": "POWERSHELL",
+      "tags": [
+        "node",
+        "lint"
+      ],
+      "favorite": false
+    }
+  ]
 }
