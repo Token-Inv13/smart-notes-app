@@ -9,7 +9,6 @@ import type { DateSelectArg, DatesSetArg, EventInput } from "@fullcalendar/core"
 import type { DateClickArg } from "@fullcalendar/interaction";
 import {
   CALENDAR_PREFERENCES_STORAGE_KEY,
-  priorityColor,
   toLocalDateInputValue,
   toLocalInputValue,
 } from "./agendaCalendarUtils";
@@ -20,6 +19,7 @@ import { useAgendaDraftManager } from "./useAgendaDraftManager";
 import { useAgendaEventMutation } from "./useAgendaEventMutation";
 import { useAgendaCalendarNavigation } from "./useAgendaCalendarNavigation";
 import { useAgendaMergedEvents } from "./useAgendaMergedEvents";
+import { getFolderColor } from "./agendaColors";
 import { renderAgendaCalendarEventContent } from "./AgendaCalendarEventContent";
 import AgendaCalendarFiltersBar from "./AgendaCalendarFiltersBar";
 import AgendaCalendarDraftModal from "./AgendaCalendarDraftModal";
@@ -62,6 +62,19 @@ type QuickAddDraft = {
   anchorX: number;
   anchorY: number;
 };
+
+type EventHoverPreview = {
+  eventId: string;
+  title: string;
+  timeLabel: string;
+  workspaceLabel: string;
+  sourceLabel: "LOCAL" | "Google";
+  left: number;
+  top: number;
+};
+
+const QUICK_ADD_DEFAULT_DURATION_MS = 60 * 60 * 1000;
+const DOUBLE_CLICK_DELAY_MS = 240;
 
 interface AgendaCalendarProps {
   tasks: TaskDoc[];
@@ -200,6 +213,19 @@ function mergeDateWithTime(baseDate: Date, timeValue: string) {
   return merged;
 }
 
+function formatEventPreviewTime(start: Date | null, end: Date | null, allDay: boolean) {
+  if (allDay) return "Journee complete";
+  if (!(start instanceof Date)) return "Horaire";
+
+  const formatClock = new Intl.DateTimeFormat("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const startLabel = formatClock.format(start);
+  if (!(end instanceof Date) || end.getTime() <= start.getTime()) return startLabel;
+  return `${startLabel}-${formatClock.format(end)}`;
+}
+
 export default function AgendaCalendar({
   tasks,
   workspaces,
@@ -218,6 +244,8 @@ export default function AgendaCalendar({
   const optionsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const quickAddPanelRef = useRef<HTMLDivElement | null>(null);
   const quickAddTitleRef = useRef<HTMLInputElement | null>(null);
+  const timeGridDateClickTimerRef = useRef<number | null>(null);
+  const lastTimeGridDateClickRef = useRef<{ timestamp: number; dateMs: number; viewType: string } | null>(null);
   const dragHoverCellRef = useRef<HTMLElement | null>(null);
   const dragMoveRafRef = useRef<number | null>(null);
   const autoScrollPendingRef = useRef(true);
@@ -251,6 +279,7 @@ export default function AgendaCalendar({
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [quickAddDraft, setQuickAddDraft] = useState<QuickAddDraft | null>(null);
   const [quickAddError, setQuickAddError] = useState<string | null>(null);
+  const [eventHoverPreview, setEventHoverPreview] = useState<EventHoverPreview | null>(null);
   const [eventDragging, setEventDragging] = useState(false);
 
   const planningWindow = useMemo(
@@ -459,6 +488,8 @@ export default function AgendaCalendar({
 
       const fcStart = allDay ? toLocalDateInputValue(start) : start;
       const fcEnd = allDay ? toLocalDateInputValue(end) : end;
+      const workspaceName = (task.workspaceId ? workspaceNameById.get(task.workspaceId) : null) ?? "Sans dossier";
+      const folderColor = getFolderColor(task.workspaceId ?? "", workspaceName);
 
       output.push({
         id: eventId,
@@ -466,17 +497,20 @@ export default function AgendaCalendar({
         start: fcStart,
         end: fcEnd,
         allDay,
-        backgroundColor: priorityColor(itemPriority),
-        borderColor: priorityColor(itemPriority),
+        backgroundColor: folderColor.backgroundColor,
+        borderColor: folderColor.borderColor,
+        textColor: folderColor.textColor,
         classNames: ["agenda-event", "agenda-event-local", `agenda-priority-${itemPriority || "none"}`],
         extendedProps: {
           taskId,
           workspaceId: task.workspaceId ?? "",
-          workspaceName: (task.workspaceId ? workspaceNameById.get(task.workspaceId) : null) ?? "Sans dossier",
+          workspaceName,
           priority: itemPriority,
           recurrence,
           instanceDate,
           conflict: itemHasConflict,
+          source: "local",
+          textTone: folderColor.textTone,
         },
       });
     }
@@ -555,6 +589,11 @@ export default function AgendaCalendar({
     setQuickAddDraft(null);
     setQuickAddError(null);
     calendarRef.current?.getApi().unselect();
+    if (timeGridDateClickTimerRef.current !== null) {
+      window.clearTimeout(timeGridDateClickTimerRef.current);
+      timeGridDateClickTimerRef.current = null;
+    }
+    lastTimeGridDateClickRef.current = null;
   }, []);
 
   const openQuickAddFromRange = useCallback(
@@ -565,7 +604,7 @@ export default function AgendaCalendar({
       const anchorX = jsEvent && shellRect ? clamp(jsEvent.clientX - shellRect.left, 18, shellRect.width - 18) : fallbackX;
       const anchorY = jsEvent && shellRect ? clamp(jsEvent.clientY - shellRect.top, 18, shellRect.height - 18) : fallbackY;
 
-      const normalizedEnd = end.getTime() > start.getTime() ? end : new Date(start.getTime() + 60 * 60 * 1000);
+      const normalizedEnd = end.getTime() > start.getTime() ? end : new Date(start.getTime() + QUICK_ADD_DEFAULT_DURATION_MS);
       setQuickAddError(null);
       setQuickAddDraft({
         title: "",
@@ -625,6 +664,11 @@ export default function AgendaCalendar({
 
   const handleCalendarSelect = useCallback(
     (arg: DateSelectArg) => {
+      if (timeGridDateClickTimerRef.current !== null) {
+        window.clearTimeout(timeGridDateClickTimerRef.current);
+        timeGridDateClickTimerRef.current = null;
+      }
+      lastTimeGridDateClickRef.current = null;
       const isTimeGridSelection = arg.view.type === "timeGridWeek" || arg.view.type === "timeGridDay";
       if (!arg.allDay && isTimeGridSelection) {
         openQuickAddFromRange(arg.start, arg.end, arg.jsEvent as MouseEvent | null);
@@ -639,7 +683,38 @@ export default function AgendaCalendar({
     (arg: DateClickArg) => {
       const isTimeGridSelection = arg.view.type === "timeGridWeek" || arg.view.type === "timeGridDay";
       if (!arg.allDay && isTimeGridSelection) {
-        openQuickAddFromRange(arg.date, new Date(arg.date.getTime() + 60 * 60 * 1000), arg.jsEvent as MouseEvent | null);
+        const mouseEvent = arg.jsEvent as MouseEvent | null;
+        const now = Date.now();
+        const dateMs = arg.date.getTime();
+        const clickDetail = typeof mouseEvent?.detail === "number" ? mouseEvent.detail : 1;
+        const lastClick = lastTimeGridDateClickRef.current;
+        const sameSlotAsPrevious =
+          lastClick &&
+          lastClick.dateMs === dateMs &&
+          lastClick.viewType === arg.view.type &&
+          now - lastClick.timestamp <= DOUBLE_CLICK_DELAY_MS;
+
+        if (timeGridDateClickTimerRef.current !== null) {
+          window.clearTimeout(timeGridDateClickTimerRef.current);
+          timeGridDateClickTimerRef.current = null;
+        }
+
+        if (clickDetail >= 2 || sameSlotAsPrevious) {
+          lastTimeGridDateClickRef.current = null;
+          openQuickAddFromRange(arg.date, new Date(arg.date.getTime() + QUICK_ADD_DEFAULT_DURATION_MS), mouseEvent);
+          return;
+        }
+
+        lastTimeGridDateClickRef.current = {
+          timestamp: now,
+          dateMs,
+          viewType: arg.view.type,
+        };
+        timeGridDateClickTimerRef.current = window.setTimeout(() => {
+          openQuickAddFromRange(arg.date, new Date(arg.date.getTime() + QUICK_ADD_DEFAULT_DURATION_MS), mouseEvent);
+          timeGridDateClickTimerRef.current = null;
+          lastTimeGridDateClickRef.current = null;
+        }, DOUBLE_CLICK_DELAY_MS);
         return;
       }
 
@@ -647,7 +722,7 @@ export default function AgendaCalendar({
         allDay: arg.allDay,
         end: arg.allDay
           ? new Date(arg.date.getFullYear(), arg.date.getMonth(), arg.date.getDate() + 1)
-          : new Date(arg.date.getTime() + 60 * 60 * 1000),
+          : new Date(arg.date.getTime() + QUICK_ADD_DEFAULT_DURATION_MS),
         endStr: "",
         jsEvent: arg.jsEvent,
         start: arg.date,
@@ -774,6 +849,20 @@ export default function AgendaCalendar({
     };
   }, [clearDragHoverCell, eventDragging]);
 
+  useEffect(() => {
+    return () => {
+      if (timeGridDateClickTimerRef.current !== null) {
+        window.clearTimeout(timeGridDateClickTimerRef.current);
+        timeGridDateClickTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!quickAddDraft) return;
+    setEventHoverPreview(null);
+  }, [quickAddDraft]);
+
   const { agendaEvents, agendaConflictCount, isCompactDensity } = useAgendaMergedEvents({
     calendarData,
     googleCalendarEvents,
@@ -784,6 +873,53 @@ export default function AgendaCalendar({
       renderAgendaCalendarEventContent(arg, isCompactDensity),
     [isCompactDensity],
   );
+
+  const handleEventDidMount = useCallback((arg: { el: HTMLElement; event: { id: string } }) => {
+    arg.el.setAttribute("data-agenda-event-id", String(arg.event.id));
+  }, []);
+
+  const handleEventMouseEnter = useCallback((arg: {
+    event: {
+      id: string;
+      title: string;
+      start: Date | null;
+      end: Date | null;
+      allDay: boolean;
+      extendedProps: Record<string, unknown>;
+    };
+    el: HTMLElement;
+    jsEvent: MouseEvent;
+  }) => {
+    const workspaceName = typeof arg.event.extendedProps.workspaceName === "string" ? arg.event.extendedProps.workspaceName : "";
+    const sourceLabel = arg.event.extendedProps.source === "google-calendar" ? "Google" : "LOCAL";
+    const workspaceLabel = workspaceName.trim() || "Sans dossier";
+    const timeLabel = formatEventPreviewTime(arg.event.start, arg.event.end, arg.event.allDay);
+
+    const bounds = arg.el.getBoundingClientRect();
+    const pointerX = Number.isFinite(arg.jsEvent?.clientX) ? arg.jsEvent.clientX : bounds.left + bounds.width / 2;
+    const pointerY = Number.isFinite(arg.jsEvent?.clientY) ? arg.jsEvent.clientY : bounds.top + bounds.height / 2;
+    const tooltipWidth = Math.min(260, window.innerWidth - 16);
+    const tooltipHeight = 98;
+    const left = clamp(pointerX + 10, 8, Math.max(8, window.innerWidth - tooltipWidth - 8));
+    const suggestedTop = pointerY + 10;
+    const top = suggestedTop + tooltipHeight <= window.innerHeight - 8
+      ? clamp(suggestedTop, 8, Math.max(8, window.innerHeight - tooltipHeight - 8))
+      : clamp(bounds.top - tooltipHeight - 10, 8, Math.max(8, window.innerHeight - tooltipHeight - 8));
+
+    setEventHoverPreview({
+      eventId: arg.event.id,
+      title: arg.event.title,
+      timeLabel,
+      workspaceLabel,
+      sourceLabel,
+      left,
+      top,
+    });
+  }, []);
+
+  const handleEventMouseLeave = useCallback(() => {
+    setEventHoverPreview(null);
+  }, []);
 
   const { planningSections, planningAvailabilityByDate } = useAgendaPlanningData({
     agendaEvents,
@@ -1024,6 +1160,8 @@ export default function AgendaCalendar({
               selectable
               selectMirror
               editable
+              eventDurationEditable
+              eventResizableFromStart
               dayMaxEvents
               allDayMaintainDuration
               eventDisplay="block"
@@ -1038,13 +1176,19 @@ export default function AgendaCalendar({
               select={handleCalendarSelect}
               dateClick={handleCalendarDateClick}
               eventClick={openDraftFromEvent}
-              eventDragStart={() => setEventDragging(true)}
+              eventDragStart={() => {
+                setEventHoverPreview(null);
+                setEventDragging(true);
+              }}
               eventDragStop={() => {
                 setEventDragging(false);
                 clearDragHoverCell();
               }}
               eventDrop={handleMoveOrResize}
               eventResize={handleMoveOrResize}
+              eventDidMount={handleEventDidMount}
+              eventMouseEnter={handleEventMouseEnter}
+              eventMouseLeave={handleEventMouseLeave}
               eventContent={eventContent}
               timeZone={userTimezone}
               />
@@ -1135,6 +1279,22 @@ export default function AgendaCalendar({
                         Creer
                       </button>
                     </div>
+                  </div>
+                </div>
+              )}
+              {eventHoverPreview && (
+                <div
+                  className="pointer-events-none fixed z-40 w-[min(92vw,260px)] rounded-md border border-border bg-card/95 px-2.5 py-2 text-[11px] text-foreground shadow-xl backdrop-blur-sm"
+                  style={{ left: `${eventHoverPreview.left}px`, top: `${eventHoverPreview.top}px` }}
+                  aria-hidden="true"
+                >
+                  <div className="truncate text-xs font-semibold">{eventHoverPreview.title || "Sans titre"}</div>
+                  <div className="mt-1 text-[10px] text-muted-foreground">{eventHoverPreview.timeLabel}</div>
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <span className="truncate text-[10px] text-muted-foreground">{eventHoverPreview.workspaceLabel}</span>
+                    <span className="rounded-full border border-border bg-background/90 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide">
+                      {eventHoverPreview.sourceLabel}
+                    </span>
                   </div>
                 </div>
               )}
