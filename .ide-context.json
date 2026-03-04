@@ -10,7 +10,7 @@
     "dev": {
       "command": "pnpm dev",
       "source": "context",
-      "updatedAt": "2026-03-02T16:50:14.626Z"
+      "updatedAt": "2026-03-04T01:31:42.367Z"
     }
   },
   "decisionHistory": [
@@ -165,7 +165,37 @@
       "id": "688f337c-4642-4ffb-aa4b-b7983d5ba5ae",
       "at": "2026-03-03T18:02:20.268Z",
       "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "4254bf0d-80ef-4411-ab1e-f027e8e05880",
+      "at": "2026-03-03T23:11:47.321Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "1f3f1a8e-d331-4f64-8e3e-c5e5d66c5b76",
+      "at": "2026-03-04T01:27:59.280Z",
+      "text": "Projet ouvert dans Mon-IDE."
+    },
+    {
+      "id": "af64f475-1822-40ed-875c-3e7515c47081",
+      "at": "2026-03-04T01:30:29.187Z",
+      "text": "Commande de lancement retenue (Vite): pnpm dev"
+    },
+    {
+      "id": "c5231c67-2fb5-4847-99d7-6955b1c75333",
+      "at": "2026-03-04T01:31:42.367Z",
+      "text": "Commande de lancement retenue (Vite): pnpm dev"
+    },
+    {
+      "id": "411fa980-456a-4dee-99c2-a69e976ebf12",
+      "at": "2026-03-04T01:54:22.271Z",
+      "text": "Commande envoyee vers powershell: $__monide_cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('Z2l0IGFkZCAtQQ==')); Invoke-Expression $__monide_cmd; $__monide_exit = if ($null -ne $LASTEXITCODE) { [int]$LASTEXI"
+    },
+    {
+      "id": "b0abb8b9-c6ec-4232-a58d-c9e75f3d07e6",
+      "at": "2026-03-04T01:54:22.395Z",
+      "text": "Commande envoyee vers powershell: $__monide_cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('Z2l0IGNvbW1pdCAtbSAiY2hvcmU6IG1pc2UgYSBqb3VyIHdvcmtmbG93Ig==')); Invoke-Expression $__monide_cmd; $__monide_exit = "
     }
   ],
-  "updatedAt": "2026-03-03T18:02:20.269Z"
+  "updatedAt": "2026-03-04T01:54:22.395Z"
 }
