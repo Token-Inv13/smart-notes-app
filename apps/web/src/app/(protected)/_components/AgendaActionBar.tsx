@@ -67,13 +67,13 @@ export default function AgendaActionBar({
   }, [searchOpen]);
 
   return (
-    <div ref={rootRef} className="w-full rounded-md border border-border bg-background p-1">
+    <div ref={rootRef} className="w-full rounded-md border border-border bg-background p-1.5">
       <div className="flex w-full flex-wrap items-center gap-1">
         <div className="inline-flex items-center overflow-hidden rounded-md border border-border bg-background whitespace-nowrap">
           <button
             type="button"
             onClick={() => onArchiveViewChange("active")}
-            className={`inline-flex items-center gap-1 px-2 py-1 text-xs sm:text-sm ${archiveView === "active" ? "bg-accent" : ""}`}
+            className={`inline-flex items-center gap-1 px-2 py-1.5 text-xs sm:text-sm ${archiveView === "active" ? "bg-accent" : ""}`}
             aria-label="Afficher les taches actives"
             title="Actives"
           >
@@ -83,7 +83,7 @@ export default function AgendaActionBar({
           <button
             type="button"
             onClick={() => onArchiveViewChange("archived")}
-            className={`inline-flex items-center gap-1 border-l border-border px-2 py-1 text-xs sm:text-sm ${archiveView === "archived" ? "bg-accent" : ""}`}
+            className={`inline-flex items-center gap-1 border-l border-border px-2 py-1.5 text-xs sm:text-sm ${archiveView === "archived" ? "bg-accent" : ""}`}
             aria-label="Afficher les taches archivees"
             title="Archivees"
           >
@@ -100,7 +100,7 @@ export default function AgendaActionBar({
                 key={option.key}
                 type="button"
                 onClick={() => onViewModeChange(option.key)}
-                className={`inline-flex items-center gap-1 px-2 py-1 text-xs sm:text-sm ${
+                className={`inline-flex items-center gap-1 px-2 py-1.5 text-xs sm:text-sm ${
                   index > 0 ? "border-l border-border" : ""
                 } ${viewMode === option.key ? "bg-accent" : ""}`}
                 aria-label={`Afficher la vue ${option.label.toLowerCase()}`}
@@ -121,6 +121,7 @@ export default function AgendaActionBar({
                 aria-hidden
               />
               <input
+                id="tasks-search-input"
                 ref={searchInputRef}
                 type="text"
                 value={searchValue}
@@ -144,8 +145,8 @@ export default function AgendaActionBar({
                   }
                   setSearchOpen(false);
                 }}
-                placeholder="Rechercher..."
-                className="h-8 w-full rounded-md border border-input bg-background pl-7 pr-7 text-xs sm:text-sm"
+                placeholder="Rechercher (titre, texte, dossier)…"
+                className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-8 text-sm"
                 aria-label="Rechercher dans l'agenda"
               />
               <button
@@ -158,7 +159,7 @@ export default function AgendaActionBar({
                   }
                   setSearchOpen(false);
                 }}
-                className="absolute right-1 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="absolute right-1 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
                 aria-label={searchValue.trim().length > 0 ? "Effacer la recherche" : "Fermer la recherche"}
                 title={searchValue.trim().length > 0 ? "Effacer" : "Fermer"}
               >
@@ -167,9 +168,10 @@ export default function AgendaActionBar({
             </div>
           ) : (
             <button
+              id="tasks-search-toggle"
               type="button"
               onClick={() => setSearchOpen(true)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background hover:bg-accent"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-accent"
               aria-label="Ouvrir la recherche"
               title="Recherche"
             >
@@ -180,7 +182,7 @@ export default function AgendaActionBar({
           <button
             type="button"
             onClick={onFilterToggle}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background hover:bg-accent"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-accent"
             aria-label="Ouvrir les filtres"
             title="Filtres"
           >

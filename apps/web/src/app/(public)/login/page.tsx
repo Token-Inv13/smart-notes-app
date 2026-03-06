@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { auth } from "@/lib/firebase";
+import { observeCaughtError } from "@/lib/clientObservability";
 import {
   signInWithEmailAndPassword,
   GoogleAuthProvider,
@@ -18,7 +19,9 @@ import { Eye, EyeOff } from "lucide-react";
 function getFirebaseAuthErrorCode(err: unknown): string | undefined {
   if (typeof err !== "object" || err === null) return undefined;
   const code = (err as Record<string, unknown>).code;
-  return typeof code === "string" ? code : undefined;
+  if (typeof code !== "string") return undefined;
+  const normalized = code.trim().toLowerCase();
+  return normalized || undefined;
 }
 
 function normalizeNextPath(raw: string | null): string {
@@ -36,11 +39,30 @@ function getFirebaseAuthErrorRawMessage(err: unknown): string {
   return typeof message === "string" ? message : "";
 }
 
+function getFirebaseAuthTokenErrorMessage(err: unknown): string {
+  if (typeof err !== "object" || err === null) return "";
+  const customData = (err as Record<string, unknown>).customData;
+  if (typeof customData !== "object" || customData === null) return "";
+
+  const tokenResponse = (customData as Record<string, unknown>)._tokenResponse;
+  if (typeof tokenResponse !== "object" || tokenResponse === null) return "";
+
+  const tokenError = (tokenResponse as Record<string, unknown>).error;
+  if (typeof tokenError === "string") return tokenError;
+  if (typeof tokenError !== "object" || tokenError === null) return "";
+
+  const message = (tokenError as Record<string, unknown>).message;
+  return typeof message === "string" ? message : "";
+}
+
 function getFirebaseAuthErrorMessage(err: unknown): string {
   const code = getFirebaseAuthErrorCode(err);
+  const rawMessage = getFirebaseAuthErrorRawMessage(err);
+  const tokenMessage = getFirebaseAuthTokenErrorMessage(err);
+  const internalPayload = `${rawMessage}\n${tokenMessage}`.toUpperCase();
+
   if (typeof code !== "string") {
-    const message = getFirebaseAuthErrorRawMessage(err);
-    return message || "Une erreur est survenue. Réessaie.";
+    return rawMessage || "Une erreur est survenue. Réessaie.";
   }
 
   switch (code) {
@@ -60,6 +82,23 @@ function getFirebaseAuthErrorMessage(err: unknown): string {
       return "La popup a été bloquée par le navigateur. Autorise les popups puis réessaie.";
     case "auth/network-request-failed":
       return "Problème réseau. Vérifie ta connexion puis réessaie.";
+    case "auth/internal-error":
+      if (
+        internalPayload.includes("CONFIGURATION_NOT_FOUND") ||
+        internalPayload.includes("OPERATION_NOT_ALLOWED") ||
+        internalPayload.includes("PASSWORD_LOGIN_DISABLED")
+      ) {
+        return "Connexion Email/Mot de passe indisponible: active le provider Email/Password dans Firebase Auth.";
+      }
+      if (
+        internalPayload.includes("API_KEY") ||
+        internalPayload.includes("INVALID_API_KEY") ||
+        internalPayload.includes("PROJECT_NOT_FOUND") ||
+        internalPayload.includes("INVALID_PROJECT")
+      ) {
+        return "Configuration Firebase invalide côté client (API key / projet). Vérifie les variables Firebase sur Vercel.";
+      }
+      return "Erreur interne Firebase Auth. Réessaie puis contacte le support si le problème persiste.";
     default:
       return `Une erreur est survenue (${code}). Réessaie.`;
   }
@@ -108,8 +147,33 @@ function LoginPageInner() {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(text || "Failed to establish session");
+      const message = text || "Failed to establish session";
+      throw new Error(`Session API error (${res.status}): ${message}`);
     }
+  };
+
+  const debugAuthFailure = (stage: string, err: unknown, meta?: Record<string, unknown>) => {
+    const code = getFirebaseAuthErrorCode(err);
+    const message = getFirebaseAuthErrorRawMessage(err);
+    const tokenErrorMessage = getFirebaseAuthTokenErrorMessage(err);
+    console.error("[auth/login] failure", {
+      stage,
+      code: code ?? null,
+      message: message || (err instanceof Error ? err.message : ""),
+      tokenErrorMessage: tokenErrorMessage || null,
+      error: err,
+      firebaseClientProjectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? null,
+      firebaseClientAuthDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ?? null,
+      ...meta,
+    });
+    void observeCaughtError("frontend.auth.login_failure", err, {
+      stage,
+      code: code ?? null,
+      tokenErrorMessage: tokenErrorMessage || null,
+      firebaseClientProjectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? null,
+      firebaseClientAuthDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ?? null,
+      ...meta,
+    });
   };
 
   useEffect(() => {
@@ -131,6 +195,7 @@ function LoginPageInner() {
         // If no redirect is pending, Firebase may throw; treat it as non-blocking.
         const code = getFirebaseAuthErrorCode(err);
         if (code === "auth/no-auth-event") return;
+        debugAuthFailure("redirect_result", err);
         const msg = getFirebaseAuthErrorMessage(err);
         if (msg) setError(msg);
       } finally {
@@ -149,12 +214,24 @@ function LoginPageInner() {
     setResetStatus(null);
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      await establishSession();
+      await signInWithEmailAndPassword(auth, email, password).catch((err: unknown) => {
+        debugAuthFailure("firebase_sign_in", err, { provider: "password" });
+        throw err;
+      });
+      await establishSession().catch((err: unknown) => {
+        debugAuthFailure("session_api", err, { provider: "password" });
+        throw err;
+      });
       router.replace(nextPath);
     } catch (err) {
-      console.error(err);
-      setError(getFirebaseAuthErrorMessage(err));
+      const code = getFirebaseAuthErrorCode(err);
+      if (code) {
+        setError(getFirebaseAuthErrorMessage(err));
+      } else if (err instanceof Error && err.message.startsWith("Session API error")) {
+        setError("Connexion réussie, mais la session serveur a échoué. Vérifie la configuration serveur Firebase.");
+      } else {
+        setError(getFirebaseAuthErrorMessage(err));
+      }
     } finally {
       setLoading(false);
     }
@@ -199,6 +276,7 @@ function LoginPageInner() {
         throw err;
       }
     } catch (err) {
+      debugAuthFailure("google_sign_in", err, { provider: "google" });
       setError(getFirebaseAuthErrorMessage(err));
     } finally {
       setLoading(false);
@@ -220,6 +298,7 @@ function LoginPageInner() {
       await sendPasswordResetEmail(auth, trimmed);
       setResetStatus("Email de réinitialisation envoyé (si un compte existe pour cette adresse).");
     } catch (err) {
+      debugAuthFailure("password_reset", err, { provider: "password" });
       setError(getFirebaseAuthErrorMessage(err));
     } finally {
       setLoading(false);

@@ -21,7 +21,7 @@ Objectifs principaux :
   - Storage
   - Cloud Messaging (FCM Web Push)
   - Analytics (optionnel)
-- **Cloud Functions** : Node 18 (ou équivalent supporté) pour logique serveur (rappels, nettoyage…)
+- **Cloud Functions** : Node 20.x (runtime attendu) pour logique serveur (rappels, nettoyage…)
 - **PWA** :
   - Workbox (pré‑cache, stratégies de cache)
   - Service Worker custom (`apps/web/src/sw.ts`)
@@ -207,7 +207,7 @@ Ce fichier sert de **source de vérité durable** pour le projet Smart Notes / T
 - **Vercel**
   - Créer le projet, `Root Directory = apps/web`.
   - Configurer `Install: pnpm install`, `Build: pnpm build`.
-  - Vérifier que Node (Vercel) est en 18 ou 20.
+  - Vérifier que Node (Vercel) est en 20.x.
 
 - **Variables d'environnement (Vercel)**
   - Renseigner :

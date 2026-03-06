@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createSessionCookie } from '@/lib/firebaseAdmin';
+import { createSessionCookie, getAdminProjectId } from '@/lib/firebaseAdmin';
 
 const SESSION_COOKIE_NAME = 'session';
 const SESSION_EXPIRES_IN_MS = 1000 * 60 * 60 * 24 * 5; // 5 days
@@ -35,7 +35,26 @@ export async function POST(request: Request) {
 
     return res;
   } catch (e) {
-    console.error('Error creating session cookie', e);
+    const error = e as { code?: string; message?: string };
+    let adminProjectId: string | null = null;
+    try {
+      adminProjectId = getAdminProjectId();
+    } catch {
+      adminProjectId = null;
+    }
+
+    console.error('Error creating session cookie', {
+      code: typeof error?.code === 'string' ? error.code : null,
+      message: typeof error?.message === 'string' ? error.message : 'Unknown error',
+      error: e,
+      clientProjectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? null,
+      adminProjectId,
+      hasAdminJson: Boolean(
+        process.env.FIREBASE_ADMIN_JSON ||
+          process.env.FIREBASE_ADMIN_CREDENTIALS_JSON ||
+          process.env.FIREBASE_ADMIN_CREDENTIALS_BASE64
+      ),
+    });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

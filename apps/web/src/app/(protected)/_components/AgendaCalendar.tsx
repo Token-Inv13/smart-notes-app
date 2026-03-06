@@ -164,6 +164,58 @@ function formatPlanningLabel(windowRange: { start: Date; end: Date }, mode: Cale
   });
 }
 
+function formatCalendarLabel(windowRange: { start: Date; end: Date }, mode: CalendarViewMode) {
+  if (mode === "timeGridDay") {
+    return windowRange.start.toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  }
+
+  if (mode === "timeGridWeek") {
+    const endInclusive = new Date(windowRange.end.getTime() - 1);
+    const sameYear = windowRange.start.getFullYear() === endInclusive.getFullYear();
+    const sameMonth = sameYear && windowRange.start.getMonth() === endInclusive.getMonth();
+    const startDay = windowRange.start.toLocaleDateString("fr-FR", { day: "numeric" });
+    const endDay = endInclusive.toLocaleDateString("fr-FR", { day: "numeric" });
+
+    if (sameMonth) {
+      const monthYear = endInclusive.toLocaleDateString("fr-FR", {
+        month: "long",
+        year: "numeric",
+      });
+      return `${startDay} – ${endDay} ${monthYear}`;
+    }
+
+    if (sameYear) {
+      const startMonth = windowRange.start.toLocaleDateString("fr-FR", { month: "long" });
+      const endMonthYear = endInclusive.toLocaleDateString("fr-FR", {
+        month: "long",
+        year: "numeric",
+      });
+      return `${startDay} ${startMonth} – ${endDay} ${endMonthYear}`;
+    }
+
+    const startLabel = windowRange.start.toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    const endLabel = endInclusive.toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    return `${startLabel} – ${endLabel}`;
+  }
+
+  return windowRange.start.toLocaleDateString("fr-FR", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
 export default function AgendaCalendar({
   tasks,
   workspaces,
@@ -190,6 +242,12 @@ export default function AgendaCalendar({
     setPriorityFilter,
     timeWindowFilter,
     setTimeWindowFilter,
+    showClassicTasks,
+    setShowClassicTasks,
+    showChecklistItems,
+    setShowChecklistItems,
+    statusFilter,
+    setStatusFilter,
     clearFilters,
   } = useAgendaCalendarFilters();
   const [visibleRange, setVisibleRange] = useState<{ start: Date; end: Date } | null>(null);
@@ -203,6 +261,11 @@ export default function AgendaCalendar({
   const [userTimezone, setUserTimezone] = useState<string>("UTC");
   const [focusPulseActive, setFocusPulseActive] = useState(false);
   const [viewTransitioning, setViewTransitioning] = useState(false);
+  const initialScrollTime = useMemo(() => {
+    const now = new Date();
+    const hour = Math.max(6, Math.min(22, now.getHours() - 1));
+    return `${String(hour).padStart(2, "0")}:00:00`;
+  }, []);
 
   const planningWindow = useMemo(
     () => computePlanningWindow(planningAnchorDate, viewMode),
@@ -391,6 +454,8 @@ export default function AgendaCalendar({
       const itemPriority = (task.priority ?? "") as Priority | "";
       const itemHasConflict = conflictIds.has(eventId);
       const itemIsRecurring = Boolean(recurrence?.freq);
+      const itemIsChecklist = task.sourceType === "checklist_item";
+      const itemIsDone = task.completed === true || task.status === "done";
       const startHour = start.getHours();
 
       const matchesTimeWindow = (() => {
@@ -407,6 +472,10 @@ export default function AgendaCalendar({
       if (showConflictsOnly && !itemHasConflict) continue;
       if (priorityFilter && itemPriority !== priorityFilter) continue;
       if (!matchesTimeWindow) continue;
+      if (!showClassicTasks && !itemIsChecklist) continue;
+      if (!showChecklistItems && itemIsChecklist) continue;
+      if (statusFilter === "open" && itemIsDone) continue;
+      if (statusFilter === "done" && !itemIsDone) continue;
 
       const fcStart = allDay ? toLocalDateInputValue(start) : start;
       const fcEnd = allDay ? toLocalDateInputValue(end) : end;
@@ -425,6 +494,9 @@ export default function AgendaCalendar({
           workspaceId: task.workspaceId ?? "",
           workspaceName: (task.workspaceId ? workspaceNameById.get(task.workspaceId) : null) ?? "Sans dossier",
           priority: itemPriority,
+          sourceType: task.sourceType ?? null,
+          sourceTodoId: task.sourceTodoId ?? null,
+          sourceTodoItemId: task.sourceTodoItemId ?? null,
           recurrence,
           instanceDate,
           conflict: itemHasConflict,
@@ -444,7 +516,18 @@ export default function AgendaCalendar({
         conflicts,
       },
     };
-  }, [effectiveVisibleRange, priorityFilter, showConflictsOnly, showRecurringOnly, tasks, timeWindowFilter, workspaceNameById]);
+  }, [
+    effectiveVisibleRange,
+    priorityFilter,
+    showChecklistItems,
+    showClassicTasks,
+    showConflictsOnly,
+    showRecurringOnly,
+    statusFilter,
+    tasks,
+    timeWindowFilter,
+    workspaceNameById,
+  ]);
 
   const { handleMoveOrResize } = useAgendaEventMutation({
     onCreateEvent,
@@ -478,7 +561,6 @@ export default function AgendaCalendar({
   } = useAgendaCalendarNavigation({
     calendarRef,
     displayMode,
-    openQuickDraft,
     onPlanningJump: (action) => {
       setPlanningAnchorDate((prev) => {
         if (action === "today") return new Date();
@@ -506,7 +588,11 @@ export default function AgendaCalendar({
   };
 
   const onDatesSet = (arg: DatesSetArg) => {
-    setLabel(arg.view.title);
+    const currentMode: CalendarViewMode =
+      arg.view.type === "dayGridMonth" || arg.view.type === "timeGridWeek" || arg.view.type === "timeGridDay"
+        ? arg.view.type
+        : viewMode;
+    setLabel(formatCalendarLabel({ start: arg.start, end: arg.end }, currentMode));
     setVisibleRange({ start: arg.start, end: arg.end });
     setPlanningAnchorDate(arg.start);
     onVisibleRangeChange?.({ start: arg.start, end: arg.end });
@@ -533,6 +619,14 @@ export default function AgendaCalendar({
     calendarData,
     googleCalendarEvents,
   });
+  const hasActiveAgendaFilters =
+    showRecurringOnly ||
+    showConflictsOnly ||
+    Boolean(priorityFilter) ||
+    timeWindowFilter !== "" ||
+    !showClassicTasks ||
+    !showChecklistItems ||
+    statusFilter !== "all";
 
   const eventContent = useCallback(
     (arg: Parameters<typeof renderAgendaCalendarEventContent>[0]) =>
@@ -576,12 +670,12 @@ export default function AgendaCalendar({
         <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit max-w-full">
           <button type="button" className="px-3 py-1.5 text-sm hover:bg-accent/60 transition-colors" onClick={() => {
             triggerViewTransition();
-            jump("today");
-          }}>Aujourd’hui</button>
-          <button type="button" className="px-3 py-1.5 text-sm border-l border-border hover:bg-accent/60 transition-colors" onClick={() => {
-            triggerViewTransition();
             jump("prev");
           }}>←</button>
+          <button type="button" className="px-3 py-1.5 text-sm border-l border-border hover:bg-accent/60 transition-colors" onClick={() => {
+            triggerViewTransition();
+            jump("today");
+          }}>Aujourd’hui</button>
           <button type="button" className="px-3 py-1.5 text-sm border-l border-border hover:bg-accent/60 transition-colors" onClick={() => {
             triggerViewTransition();
             jump("next");
@@ -679,8 +773,14 @@ export default function AgendaCalendar({
         showConflictsOnly={showConflictsOnly}
         priorityFilter={priorityFilter}
         timeWindowFilter={timeWindowFilter}
+        showClassicTasks={showClassicTasks}
+        showChecklistItems={showChecklistItems}
+        statusFilter={statusFilter}
         onToggleRecurringOnly={() => setShowRecurringOnly((prev) => !prev)}
         onToggleConflictsOnly={() => setShowConflictsOnly((prev) => !prev)}
+        onToggleClassicTasks={() => setShowClassicTasks((prev) => !prev)}
+        onToggleChecklistItems={() => setShowChecklistItems((prev) => !prev)}
+        onStatusFilterChange={setStatusFilter}
         onPriorityFilterChange={setPriorityFilter}
         onTimeWindowFilterChange={setTimeWindowFilter}
         onReset={clearFilters}
@@ -701,16 +801,32 @@ export default function AgendaCalendar({
 
       {!error && displayMode === "calendar" && agendaEvents.length === 0 && (
         <div className="sn-empty sn-empty--premium sn-animate-in">
-          <div className="sn-empty-title">Aucun événement dans cette fenêtre</div>
-          <div className="sn-empty-desc">Ajoute un élément pour démarrer, ou navigue vers une autre période.</div>
+          <div className="sn-empty-title">
+            {hasActiveAgendaFilters ? "Aucun résultat avec ces filtres" : "Aucun événement dans cette fenêtre"}
+          </div>
+          <div className="sn-empty-desc">
+            {hasActiveAgendaFilters
+              ? "Essaie de réinitialiser les filtres de l’agenda pour afficher plus d’éléments."
+              : "Ajoute un élément pour démarrer, ou navigue vers une autre période."}
+          </div>
           <div className="mt-3">
-            <button
-              type="button"
-              className="inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 transition-opacity"
-              onClick={openQuickDraft}
-            >
-              Créer une tâche
-            </button>
+            {hasActiveAgendaFilters ? (
+              <button
+                type="button"
+                className="inline-flex items-center justify-center h-10 px-4 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent/60"
+                onClick={clearFilters}
+              >
+                Réinitialiser les filtres
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 transition-opacity"
+                onClick={openQuickDraft}
+              >
+                Créer une tâche
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -742,6 +858,8 @@ export default function AgendaCalendar({
               eventShortHeight={22}
               slotMinTime="06:00:00"
               slotMaxTime="23:30:00"
+              scrollTime={initialScrollTime}
+              scrollTimeReset={false}
               events={agendaEvents}
               datesSet={onDatesSet}
               select={openDraftFromSelect}

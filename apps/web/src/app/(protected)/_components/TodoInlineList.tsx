@@ -140,7 +140,10 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
       result = result.filter((t) => {
         const workspaceName = t.workspaceId ? workspaceNameById.get(t.workspaceId) ?? "" : "";
         const itemsText = (t.items ?? []).map((i) => i.text ?? "").join("\n");
-        const text = normalizeText(`${t.title}\n${itemsText}\n${workspaceName}`);
+        const dueLabel = formatDueDate(t.dueDate ?? null);
+        const priority = t.priority ? priorityLabel(t.priority) : "";
+        const completion = t.completed === true ? "terminee" : "active";
+        const text = normalizeText(`${t.title}\n${itemsText}\n${workspaceName}\n${dueLabel}\n${priority}\n${completion}`);
         return text.includes(q);
       });
     }
@@ -188,6 +191,16 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
     const q = debouncedSearch.trim();
     return q.length > 0 || workspaceFilter !== "all" || priorityFilter !== "all" || dueFilter !== "all" || sortBy !== "updatedAt";
   }, [debouncedSearch, dueFilter, priorityFilter, sortBy, workspaceFilter]);
+  const activeSearchLabel = useMemo(() => debouncedSearch.trim().slice(0, 60), [debouncedSearch]);
+
+  const resetSearchAndFilters = () => {
+    setSearchInput("");
+    setDebouncedSearch("");
+    setWorkspaceFilter(workspaceId ?? "all");
+    setPriorityFilter("all");
+    setDueFilter("all");
+    setSortBy("updatedAt");
+  };
 
   const toggleCompleted = async (todo: TodoDoc, nextCompleted: boolean) => {
     if (!todo.id) return;
@@ -242,7 +255,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
       {actionFeedback && <div className="sn-alert" role="status" aria-live="polite">{actionFeedback}</div>}
       {error && (
@@ -262,7 +275,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
       )}
 
       {!loading && !error && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div
             className="inline-flex rounded-md border border-border bg-background overflow-hidden"
             {...todoTabsSwipeHandlers}
@@ -270,14 +283,14 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
             <button
               type="button"
               onClick={() => setTodoView("active")}
-              className={`px-3 py-1 text-sm ${todoView === "active" ? "bg-accent" : ""}`}
+              className={`px-3 py-1.5 text-sm ${todoView === "active" ? "bg-accent" : ""}`}
             >
               Actives ({activeTodos.length})
             </button>
             <button
               type="button"
               onClick={() => setTodoView("completed")}
-              className={`px-3 py-1 text-sm ${todoView === "completed" ? "bg-accent" : ""}`}
+              className={`px-3 py-1.5 text-sm ${todoView === "completed" ? "bg-accent" : ""}`}
             >
               Terminées ({completedTodos.length})
             </button>
@@ -286,10 +299,11 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
           <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
             <div className="relative flex-1 min-w-0">
               <input
+                id="todo-search-input"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Rechercher (titre, items, dossier)…"
-                className="w-full border border-input rounded-md px-3 py-2 pr-10 bg-background text-sm"
+                placeholder="Rechercher (titre, texte, dossier)…"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 pr-10 text-sm"
                 aria-label="Rechercher dans la checklist"
               />
               {searchInput.trim().length > 0 && (
@@ -308,11 +322,18 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
             <button
               type="button"
               onClick={() => setFiltersOpen(true)}
-              className="inline-flex items-center justify-center h-10 px-3 rounded-md border border-border bg-background hover:bg-accent text-sm"
+              className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-background px-3 text-sm hover:bg-accent"
             >
               Filtrer
             </button>
           </div>
+
+          {activeSearchLabel && (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span className="sn-badge">Recherche: “{activeSearchLabel}”</span>
+              <span className="sn-badge">Résultats: {filteredTodos.length}</span>
+            </div>
+          )}
 
           {filtersOpen && (
             <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Filtres checklist">
@@ -425,25 +446,57 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
               </div>
               <div className="sn-empty-desc">
                 {hasActiveSearchOrFilters
-                  ? "Essaie d’effacer la recherche ou de réinitialiser les filtres."
+                  ? activeSearchLabel
+                    ? `Aucune checklist ne correspond à “${activeSearchLabel}” avec les filtres actuels.`
+                    : "Aucune checklist ne correspond à ta recherche ou à tes filtres actuels."
                   : todoView === "completed"
                     ? "Marque une checklist comme terminée pour la retrouver ici."
                     : "Appuie sur + pour en créer une."}
+              </div>
+              <div className="mt-3">
+                {hasActiveSearchOrFilters ? (
+                  <button
+                    type="button"
+                    onClick={resetSearchAndFilters}
+                    className="inline-flex items-center justify-center h-10 px-4 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent/60"
+                  >
+                    Réinitialiser les filtres
+                  </button>
+                ) : todoView === "completed" ? (
+                  <button
+                    type="button"
+                    onClick={() => setTodoView("active")}
+                    className="inline-flex items-center justify-center h-10 px-4 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent/60"
+                  >
+                    Voir les checklists actives
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const qs = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
+                      router.push(`/todo/new${qs}`);
+                    }}
+                    className="inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 transition-opacity"
+                  >
+                    Créer une checklist
+                  </button>
+                )}
               </div>
             </div>
           )}
 
           {filteredTodos.length > 0 && (
-            <ul className="space-y-2">
+            <ul className="space-y-1.5">
               {filteredTodos.map((todo) => (
                 <li key={todo.id}>
                   <div
-                    className={`sn-card p-4 relative ${todo.completed ? "opacity-80" : ""} ${todo.id ? "cursor-pointer" : ""} ${todo.id ? "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40" : ""}`}
+                    className={`sn-card relative p-3 ${todo.completed ? "opacity-80" : ""} ${todo.id ? "cursor-pointer" : ""} ${todo.id ? "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40" : ""}`}
                     aria-label={todo.id ? `Ouvrir la checklist ${todo.title}` : undefined}
                     onClick={() => openTodoDetail(todo.id)}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex min-w-0 flex-1 items-center gap-2.5">
                         <input
                           type="checkbox"
                           checked={todo.completed === true}

@@ -6,6 +6,7 @@ import { auth, db } from "@/lib/firebase";
 import {
   DATE_PLACEHOLDER_FR,
   formatTimestampForDateInput,
+  formatTimestampToDateTimeFr,
   formatTimestampToDateFr,
   normalizeAgendaWindowForFirestore,
   parseLocalDateToTimestamp,
@@ -36,6 +37,7 @@ function normalizeTodoItems(items: TodoDoc["items"] | null | undefined): TodoIte
         text,
         done: item.done === true,
         createdAt: typeof item.createdAt === "number" ? item.createdAt : Date.now(),
+        agendaPlan: item.agendaPlan ?? null,
       };
     })
     .filter((item): item is TodoItem => item !== null);
@@ -98,6 +100,21 @@ function mapChecklistDueDateToAgendaWindow(dueDate: TodoDoc["dueDate"] | null | 
     end,
     allDay: true,
   };
+}
+
+function formatAgendaPlanLabel(item: TodoItem): string {
+  const plan = item.agendaPlan;
+  if (!plan) return "";
+
+  if (plan.allDay) {
+    if (plan.startDate) return formatTimestampToDateFr(plan.startDate);
+    if (plan.dueDate) return formatTimestampToDateFr(plan.dueDate);
+    return "Date planifiée";
+  }
+
+  if (plan.startDate) return formatTimestampToDateTimeFr(plan.startDate);
+  if (plan.dueDate) return formatTimestampToDateTimeFr(plan.dueDate);
+  return "Horaire planifié";
 }
 
 export default function TodoDetailModal(props: { params: Promise<{ id: string }> }) {
@@ -714,6 +731,17 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                             disabled={saving}
                             aria-label="Texte de l’élément"
                           />
+                          {it.agendaPlan?.taskId && (
+                            <button
+                              type="button"
+                              className="shrink-0 sn-text-btn"
+                              onClick={() => router.push(`/tasks?taskId=${encodeURIComponent(it.agendaPlan!.taskId)}`)}
+                              aria-label="Ouvrir dans l’agenda"
+                              title="Ouvrir dans l’agenda"
+                            >
+                              📅
+                            </button>
+                          )}
                           <button
                             type="button"
                             className="sn-icon-btn shrink-0"
@@ -725,6 +753,21 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                             ✕
                           </button>
                         </div>
+                        {it.agendaPlan?.taskId && (
+                          <div className="mt-2 flex flex-wrap items-center gap-2 pl-6">
+                            <span className="sn-badge inline-flex items-center gap-1">
+                              <span aria-hidden>📅</span>
+                              <span>Planifié{formatAgendaPlanLabel(it) ? `: ${formatAgendaPlanLabel(it)}` : ""}</span>
+                            </span>
+                            <button
+                              type="button"
+                              className="text-xs text-muted-foreground hover:underline"
+                              onClick={() => router.push(`/tasks?taskId=${encodeURIComponent(it.agendaPlan!.taskId)}`)}
+                            >
+                              Voir dans l’agenda
+                            </button>
+                          </div>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -761,6 +804,21 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                             />
                             <div className="w-full min-w-0">
                               <div className="text-sm line-through text-muted-foreground break-words">{it.text}</div>
+                              {it.agendaPlan?.taskId && (
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <span className="sn-badge inline-flex items-center gap-1">
+                                    <span aria-hidden>📅</span>
+                                    <span>Planifié{formatAgendaPlanLabel(it) ? `: ${formatAgendaPlanLabel(it)}` : ""}</span>
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="text-xs text-muted-foreground hover:underline"
+                                    onClick={() => router.push(`/tasks?taskId=${encodeURIComponent(it.agendaPlan!.taskId)}`)}
+                                  >
+                                    Voir dans l’agenda
+                                  </button>
+                                </div>
+                              )}
                             </div>
                             <button
                               type="button"

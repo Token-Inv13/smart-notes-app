@@ -106,6 +106,9 @@ export default function DashboardPage() {
   const { data: favoriteNotesForLimit } = useUserNotes({ favoriteOnly: true, limit: 11 });
   const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
   const { data: favoriteTodos } = useUserTodos({ workspaceId, completed: false, favoriteOnly: true });
+  const { data: dashboardTasks } = useUserTasks({ workspaceId, limit: 300 });
+  const { data: dashboardTodos } = useUserTodos({ workspaceId, limit: 200 });
+  const { data: dashboardNotes } = useUserNotes({ workspaceId, limit: 40 });
 
   const { data: workspaces } = useUserWorkspaces();
 
@@ -140,6 +143,70 @@ export default function DashboardPage() {
   const todoFavoriteCount = favoriteTodos.length;
   const notesFavoriteCount = activeFavoriteNotes.length;
   const tasksFavoriteCount = activeFavoriteTasks.length;
+
+  const dashboardSummary = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const tomorrowStart = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+    const recentWindowStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const activeTasksBase = dashboardTasks.filter((task) => {
+      const status = task.status ?? 'todo';
+      return task.archived !== true && status !== 'done';
+    });
+
+    let tasksToday = 0;
+    let checklistPlannedToday = 0;
+    let overdueTasks = 0;
+
+    for (const task of activeTasksBase) {
+      const projected = projectTaskToEvent(task);
+      if (projected.event) {
+        const startsToday =
+          projected.event.start.getTime() >= todayStart.getTime() &&
+          projected.event.start.getTime() < tomorrowStart.getTime();
+        if (startsToday) {
+          tasksToday += 1;
+          if (task.sourceType === 'checklist_item') {
+            checklistPlannedToday += 1;
+          }
+        }
+      }
+
+      const dueMs = readTimestampMs(task.dueDate);
+      if (dueMs != null && dueMs < now.getTime()) {
+        overdueTasks += 1;
+      }
+    }
+
+    const activeChecklists = dashboardTodos.filter((todo) => todo.archived !== true && todo.completed !== true);
+    const checklistOpenItems = activeChecklists.reduce((acc, todo) => {
+      const openItems = (todo.items ?? []).reduce((itemAcc, item) => (item.done === true ? itemAcc : itemAcc + 1), 0);
+      return acc + openItems;
+    }, 0);
+
+    const activeNotes = dashboardNotes.filter((note) => note.archived !== true);
+    const recentNotes = activeNotes
+      .filter((note) => {
+        const updatedAtMs = readTimestampMs(note.updatedAt);
+        return updatedAtMs != null && updatedAtMs >= recentWindowStart.getTime();
+      })
+      .sort((a, b) => {
+        const aMs = readTimestampMs(a.updatedAt) ?? 0;
+        const bMs = readTimestampMs(b.updatedAt) ?? 0;
+        return bMs - aMs;
+      });
+
+    return {
+      tasksToday,
+      overdueTasks,
+      checklistPlannedToday,
+      activeChecklists: activeChecklists.length,
+      checklistOpenItems,
+      recentNotesCount: recentNotes.length,
+      recentNotesTop: recentNotes.slice(0, 3),
+    };
+  }, [dashboardNotes, dashboardTasks, dashboardTodos]);
 
   const slidesContainerRef = useRef<HTMLDivElement | null>(null);
   const slideRefs = useRef<Array<HTMLDivElement | null>>([]);
@@ -369,6 +436,58 @@ export default function DashboardPage() {
         <h1 className="text-xl font-semibold">Dashboard</h1>
         <div id="sn-create-slot" data-dashboard-slide-index={activeSlideIndex} />
       </header>
+
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="sn-card p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold">Aujourd’hui</h2>
+            <Link href={tasksCalendarHref} className="sn-text-btn text-xs">
+              Voir l’agenda
+            </Link>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="sn-badge">Prévues: {dashboardSummary.tasksToday}</span>
+            <span className="sn-badge">En retard: {dashboardSummary.overdueTasks}</span>
+            {dashboardSummary.checklistPlannedToday > 0 && (
+              <span className="sn-badge">Checklist planifiées: {dashboardSummary.checklistPlannedToday}</span>
+            )}
+          </div>
+        </div>
+
+        <div className="sn-card p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold">Checklists</h2>
+            <Link href={`/todo${suffix}`} className="sn-text-btn text-xs">
+              Voir les checklists
+            </Link>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="sn-badge">Actives: {dashboardSummary.activeChecklists}</span>
+            <span className="sn-badge">Items restants: {dashboardSummary.checklistOpenItems}</span>
+          </div>
+        </div>
+
+        <div className="sn-card p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold">Notes</h2>
+            <Link href={`/notes${suffix}`} className="sn-text-btn text-xs">
+              Voir les notes
+            </Link>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="sn-badge">Récentes (7j): {dashboardSummary.recentNotesCount}</span>
+          </div>
+          {dashboardSummary.recentNotesTop.length > 0 && (
+            <ul className="space-y-1">
+              {dashboardSummary.recentNotesTop.map((note) => (
+                <li key={note.id ?? note.title} className="text-xs text-muted-foreground truncate">
+                  {note.title}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
 
       <div className="sticky top-0 z-10 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="inline-flex rounded-md border border-border bg-background overflow-hidden max-w-full">

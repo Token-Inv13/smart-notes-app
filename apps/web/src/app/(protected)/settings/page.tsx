@@ -594,6 +594,76 @@ export default function SettingsPage() {
     notificationPermission === "granted" &&
     !hasFcmTokens;
 
+  const remindersEnabled = !!user?.settings?.notifications?.taskReminders;
+  const remindersStatusBadgeClass = remindersEnabled
+    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+    : "border-border bg-muted text-muted-foreground";
+  const remindersStatusLabel = remindersEnabled
+    ? "Interrupteur Smart Notes: activé"
+    : "Interrupteur Smart Notes: désactivé";
+
+  const browserPermissionLabel =
+    notificationPermission === "granted"
+      ? "Navigateur: autorisé"
+      : notificationPermission === "denied"
+        ? "Navigateur: refusé"
+        : notificationPermission === "default"
+          ? "Navigateur: en attente"
+          : "Navigateur: non compatible";
+  const browserPermissionBadgeClass =
+    notificationPermission === "granted"
+      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+      : notificationPermission === "denied"
+        ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+        : "border-border bg-muted text-muted-foreground";
+
+  const notificationsSummary =
+    !remindersEnabled
+      ? "Les rappels sont désactivés dans Smart Notes."
+      : notificationPermission === "granted" && hasFcmTokens
+        ? "Rappels prêts: ce navigateur recevra les notifications."
+        : notificationPermission === "granted" && !hasFcmTokens
+          ? "Action requise: autorisation accordée, mais cet appareil n’est pas encore enregistré."
+          : notificationPermission === "denied"
+            ? "Action requise: autoriser les notifications dans les paramètres du navigateur."
+            : notificationPermission === "default"
+              ? "Action requise: autoriser les notifications pour recevoir les rappels."
+              : "Les notifications ne sont pas disponibles sur ce navigateur.";
+
+  const calendarStatusLabel = calendarLoading
+    ? "Vérification en cours"
+    : calendarConnected
+      ? "Connecté"
+      : "Non connecté";
+  const calendarStatusBadgeClass = calendarLoading
+    ? "border-border bg-muted text-muted-foreground"
+    : calendarConnected
+      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+      : "border-border bg-muted text-muted-foreground";
+  const calendarSummary = calendarConnected
+    ? "Tes événements Google peuvent être synchronisés dans l’agenda."
+    : "Connecte Google Calendar pour importer tes événements dans l’agenda.";
+
+  const subscriptionStatusLabel = !isPro
+    ? "Plan Free"
+    : isAndroid
+      ? "Pro actif (Google Play)"
+      : hasActiveStripeSubscription
+        ? "Pro actif (Stripe)"
+        : "Pro détecté, statut de facturation à vérifier";
+  const subscriptionStatusBadgeClass = !isPro
+    ? "border-border bg-muted text-muted-foreground"
+    : isAndroid || hasActiveStripeSubscription
+      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+      : "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+  const subscriptionSummary = !isPro
+    ? "Tu utilises actuellement le plan gratuit."
+    : isAndroid
+      ? "Gestion de l’abonnement via Google Play."
+      : hasActiveStripeSubscription
+        ? "Gestion, modification et annulation via le portail Stripe sécurisé."
+        : "Le plan Pro est actif dans Smart Notes, mais Stripe n’a pas encore confirmé un statut actif.";
+
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
       <div className="flex flex-col gap-1">
@@ -663,15 +733,16 @@ export default function SettingsPage() {
               <h2 className="text-base font-semibold">Abonnement</h2>
               <div className="text-xs text-muted-foreground">Pro</div>
             </div>
-            <p className="text-sm text-muted-foreground">Ton plan et les options de gestion.</p>
+            <p className="text-sm text-muted-foreground">Ton plan actuel, son statut et les actions disponibles.</p>
             <div className="text-sm">
               <span className="font-medium">Plan actuel :</span> <span>{user.plan ?? "free"}</span>
             </div>
+            <div className={`text-xs px-2 py-1 rounded-full border inline-flex w-fit ${subscriptionStatusBadgeClass}`}>
+              {subscriptionStatusLabel}
+            </div>
+            <p className="text-xs text-muted-foreground">{subscriptionSummary}</p>
             {isPro ? (
               <div className="space-y-2">
-                <div className="text-xs px-2 py-1 rounded-full border border-primary/30 bg-primary/10 text-foreground inline-flex w-fit">
-                  {hasActiveStripeSubscription || isAndroid ? "Pro actif" : "Statut à vérifier"}
-                </div>
                 <Link
                   href="/upgrade"
                   className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-border bg-background text-sm font-medium hover:bg-accent/60"
@@ -694,7 +765,7 @@ export default function SettingsPage() {
                   <div className="text-xs text-muted-foreground">
                     {hasActiveStripeSubscription
                       ? "Modification et annulation via le portail sécurisé Stripe."
-                      : "Ton abonnement Stripe ne semble plus actif. Ouvre la page Abonnement pour rafraîchir le statut."}
+                      : "Statut Stripe non confirmé. Ouvre la page Abonnement pour vérifier ou rafraîchir le statut."}
                   </div>
                 )}
               </div>
@@ -721,12 +792,8 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-medium">Google Calendar</div>
-                  <div className="text-xs text-muted-foreground">
-                    {calendarLoading
-                      ? "Chargement…"
-                      : calendarConnected
-                        ? "Connecté"
-                        : "Non connecté"}
+                  <div className={`mt-1 text-xs px-2 py-1 rounded-full border inline-flex w-fit ${calendarStatusBadgeClass}`}>
+                    {calendarStatusLabel}
                   </div>
                 </div>
                 {!calendarConnected ? (
@@ -750,9 +817,8 @@ export default function SettingsPage() {
                 )}
               </div>
 
-              <p className="text-xs text-muted-foreground">
-                Connexion OAuth officielle Google en 1 clic, sans saisie manuelle ni affichage de token.
-              </p>
+              <p className="text-xs text-muted-foreground">{calendarSummary}</p>
+              <p className="text-xs text-muted-foreground">Connexion OAuth officielle Google en 1 clic, sans saisie manuelle.</p>
 
               {calendarPrimaryId ? (
                 <div className="text-xs text-muted-foreground break-all">Calendrier principal: {calendarPrimaryId}</div>
@@ -767,13 +833,13 @@ export default function SettingsPage() {
               <h2 className="text-base font-semibold">Notifications</h2>
               <div className="text-xs text-muted-foreground">Rappels</div>
             </div>
-            <p className="text-sm text-muted-foreground">Active les rappels et configure ce navigateur.</p>
+            <p className="text-sm text-muted-foreground">Vérifie séparément l’état Smart Notes et l’autorisation du navigateur.</p>
 
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">
                 <div className="text-sm font-medium">Rappels d’agenda</div>
-                <div className="text-sm text-muted-foreground">
-                  {user.settings?.notifications?.taskReminders ? "Activés" : "Désactivés"}
+                <div className={`mt-1 text-xs px-2 py-1 rounded-full border inline-flex w-fit ${remindersStatusBadgeClass}`}>
+                  {remindersStatusLabel}
                 </div>
               </div>
 
@@ -795,18 +861,10 @@ export default function SettingsPage() {
               </button>
             </div>
 
-            <div className="text-sm">
-              <span className="font-medium">État des notifications:</span>{" "}
-              <span>
-                {notificationPermission === "granted"
-                  ? "✅ Notifications activées"
-                  : notificationPermission === "denied"
-                    ? "⚠️ Permission refusée"
-                    : notificationPermission === "default"
-                      ? "— À activer"
-                      : "❌ Navigateur non compatible"}
-              </span>
+            <div className={`text-xs px-2 py-1 rounded-full border inline-flex w-fit ${browserPermissionBadgeClass}`}>
+              {browserPermissionLabel}
             </div>
+            <p className="text-sm text-muted-foreground">{notificationsSummary}</p>
 
             {toggleMessage && <p className="text-sm">{toggleMessage}</p>}
 

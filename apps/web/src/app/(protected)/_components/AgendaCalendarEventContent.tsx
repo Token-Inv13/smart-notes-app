@@ -16,6 +16,7 @@ export function renderAgendaCalendarEventContent(arg: EventContentArg, isCompact
         : "Local";
 
   const sourceLabel = arg.event.extendedProps.source === "google-calendar" ? "Google" : "Local";
+  const fromChecklist = arg.event.extendedProps.sourceType === "checklist_item";
   const start = arg.event.start;
   const end = arg.event.end;
   const durationMinutes =
@@ -28,6 +29,7 @@ export function renderAgendaCalendarEventContent(arg: EventContentArg, isCompact
     return (
       <div className="px-1 py-0.5 text-[11px] leading-tight text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]">
         <div className="flex items-center gap-1.5">
+          {fromChecklist && <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-200" aria-hidden />}
           <span className="truncate font-semibold">{arg.event.title}</span>
           {hasConflict && <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-red-200" aria-hidden />}
         </div>
@@ -41,6 +43,7 @@ export function renderAgendaCalendarEventContent(arg: EventContentArg, isCompact
       {compactPresentation ? (
         <div className="mt-0.5 inline-flex items-center gap-1 text-[9px] text-white/90">
           <span className="rounded-full bg-black/25 px-1.5 py-0.5 font-semibold uppercase tracking-wide">{sourceLabel === "Google" ? "G" : "L"}</span>
+          {fromChecklist && <span className="rounded-full bg-emerald-500/80 px-1.5 py-0.5 font-semibold">Checklist</span>}
           {hasConflict && <span className="rounded-full bg-red-500/85 px-1.5 py-0.5 font-semibold">C · P{Math.min(9, conflictScore)}</span>}
         </div>
       ) : (
@@ -48,6 +51,9 @@ export function renderAgendaCalendarEventContent(arg: EventContentArg, isCompact
           <div className="truncate text-white/90">{workspaceName}</div>
           <div className="mt-0.5 inline-flex flex-wrap items-center gap-1">
             <span className="rounded-full bg-black/25 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white/95">{sourceLabel}</span>
+            {fromChecklist && (
+              <span className="rounded-full bg-emerald-500/80 px-1.5 py-0.5 text-[9px] font-semibold text-white">Checklist</span>
+            )}
             {priority && (
               <span className="rounded-full bg-black/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white/95">{priority}</span>
             )}

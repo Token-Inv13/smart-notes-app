@@ -188,8 +188,9 @@ export default function NotesPage() {
       if (!q) return true;
 
       const workspaceName = n.workspaceId ? workspaceNameById.get(n.workspaceId) ?? "" : "";
+      const tagsText = Array.isArray(n.tags) ? n.tags.join(" ") : "";
       const text = normalizeText(
-        `${n.title}\n${htmlToPlainText(n.content ?? "")}\n${workspaceName}`,
+        `${n.title}\n${htmlToPlainText(n.content ?? "")}\n${workspaceName}\n${tagsText}`,
       );
       return text.includes(q);
     });
@@ -199,6 +200,12 @@ export default function NotesPage() {
     () => (archiveView === "archived" ? archivedNotesSorted.length : sortedNotes.filter((n) => n.archived !== true).length),
     [archiveView, archivedNotesSorted.length, sortedNotes],
   );
+  const hasActiveSearchOrFilters = useMemo(() => {
+    const q = debouncedSearch.trim();
+    const baselineWorkspace = workspaceId ?? "all";
+    return q.length > 0 || favoriteOnly || workspaceFilter !== baselineWorkspace;
+  }, [debouncedSearch, favoriteOnly, workspaceFilter, workspaceId]);
+  const activeSearchLabel = useMemo(() => debouncedSearch.trim().slice(0, 60), [debouncedSearch]);
   const visibleTasksCount = useMemo(
     () => tasksForCounter.filter((t) => t.archived !== true).length,
     [tasksForCounter],
@@ -236,6 +243,16 @@ export default function NotesPage() {
     },
     [pathname, router, searchParams],
   );
+
+  const resetSearchAndFilters = useCallback(() => {
+    setSearchInput("");
+    setDebouncedSearch("");
+    setFavoriteOnly(false);
+    setSortBy("updatedAt");
+    const base = workspaceId ?? "all";
+    setWorkspaceFilter(base);
+    pushWorkspaceFilterToUrl(base);
+  }, [pushWorkspaceFilterToUrl, workspaceId]);
   const tabs = (
     <div className="mb-4 max-w-full overflow-x-auto">
       <div className="inline-flex rounded-md border border-border bg-background overflow-hidden whitespace-nowrap">
@@ -309,7 +326,7 @@ export default function NotesPage() {
   return (
     <div className="space-y-4" {...workspaceTabsSwipeHandlers}>
       {workspaceId && tabs}
-      <header className="flex flex-col gap-2 mb-4">
+      <header className="mb-3 flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-xl font-semibold">Notes</h1>
           <div id="sn-create-slot" />
@@ -340,10 +357,11 @@ export default function NotesPage() {
         <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
           <div className="relative flex-1 min-w-0">
             <input
+              id="notes-search-input"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Rechercher (titre, contenu, dossier)…"
-              className="w-full border border-input rounded-md px-3 py-2 pr-10 bg-background text-sm"
+              placeholder="Rechercher (titre, texte, dossier)…"
+              className="h-9 w-full rounded-md border border-input bg-background px-3 pr-10 text-sm"
               aria-label="Rechercher dans les notes"
             />
             {searchInput.trim().length > 0 && (
@@ -362,11 +380,18 @@ export default function NotesPage() {
           <button
             type="button"
             onClick={() => setFiltersOpen(true)}
-            className="inline-flex items-center justify-center h-10 px-3 rounded-md border border-border bg-background hover:bg-accent text-sm"
+            className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-background px-3 text-sm hover:bg-accent"
           >
             Filtrer
           </button>
         </div>
+
+        {activeSearchLabel && (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span className="sn-badge">Recherche: “{activeSearchLabel}”</span>
+            <span className="sn-badge">Résultats: {visibleNotes.length}</span>
+          </div>
+        )}
 
         {filtersOpen && (
           <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Filtres notes">
@@ -507,25 +532,58 @@ export default function NotesPage() {
         {!loading && !error && archiveView === "active" && visibleNotes.length === 0 && (
           <div className="sn-empty">
             <div className="sn-empty-title">
-              {debouncedSearch || favoriteOnly ? "Aucun résultat" : "Aucune note pour le moment"}
+              {hasActiveSearchOrFilters ? "Aucun résultat" : "Aucune note pour le moment"}
             </div>
             <div className="sn-empty-desc">
-              {debouncedSearch || favoriteOnly
-                ? "Essaie d’effacer la recherche ou de réinitialiser les filtres."
+              {hasActiveSearchOrFilters
+                ? activeSearchLabel
+                  ? `Aucune note ne correspond à “${activeSearchLabel}” avec les filtres actuels.`
+                  : "Aucune note ne correspond à ta recherche ou à tes filtres actuels."
                 : "Commence simple : capture une idée, une liste ou un résumé."}
+            </div>
+            <div className="mt-3">
+              {hasActiveSearchOrFilters ? (
+                <button
+                  type="button"
+                  onClick={resetSearchAndFilters}
+                  className="inline-flex items-center justify-center h-10 px-4 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent/60"
+                >
+                  Réinitialiser les filtres
+                </button>
+              ) : (
+                <Link
+                  href={workspaceId ? `/notes/new?workspaceId=${encodeURIComponent(workspaceId)}` : "/notes/new"}
+                  className="inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 transition-opacity"
+                >
+                  Créer une note
+                </Link>
+              )}
             </div>
           </div>
         )}
         {!loading && !error && archiveView === "archived" && visibleNotes.length === 0 && (
           <div className="sn-empty">
             <div className="sn-empty-title">
-              {debouncedSearch || favoriteOnly ? "Aucun résultat" : "Aucune note archivée"}
+              {hasActiveSearchOrFilters ? "Aucun résultat" : "Aucune note archivée"}
             </div>
             <div className="sn-empty-desc">
-              {debouncedSearch || favoriteOnly
-                ? "Essaie d’effacer la recherche ou de réinitialiser les filtres."
+              {hasActiveSearchOrFilters
+                ? activeSearchLabel
+                  ? `Aucune note archivée ne correspond à “${activeSearchLabel}”.`
+                  : "Aucune note archivée ne correspond à ta recherche ou à tes filtres actuels."
                 : "Archive une note pour la retrouver ici et la restaurer plus tard."}
             </div>
+            {hasActiveSearchOrFilters && (
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={resetSearchAndFilters}
+                  className="inline-flex items-center justify-center h-10 px-4 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent/60"
+                >
+                  Réinitialiser les filtres
+                </button>
+              </div>
+            )}
           </div>
         )}
         {error && <div className="sn-alert sn-alert--error">Impossible de charger les notes pour le moment.</div>}
@@ -547,7 +605,7 @@ export default function NotesPage() {
               return (
                 <li key={note.id}>
                   <div
-                    className="sn-card sn-card--note sn-card--muted p-4 cursor-pointer"
+                    className="sn-card sn-card--note sn-card--muted p-3 cursor-pointer"
                     onClick={() => {
                       if (!note.id) return;
                       openNoteModal(note.id);
@@ -591,13 +649,13 @@ export default function NotesPage() {
               return (
                 <li key={note.id}>
                   <div
-                    className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4`}
+                    className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-3`}
                     onClick={() => {
                       if (!note.id) return;
                       openNoteModal(note.id);
                     }}
                   >
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       <div className="sn-card-header">
                         <div className="min-w-0">
                           <div className="sn-card-title truncate">{note.title}</div>

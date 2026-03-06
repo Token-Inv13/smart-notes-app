@@ -53,8 +53,28 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId) {
-  throw new Error('Missing required Firebase environment variables');
+const requiredFirebaseEnv = [
+  { name: 'NEXT_PUBLIC_FIREBASE_API_KEY', value: firebaseConfig.apiKey },
+  { name: 'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN', value: firebaseConfig.authDomain },
+  { name: 'NEXT_PUBLIC_FIREBASE_PROJECT_ID', value: firebaseConfig.projectId },
+  { name: 'NEXT_PUBLIC_FIREBASE_APP_ID', value: firebaseConfig.appId },
+  { name: 'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID', value: firebaseConfig.messagingSenderId },
+];
+
+const missingFirebaseEnv = requiredFirebaseEnv.filter((entry) => !entry.value).map((entry) => entry.name);
+if (missingFirebaseEnv.length > 0) {
+  throw new Error(`Missing required Firebase environment variables: ${missingFirebaseEnv.join(', ')}`);
+}
+
+if (firebaseConfig.authDomain && firebaseConfig.projectId) {
+  const expectedAuthDomain = `${firebaseConfig.projectId}.firebaseapp.com`;
+  if (firebaseConfig.authDomain !== expectedAuthDomain) {
+    console.warn('[firebase] authDomain/projectId mismatch detected', {
+      authDomain: firebaseConfig.authDomain,
+      projectId: firebaseConfig.projectId,
+      expectedAuthDomain,
+    });
+  }
 }
 
 const useEmulators = process.env.NEXT_PUBLIC_USE_EMULATORS === 'true';

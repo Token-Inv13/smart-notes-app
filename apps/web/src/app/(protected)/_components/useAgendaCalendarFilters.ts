@@ -4,12 +4,16 @@ import type { Priority } from "@/types/firestore";
 
 export type CalendarPriorityFilter = "" | Priority;
 export type CalendarTimeWindowFilter = "" | "allDay" | "morning" | "afternoon" | "evening";
+export type CalendarStatusFilter = "all" | "open" | "done";
 
 type CalendarFilterStorage = {
   showRecurringOnly: boolean;
   showConflictsOnly: boolean;
   priorityFilter: CalendarPriorityFilter;
   timeWindowFilter: CalendarTimeWindowFilter;
+  showClassicTasks: boolean;
+  showChecklistItems: boolean;
+  statusFilter: CalendarStatusFilter;
 };
 
 export function useAgendaCalendarFilters() {
@@ -17,6 +21,9 @@ export function useAgendaCalendarFilters() {
   const [showConflictsOnly, setShowConflictsOnly] = useState(false);
   const [priorityFilter, setPriorityFilter] = useState<CalendarPriorityFilter>("");
   const [timeWindowFilter, setTimeWindowFilter] = useState<CalendarTimeWindowFilter>("");
+  const [showClassicTasks, setShowClassicTasks] = useState(true);
+  const [showChecklistItems, setShowChecklistItems] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<CalendarStatusFilter>("all");
   const [filtersHydrated, setFiltersHydrated] = useState(false);
 
   useEffect(() => {
@@ -47,6 +54,18 @@ export function useAgendaCalendarFilters() {
       ) {
         setTimeWindowFilter(parsed.timeWindowFilter);
       }
+
+      if (typeof parsed.showClassicTasks === "boolean") {
+        setShowClassicTasks(parsed.showClassicTasks);
+      }
+
+      if (typeof parsed.showChecklistItems === "boolean") {
+        setShowChecklistItems(parsed.showChecklistItems);
+      }
+
+      if (parsed.statusFilter === "all" || parsed.statusFilter === "open" || parsed.statusFilter === "done") {
+        setStatusFilter(parsed.statusFilter);
+      }
     } catch {
       // ignore invalid persisted payload
     } finally {
@@ -62,6 +81,9 @@ export function useAgendaCalendarFilters() {
       showConflictsOnly,
       priorityFilter,
       timeWindowFilter,
+      showClassicTasks,
+      showChecklistItems,
+      statusFilter,
     };
 
     try {
@@ -69,13 +91,25 @@ export function useAgendaCalendarFilters() {
     } catch {
       // ignore storage write errors
     }
-  }, [filtersHydrated, priorityFilter, showConflictsOnly, showRecurringOnly, timeWindowFilter]);
+  }, [
+    filtersHydrated,
+    priorityFilter,
+    showChecklistItems,
+    showClassicTasks,
+    showConflictsOnly,
+    showRecurringOnly,
+    statusFilter,
+    timeWindowFilter,
+  ]);
 
   const clearFilters = useCallback(() => {
     setShowRecurringOnly(false);
     setShowConflictsOnly(false);
     setPriorityFilter("");
     setTimeWindowFilter("");
+    setShowClassicTasks(true);
+    setShowChecklistItems(true);
+    setStatusFilter("all");
   }, []);
 
   return {
@@ -87,6 +121,12 @@ export function useAgendaCalendarFilters() {
     setPriorityFilter,
     timeWindowFilter,
     setTimeWindowFilter,
+    showClassicTasks,
+    setShowClassicTasks,
+    showChecklistItems,
+    setShowChecklistItems,
+    statusFilter,
+    setStatusFilter,
     clearFilters,
   };
 }

@@ -26,6 +26,7 @@ type TaskStatus = "todo" | "doing" | "done";
 type Props = {
   initialWorkspaceId?: string;
   initialFavorite?: boolean;
+  initialStartDate?: string;
   onCreated?: () => void;
 };
 
@@ -38,7 +39,7 @@ const newTaskSchema = z.object({
   priority: z.union([z.literal("low"), z.literal("medium"), z.literal("high")]).optional(),
 });
 
-export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, onCreated }: Props) {
+export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, initialStartDate, onCreated }: Props) {
   const { data: workspaces } = useUserWorkspaces();
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === "pro";
@@ -51,7 +52,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
   const [newTitle, setNewTitle] = useState("");
   const [newStatus, setNewStatus] = useState<TaskStatus>("todo");
   const [newWorkspaceId, setNewWorkspaceId] = useState<string>(initialWorkspaceId ?? "");
-  const [newStartDate, setNewStartDate] = useState<string>("");
+  const [newStartDate, setNewStartDate] = useState<string>(initialStartDate ?? "");
   const [newDueDate, setNewDueDate] = useState<string>("");
   const [newPriority, setNewPriority] = useState<"" | NonNullable<TaskDoc["priority"]>>("");
   const [creating, setCreating] = useState(false);
@@ -69,6 +70,11 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, on
   useEffect(() => {
     setNewWorkspaceId(initialWorkspaceId ?? "");
   }, [initialWorkspaceId]);
+
+  useEffect(() => {
+    if (!initialStartDate) return;
+    setNewStartDate((prev) => prev || initialStartDate);
+  }, [initialStartDate]);
 
   useEffect(() => {
     window.requestAnimationFrame(() => {

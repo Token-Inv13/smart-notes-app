@@ -6,14 +6,12 @@ type AgendaDisplayMode = "calendar" | "planning";
 type UseAgendaCalendarNavigationParams = {
   calendarRef: RefObject<FullCalendar | null>;
   displayMode: AgendaDisplayMode;
-  openQuickDraft: () => void;
   onPlanningJump?: (action: "prev" | "next" | "today") => void;
 };
 
 export function useAgendaCalendarNavigation({
   calendarRef,
   displayMode,
-  openQuickDraft,
   onPlanningJump,
 }: UseAgendaCalendarNavigationParams) {
   const touchStartRef = useRef<{ x: number; y: number; at: number } | null>(null);
@@ -117,26 +115,6 @@ export function useAgendaCalendarNavigation({
       const isEditing = tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable;
       if (isEditing) return;
 
-      if (e.key.toLowerCase() === "n") {
-        e.preventDefault();
-        openQuickDraft();
-        return;
-      }
-
-      if (e.key === "/") {
-        e.preventDefault();
-        const searchInput = document.getElementById("tasks-search-input") as HTMLInputElement | null;
-        searchInput?.focus();
-        searchInput?.select();
-        return;
-      }
-
-      if (e.key.toLowerCase() === "t") {
-        e.preventDefault();
-        jump("today");
-        return;
-      }
-
       if (e.key === "ArrowLeft") {
         e.preventDefault();
         jump("prev");
@@ -151,7 +129,7 @@ export function useAgendaCalendarNavigation({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [jump, openQuickDraft]);
+  }, [jump]);
 
   return {
     jump,

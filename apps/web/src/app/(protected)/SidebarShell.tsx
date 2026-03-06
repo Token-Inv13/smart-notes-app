@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { PanelLeft, Menu, X } from "lucide-react";
 import SidebarWorkspaces from "./SidebarWorkspaces";
 import PwaInstallCta from "./_components/PwaInstallCta";
@@ -45,6 +45,11 @@ function toMinutes(hhmm: string, fallback: number): number {
   return h * 60 + mm;
 }
 
+function toLocalDateInputValue(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 function isWithinQuietHours(now: Date, startRaw?: string, endRaw?: string): boolean {
   const start = toMinutes(typeof startRaw === "string" ? startRaw : "22:00", 22 * 60);
   const end = toMinutes(typeof endRaw === "string" ? endRaw : "08:00", 8 * 60);
@@ -86,6 +91,7 @@ function reserveDailyNotificationBudget(suggestionId: string, maxPerDay: number)
 }
 
 export default function SidebarShell({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const workspaceId = searchParams.get("workspaceId");
@@ -133,6 +139,146 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   const isSettingsRoute = pathname.startsWith("/settings");
   const isAgendaRoute = pathname.startsWith("/tasks");
   const shouldRenderDock = !isAgendaRoute || !isTasksCalendarView;
+
+  useEffect(() => {
+    const isTypingTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return true;
+      if (target.isContentEditable) return true;
+      if (target.closest("[contenteditable='true']")) return true;
+      if (target.closest("[role='textbox']")) return true;
+      if (target.closest(".ProseMirror,.tiptap,.ql-editor,.cm-editor")) return true;
+      return false;
+    };
+
+    const focusSearchForActiveView = () => {
+      const focusAndSelect = (el: HTMLElement | null) => {
+        if (!el) return false;
+        el.focus();
+        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+          el.select();
+        }
+        return true;
+      };
+
+      if (pathname.startsWith("/notes")) {
+        return focusAndSelect(document.getElementById("notes-search-input") as HTMLElement | null);
+      }
+
+      if (pathname.startsWith("/tasks")) {
+        const existing = document.getElementById("tasks-search-input") as HTMLElement | null;
+        if (focusAndSelect(existing)) return true;
+
+        const toggle = document.getElementById("tasks-search-toggle");
+        if (toggle instanceof HTMLButtonElement) {
+          toggle.click();
+          window.setTimeout(() => {
+            focusAndSelect(document.getElementById("tasks-search-input") as HTMLElement | null);
+          }, 0);
+          return true;
+        }
+        return false;
+      }
+
+      if (pathname.startsWith("/todo")) {
+        return focusAndSelect(document.getElementById("todo-search-input") as HTMLElement | null);
+      }
+
+      return false;
+    };
+
+    const buildCreateHref = (kind: "note" | "task" | "checklist") => {
+      const qs = new URLSearchParams();
+      const workspaceId = searchParams.get("workspaceId");
+      if (workspaceId) qs.set("workspaceId", workspaceId);
+      if (pathname === "/dashboard") qs.set("favorite", "1");
+      if (kind === "task" && pathname.startsWith("/tasks")) {
+        qs.set("startDate", toLocalDateInputValue(new Date()));
+      }
+
+      const base =
+        kind === "note" ? "/notes/new" : kind === "task" ? "/tasks/new" : "/todo/new";
+      const suffix = qs.toString();
+      return suffix ? `${base}?${suffix}` : base;
+    };
+
+    const buildSectionHref = (section: "notes" | "agenda" | "checklist") => {
+      const qs = new URLSearchParams();
+      const workspaceId = searchParams.get("workspaceId");
+      if (workspaceId) qs.set("workspaceId", workspaceId);
+      const base = section === "notes" ? "/notes" : section === "agenda" ? "/tasks" : "/todo";
+      const suffix = qs.toString();
+      return suffix ? `${base}?${suffix}` : base;
+    };
+
+    const goPrefixRef = { at: 0 };
+    const GO_WINDOW_MS = 1200;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (isTypingTarget(e.target)) return;
+      if (document.querySelector("[aria-modal='true']")) return;
+
+      const key = e.key.toLowerCase();
+      const now = Date.now();
+      const inGoWindow = goPrefixRef.at > 0 && now - goPrefixRef.at <= GO_WINDOW_MS;
+
+      if (inGoWindow) {
+        goPrefixRef.at = 0;
+        if (key === "n") {
+          e.preventDefault();
+          router.push(buildSectionHref("notes"));
+          return;
+        }
+        if (key === "a") {
+          e.preventDefault();
+          router.push(buildSectionHref("agenda"));
+          return;
+        }
+        if (key === "c") {
+          e.preventDefault();
+          router.push(buildSectionHref("checklist"));
+          return;
+        }
+      }
+
+      if (key === "g") {
+        goPrefixRef.at = now;
+        e.preventDefault();
+        return;
+      }
+
+      if (key === "n") {
+        e.preventDefault();
+        router.push(buildCreateHref("note"));
+        return;
+      }
+
+      if (key === "t") {
+        e.preventDefault();
+        router.push(buildCreateHref("task"));
+        return;
+      }
+
+      if (key === "c") {
+        e.preventDefault();
+        router.push(buildCreateHref("checklist"));
+        return;
+      }
+
+      if (key === "/") {
+        const focused = focusSearchForActiveView();
+        if (focused) {
+          e.preventDefault();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [pathname, router, searchParams]);
 
   useEffect(() => {
     if (!mobileOpen) return;

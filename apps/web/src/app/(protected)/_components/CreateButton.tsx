@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
-
-type CreateContext = "notes" | "tasks";
 
 type Props = {
   mobileHidden?: boolean;
@@ -17,10 +15,13 @@ type Props = {
   }) => ReactNode;
 };
 
-function getCreateContext(pathname: string): CreateContext {
-  if (pathname.startsWith("/notes")) return "notes";
-  if (pathname.startsWith("/tasks")) return "tasks";
-  return "notes";
+function toLocalDateInputValue(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function isMainCreationView(pathname: string) {
+  return pathname === "/dashboard" || pathname === "/notes" || pathname === "/tasks" || pathname === "/todo";
 }
 
 export default function CreateButton({ mobileHidden, renderCustomTrigger }: Props) {
@@ -28,58 +29,17 @@ export default function CreateButton({ mobileHidden, renderCustomTrigger }: Prop
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const [desktopSlot, setDesktopSlot] = useState<HTMLElement | null>(null);
   const [favoritesPickerOpen, setFavoritesPickerOpen] = useState(false);
 
-  const context = useMemo(() => getCreateContext(pathname), [pathname]);
-
-  const shouldHide = useMemo(() => {
+  const shouldHide = (() => {
     if (pathname.startsWith("/notes/new") || pathname.startsWith("/tasks/new") || pathname.startsWith("/todo/new")) return true;
     if (pathname.startsWith("/settings")) return true;
     if (pathname.startsWith("/upgrade")) return true;
     return false;
-  }, [pathname]);
-
-  const getDashboardSlideIndex = () => {
-    if (typeof document === "undefined") return null;
-    const el = document.getElementById("sn-create-slot");
-    const raw = el?.getAttribute("data-dashboard-slide-index");
-    if (raw === "0" || raw === "1" || raw === "2") return Number(raw) as 0 | 1 | 2;
-    return null;
-  };
+  })();
 
   const handleClick = () => {
-    if (pathname === "/dashboard") {
-      const idx = getDashboardSlideIndex();
-      const workspaceId = searchParams.get("workspaceId");
-
-      if (idx === 0) {
-        const qs = new URLSearchParams();
-        if (workspaceId) qs.set("workspaceId", workspaceId);
-        qs.set("favorite", "1");
-        const href = qs.toString();
-        router.push(href ? `/todo/new?${href}` : "/todo/new");
-        return;
-      }
-
-      if (idx === 1) {
-        const qs = new URLSearchParams();
-        if (workspaceId) qs.set("workspaceId", workspaceId);
-        qs.set("favorite", "1");
-        const href = qs.toString();
-        router.push(href ? `/notes/new?${href}` : "/notes/new");
-        return;
-      }
-
-      if (idx === 2) {
-        const qs = new URLSearchParams();
-        if (workspaceId) qs.set("workspaceId", workspaceId);
-        qs.set("favorite", "1");
-        const href = qs.toString();
-        router.push(href ? `/tasks/new?${href}` : "/tasks/new");
-        return;
-      }
-
+    if (isMainCreationView(pathname)) {
       setFavoritesPickerOpen(true);
       return;
     }
@@ -94,9 +54,10 @@ export default function CreateButton({ mobileHidden, renderCustomTrigger }: Prop
     }
 
     const workspaceId = searchParams.get("workspaceId");
-    const hrefBase = context === "notes" ? "/notes/new" : "/tasks/new";
-    const href = workspaceId ? `${hrefBase}?workspaceId=${encodeURIComponent(workspaceId)}` : hrefBase;
-    router.push(href);
+    const qs = new URLSearchParams();
+    if (workspaceId) qs.set("workspaceId", workspaceId);
+    const href = qs.toString();
+    router.push(href ? `/notes/new?${href}` : "/notes/new");
   };
 
   const favoritesPicker = favoritesPickerOpen ? (
@@ -123,12 +84,12 @@ export default function CreateButton({ mobileHidden, renderCustomTrigger }: Prop
               setFavoritesPickerOpen(false);
               const qs = new URLSearchParams();
               if (workspaceId) qs.set("workspaceId", workspaceId);
-              qs.set("favorite", "1");
+              if (pathname === "/dashboard") qs.set("favorite", "1");
               const href = qs.toString();
               router.push(href ? `/notes/new?${href}` : "/notes/new");
             }}
           >
-            Note
+            Nouvelle note
           </button>
 
           <button
@@ -139,12 +100,15 @@ export default function CreateButton({ mobileHidden, renderCustomTrigger }: Prop
               setFavoritesPickerOpen(false);
               const qs = new URLSearchParams();
               if (workspaceId) qs.set("workspaceId", workspaceId);
-              qs.set("favorite", "1");
+              if (pathname === "/dashboard") qs.set("favorite", "1");
+              if (pathname.startsWith("/tasks")) {
+                qs.set("startDate", toLocalDateInputValue(new Date()));
+              }
               const href = qs.toString();
               router.push(href ? `/tasks/new?${href}` : "/tasks/new");
             }}
           >
-            Agenda
+            Nouvelle tâche
           </button>
 
           <button
@@ -155,12 +119,12 @@ export default function CreateButton({ mobileHidden, renderCustomTrigger }: Prop
               setFavoritesPickerOpen(false);
               const qs = new URLSearchParams();
               if (workspaceId) qs.set("workspaceId", workspaceId);
-              qs.set("favorite", "1");
+              if (pathname === "/dashboard") qs.set("favorite", "1");
               const href = qs.toString();
               router.push(href ? `/todo/new?${href}` : "/todo/new");
             }}
           >
-            Checklist
+            Nouvelle checklist
           </button>
         </div>
 
@@ -209,13 +173,10 @@ export default function CreateButton({ mobileHidden, renderCustomTrigger }: Prop
     </div>
   );
 
-  // If a page provides a header slot, render the desktop button inside it (no floating on desktop).
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    const el = document.getElementById("sn-create-slot");
-    setDesktopSlot(el);
-  }, [pathname]);
-
+  const desktopSlot = (() => {
+    if (typeof document === "undefined") return null;
+    return document.getElementById("sn-create-slot");
+  })();
   const canPortal = !!desktopSlot && desktopSlot.isConnected;
 
   if (shouldHide) return null;

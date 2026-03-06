@@ -583,7 +583,14 @@ export default function TasksPage() {
     if (q) {
       result = result.filter((task) => {
         const workspaceName = task.workspaceId ? workspaceNameById.get(task.workspaceId) ?? "" : "";
-        const text = normalizeText(`${task.title}\n${task.description ?? ""}\n${workspaceName}`);
+        const status = statusForTask(task);
+        const priority = task.priority ? priorityLabel(task.priority) : "";
+        const startLabel = formatStartDate(task.startDate ?? null);
+        const dueLabel = formatDueDate(task.dueDate ?? null);
+        const sourceLabel = task.sourceType === "checklist_item" ? "checklist" : "tache";
+        const text = normalizeText(
+          `${task.title}\n${task.description ?? ""}\n${workspaceName}\n${statusLabel(status)}\n${priority}\n${startLabel}\n${dueLabel}\n${sourceLabel}`,
+        );
         return text.includes(q);
       });
     }
@@ -696,6 +703,7 @@ export default function TasksPage() {
       workspaceFilter !== "all"
     );
   }, [debouncedSearch, dueFilter, priorityFilter, statusFilter, workspaceFilter]);
+  const activeSearchLabel = useMemo(() => debouncedSearch.trim().slice(0, 60), [debouncedSearch]);
 
   const visibleTasksCount = useMemo(
     () => activeTasks.length + completedTasks.length,
@@ -1041,6 +1049,13 @@ export default function TasksPage() {
           />
         </div>
 
+        {activeSearchLabel && (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span className="sn-badge">Recherche: “{activeSearchLabel}”</span>
+            <span className="sn-badge">Résultats: {filteredTasks.length}</span>
+          </div>
+        )}
+
         {filtersOpen && (
           <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Filtres agenda">
             <button
@@ -1249,9 +1264,30 @@ export default function TasksPage() {
         <div className="sn-empty sn-empty--premium sn-animate-in">
           <div className="sn-empty-title">{hasActiveSearchOrFilters ? "Aucun résultat" : "Aucun élément d’agenda pour le moment"}</div>
           <div className="sn-empty-desc">
-            {hasActiveSearchOrFilters ? "Essaie d’effacer la recherche ou de réinitialiser les filtres." : "Commence par ajouter un élément à l’agenda."}
+            {hasActiveSearchOrFilters
+              ? activeSearchLabel
+                ? `Aucun élément ne correspond à “${activeSearchLabel}” avec les filtres actuels.`
+                : "Aucun élément ne correspond à ta recherche ou à tes filtres actuels."
+              : "Commence par ajouter un élément à l’agenda."}
           </div>
-          {!hasActiveSearchOrFilters && (
+          {hasActiveSearchOrFilters ? (
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilter("all");
+                  setPriorityFilter("all");
+                  setDueFilter("all");
+                  setSearchInput("");
+                  setDebouncedSearch("");
+                  setWorkspaceFilter((workspaceIdParam ?? "all") as WorkspaceFilter);
+                }}
+                className="inline-flex items-center justify-center h-10 px-4 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent/60"
+              >
+                Réinitialiser les filtres
+              </button>
+            </div>
+          ) : (
             <div className="mt-3">
               <button
                 type="button"

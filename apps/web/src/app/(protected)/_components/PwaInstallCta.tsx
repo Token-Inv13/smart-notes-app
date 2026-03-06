@@ -48,8 +48,8 @@ export default function PwaInstallCta() {
   const installed = useMemo(() => isStandaloneDisplayMode(), []);
   const ios = useMemo(() => isIosDevice(), []);
 
-  const shouldShow = !installed && !dismissed;
   const canPromptInstall = !!deferred;
+  const shouldShow = !installed && !dismissed && canPromptInstall;
 
   const dismiss = () => {
     setDismissed(true);
@@ -75,7 +75,7 @@ export default function PwaInstallCta() {
 
   return (
     <div className="sn-card sn-card--muted p-3 mb-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-sm font-semibold">📲 Installer Smart Notes</div>
           <div className="text-sm text-muted-foreground">
@@ -89,16 +89,25 @@ export default function PwaInstallCta() {
           )}
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          {canPromptInstall && (
-            <button type="button" onClick={onInstall} className="sn-text-btn">
-              Installer
-            </button>
-          )}
-          <button type="button" onClick={dismiss} className="sn-text-btn">
-            Plus tard
+        <button
+          type="button"
+          onClick={dismiss}
+          aria-label="Masquer le bandeau d'installation"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          ×
+        </button>
+      </div>
+
+      <div className="mt-2 flex items-center gap-2">
+        {canPromptInstall && (
+          <button type="button" onClick={onInstall} className="sn-text-btn">
+            Installer
           </button>
-        </div>
+        )}
+        <button type="button" onClick={dismiss} className="sn-text-btn">
+          Plus tard
+        </button>
       </div>
     </div>
   );

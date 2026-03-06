@@ -7,6 +7,7 @@ export default function NewTaskPage() {
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId") || undefined;
   const initialFavorite = searchParams.get("favorite") === "1";
+  const initialStartDate = searchParams.get("startDate") || undefined;
 
   return (
     <div className="space-y-4">
@@ -16,7 +17,11 @@ export default function NewTaskPage() {
       </header>
 
       <section className="border border-border rounded-lg bg-card p-4">
-        <TaskCreateForm initialWorkspaceId={workspaceId} initialFavorite={initialFavorite} />
+        <TaskCreateForm
+          initialWorkspaceId={workspaceId}
+          initialFavorite={initialFavorite}
+          initialStartDate={initialStartDate}
+        />
       </section>
     </div>
   );

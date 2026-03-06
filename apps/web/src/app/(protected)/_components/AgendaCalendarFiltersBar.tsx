@@ -1,15 +1,21 @@
 "use client";
 
 import type { Priority } from "@/types/firestore";
-import type { CalendarTimeWindowFilter } from "./useAgendaCalendarFilters";
+import type { CalendarStatusFilter, CalendarTimeWindowFilter } from "./useAgendaCalendarFilters";
 
 type AgendaCalendarFiltersBarProps = {
   showRecurringOnly: boolean;
   showConflictsOnly: boolean;
   priorityFilter: "" | Priority;
   timeWindowFilter: CalendarTimeWindowFilter;
+  showClassicTasks: boolean;
+  showChecklistItems: boolean;
+  statusFilter: CalendarStatusFilter;
   onToggleRecurringOnly: () => void;
   onToggleConflictsOnly: () => void;
+  onToggleClassicTasks: () => void;
+  onToggleChecklistItems: () => void;
+  onStatusFilterChange: (value: CalendarStatusFilter) => void;
   onPriorityFilterChange: (value: "" | Priority) => void;
   onTimeWindowFilterChange: (value: CalendarTimeWindowFilter) => void;
   onReset: () => void;
@@ -20,14 +26,64 @@ export default function AgendaCalendarFiltersBar({
   showConflictsOnly,
   priorityFilter,
   timeWindowFilter,
+  showClassicTasks,
+  showChecklistItems,
+  statusFilter,
   onToggleRecurringOnly,
   onToggleConflictsOnly,
+  onToggleClassicTasks,
+  onToggleChecklistItems,
+  onStatusFilterChange,
   onPriorityFilterChange,
   onTimeWindowFilterChange,
   onReset,
 }: AgendaCalendarFiltersBarProps) {
   return (
     <div className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={onToggleClassicTasks}
+        className={`h-8 px-3 rounded-md border text-xs ${showClassicTasks ? "border-primary bg-accent" : "border-border bg-background"}`}
+        aria-pressed={showClassicTasks}
+      >
+        Tâches
+      </button>
+      <button
+        type="button"
+        onClick={onToggleChecklistItems}
+        className={`h-8 px-3 rounded-md border text-xs ${showChecklistItems ? "border-primary bg-accent" : "border-border bg-background"}`}
+        aria-pressed={showChecklistItems}
+      >
+        Checklist
+      </button>
+
+      <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
+        <button
+          type="button"
+          onClick={() => onStatusFilterChange("all")}
+          className={`h-8 px-3 text-xs ${statusFilter === "all" ? "bg-accent font-medium" : "hover:bg-accent/60"}`}
+          aria-pressed={statusFilter === "all"}
+        >
+          Toutes
+        </button>
+        <button
+          type="button"
+          onClick={() => onStatusFilterChange("open")}
+          className={`h-8 px-3 text-xs border-l border-border ${statusFilter === "open" ? "bg-accent font-medium" : "hover:bg-accent/60"}`}
+          aria-pressed={statusFilter === "open"}
+        >
+          Non terminées
+        </button>
+        <button
+          type="button"
+          onClick={() => onStatusFilterChange("done")}
+          className={`h-8 px-3 text-xs border-l border-border ${statusFilter === "done" ? "bg-accent font-medium" : "hover:bg-accent/60"}`}
+          aria-pressed={statusFilter === "done"}
+        >
+          Terminées
+        </button>
+      </div>
+
       <button
         type="button"
         onClick={onToggleRecurringOnly}
@@ -76,7 +132,13 @@ export default function AgendaCalendarFiltersBar({
         <option value="evening">Soir</option>
       </select>
 
-      {(showRecurringOnly || showConflictsOnly || priorityFilter || timeWindowFilter) && (
+      {(showRecurringOnly ||
+        showConflictsOnly ||
+        priorityFilter ||
+        timeWindowFilter ||
+        !showClassicTasks ||
+        !showChecklistItems ||
+        statusFilter !== "all") && (
         <button
           type="button"
           onClick={onReset}
