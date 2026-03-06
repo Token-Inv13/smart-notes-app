@@ -11,6 +11,10 @@ Monorepo avec :
 - Node.js 20
 - pnpm
 
+Recommandé pour aligner la version locale:
+
+- `nvm use` (lit `/.nvmrc`, actuellement `20`)
+
 ## Commandes (depuis la racine)
 
 - **Développement web** : `pnpm dev`
@@ -93,15 +97,11 @@ Un modèle local est disponible dans `apps/web/.env.example`.
 
 ## Sécurité des variables d'environnement
 
-- Les fichiers de secrets à la racine (`/.env`, `/.env.*`) sont ignorés par Git.
-- Ne jamais committer de secrets dans le repository.
-- Vérification dédiée: `pnpm audit:env-secrets` (à exécuter en CI).
-- Setup local:
-  1. Copier le template: `cp .env.example .env` (ou `Copy-Item .env.example .env` sous PowerShell).
-  2. Remplir `.env` avec vos valeurs locales.
-- Configuration production:
-  - Variables Web/SSR à configurer dans **Vercel Project Settings > Environment Variables**.
-  - Variables Firebase Functions à configurer dans l’environnement Firebase (console/secret manager) avant déploiement.
+- Local Next.js (`apps/web`): utiliser `apps/web/.env.local` (non versionné).
+- Production/Preview: configurer les variables dans **Vercel Project Settings > Environment Variables**.
+- Le fichier `/.env` racine est **legacy** et n'est pas la source de vérité pour `apps/web`.
+- Ne pas mélanger les sources (`/.env` racine + `apps/web/.env.local` + Vercel) pour éviter les ambiguïtés.
+- Variables Firebase Admin: privilégier une seule stratégie (`FIREBASE_ADMIN_JSON`) côté serveur.
 
 ## Observabilité (PR-1)
 
