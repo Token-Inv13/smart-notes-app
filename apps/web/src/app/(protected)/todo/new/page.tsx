@@ -7,6 +7,7 @@ export default function NewTodoPage() {
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId") || undefined;
   const initialFavorite = searchParams.get("favorite") === "1";
+  const initialTitle = searchParams.get("title") || undefined;
 
   return (
     <div className="space-y-4">
@@ -16,7 +17,7 @@ export default function NewTodoPage() {
       </header>
 
       <section className="border border-border rounded-lg bg-card p-4">
-        <TodoCreateForm initialWorkspaceId={workspaceId} initialFavorite={initialFavorite} showActions />
+        <TodoCreateForm initialWorkspaceId={workspaceId} initialFavorite={initialFavorite} initialTitle={initialTitle} showActions />
       </section>
     </div>
   );

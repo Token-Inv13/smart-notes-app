@@ -107,8 +107,6 @@ export default function DashboardPage() {
   const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
   const { data: favoriteTodos } = useUserTodos({ workspaceId, completed: false, favoriteOnly: true });
   const { data: dashboardTasks } = useUserTasks({ workspaceId, limit: 300 });
-  const { data: dashboardTodos } = useUserTodos({ workspaceId, limit: 200 });
-  const { data: dashboardNotes } = useUserNotes({ workspaceId, limit: 40 });
 
   const { data: workspaces } = useUserWorkspaces();
 
@@ -148,7 +146,6 @@ export default function DashboardPage() {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
     const tomorrowStart = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
-    const recentWindowStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
     const activeTasksBase = dashboardTasks.filter((task) => {
       const status = task.status ?? 'todo';
@@ -179,34 +176,12 @@ export default function DashboardPage() {
       }
     }
 
-    const activeChecklists = dashboardTodos.filter((todo) => todo.archived !== true && todo.completed !== true);
-    const checklistOpenItems = activeChecklists.reduce((acc, todo) => {
-      const openItems = (todo.items ?? []).reduce((itemAcc, item) => (item.done === true ? itemAcc : itemAcc + 1), 0);
-      return acc + openItems;
-    }, 0);
-
-    const activeNotes = dashboardNotes.filter((note) => note.archived !== true);
-    const recentNotes = activeNotes
-      .filter((note) => {
-        const updatedAtMs = readTimestampMs(note.updatedAt);
-        return updatedAtMs != null && updatedAtMs >= recentWindowStart.getTime();
-      })
-      .sort((a, b) => {
-        const aMs = readTimestampMs(a.updatedAt) ?? 0;
-        const bMs = readTimestampMs(b.updatedAt) ?? 0;
-        return bMs - aMs;
-      });
-
     return {
       tasksToday,
       overdueTasks,
       checklistPlannedToday,
-      activeChecklists: activeChecklists.length,
-      checklistOpenItems,
-      recentNotesCount: recentNotes.length,
-      recentNotesTop: recentNotes.slice(0, 3),
     };
-  }, [dashboardNotes, dashboardTasks, dashboardTodos]);
+  }, [dashboardTasks]);
 
   const slidesContainerRef = useRef<HTMLDivElement | null>(null);
   const slideRefs = useRef<Array<HTMLDivElement | null>>([]);
@@ -437,56 +412,25 @@ export default function DashboardPage() {
         <div id="sn-create-slot" data-dashboard-slide-index={activeSlideIndex} />
       </header>
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <div className="sn-card p-4 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold">Aujourd’hui</h2>
-            <Link href={tasksCalendarHref} className="sn-text-btn text-xs">
-              Voir l’agenda
-            </Link>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs">
+      <section className="sn-card p-3 md:p-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="inline-flex items-center gap-2 text-sm">
+            <span className="font-semibold">Aujourd’hui</span>
             <span className="sn-badge">Prévues: {dashboardSummary.tasksToday}</span>
             <span className="sn-badge">En retard: {dashboardSummary.overdueTasks}</span>
-            {dashboardSummary.checklistPlannedToday > 0 && (
-              <span className="sn-badge">Checklist planifiées: {dashboardSummary.checklistPlannedToday}</span>
-            )}
           </div>
+          <Link href={tasksCalendarHref} className="sn-text-btn text-xs">
+            Voir l’agenda
+          </Link>
         </div>
-
-        <div className="sn-card p-4 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold">Checklists</h2>
-            <Link href={`/todo${suffix}`} className="sn-text-btn text-xs">
-              Voir les checklists
-            </Link>
+        <details className="mt-2">
+          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+            Détails
+          </summary>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            <span className="sn-badge">Checklist planifiées: {dashboardSummary.checklistPlannedToday}</span>
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="sn-badge">Actives: {dashboardSummary.activeChecklists}</span>
-            <span className="sn-badge">Items restants: {dashboardSummary.checklistOpenItems}</span>
-          </div>
-        </div>
-
-        <div className="sn-card p-4 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold">Notes</h2>
-            <Link href={`/notes${suffix}`} className="sn-text-btn text-xs">
-              Voir les notes
-            </Link>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="sn-badge">Récentes (7j): {dashboardSummary.recentNotesCount}</span>
-          </div>
-          {dashboardSummary.recentNotesTop.length > 0 && (
-            <ul className="space-y-1">
-              {dashboardSummary.recentNotesTop.map((note) => (
-                <li key={note.id ?? note.title} className="text-xs text-muted-foreground truncate">
-                  {note.title}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        </details>
       </section>
 
       <div className="sticky top-0 z-10 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">

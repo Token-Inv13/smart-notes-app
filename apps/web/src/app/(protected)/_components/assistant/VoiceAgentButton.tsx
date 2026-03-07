@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useRouter, useSearchParams } from "next/navigation";
 import { httpsCallable } from "firebase/functions";
 import { doc, onSnapshot } from "firebase/firestore";
 import { ref as storageRef, uploadBytes } from "firebase/storage";
@@ -39,6 +40,23 @@ type ExecuteIntentResponse = {
 };
 
 type VoiceFlowStep = "idle" | "listening" | "uploading" | "transcribing" | "review" | "clarify" | "executing" | "done" | "error";
+type LocalVoiceActionPlan = {
+  kind: "note" | "task" | "checklist" | "search" | "navigation" | "unknown";
+  payload: string;
+  typeLabel: string;
+  proposedAction: string;
+  detectedDateLabel: string | null;
+  startDate: string | null;
+  executable: boolean;
+};
+
+type LocalIntentKind = "note" | "task" | "checklist" | "search" | "navigation" | "unknown";
+
+type LocalTemporalMatch = {
+  label: string;
+};
+
+type LocalVoiceIntentKind = "note" | "task" | "checklist" | "search" | "navigation" | "unknown";
 
 function mapMicrophoneAccessError(err: unknown): string {
   if (err instanceof DOMException) {
@@ -84,7 +102,179 @@ function mapMicrophoneAccessError(err: unknown): string {
   return "Impossible d’accéder au micro.";
 }
 
+function normalizeVoiceText(raw: string) {
+  return raw
+    .toLowerCase()
+    .replace(/[’]/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanIntentPayload(raw: string | undefined) {
+  if (!raw) return "";
+  return raw.replace(/^[:\s-]+/, "").trim();
+}
+
+function parseTaskTemporalLabel(rawText: string): LocalTemporalMatch | null {
+  const text = normalizeVoiceText(rawText);
+  if (!text) return null;
+
+  const timeMatch =
+    /\b(?:a|à|vers)\s+([01]?\d|2[0-3])h(?:([0-5]\d))?\b/i.exec(text) ??
+    /\b([01]?\d|2[0-3])h(?:([0-5]\d))\b/i.exec(text);
+
+  const parsedHour = timeMatch?.[1] != null ? Number(timeMatch[1]) : null;
+  const parsedMinute = timeMatch?.[2] != null ? Number(timeMatch[2]) : 0;
+  const hasTime = parsedHour != null && Number.isFinite(parsedHour) && parsedMinute != null && Number.isFinite(parsedMinute);
+  const timeLabel = hasTime
+    ? `${String(parsedHour).padStart(2, "0")}:${String(parsedMinute).padStart(2, "0")}`
+    : null;
+
+  if (text.includes("ce soir")) {
+    return {
+      label: `ce soir${timeLabel ? `, ${timeLabel}` : ", 20:00"}`,
+    };
+  }
+
+  if (text.includes("aujourd'hui") || text.includes("aujourdhui")) {
+    if (!timeLabel) return { label: "aujourd’hui" };
+    return { label: `aujourd’hui, ${timeLabel}` };
+  }
+
+  if (text.includes("demain")) {
+    if (!timeLabel) return { label: "demain" };
+    return { label: `demain, ${timeLabel}` };
+  }
+
+  const weekdays: Array<{ key: string; label: string }> = [
+    { key: "lundi", label: "lundi" },
+    { key: "mardi", label: "mardi" },
+    { key: "mercredi", label: "mercredi" },
+    { key: "jeudi", label: "jeudi" },
+    { key: "vendredi", label: "vendredi" },
+    { key: "samedi", label: "samedi" },
+    { key: "dimanche", label: "dimanche" },
+  ];
+
+  const day = weekdays.find((w) => new RegExp(`\\b${w.key}\\b`, "i").test(text));
+  if (day) {
+    if (!timeLabel) return { label: day.label };
+    return { label: `${day.label}, ${timeLabel}` };
+  }
+
+  return null;
+}
+
+function normalizeVoiceTranscript(raw: string) {
+  return raw
+    .toLowerCase()
+    .replace(/[’]/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanVoicePayload(raw: string | undefined) {
+  if (!raw) return "";
+  return raw.replace(/^[:\s-]+/, "").trim();
+}
+
+function detectLocalVoiceIntent(rawTranscript: string): {
+  kind: LocalVoiceIntentKind;
+  label: string;
+  payload: string;
+} {
+  const raw = rawTranscript.trim();
+  if (!raw) {
+    return { kind: "unknown", label: "Commande non reconnue", payload: "" };
+  }
+
+  const normalized = normalizeVoiceTranscript(raw);
+
+  const noteMatch =
+    /^(?:cr[eé]e(?:r)?|ajoute|note(?:\s+que)?)\s+(?:une?\s+)?note\b[:\s-]*(.*)$/i.exec(raw) ??
+    /^(?:cr[eé]e(?:r)?|ajoute|note(?:\s+que)?)\s+(?:une?\s+)?note\b[:\s-]*(.*)$/i.exec(normalized);
+  if (noteMatch) {
+    return {
+      kind: "note",
+      label: "Créer une note",
+      payload: cleanVoicePayload(noteMatch[1]),
+    };
+  }
+
+  const checklistMatch =
+    /^(?:cr[eé]e(?:r)?|ajoute|fais)\s+(?:une?\s+)?checklist\b[:\s-]*(.*)$/i.exec(raw) ??
+    /^(?:cr[eé]e(?:r)?|ajoute|fais)\s+(?:une?\s+)?checklist\b[:\s-]*(.*)$/i.exec(normalized);
+  if (checklistMatch) {
+    return {
+      kind: "checklist",
+      label: "Créer une checklist",
+      payload: cleanVoicePayload(checklistMatch[1]),
+    };
+  }
+
+  const taskMatch =
+    /^(?:ajoute|cr[eé]e(?:r)?)\s+(?:une?\s+)?t[âa]che\b[:\s-]*(.*)$/i.exec(raw) ??
+    /^rappelle[-\s]?moi\b[:\s-]*(.*)$/i.exec(raw) ??
+    /^(?:ajoute|mets?)\s+dans\s+l['’]?agenda\b[:\s-]*(.*)$/i.exec(raw) ??
+    /^(?:ajoute|cr[eé]e(?:r)?)\s+(?:une?\s+)?t[âa]che\b[:\s-]*(.*)$/i.exec(normalized) ??
+    /^rappelle[-\s]?moi\b[:\s-]*(.*)$/i.exec(normalized) ??
+    /^(?:ajoute|mets?)\s+dans\s+l['']?agenda\b[:\s-]*(.*)$/i.exec(normalized);
+  if (taskMatch) {
+    return {
+      kind: "task",
+      label: "Créer un élément d’agenda",
+      payload: cleanVoicePayload(taskMatch[1]),
+    };
+  }
+
+  const searchMatch =
+    /^(?:cherche|trouve|recherche)\b[:\s-]*(.*)$/i.exec(raw) ??
+    /^(?:cherche|trouve|recherche)\b[:\s-]*(.*)$/i.exec(normalized);
+  if (searchMatch) {
+    return {
+      kind: "search",
+      label: "Lancer une recherche",
+      payload: cleanVoicePayload(searchMatch[1]),
+    };
+  }
+
+  const navMatch =
+    /^(?:ouvre|va\s+(?:dans|au|a|à|sur))\s+(?:l['’]|la\s+|le\s+)?(agenda|notes?|checklist|dashboard)\b[:\s-]*(.*)$/i.exec(raw) ??
+    /^(?:ouvre|va\s+(?:dans|au|a|à|sur))\s+(?:l['']|la\s+|le\s+)?(agenda|notes?|checklist|dashboard)\b[:\s-]*(.*)$/i.exec(normalized);
+  if (navMatch) {
+    const targetRaw = (navMatch[1] ?? "").toLowerCase();
+    const targetLabel =
+      targetRaw === "agenda"
+        ? "Agenda"
+        : targetRaw.startsWith("note")
+          ? "Notes"
+          : targetRaw === "checklist"
+            ? "Checklist"
+            : "Dashboard";
+    return {
+      kind: "navigation",
+      label: `Naviguer vers ${targetLabel}`,
+      payload: cleanVoicePayload(navMatch[2]),
+    };
+  }
+
+  return { kind: "unknown", label: "Commande non reconnue", payload: "" };
+}
+
+function buildLocalIntentPreview(intent: { kind: LocalVoiceIntentKind; label: string; payload: string }) {
+  if (intent.kind === "unknown") {
+    return "Commande non reconnue pour l’instant. Reformule plus simplement (ex: “crée une note …”).";
+  }
+  if (intent.payload) {
+    return `${intent.label} — “${intent.payload}”`;
+  }
+  return intent.label;
+}
+
 export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: Props) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const workspaceId = searchParams.get("workspaceId") || "";
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [flowStep, setFlowStep] = useState<VoiceFlowStep>("idle");
@@ -95,6 +285,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ExecuteIntentResponse | null>(null);
   const [localPreviewHint, setLocalPreviewHint] = useState<string | null>(null);
+  const [localActionPlan, setLocalActionPlan] = useState<LocalVoiceActionPlan | null>(null);
   const [clarificationSubmitting, setClarificationSubmitting] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [resultId, setResultId] = useState<string | null>(null);
@@ -120,58 +311,6 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
   const silenceAutoStopMs = 1000;
   const noVoiceAutoStopMs = 7000;
   const maxBytes = 25 * 1024 * 1024;
-
-  const buildLocalIntentPreview = (text: string): string | null => {
-    const raw = text.trim();
-    if (!raw) return null;
-    const lower = raw.toLowerCase();
-    const hasMeeting =
-      lower.includes("réunion") ||
-      lower.includes("reunion") ||
-      lower.includes("meeting") ||
-      lower.includes("rdv") ||
-      lower.includes("rendez-vous") ||
-      lower.includes("agenda") ||
-      lower.includes("calendrier");
-    if (hasMeeting) {
-      return "Pré-analyse rapide: demande de réunion détectée.";
-    }
-
-    const hasReminder =
-      lower.includes("rappel") ||
-      lower.includes("rappelle") ||
-      lower.includes("souviens") ||
-      lower.includes("n'oublie") ||
-      lower.includes("n oublie");
-    if (hasReminder) {
-      return "Pré-analyse rapide: rappel détecté.";
-    }
-
-    const hasTodoKeyword =
-      lower.includes("todo") ||
-      lower.includes("to-do") ||
-      lower.includes("checklist") ||
-      lower.includes("à faire") ||
-      lower.includes("a faire") ||
-      lower.includes("liste");
-    const hasTaskKeyword =
-      lower.includes("tâche") ||
-      lower.includes("tache") ||
-      lower.includes("task") ||
-      lower.includes("projet") ||
-      lower.includes("deadline") ||
-      lower.includes("échéance") ||
-      lower.includes("echeance");
-    const words = raw.split(/\s+/).filter(Boolean);
-    const shortActionLike = words.length > 0 && words.length <= 5;
-    const hasScheduleSignal = /\b(demain|ce soir|ce matin|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b/i.test(lower);
-
-    if (hasTodoKeyword || (!hasTaskKeyword && !hasScheduleSignal && shortActionLike)) {
-      return "Pré-analyse rapide: checklist détectée.";
-    }
-
-    return "Pré-analyse rapide: élément d’agenda détecté.";
-  };
 
   const isCallableUnauthenticated = (err: unknown) => {
     if (isAuthInvalidError(err)) return true;
@@ -240,7 +379,8 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
     setFlowStep(execute ? "executing" : "transcribing");
     setError(null);
     if (!execute) {
-      setLocalPreviewHint(buildLocalIntentPreview(effectiveTranscript));
+      const localIntent = detectLocalVoiceIntent(effectiveTranscript);
+      setLocalPreviewHint(buildLocalIntentPreview(localIntent));
     }
 
     try {
@@ -588,6 +728,114 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
   const displayedHint = parsedHint ?? localPreviewHint;
   const clarificationPending = flowStep === "clarify" || result?.needsClarification === true;
   const isBusyStep = flowStep === "listening" || flowStep === "uploading" || flowStep === "transcribing" || flowStep === "executing";
+  const flowStateMeta = useMemo(() => {
+    if (flowStep === "listening") {
+      return {
+        label: "En écoute",
+        toneClass: "border-primary/40 bg-primary/10 text-primary",
+      };
+    }
+    if (flowStep === "uploading" || flowStep === "transcribing" || flowStep === "executing") {
+      return {
+        label: "Traitement",
+        toneClass: "border-amber-300 bg-amber-50 text-amber-700",
+      };
+    }
+    if (flowStep === "review" || flowStep === "clarify") {
+      return {
+        label: "Commande détectée",
+        toneClass: "border-emerald-300 bg-emerald-50 text-emerald-700",
+      };
+    }
+    if (flowStep === "done") {
+      return {
+        label: "Terminé",
+        toneClass: "border-emerald-300 bg-emerald-50 text-emerald-700",
+      };
+    }
+    if (flowStep === "error") {
+      return {
+        label: "Erreur",
+        toneClass: "border-destructive/40 bg-destructive/10 text-destructive",
+      };
+    }
+    return {
+      label: "Prêt",
+      toneClass: "border-border bg-muted/30 text-muted-foreground",
+    };
+  }, [flowStep]);
+  const flowStateMeta = useMemo(() => {
+    if (flowStep === "listening") {
+      return {
+        label: "En écoute",
+        toneClass: "border-primary/40 bg-primary/10 text-primary",
+      };
+    }
+    if (flowStep === "uploading" || flowStep === "transcribing" || flowStep === "executing") {
+      return {
+        label: "Traitement",
+        toneClass: "border-amber-300 bg-amber-50 text-amber-700",
+      };
+    }
+    if (flowStep === "review" || flowStep === "clarify") {
+      return {
+        label: "Commande détectée",
+        toneClass: "border-emerald-300 bg-emerald-50 text-emerald-700",
+      };
+    }
+    if (flowStep === "done") {
+      return {
+        label: "Terminé",
+        toneClass: "border-emerald-300 bg-emerald-50 text-emerald-700",
+      };
+    }
+    if (flowStep === "error") {
+      return {
+        label: "Erreur",
+        toneClass: "border-destructive/40 bg-destructive/10 text-destructive",
+      };
+    }
+    return {
+      label: "Prêt",
+      toneClass: "border-border bg-muted/30 text-muted-foreground",
+    };
+  }, [flowStep]);
+  const flowStateMeta = useMemo(() => {
+    if (flowStep === "listening") {
+      return {
+        label: "En écoute",
+        toneClass: "border-primary/40 bg-primary/10 text-primary",
+      };
+    }
+    if (flowStep === "uploading" || flowStep === "transcribing" || flowStep === "executing") {
+      return {
+        label: "Traitement",
+        toneClass: "border-amber-300 bg-amber-50 text-amber-700",
+      };
+    }
+    if (flowStep === "review" || flowStep === "clarify") {
+      return {
+        label: "Commande détectée",
+        toneClass: "border-emerald-300 bg-emerald-50 text-emerald-700",
+      };
+    }
+    if (flowStep === "done") {
+      return {
+        label: "Terminé",
+        toneClass: "border-emerald-300 bg-emerald-50 text-emerald-700",
+      };
+    }
+    if (flowStep === "error") {
+      return {
+        label: "Erreur",
+        toneClass: "border-destructive/40 bg-destructive/10 text-destructive",
+      };
+    }
+    return {
+      label: "Prêt",
+      toneClass: "border-border bg-muted/30 text-muted-foreground",
+    };
+  }, [flowStep]);
   const stepProgress = useMemo(
     () => [
       { key: "listening", label: "Captation" },
@@ -630,7 +878,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
   }, [clarificationSubmitting, parsedClarificationTime, result?.intent.kind]);
   const confirmationHint =
     flowStep === "review" && result?.intent?.requiresConfirmation
-      ? "Dernière étape: appuie sur Oui pour confirmer la création."
+      ? "Dernière étape: appuie sur Valider pour confirmer la création."
       : null;
 
   const stepHint = useMemo(() => {
@@ -643,6 +891,39 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
     if (flowStep === "review") return "Voici mon interprétation. Je lance l’action ?";
     return "Appuie sur le micro pour commencer.";
   }, [flowStep, result?.clarificationQuestion]);
+  const helpfulErrorHint = useMemo(() => {
+    if (!error) return null;
+    const raw = error.toLowerCase();
+    if (raw.includes("micro") || raw.includes("permission")) {
+      return "Vérifie l’accès micro dans le navigateur, puis réessaie.";
+    }
+    if (raw.includes("audio")) {
+      return "Réessaie avec une commande plus courte et parle clairement.";
+    }
+    return "Tu peux réessayer ou reformuler la commande plus simplement.";
+  }, [error]);
+  const helpfulErrorHint = useMemo(() => {
+    if (!error) return null;
+    const raw = error.toLowerCase();
+    if (raw.includes("micro") || raw.includes("permission")) {
+      return "Vérifie l’accès micro dans le navigateur, puis réessaie.";
+    }
+    if (raw.includes("audio")) {
+      return "Réessaie avec une commande plus courte et parle clairement.";
+    }
+    return "Tu peux réessayer ou reformuler la commande plus simplement.";
+  }, [error]);
+  const helpfulErrorHint = useMemo(() => {
+    if (!error) return null;
+    const raw = error.toLowerCase();
+    if (raw.includes("micro") || raw.includes("permission")) {
+      return "Vérifie l’accès micro dans le navigateur, puis réessaie.";
+    }
+    if (raw.includes("audio")) {
+      return "Réessaie avec une commande plus courte et parle clairement.";
+    }
+    return "Tu peux réessayer ou reformuler la commande plus simplement.";
+  }, [error]);
 
   const customTrigger = renderCustomTrigger
     ? renderCustomTrigger({
@@ -667,13 +948,41 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-semibold">Assistant vocal</div>
+          <div className="space-y-1">
+            <div className="text-sm font-semibold">Assistant vocal</div>
+            <div
+              className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                flowStep === "listening"
+                  ? "border-primary/40 bg-primary/10 text-primary"
+                  : flowStep === "uploading" || flowStep === "transcribing" || flowStep === "executing"
+                    ? "border-amber-300 bg-amber-50 text-amber-700"
+                    : flowStep === "review" || flowStep === "clarify" || flowStep === "done"
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                      : flowStep === "error"
+                        ? "border-destructive/40 bg-destructive/10 text-destructive"
+                        : "border-border bg-muted/30 text-muted-foreground"
+              }`}
+            >
+              {flowStep === "listening"
+                ? "En écoute"
+                : flowStep === "uploading" || flowStep === "transcribing" || flowStep === "executing"
+                  ? "Traitement"
+                  : flowStep === "review" || flowStep === "clarify"
+                    ? "Commande détectée"
+                    : flowStep === "done"
+                      ? "Terminé"
+                      : flowStep === "error"
+                        ? "Erreur"
+                        : "Prêt"}
+            </div>
+          </div>
           <button type="button" className="text-sm text-muted-foreground" onClick={closeModal}>
             Fermer
           </button>
         </div>
 
-        <div className="flex flex-col items-center justify-center gap-2 py-1 md:py-2">
+        <div className="rounded-lg border border-border bg-background/60 p-2 md:p-3">
+          <div className="flex flex-col items-center justify-center gap-2 py-1">
           <button
             type="button"
             onClick={() => {
@@ -892,6 +1201,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useRouter, useSearchParams } from "next/navigation";
 import { httpsCallable } from "firebase/functions";
 import { doc, onSnapshot } from "firebase/firestore";
 import { ref as storageRef, uploadBytes } from "firebase/storage";
@@ -928,6 +1238,16 @@ type ExecuteIntentResponse = {
 };
 
 type VoiceFlowStep = "idle" | "listening" | "uploading" | "transcribing" | "review" | "clarify" | "executing" | "done" | "error";
+
+type LocalVoiceActionPlan = {
+  kind: "note" | "task" | "checklist" | "search" | "navigation" | "unknown";
+  payload: string;
+  typeLabel: string;
+  proposedAction: string;
+  detectedDateLabel: string | null;
+  startDate: string | null;
+  executable: boolean;
+};
 
 type VoiceTimelineState = {
   recordStartMs: number | null;
@@ -999,6 +1319,9 @@ function mapMicrophoneAccessError(err: unknown): string {
 
 export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: Props) {
   const { user } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const workspaceId = searchParams.get("workspaceId") || "";
   const [open, setOpen] = useState(false);
   const [flowStep, setFlowStep] = useState<VoiceFlowStep>("idle");
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -1007,6 +1330,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ExecuteIntentResponse | null>(null);
   const [localPreviewHint, setLocalPreviewHint] = useState<string | null>(null);
+  const [localActionPlan, setLocalActionPlan] = useState<LocalVoiceActionPlan | null>(null);
   const [clarificationSubmitting, setClarificationSubmitting] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [resultId, setResultId] = useState<string | null>(null);
@@ -1052,53 +1376,274 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
   const buildLocalIntentPreview = (text: string): string | null => {
     const raw = text.trim();
     if (!raw) return null;
-    const lower = raw.toLowerCase();
-    const hasMeeting =
-      lower.includes("réunion") ||
-      lower.includes("reunion") ||
-      lower.includes("meeting") ||
-      lower.includes("rdv") ||
-      lower.includes("rendez-vous") ||
-      lower.includes("agenda") ||
-      lower.includes("calendrier");
-    if (hasMeeting) {
-      return "Pré-analyse rapide: demande de réunion détectée.";
+    const normalized = raw
+      .toLowerCase()
+      .replace(/[’]/g, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+    const cleanPayload = (value: string | undefined) => (value ? value.replace(/^[:\s-]+/, "").trim() : "");
+    const parseTaskTemporal = (input: string) => {
+      const lower = input
+        .toLowerCase()
+        .replace(/[’]/g, "'")
+        .replace(/\s+/g, " ")
+        .trim();
+      const timeMatch =
+        /\b(?:a|à|vers)\s+([01]?\d|2[0-3])h(?:([0-5]\d))?\b/i.exec(lower) ??
+        /\b([01]?\d|2[0-3])h(?:([0-5]\d))\b/i.exec(lower);
+      const hour = timeMatch?.[1] != null ? Number(timeMatch[1]) : null;
+      const minute = timeMatch?.[2] != null ? Number(timeMatch[2]) : 0;
+      const hasTime = hour != null && Number.isFinite(hour) && minute != null && Number.isFinite(minute);
+      const timeLabel = hasTime ? `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}` : null;
+
+      if (lower.includes("ce soir")) return `ce soir${timeLabel ? `, ${timeLabel}` : ", 20:00"}`;
+      if (lower.includes("aujourd'hui") || lower.includes("aujourdhui")) return timeLabel ? `aujourd’hui, ${timeLabel}` : "aujourd’hui";
+      if (lower.includes("demain")) return timeLabel ? `demain, ${timeLabel}` : "demain";
+
+      const weekdays = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
+      const weekday = weekdays.find((d) => new RegExp(`\\b${d}\\b`, "i").test(lower));
+      if (!weekday) return null;
+      return timeLabel ? `${weekday}, ${timeLabel}` : weekday;
+    };
+
+    const noteMatch =
+      /^(?:cr[eé]e(?:r)?|ajoute|note(?:\s+que)?)\s+(?:une?\s+)?note\b[:\s-]*(.*)$/i.exec(raw) ??
+      /^(?:cr[eé]e(?:r)?|ajoute|note(?:\s+que)?)\s+(?:une?\s+)?note\b[:\s-]*(.*)$/i.exec(normalized);
+    const checklistMatch =
+      /^(?:cr[eé]e(?:r)?|ajoute|fais)\s+(?:une?\s+)?checklist\b[:\s-]*(.*)$/i.exec(raw) ??
+      /^(?:cr[eé]e(?:r)?|ajoute|fais)\s+(?:une?\s+)?checklist\b[:\s-]*(.*)$/i.exec(normalized);
+    const taskMatch =
+      /^(?:ajoute|cr[eé]e(?:r)?)\s+(?:une?\s+)?t[âa]che\b[:\s-]*(.*)$/i.exec(raw) ??
+      /^rappelle[-\s]?moi\b[:\s-]*(.*)$/i.exec(raw) ??
+      /^(?:ajoute|mets?)\s+dans\s+l['’]?agenda\b[:\s-]*(.*)$/i.exec(raw) ??
+      /^(?:ajoute|cr[eé]e(?:r)?)\s+(?:une?\s+)?t[âa]che\b[:\s-]*(.*)$/i.exec(normalized) ??
+      /^rappelle[-\s]?moi\b[:\s-]*(.*)$/i.exec(normalized) ??
+      /^(?:ajoute|mets?)\s+dans\s+l['']?agenda\b[:\s-]*(.*)$/i.exec(normalized);
+    const searchMatch =
+      /^(?:cherche|trouve|recherche)\b[:\s-]*(.*)$/i.exec(raw) ??
+      /^(?:cherche|trouve|recherche)\b[:\s-]*(.*)$/i.exec(normalized);
+    const navMatch =
+      /^(?:ouvre|va\s+(?:dans|au|a|à|sur))\s+(?:l['’]|la\s+|le\s+)?(agenda|notes?|checklist|dashboard)\b[:\s-]*(.*)$/i.exec(raw) ??
+      /^(?:ouvre|va\s+(?:dans|au|a|à|sur))\s+(?:l['']|la\s+|le\s+)?(agenda|notes?|checklist|dashboard)\b[:\s-]*(.*)$/i.exec(normalized);
+
+    let detectedKind: "note" | "task" | "checklist" | "search" | "navigation" | "unknown" = "unknown";
+    let label = "Commande non reconnue";
+    let payload = "";
+
+    if (noteMatch) {
+      detectedKind = "note";
+      label = "Créer une note";
+      payload = cleanPayload(noteMatch[1]);
+    } else if (checklistMatch) {
+      detectedKind = "checklist";
+      label = "Créer une checklist";
+      payload = cleanPayload(checklistMatch[1]);
+    } else if (taskMatch) {
+      detectedKind = "task";
+      label = "Créer un élément d’agenda";
+      payload = cleanPayload(taskMatch[1]);
+    } else if (searchMatch) {
+      detectedKind = "search";
+      label = "Lancer une recherche";
+      payload = cleanPayload(searchMatch[1]);
+    } else if (navMatch) {
+      detectedKind = "navigation";
+      const target = String(navMatch[1] ?? "").toLowerCase();
+      const targetLabel =
+        target === "agenda"
+          ? "Agenda"
+          : target.startsWith("note")
+            ? "Notes"
+            : target === "checklist"
+              ? "Checklist"
+              : "Dashboard";
+      label = `Naviguer vers ${targetLabel}`;
+      payload = cleanPayload(navMatch[2]);
     }
 
-    const hasReminder =
-      lower.includes("rappel") ||
-      lower.includes("rappelle") ||
-      lower.includes("souviens") ||
-      lower.includes("n'oublie") ||
-      lower.includes("n oublie");
-    if (hasReminder) {
-      return "Pré-analyse rapide: rappel détecté.";
+    if (detectedKind === "unknown") {
+      return "Commande non reconnue pour l’instant. Reformule plus simplement (ex: “rappelle-moi demain à 14h ...”).";
     }
 
-    const hasTodoKeyword =
-      lower.includes("todo") ||
-      lower.includes("to-do") ||
-      lower.includes("checklist") ||
-      lower.includes("à faire") ||
-      lower.includes("a faire") ||
-      lower.includes("liste");
-    const hasTaskKeyword =
-      lower.includes("tâche") ||
-      lower.includes("tache") ||
-      lower.includes("task") ||
-      lower.includes("projet") ||
-      lower.includes("deadline") ||
-      lower.includes("échéance") ||
-      lower.includes("echeance");
-    const words = raw.split(/\s+/).filter(Boolean);
-    const shortActionLike = words.length > 0 && words.length <= 5;
-    const hasScheduleSignal = /\b(demain|ce soir|ce matin|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b/i.test(lower);
-
-    if (hasTodoKeyword || (!hasTaskKeyword && !hasScheduleSignal && shortActionLike)) {
-      return "Pré-analyse rapide: checklist détectée.";
+    if (detectedKind !== "task") {
+      return payload ? `${label} — “${payload}”` : label;
     }
 
-    return "Pré-analyse rapide: élément d’agenda détecté.";
+    const temporal = parseTaskTemporal(raw);
+    if (!temporal) {
+      return payload ? `${label} — “${payload}”` : label;
+    }
+
+    return `${payload ? `${label} — “${payload}”` : label} · Date détectée: ${temporal}`;
+  };
+
+  const detectLocalActionPlan = (text: string): LocalVoiceActionPlan => {
+    const raw = text.trim();
+    if (!raw) {
+      return {
+        kind: "unknown",
+        payload: "",
+        typeLabel: "Inconnu",
+        proposedAction: "Aucune exécution",
+        detectedDateLabel: null,
+        startDate: null,
+        executable: false,
+      };
+    }
+
+    const normalized = raw
+      .toLowerCase()
+      .replace(/[’]/g, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+    const cleanPayload = (value: string | undefined) => (value ? value.replace(/^[:\s-]+/, "").trim() : "");
+    const toDateInputValue = (date: Date) => {
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    };
+    const parseTemporal = (input: string): { label: string; startDate: string } | null => {
+      const lower = input
+        .toLowerCase()
+        .replace(/[’]/g, "'")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      const timeMatch =
+        /\b(?:a|à|vers)\s+([01]?\d|2[0-3])h(?:([0-5]\d))?\b/i.exec(lower) ??
+        /\b([01]?\d|2[0-3])h(?:([0-5]\d))\b/i.exec(lower);
+      const hh = timeMatch?.[1] != null ? Number(timeMatch[1]) : null;
+      const mm = timeMatch?.[2] != null ? Number(timeMatch[2]) : 0;
+      const hasTime = hh != null && Number.isFinite(hh) && Number.isFinite(mm);
+      const timeLabel = hasTime ? `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}` : null;
+
+      const now = new Date();
+      const build = (label: string, date: Date) => ({
+        label: timeLabel ? `${label}, ${timeLabel}` : label,
+        startDate: toDateInputValue(date),
+      });
+
+      if (lower.includes("ce soir")) {
+        return {
+          label: `ce soir, ${timeLabel ?? "20:00"}`,
+          startDate: toDateInputValue(now),
+        };
+      }
+      if (lower.includes("aujourd'hui") || lower.includes("aujourdhui")) return build("aujourd’hui", now);
+      if (lower.includes("demain")) {
+        const d = new Date(now);
+        d.setDate(d.getDate() + 1);
+        return build("demain", d);
+      }
+
+      const weekdays: Array<{ name: string; day: number }> = [
+        { name: "lundi", day: 1 },
+        { name: "mardi", day: 2 },
+        { name: "mercredi", day: 3 },
+        { name: "jeudi", day: 4 },
+        { name: "vendredi", day: 5 },
+        { name: "samedi", day: 6 },
+        { name: "dimanche", day: 0 },
+      ];
+      const weekday = weekdays.find((w) => new RegExp(`\\b${w.name}\\b`, "i").test(lower));
+      if (!weekday) return null;
+      const d = new Date(now);
+      const delta = (weekday.day - now.getDay() + 7) % 7;
+      d.setDate(d.getDate() + delta);
+      return build(weekday.name, d);
+    };
+
+    const noteMatch =
+      /^(?:cr[eé]e(?:r)?|ajoute|note(?:\s+que)?)\s+(?:une?\s+)?note\b[:\s-]*(.*)$/i.exec(raw) ??
+      /^(?:cr[eé]e(?:r)?|ajoute|note(?:\s+que)?)\s+(?:une?\s+)?note\b[:\s-]*(.*)$/i.exec(normalized);
+    if (noteMatch) {
+      const payload = cleanPayload(noteMatch[1]);
+      return {
+        kind: "note",
+        payload,
+        typeLabel: "Note",
+        proposedAction: "Créer une note",
+        detectedDateLabel: null,
+        startDate: null,
+        executable: payload.length > 0,
+      };
+    }
+
+    const checklistMatch =
+      /^(?:cr[eé]e(?:r)?|ajoute|fais)\s+(?:une?\s+)?checklist\b[:\s-]*(.*)$/i.exec(raw) ??
+      /^(?:cr[eé]e(?:r)?|ajoute|fais)\s+(?:une?\s+)?checklist\b[:\s-]*(.*)$/i.exec(normalized);
+    if (checklistMatch) {
+      const payload = cleanPayload(checklistMatch[1]);
+      return {
+        kind: "checklist",
+        payload,
+        typeLabel: "Checklist",
+        proposedAction: "Créer une checklist",
+        detectedDateLabel: null,
+        startDate: null,
+        executable: payload.length > 0,
+      };
+    }
+
+    const taskMatch =
+      /^(?:ajoute|cr[eé]e(?:r)?)\s+(?:une?\s+)?t[âa]che\b[:\s-]*(.*)$/i.exec(raw) ??
+      /^rappelle[-\s]?moi\b[:\s-]*(.*)$/i.exec(raw) ??
+      /^(?:ajoute|mets?)\s+dans\s+l['’]?agenda\b[:\s-]*(.*)$/i.exec(raw) ??
+      /^(?:ajoute|cr[eé]e(?:r)?)\s+(?:une?\s+)?t[âa]che\b[:\s-]*(.*)$/i.exec(normalized) ??
+      /^rappelle[-\s]?moi\b[:\s-]*(.*)$/i.exec(normalized) ??
+      /^(?:ajoute|mets?)\s+dans\s+l['']?agenda\b[:\s-]*(.*)$/i.exec(normalized);
+    if (taskMatch) {
+      const payload = cleanPayload(taskMatch[1]);
+      const temporal = parseTemporal(raw);
+      return {
+        kind: "task",
+        payload,
+        typeLabel: "Tâche",
+        proposedAction: "Créer un élément d’agenda",
+        detectedDateLabel: temporal?.label ?? null,
+        startDate: temporal?.startDate ?? null,
+        executable: payload.length > 0,
+      };
+    }
+
+    const searchMatch =
+      /^(?:cherche|trouve|recherche)\b[:\s-]*(.*)$/i.exec(raw) ??
+      /^(?:cherche|trouve|recherche)\b[:\s-]*(.*)$/i.exec(normalized);
+    if (searchMatch) {
+      return {
+        kind: "search",
+        payload: cleanPayload(searchMatch[1]),
+        typeLabel: "Recherche",
+        proposedAction: "Recherche non exécutable dans cette version",
+        detectedDateLabel: null,
+        startDate: null,
+        executable: false,
+      };
+    }
+
+    const navMatch =
+      /^(?:ouvre|va\s+(?:dans|au|a|à|sur))\s+(?:l['’]|la\s+|le\s+)?(agenda|notes?|checklist|dashboard)\b[:\s-]*(.*)$/i.exec(raw) ??
+      /^(?:ouvre|va\s+(?:dans|au|a|à|sur))\s+(?:l['']|la\s+|le\s+)?(agenda|notes?|checklist|dashboard)\b[:\s-]*(.*)$/i.exec(normalized);
+    if (navMatch) {
+      return {
+        kind: "navigation",
+        payload: cleanPayload(navMatch[2]),
+        typeLabel: "Navigation",
+        proposedAction: "Navigation non exécutable dans cette version",
+        detectedDateLabel: null,
+        startDate: null,
+        executable: false,
+      };
+    }
+
+    return {
+      kind: "unknown",
+      payload: "",
+      typeLabel: "Inconnu",
+      proposedAction: "Aucune exécution",
+      detectedDateLabel: null,
+      startDate: null,
+      executable: false,
+    };
   };
 
   const isCallableUnauthenticated = (err: unknown) => {
@@ -1169,6 +1714,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
     setFlowStep(execute ? "executing" : "transcribing");
     setError(null);
     if (!execute) {
+      setLocalActionPlan(detectLocalActionPlan(effectiveTranscript));
       setLocalPreviewHint(buildLocalIntentPreview(effectiveTranscript));
     }
 
@@ -1176,7 +1722,9 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
       const fn = httpsCallable<{ transcript: string; execute: boolean }, ExecuteIntentResponse>(fbFunctions, "assistantExecuteIntent");
       const res = await fn({ transcript: effectiveTranscript, execute });
       setResult(res.data);
-      setLocalPreviewHint(null);
+      if (execute) {
+        setLocalPreviewHint(null);
+      }
 
       if (!execute) {
         const intentReadyMs = Date.now();
@@ -1217,6 +1765,81 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
       setError(toUserErrorMessage(e, "Impossible d’exécuter la commande vocale."));
       setFlowStep("error");
     }
+  };
+
+  const executeLocalCreation = async (plan: LocalVoiceActionPlan) => {
+    if (typeof window === "undefined") return;
+
+    const buildPath = (path: string, extra: Record<string, string> = {}) => {
+      const params = new URLSearchParams();
+      if (workspaceId) params.set("workspaceId", workspaceId);
+      for (const [key, value] of Object.entries(extra)) {
+        if (value) params.set(key, value);
+      }
+      const query = params.toString();
+      return query ? `${path}?${query}` : path;
+    };
+
+    if (plan.kind === "note") {
+      window.sessionStorage.setItem(
+        "smartnotes:draft:new-note",
+        JSON.stringify({
+          title: plan.payload,
+          content: "",
+          workspaceId,
+        }),
+      );
+      closeModal();
+      router.push(buildPath("/notes/new"));
+      return;
+    }
+
+    if (plan.kind === "task") {
+      window.sessionStorage.setItem(
+        "smartnotes:draft:new-task",
+        JSON.stringify({
+          title: plan.payload,
+          status: "todo",
+          workspaceId,
+          startDate: plan.startDate ?? "",
+          dueDate: "",
+          priority: null,
+        }),
+      );
+      closeModal();
+      router.push(buildPath("/tasks/new", plan.startDate ? { startDate: plan.startDate } : {}));
+      return;
+    }
+
+    if (plan.kind === "checklist") {
+      closeModal();
+      router.push(buildPath("/todo/new", { title: plan.payload }));
+    }
+  };
+
+  const handleConfirmReview = async () => {
+    if (!localActionPlan) {
+      setError("Commande non reconnue. Reformule plus simplement.");
+      return;
+    }
+
+    if (!localActionPlan.executable || !localActionPlan.payload.trim()) {
+      if (localActionPlan.kind === "search" || localActionPlan.kind === "navigation") {
+        setError("Cette commande est comprise, mais n’est pas exécutable dans cette version.");
+      } else {
+        setError("Commande incomplète. Ajoute un contenu clair puis réessaie.");
+      }
+      return;
+    }
+
+    if (localActionPlan.kind !== "note" && localActionPlan.kind !== "task" && localActionPlan.kind !== "checklist") {
+      setError("Cette intention n’est pas exécutable dans cette version.");
+      return;
+    }
+
+    setError(null);
+    setFlowStep("executing");
+    await executeLocalCreation(localActionPlan);
   };
 
   const processBlob = async (blob: Blob) => {
@@ -1288,6 +1911,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
     setClarificationInput("");
     setTranscript("");
     setLocalPreviewHint(null);
+    setLocalActionPlan(null);
     setElapsedMs(0);
     setJobId(null);
     setResultId(null);
@@ -1408,6 +2032,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
   const closeModal = () => {
     setOpen(false);
     startedAutomaticallyRef.current = false;
+    setLocalActionPlan(null);
     hardStopRecordingResources();
     try {
       recorderRef.current?.stop();
@@ -1421,6 +2046,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
     setResult(null);
     setError(null);
     setTranscript("");
+    setLocalActionPlan(null);
     setClarificationInput("");
     setClarificationSubmitting(false);
     setFlowStep("idle");
@@ -1630,59 +2256,91 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-semibold">Assistant vocal</div>
+          <div className="space-y-1">
+            <div className="text-sm font-semibold">Assistant vocal</div>
+            <div
+              className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                flowStep === "listening"
+                  ? "border-primary/40 bg-primary/10 text-primary"
+                  : flowStep === "uploading" || flowStep === "transcribing" || flowStep === "executing"
+                    ? "border-amber-300 bg-amber-50 text-amber-700"
+                    : flowStep === "review" || flowStep === "clarify" || flowStep === "done"
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                      : flowStep === "error"
+                        ? "border-destructive/40 bg-destructive/10 text-destructive"
+                        : "border-border bg-muted/30 text-muted-foreground"
+              }`}
+            >
+              {flowStep === "listening"
+                ? "En écoute"
+                : flowStep === "uploading" || flowStep === "transcribing" || flowStep === "executing"
+                  ? "Traitement"
+                  : flowStep === "review" || flowStep === "clarify"
+                    ? "Commande détectée"
+                    : flowStep === "done"
+                      ? "Terminé"
+                      : flowStep === "error"
+                        ? "Erreur"
+                        : "Prêt"}
+            </div>
+          </div>
           <button type="button" className="text-sm text-muted-foreground" onClick={closeModal}>
             Fermer
           </button>
         </div>
 
-        <div className="flex flex-col items-center justify-center gap-2 py-1 md:py-2">
-          <button
-            type="button"
-            onClick={() => {
-              if (flowStep === "listening") {
-                stopListening();
-              } else {
-                void startListening();
+        <div className="rounded-lg border border-border bg-background/60 p-2 md:p-3">
+          <div className="flex flex-col items-center justify-center gap-2 py-1">
+            <button
+              type="button"
+              onClick={() => {
+                if (flowStep === "listening") {
+                  stopListening();
+                } else {
+                  void startListening();
+                }
+              }}
+              className={
+                "relative h-20 w-20 md:h-24 md:w-24 rounded-full border border-primary/40 text-2xl md:text-3xl flex items-center justify-center transition-all " +
+                (flowStep === "listening" ? "bg-primary/20 animate-pulse" : "bg-primary/10")
               }
-            }}
-            className={
-              "relative h-20 w-20 md:h-24 md:w-24 rounded-full border border-primary/40 text-2xl md:text-3xl flex items-center justify-center transition-all " +
-              (flowStep === "listening" ? "bg-primary/20 animate-pulse" : "bg-primary/10")
-            }
-            aria-label={flowStep === "listening" ? "Stopper l’écoute" : "Démarrer l’écoute"}
-            title={flowStep === "listening" ? "Stop" : "Parler"}
-          >
-            🎤
-          </button>
-          {flowStep === "listening" ? <div className="text-xs text-muted-foreground">{Math.max(0, Math.floor(elapsedMs / 1000))}s</div> : null}
-          <div className="text-xs text-muted-foreground text-center">{stepHint}</div>
-          {slowStepHint ? <div className="text-xs text-amber-600">{slowStepHint}</div> : null}
-          <div className="flex flex-wrap items-center justify-center gap-1 pt-1">
-            {stepProgress.map((step, index) => {
-              const isDone = activeProgressIndex >= 0 && index < activeProgressIndex;
-              const isActive = index === activeProgressIndex;
-              return (
-                <span
-                  key={step.key}
-                  className={`rounded-full border px-2 py-0.5 text-[10px] ${
-                    isActive
-                      ? "border-primary bg-primary/10 text-primary"
-                      : isDone
-                        ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                        : "border-border bg-muted/30 text-muted-foreground"
-                  }`}
-                >
-                  {step.label}
-                </span>
-              );
-            })}
+              aria-label={flowStep === "listening" ? "Stopper l’écoute" : "Démarrer l’écoute"}
+              title={flowStep === "listening" ? "Stop" : "Parler"}
+            >
+              🎤
+            </button>
+            {flowStep === "listening" ? <div className="text-xs text-muted-foreground">{Math.max(0, Math.floor(elapsedMs / 1000))}s</div> : null}
+            <div className="text-xs text-muted-foreground text-center">{stepHint}</div>
+            {slowStepHint ? <div className="text-xs text-amber-600">{slowStepHint}</div> : null}
+            <div className="flex flex-wrap items-center justify-center gap-1 pt-1">
+              {stepProgress.map((step, index) => {
+                const isDone = activeProgressIndex >= 0 && index < activeProgressIndex;
+                const isActive = index === activeProgressIndex;
+                return (
+                  <span
+                    key={step.key}
+                    className={`rounded-full border px-2 py-0.5 text-[10px] ${
+                      isActive
+                        ? "border-primary bg-primary/10 text-primary"
+                        : isDone
+                          ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                          : "border-border bg-muted/30 text-muted-foreground"
+                    }`}
+                  >
+                    {step.label}
+                  </span>
+                );
+              })}
+            </div>
           </div>
         </div>
 
-        {transcript ? (
-          <div className="rounded-md border border-border bg-background p-2.5 md:p-3 text-sm whitespace-pre-wrap max-h-24 overflow-y-auto">{transcript}</div>
-        ) : null}
+        <div className="space-y-1">
+          <div className="text-xs font-medium text-muted-foreground">Transcription</div>
+          <div className="rounded-md border border-border bg-background p-2.5 md:p-3 text-sm whitespace-pre-wrap max-h-28 overflow-y-auto">
+            {transcript ? transcript : "La transcription apparaîtra ici dès qu’un audio est capté."}
+          </div>
+        </div>
 
         {clarificationPending ? (
           <form
@@ -1705,6 +2363,44 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
           </form>
         ) : null}
 
+        {displayedHint ? (
+          <div className="space-y-1">
+            <div className="text-xs font-medium text-muted-foreground">Action comprise</div>
+            <div className="rounded-md border border-emerald-300/70 bg-emerald-50/70 p-2.5 text-sm text-emerald-900">{displayedHint}</div>
+          </div>
+        ) : null}
+        {localActionPlan && (localActionPlan.kind === "note" || localActionPlan.kind === "task" || localActionPlan.kind === "checklist") ? (
+          <div className="space-y-1">
+            <div className="text-xs font-medium text-muted-foreground">Résumé de confirmation</div>
+            <div className="rounded-md border border-border bg-background p-2.5 text-sm space-y-1">
+              <div>Type : {localActionPlan.typeLabel}</div>
+              <div>Contenu détecté : {localActionPlan.payload ? `“${localActionPlan.payload}”` : "non détecté"}</div>
+              {localActionPlan.detectedDateLabel ? <div>Date détectée : {localActionPlan.detectedDateLabel}</div> : null}
+              <div>Action proposée : {localActionPlan.proposedAction}</div>
+            </div>
+          </div>
+        ) : null}
+
+        {result?.message ? <div className="text-xs text-muted-foreground">{result.message}</div> : null}
+        {confirmationHint ? <div className="text-xs text-amber-600">{confirmationHint}</div> : null}
+        {error ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2">
+            <div className="text-xs font-medium text-destructive">{error}</div>
+            <div className="mt-1 text-xs text-destructive/90">
+              {(() => {
+                const raw = error.toLowerCase();
+                if (raw.includes("micro") || raw.includes("permission")) {
+                  return "Vérifie l’accès micro dans le navigateur, puis réessaie.";
+                }
+                if (raw.includes("audio")) {
+                  return "Réessaie avec une commande plus courte et parle clairement.";
+                }
+                return "Tu peux réessayer ou reformuler la commande plus simplement.";
+              })()}
+            </div>
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap items-center gap-2 pt-1">
           {flowStep === "listening" ? (
             <button
@@ -1712,7 +2408,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
               className="px-3 py-2 rounded-md border border-input text-sm"
               onClick={stopListening}
             >
-              STOP
+              Arrêter l’écoute
             </button>
           ) : null}
 
@@ -1721,16 +2417,16 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
               <button
                 type="button"
                 className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm"
-                onClick={() => void runIntent(true)}
+                onClick={() => void handleConfirmReview()}
               >
-                Oui
+                Valider
               </button>
               <button
                 type="button"
                 className="px-3 py-2 rounded-md border border-input text-sm"
                 onClick={retryVoice}
               >
-                Non
+                Réessayer
               </button>
               <button
                 type="button"
@@ -1768,7 +2464,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
               className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm"
               onClick={closeModal}
             >
-              OK
+              Fermer
             </button>
           ) : null}
 
@@ -1797,7 +2493,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
               className="px-3 py-2 rounded-md border border-input text-sm"
               onClick={() => void startListening()}
             >
-              Parler
+              Démarrer l’écoute
             </button>
           ) : null}
 
@@ -1810,11 +2506,6 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
             Nouvelle commande
           </button>
         </div>
-
-        {displayedHint ? <div className="text-sm">{displayedHint}</div> : null}
-        {result?.message ? <div className="text-xs text-muted-foreground">{result.message}</div> : null}
-        {confirmationHint ? <div className="text-xs text-amber-600">{confirmationHint}</div> : null}
-        {error ? <div className="text-xs text-destructive">{error}</div> : null}
       </div>
     </div>
   ) : null;

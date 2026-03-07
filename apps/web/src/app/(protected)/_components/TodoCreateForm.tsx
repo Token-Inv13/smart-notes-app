@@ -110,6 +110,7 @@ function parseAssistantTodoText(raw: string, fallbackTitle: string): { title: st
 type Props = {
   initialWorkspaceId?: string;
   initialFavorite?: boolean;
+  initialTitle?: string;
   onCreated?: (todoId: string) => void;
   onCancel?: () => void;
   autoFocus?: boolean;
@@ -120,13 +121,14 @@ type Props = {
 export default function TodoCreateForm({
   initialWorkspaceId,
   initialFavorite,
+  initialTitle,
   onCreated,
   onCancel,
   autoFocus,
   showActions,
   assistantMode = "full",
 }: Props) {
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(initialTitle ?? "");
   const [newItemText, setNewItemText] = useState("");
   const [itemsDraft, setItemsDraft] = useState<TodoDraftItem[]>([]);
   const [itemsOpen, setItemsOpen] = useState(false);
@@ -157,6 +159,11 @@ export default function TodoCreateForm({
     const t = window.setTimeout(() => inputRef.current?.focus(), 0);
     return () => window.clearTimeout(t);
   }, [autoFocus]);
+
+  useEffect(() => {
+    if (!initialTitle) return;
+    setTitle((prev) => prev || initialTitle);
+  }, [initialTitle]);
 
   useEffect(() => {
     if (itemsDraft.length > 0) setItemsOpen(true);
