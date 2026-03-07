@@ -6,7 +6,6 @@ import {
   ArchiveRestore,
   CalendarDays,
   Kanban,
-  LayoutGrid,
   List,
   Search,
   SlidersHorizontal,
@@ -33,7 +32,6 @@ const VIEW_OPTIONS: Array<{
 }> = [
   { key: "list", label: "Liste", icon: List },
   { key: "kanban", label: "Kanban", icon: Kanban },
-  { key: "grid", label: "Grille", icon: LayoutGrid },
   { key: "calendar", label: "Agenda", icon: CalendarDays },
 ];
 

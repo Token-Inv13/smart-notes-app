@@ -60,7 +60,7 @@ export default function CreateButton({ mobileHidden, renderCustomTrigger }: Prop
     router.push(href ? `/notes/new?${href}` : "/notes/new");
   };
 
-  const favoritesPicker = favoritesPickerOpen ? (
+  const favoritesPickerContent = favoritesPickerOpen ? (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-background/75 backdrop-blur-[2px] px-4 py-6"
       onMouseDown={(e) => {
@@ -140,6 +140,11 @@ export default function CreateButton({ mobileHidden, renderCustomTrigger }: Prop
       </div>
     </div>
   ) : null;
+
+  const favoritesPicker =
+    favoritesPickerContent && typeof document !== "undefined"
+      ? createPortal(favoritesPickerContent, document.body)
+      : favoritesPickerContent;
 
   const buttonBaseClass =
     "inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg h-12 w-12 text-2xl font-semibold select-none transition-transform active:scale-95";
