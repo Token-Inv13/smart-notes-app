@@ -9,6 +9,13 @@ import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidatio
 import { useAuth } from "@/hooks/useAuth";
 import { toUserErrorMessage } from "@/lib/userError";
 import type { AssistantVoiceJobDoc, AssistantVoiceResultDoc, NoteDoc } from "@/types/firestore";
+import {
+  buildVoiceCaptureError,
+  classifyGetUserMediaError,
+  getMicrophonePermissionState,
+  pickSupportedRecordingMimeType,
+  reportVoiceCaptureError,
+} from "./voiceCaptureDiagnostics";
 
 type Props = {
   noteId?: string;
@@ -42,19 +49,6 @@ function plainTextToNoteHtml(text: string) {
   return `<div>${withBreaks}</div>`;
 }
 
-function pickMimeType() {
-  if (typeof window === "undefined") return "";
-  const mr = window.MediaRecorder as unknown as { isTypeSupported?: (t: string) => boolean } | undefined;
-  const can = (t: string) => Boolean(mr?.isTypeSupported?.(t));
-  const candidates = [
-    "audio/webm;codecs=opus",
-    "audio/webm",
-    "audio/ogg;codecs=opus",
-    "audio/ogg",
-  ];
-  return candidates.find(can) ?? "";
-}
-
 function inferVoiceFileExtension(mimeType: string) {
   const normalized = mimeType.toLowerCase();
   if (normalized.includes("webm")) return "webm";
@@ -64,50 +58,6 @@ function inferVoiceFileExtension(mimeType: string) {
   if (normalized.includes("x-m4a") || normalized.includes("m4a")) return "m4a";
   if (normalized.includes("mp4") || normalized.includes("aac")) return "mp4";
   return "webm";
-}
-
-function mapMicrophoneAccessError(err: unknown): string {
-  if (err instanceof DOMException) {
-    const name = String(err.name || "").toLowerCase();
-    const message = String(err.message || "").toLowerCase();
-    if (name.includes("notfound") || message.includes("requested device not found") || message.includes("device not found")) {
-      return "Aucun micro disponible. Vérifie ton appareil audio puis réessaie.";
-    }
-    if (name.includes("notallowed") || name.includes("security") || message.includes("permission") || message.includes("denied")) {
-      return "Permission micro refusée. Autorise le micro dans ton navigateur puis recharge la page.";
-    }
-    if (name.includes("notreadable") || message.includes("could not start audio source")) {
-      return "Le micro est indisponible (utilisé par une autre application ou bloqué par le système).";
-    }
-    return err.message || "Impossible d’accéder au micro.";
-  }
-
-  if (err instanceof Error) {
-    const msg = err.message.toLowerCase();
-    if (msg.includes("requested device not found") || msg.includes("device not found")) {
-      return "Aucun micro disponible. Vérifie ton appareil audio puis réessaie.";
-    }
-    if (msg.includes("permission") || msg.includes("notallowed") || msg.includes("denied")) {
-      return "Permission micro refusée. Autorise le micro dans ton navigateur puis recharge la page.";
-    }
-    if (msg.includes("not supported") || msg.includes("unsupported")) {
-      return "Enregistrement micro non supporté sur cet appareil.";
-    }
-    return err.message;
-  }
-
-  if (typeof err === "string") {
-    const msg = err.toLowerCase();
-    if (msg.includes("requested device not found") || msg.includes("device not found")) {
-      return "Aucun micro disponible. Vérifie ton appareil audio puis réessaie.";
-    }
-    if (msg.includes("permission") || msg.includes("notallowed") || msg.includes("denied")) {
-      return "Permission micro refusée. Autorise le micro dans ton navigateur puis recharge la page.";
-    }
-    return `Impossible d’accéder au micro: ${err}`;
-  }
-
-  return "Impossible d’accéder au micro.";
 }
 
 export default function VoiceRecorderButton({
@@ -267,8 +217,32 @@ export default function VoiceRecorderButton({
   };
 
   const start = async () => {
-    if (!canRecord) {
-      setError("Enregistrement non supporté sur cet appareil.");
+    if (typeof window === "undefined" || typeof navigator === "undefined" || !navigator.mediaDevices) {
+      const detail = buildVoiceCaptureError("media_devices_unavailable", "media_devices");
+      reportVoiceCaptureError("voice_recorder_button", detail);
+      setError(detail.message);
+      setStatus("error");
+      return;
+    }
+    if (typeof navigator.mediaDevices.getUserMedia !== "function") {
+      const detail = buildVoiceCaptureError("get_user_media_unavailable", "get_user_media");
+      reportVoiceCaptureError("voice_recorder_button", detail);
+      setError(detail.message);
+      setStatus("error");
+      return;
+    }
+    if (typeof window.MediaRecorder === "undefined") {
+      const detail = buildVoiceCaptureError("media_recorder_unavailable", "media_recorder");
+      reportVoiceCaptureError("voice_recorder_button", detail);
+      setError(detail.message);
+      setStatus("error");
+      return;
+    }
+    const permissionState = await getMicrophonePermissionState();
+    if (permissionState === "denied") {
+      const detail = buildVoiceCaptureError("permission_denied", "permissions", undefined, { permissionState });
+      reportVoiceCaptureError("voice_recorder_button", detail);
+      setError(detail.message);
       setStatus("error");
       return;
     }
@@ -283,37 +257,78 @@ export default function VoiceRecorderButton({
     }
     setResultId(null);
 
+    let stream: MediaStream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      const detail = classifyGetUserMediaError(e);
+      reportVoiceCaptureError("voice_recorder_button", detail);
+      setError(detail.message);
+      setStatus("error");
+      stopAndCleanupStream();
+      return;
+    }
 
-      const mimeType = pickMimeType();
-      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-      recorderRef.current = recorder;
-      chunksRef.current = [];
+    streamRef.current = stream;
+    const { selectedMimeType, supportedMimeTypes } = pickSupportedRecordingMimeType();
 
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          chunksRef.current.push(e.data);
-        }
-      };
-
-      recorder.onstop = () => {
-        stopTimer();
-        const mt = recorder.mimeType || mimeType || "audio/webm";
-        const blob = new Blob(chunksRef.current, { type: mt });
-        chunksRef.current = [];
-        recorderRef.current = null;
+    let recorder: MediaRecorder;
+    try {
+      recorder = selectedMimeType ? new MediaRecorder(stream, { mimeType: selectedMimeType }) : new MediaRecorder(stream);
+    } catch (e) {
+      try {
+        recorder = new MediaRecorder(stream);
+      } catch (fallbackErr) {
+        const detail = buildVoiceCaptureError("media_recorder_init_failed", "media_recorder_init", fallbackErr, {
+          permissionState,
+          requestedMimeType: selectedMimeType || undefined,
+        });
+        reportVoiceCaptureError("voice_recorder_button", detail);
+        setError(detail.message);
+        setStatus("error");
         stopAndCleanupStream();
-        void handleBlob(blob);
-      };
+        return;
+      }
 
+      if (selectedMimeType && supportedMimeTypes.length > 0) {
+        const detail = buildVoiceCaptureError("mime_type_not_supported", "mime_type", e, {
+          permissionState,
+          requestedMimeType: selectedMimeType,
+        });
+        reportVoiceCaptureError("voice_recorder_button", detail);
+      }
+    }
+
+    recorderRef.current = recorder;
+    chunksRef.current = [];
+
+    recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) {
+        chunksRef.current.push(e.data);
+      }
+    };
+
+    recorder.onstop = () => {
+      stopTimer();
+      const mt = recorder.mimeType || selectedMimeType || "audio/webm";
+      const blob = new Blob(chunksRef.current, { type: mt });
+      chunksRef.current = [];
+      recorderRef.current = null;
+      stopAndCleanupStream();
+      void handleBlob(blob);
+    };
+
+    try {
       recorder.start(500);
       setStatus("recording");
       startTimer();
     } catch (e) {
-      console.error("voice.start_failed", e);
-      setError(mapMicrophoneAccessError(e));
+      const detail = buildVoiceCaptureError("capture_start_failed", "capture_start", e, {
+        permissionState,
+        requestedMimeType: selectedMimeType || undefined,
+      });
+      reportVoiceCaptureError("voice_recorder_button", detail);
+      setError(detail.message);
       setStatus("error");
       stopAndCleanupStream();
     }

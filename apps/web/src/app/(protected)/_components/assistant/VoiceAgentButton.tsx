@@ -627,8 +627,33 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
 
   const startListening = async () => {
     if (flowStep === "listening" || flowStep === "uploading" || flowStep === "transcribing" || flowStep === "executing") return;
-    if (typeof window === "undefined" || typeof window.MediaRecorder === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      setError("Enregistrement non supporté sur cet appareil.");
+    if (typeof window === "undefined" || typeof navigator === "undefined" || !navigator.mediaDevices) {
+      const detail = buildVoiceCaptureError("media_devices_unavailable", "media_devices");
+      reportVoiceCaptureError("voice_agent_button", detail);
+      setError(detail.message);
+      setFlowStep("error");
+      return;
+    }
+    if (typeof navigator.mediaDevices.getUserMedia !== "function") {
+      const detail = buildVoiceCaptureError("get_user_media_unavailable", "get_user_media");
+      reportVoiceCaptureError("voice_agent_button", detail);
+      setError(detail.message);
+      setFlowStep("error");
+      return;
+    }
+    if (typeof window.MediaRecorder === "undefined") {
+      const detail = buildVoiceCaptureError("media_recorder_unavailable", "media_recorder");
+      reportVoiceCaptureError("voice_agent_button", detail);
+      setError(detail.message);
+      setFlowStep("error");
+      return;
+    }
+
+    const permissionState = await getMicrophonePermissionState();
+    if (permissionState === "denied") {
+      const detail = buildVoiceCaptureError("permission_denied", "permissions", undefined, { permissionState });
+      reportVoiceCaptureError("voice_agent_button", detail);
+      setError(detail.message);
       setFlowStep("error");
       return;
     }
@@ -1379,6 +1404,13 @@ import { trackEvent } from "@/lib/analytics";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import { useAuth } from "@/hooks/useAuth";
 import { toUserErrorMessage } from "@/lib/userError";
+import {
+  buildVoiceCaptureError,
+  classifyGetUserMediaError,
+  getMicrophonePermissionState,
+  pickSupportedRecordingMimeType,
+  reportVoiceCaptureError,
+} from "./voiceCaptureDiagnostics";
 
 type Props = {
   mobileHidden?: boolean;
@@ -1442,50 +1474,6 @@ function createVoiceTimelineState(): VoiceTimelineState {
   };
 }
 
-function mapMicrophoneAccessError(err: unknown): string {
-  if (err instanceof DOMException) {
-    const name = String(err.name || "").toLowerCase();
-    const message = String(err.message || "").toLowerCase();
-    if (name.includes("notfound") || message.includes("requested device not found") || message.includes("device not found")) {
-      return "Aucun micro disponible. Vérifie ton appareil audio puis réessaie.";
-    }
-    if (name.includes("notallowed") || name.includes("security") || message.includes("permission") || message.includes("denied")) {
-      return "Permission micro refusée. Autorise le micro dans ton navigateur puis recharge la page.";
-    }
-    if (name.includes("notreadable") || message.includes("could not start audio source")) {
-      return "Le micro est indisponible (utilisé par une autre application ou bloqué par le système).";
-    }
-    return err.message || "Impossible d’accéder au micro.";
-  }
-
-  if (err instanceof Error) {
-    const msg = err.message.toLowerCase();
-    if (msg.includes("requested device not found") || msg.includes("device not found")) {
-      return "Aucun micro disponible. Vérifie ton appareil audio puis réessaie.";
-    }
-    if (msg.includes("permission") || msg.includes("notallowed") || msg.includes("denied")) {
-      return "Permission micro refusée. Autorise le micro dans ton navigateur puis recharge la page.";
-    }
-    if (msg.includes("not supported") || msg.includes("unsupported")) {
-      return "Enregistrement micro non supporté sur cet appareil.";
-    }
-    return err.message;
-  }
-
-  if (typeof err === "string") {
-    const msg = err.toLowerCase();
-    if (msg.includes("requested device not found") || msg.includes("device not found")) {
-      return "Aucun micro disponible. Vérifie ton appareil audio puis réessaie.";
-    }
-    if (msg.includes("permission") || msg.includes("notallowed") || msg.includes("denied")) {
-      return "Permission micro refusée. Autorise le micro dans ton navigateur puis recharge la page.";
-    }
-    return `Impossible d’accéder au micro: ${err}`;
-  }
-
-  return "Impossible d’accéder au micro.";
-}
-
 function extractVoiceErrorCode(err: unknown): string {
   const code = typeof (err as { code?: unknown })?.code === "string" ? String((err as { code?: unknown }).code) : "";
   return code.toLowerCase();
@@ -1526,20 +1514,6 @@ function mapVoiceFlowError(stage: "create_job" | "upload" | "transcription_reque
   if (stage === "upload") return "Échec d’envoi du fichier audio.";
   if (stage === "transcription_request") return "Échec de la demande de transcription.";
   return "Réponse backend invalide pendant la transcription.";
-}
-
-function pickSupportedRecordingMimeType(): string {
-  if (typeof window === "undefined") return "";
-  const mediaRecorder = window.MediaRecorder as unknown as { isTypeSupported?: (t: string) => boolean } | undefined;
-  const can = (value: string) => Boolean(mediaRecorder?.isTypeSupported?.(value));
-  const candidates = [
-    "audio/webm;codecs=opus",
-    "audio/webm",
-    "audio/mp4",
-    "audio/ogg;codecs=opus",
-    "audio/ogg",
-  ];
-  return candidates.find(can) ?? "";
 }
 
 export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: Props) {
@@ -2096,8 +2070,32 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
 
   const startListening = async () => {
     if (flowStep === "listening" || flowStep === "uploading" || flowStep === "transcribing" || flowStep === "executing") return;
-    if (typeof window === "undefined" || typeof window.MediaRecorder === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      setError("Enregistrement non supporté sur cet appareil.");
+    if (typeof window === "undefined" || typeof navigator === "undefined" || !navigator.mediaDevices) {
+      const detail = buildVoiceCaptureError("media_devices_unavailable", "media_devices");
+      reportVoiceCaptureError("voice_agent_button", detail);
+      setError(detail.message);
+      setFlowStep("error");
+      return;
+    }
+    if (typeof navigator.mediaDevices.getUserMedia !== "function") {
+      const detail = buildVoiceCaptureError("get_user_media_unavailable", "get_user_media");
+      reportVoiceCaptureError("voice_agent_button", detail);
+      setError(detail.message);
+      setFlowStep("error");
+      return;
+    }
+    if (typeof window.MediaRecorder === "undefined") {
+      const detail = buildVoiceCaptureError("media_recorder_unavailable", "media_recorder");
+      reportVoiceCaptureError("voice_agent_button", detail);
+      setError(detail.message);
+      setFlowStep("error");
+      return;
+    }
+    const permissionState = await getMicrophonePermissionState();
+    if (permissionState === "denied") {
+      const detail = buildVoiceCaptureError("permission_denied", "permissions", undefined, { permissionState });
+      reportVoiceCaptureError("voice_agent_button", detail);
+      setError(detail.message);
       setFlowStep("error");
       return;
     }
@@ -2116,50 +2114,88 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
     calibrationUntilRef.current = Date.now() + 1200;
     voiceTimelineRef.current = createVoiceTimelineState();
 
+    let stream: MediaStream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      chunksRef.current = [];
-      heardVoiceRef.current = false;
-      lastVoiceMsRef.current = Date.now();
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      const detail = classifyGetUserMediaError(e);
+      reportVoiceCaptureError("voice_agent_button", detail);
+      trackVoiceFlowEvent("voice_capture_prepare_failed", {
+        phase: "voice_record",
+        stage: detail.stage,
+        code: detail.code,
+      });
+      setError(detail.message);
+      setFlowStep("error");
+      hardStopRecordingResources();
+      return;
+    }
 
-      const recorder = (() => {
-        const supportedMimeType = pickSupportedRecordingMimeType();
-        try {
-          if (supportedMimeType) {
-            return new MediaRecorder(stream, { mimeType: supportedMimeType });
-          }
-          return new MediaRecorder(stream);
-        } catch {
-          return new MediaRecorder(stream);
-        }
-      })();
-      recorderRef.current = recorder;
+    streamRef.current = stream;
+    chunksRef.current = [];
+    heardVoiceRef.current = false;
+    lastVoiceMsRef.current = Date.now();
 
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          chunksRef.current.push(e.data);
-        }
-      };
-
-      recorder.onstop = () => {
-        clearTimer();
-        clearSilenceWatcher();
-        cleanupAudioGraph();
-        cleanupStream();
-        const recordStopMs = Date.now();
-        voiceTimelineRef.current.recordStopMs = recordStopMs;
-        trackVoiceFlowEvent("voice_record_stop", {
-          phase: "voice_record",
-          heard_voice: heardVoiceRef.current,
-          record_duration_ms: safeDeltaMs(voiceTimelineRef.current.recordStartMs, recordStopMs),
+    const { selectedMimeType, supportedMimeTypes } = pickSupportedRecordingMimeType();
+    let recorder: MediaRecorder;
+    try {
+      recorder = selectedMimeType ? new MediaRecorder(stream, { mimeType: selectedMimeType }) : new MediaRecorder(stream);
+    } catch (e) {
+      try {
+        recorder = new MediaRecorder(stream);
+      } catch (fallbackErr) {
+        const detail = buildVoiceCaptureError("media_recorder_init_failed", "media_recorder_init", fallbackErr, {
+          permissionState,
+          requestedMimeType: selectedMimeType || undefined,
         });
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
-        chunksRef.current = [];
-        recorderRef.current = null;
-        void processBlob(blob);
-      };
+        reportVoiceCaptureError("voice_agent_button", detail);
+        trackVoiceFlowEvent("voice_capture_prepare_failed", {
+          phase: "voice_record",
+          stage: detail.stage,
+          code: detail.code,
+        });
+        setError(detail.message);
+        setFlowStep("error");
+        hardStopRecordingResources();
+        return;
+      }
 
+      if (selectedMimeType && supportedMimeTypes.length > 0) {
+        const detail = buildVoiceCaptureError("mime_type_not_supported", "mime_type", e, {
+          permissionState,
+          requestedMimeType: selectedMimeType,
+        });
+        reportVoiceCaptureError("voice_agent_button", detail);
+      }
+    }
+
+    recorderRef.current = recorder;
+
+    recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) {
+        chunksRef.current.push(e.data);
+      }
+    };
+
+    recorder.onstop = () => {
+      clearTimer();
+      clearSilenceWatcher();
+      cleanupAudioGraph();
+      cleanupStream();
+      const recordStopMs = Date.now();
+      voiceTimelineRef.current.recordStopMs = recordStopMs;
+      trackVoiceFlowEvent("voice_record_stop", {
+        phase: "voice_record",
+        heard_voice: heardVoiceRef.current,
+        record_duration_ms: safeDeltaMs(voiceTimelineRef.current.recordStartMs, recordStopMs),
+      });
+      const blob = new Blob(chunksRef.current, { type: recorder.mimeType || selectedMimeType || "audio/webm" });
+      chunksRef.current = [];
+      recorderRef.current = null;
+      void processBlob(blob);
+    };
+
+    try {
       recorder.start(350);
       setFlowStep("listening");
       startedAtRef.current = Date.now();
@@ -2223,7 +2259,17 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
         }
       }, 180);
     } catch (e) {
-      setError(mapMicrophoneAccessError(e));
+      const detail = buildVoiceCaptureError("capture_start_failed", "capture_start", e, {
+        permissionState,
+        requestedMimeType: selectedMimeType || undefined,
+      });
+      reportVoiceCaptureError("voice_agent_button", detail);
+      trackVoiceFlowEvent("voice_capture_prepare_failed", {
+        phase: "voice_record",
+        stage: detail.stage,
+        code: detail.code,
+      });
+      setError(detail.message);
       setFlowStep("error");
       hardStopRecordingResources();
     }
