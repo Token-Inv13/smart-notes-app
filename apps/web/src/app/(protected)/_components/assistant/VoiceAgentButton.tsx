@@ -4,7 +4,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useRouter, useSearchParams } from "next/navigation";
 import { httpsCallable } from "firebase/functions";
 import { doc, onSnapshot } from "firebase/firestore";
 import { ref as storageRef, uploadBytes } from "firebase/storage";
@@ -100,6 +99,174 @@ function mapMicrophoneAccessError(err: unknown): string {
   }
 
   return "Impossible d’accéder au micro.";
+}
+
+function extractVoiceErrorCode(err: unknown): string {
+  const code = typeof (err as { code?: unknown })?.code === "string" ? String((err as { code?: unknown }).code) : "";
+  return code.toLowerCase();
+}
+
+function inferVoiceFileExtension(mimeType: string): string {
+  const normalized = mimeType.toLowerCase();
+  if (normalized.includes("webm")) return "webm";
+  if (normalized.includes("ogg") || normalized.includes("opus")) return "ogg";
+  if (normalized.includes("mpeg") || normalized.includes("mp3")) return "mp3";
+  if (normalized.includes("wav")) return "wav";
+  if (normalized.includes("x-m4a") || normalized.includes("m4a")) return "m4a";
+  if (normalized.includes("mp4") || normalized.includes("aac")) return "mp4";
+  return "webm";
+}
+
+function mapVoiceFlowError(stage: "create_job" | "upload" | "transcription_request" | "backend_invalid", err: unknown): string {
+  const code = extractVoiceErrorCode(err);
+  const asMessage = toUserErrorMessage(err, "");
+  const message = asMessage.trim().toLowerCase();
+
+  if (code.includes("permission-denied") || message.includes("permission")) {
+    return "Permission refusée pour traiter l’audio côté serveur.";
+  }
+  if (code.includes("resource-exhausted") || message.includes("daily transcription limit")) {
+    return "Limite de transcription atteinte pour aujourd’hui.";
+  }
+  if (code.includes("invalid-argument")) {
+    return "Audio invalide pour la transcription.";
+  }
+  if (code.includes("failed-precondition")) {
+    if (message.includes("audio file missing")) return "Fichier audio introuvable après capture.";
+    if (message.includes("audio file invalid")) return "Capture audio vide ou invalide.";
+    if (message.includes("already in progress")) return "Une transcription est déjà en cours. Réessaie dans quelques secondes.";
+  }
+
+  if (stage === "create_job") return "Impossible de préparer l’enregistrement audio.";
+  if (stage === "upload") return "Échec d’envoi du fichier audio.";
+  if (stage === "transcription_request") return "Échec de la demande de transcription.";
+  return "Réponse backend invalide pendant la transcription.";
+}
+
+function pickSupportedRecordingMimeType(): string {
+  if (typeof window === "undefined") return "";
+  const mediaRecorder = window.MediaRecorder as unknown as { isTypeSupported?: (t: string) => boolean } | undefined;
+  const can = (value: string) => Boolean(mediaRecorder?.isTypeSupported?.(value));
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+    "audio/ogg",
+  ];
+  return candidates.find(can) ?? "";
+}
+
+function extractVoiceErrorCode(err: unknown): string {
+  const code = typeof (err as { code?: unknown })?.code === "string" ? String((err as { code?: unknown }).code) : "";
+  return code.toLowerCase();
+}
+
+function inferVoiceFileExtension(mimeType: string): string {
+  const normalized = mimeType.toLowerCase();
+  if (normalized.includes("webm")) return "webm";
+  if (normalized.includes("ogg") || normalized.includes("opus")) return "ogg";
+  if (normalized.includes("mpeg") || normalized.includes("mp3")) return "mp3";
+  if (normalized.includes("wav")) return "wav";
+  if (normalized.includes("x-m4a") || normalized.includes("m4a")) return "m4a";
+  if (normalized.includes("mp4") || normalized.includes("aac")) return "mp4";
+  return "webm";
+}
+
+function mapVoiceFlowError(stage: "create_job" | "upload" | "transcription_request" | "backend_invalid", err: unknown): string {
+  const code = extractVoiceErrorCode(err);
+  const asMessage = toUserErrorMessage(err, "");
+  const message = asMessage.trim().toLowerCase();
+
+  if (code.includes("permission-denied") || message.includes("permission")) {
+    return "Permission refusée pour traiter l’audio côté serveur.";
+  }
+  if (code.includes("resource-exhausted") || message.includes("daily transcription limit")) {
+    return "Limite de transcription atteinte pour aujourd’hui.";
+  }
+  if (code.includes("invalid-argument")) {
+    return "Audio invalide pour la transcription.";
+  }
+  if (code.includes("failed-precondition")) {
+    if (message.includes("audio file missing")) return "Fichier audio introuvable après capture.";
+    if (message.includes("audio file invalid")) return "Capture audio vide ou invalide.";
+    if (message.includes("already in progress")) return "Une transcription est déjà en cours. Réessaie dans quelques secondes.";
+  }
+
+  if (stage === "create_job") return "Impossible de préparer l’enregistrement audio.";
+  if (stage === "upload") return "Échec d’envoi du fichier audio.";
+  if (stage === "transcription_request") return "Échec de la demande de transcription.";
+  return "Réponse backend invalide pendant la transcription.";
+}
+
+function pickSupportedRecordingMimeType(): string {
+  if (typeof window === "undefined") return "";
+  const mediaRecorder = window.MediaRecorder as unknown as { isTypeSupported?: (t: string) => boolean } | undefined;
+  const can = (value: string) => Boolean(mediaRecorder?.isTypeSupported?.(value));
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+    "audio/ogg",
+  ];
+  return candidates.find(can) ?? "";
+}
+
+function extractVoiceErrorCode(err: unknown): string {
+  const code = typeof (err as { code?: unknown })?.code === "string" ? String((err as { code?: unknown }).code) : "";
+  return code.toLowerCase();
+}
+
+function inferVoiceFileExtension(mimeType: string): string {
+  const normalized = mimeType.toLowerCase();
+  if (normalized.includes("webm")) return "webm";
+  if (normalized.includes("ogg") || normalized.includes("opus")) return "ogg";
+  if (normalized.includes("mpeg") || normalized.includes("mp3")) return "mp3";
+  if (normalized.includes("wav")) return "wav";
+  if (normalized.includes("x-m4a") || normalized.includes("m4a")) return "m4a";
+  if (normalized.includes("mp4") || normalized.includes("aac")) return "mp4";
+  return "webm";
+}
+
+function mapVoiceFlowError(stage: "create_job" | "upload" | "transcription_request" | "backend_invalid", err: unknown): string {
+  const code = extractVoiceErrorCode(err);
+  const asMessage = toUserErrorMessage(err, "");
+  const message = asMessage.trim().toLowerCase();
+
+  if (code.includes("permission-denied") || message.includes("permission")) {
+    return "Permission refusée pour traiter l’audio côté serveur.";
+  }
+  if (code.includes("resource-exhausted") || message.includes("daily transcription limit")) {
+    return "Limite de transcription atteinte pour aujourd’hui.";
+  }
+  if (code.includes("invalid-argument")) {
+    return "Audio invalide pour la transcription.";
+  }
+  if (code.includes("failed-precondition")) {
+    if (message.includes("audio file missing")) return "Fichier audio introuvable après capture.";
+    if (message.includes("audio file invalid")) return "Capture audio vide ou invalide.";
+    if (message.includes("already in progress")) return "Une transcription est déjà en cours. Réessaie dans quelques secondes.";
+  }
+
+  if (stage === "create_job") return "Impossible de préparer l’enregistrement audio.";
+  if (stage === "upload") return "Échec d’envoi du fichier audio.";
+  if (stage === "transcription_request") return "Échec de la demande de transcription.";
+  return "Réponse backend invalide pendant la transcription.";
+}
+
+function pickSupportedRecordingMimeType(): string {
+  if (typeof window === "undefined") return "";
+  const mediaRecorder = window.MediaRecorder as unknown as { isTypeSupported?: (t: string) => boolean } | undefined;
+  const can = (value: string) => Boolean(mediaRecorder?.isTypeSupported?.(value));
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+    "audio/ogg",
+  ];
+  return candidates.find(can) ?? "";
 }
 
 function normalizeVoiceText(raw: string) {
@@ -360,9 +527,12 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
     cleanupStream();
   };
 
-  const createVoiceJob = async () => {
-    const fn = httpsCallable<{ mode?: string }, { jobId: string; storagePath: string }>(fbFunctions, "assistantCreateVoiceJob");
-    const res = await fn({ mode: "standalone" });
+  const createVoiceJob = async (mimeType: string, fileExtension: string) => {
+    const fn = httpsCallable<
+      { mode?: string; mimeType?: string; fileExtension?: string },
+      { jobId: string; storagePath: string }
+    >(fbFunctions, "assistantCreateVoiceJob");
+    const res = await fn({ mode: "standalone", mimeType, fileExtension });
     return res.data;
   };
 
@@ -1201,7 +1371,6 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useRouter, useSearchParams } from "next/navigation";
 import { httpsCallable } from "firebase/functions";
 import { doc, onSnapshot } from "firebase/firestore";
 import { ref as storageRef, uploadBytes } from "firebase/storage";
@@ -1317,11 +1486,64 @@ function mapMicrophoneAccessError(err: unknown): string {
   return "Impossible d’accéder au micro.";
 }
 
+function extractVoiceErrorCode(err: unknown): string {
+  const code = typeof (err as { code?: unknown })?.code === "string" ? String((err as { code?: unknown }).code) : "";
+  return code.toLowerCase();
+}
+
+function inferVoiceFileExtension(mimeType: string): string {
+  const normalized = mimeType.toLowerCase();
+  if (normalized.includes("webm")) return "webm";
+  if (normalized.includes("ogg") || normalized.includes("opus")) return "ogg";
+  if (normalized.includes("mpeg") || normalized.includes("mp3")) return "mp3";
+  if (normalized.includes("wav")) return "wav";
+  if (normalized.includes("x-m4a") || normalized.includes("m4a")) return "m4a";
+  if (normalized.includes("mp4") || normalized.includes("aac")) return "mp4";
+  return "webm";
+}
+
+function mapVoiceFlowError(stage: "create_job" | "upload" | "transcription_request" | "backend_invalid", err: unknown): string {
+  const code = extractVoiceErrorCode(err);
+  const asMessage = toUserErrorMessage(err, "");
+  const message = asMessage.trim().toLowerCase();
+
+  if (code.includes("permission-denied") || message.includes("permission")) {
+    return "Permission refusée pour traiter l’audio côté serveur.";
+  }
+  if (code.includes("resource-exhausted") || message.includes("daily transcription limit")) {
+    return "Limite de transcription atteinte pour aujourd’hui.";
+  }
+  if (code.includes("invalid-argument")) {
+    return "Audio invalide pour la transcription.";
+  }
+  if (code.includes("failed-precondition")) {
+    if (message.includes("audio file missing")) return "Fichier audio introuvable après capture.";
+    if (message.includes("audio file invalid")) return "Capture audio vide ou invalide.";
+    if (message.includes("already in progress")) return "Une transcription est déjà en cours. Réessaie dans quelques secondes.";
+  }
+
+  if (stage === "create_job") return "Impossible de préparer l’enregistrement audio.";
+  if (stage === "upload") return "Échec d’envoi du fichier audio.";
+  if (stage === "transcription_request") return "Échec de la demande de transcription.";
+  return "Réponse backend invalide pendant la transcription.";
+}
+
+function pickSupportedRecordingMimeType(): string {
+  if (typeof window === "undefined") return "";
+  const mediaRecorder = window.MediaRecorder as unknown as { isTypeSupported?: (t: string) => boolean } | undefined;
+  const can = (value: string) => Boolean(mediaRecorder?.isTypeSupported?.(value));
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+    "audio/ogg",
+  ];
+  return candidates.find(can) ?? "";
+}
+
 export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: Props) {
   const { user } = useAuth();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const workspaceId = searchParams.get("workspaceId") || "";
   const [open, setOpen] = useState(false);
   const [flowStep, setFlowStep] = useState<VoiceFlowStep>("idle");
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -1694,9 +1916,12 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
     cleanupStream();
   };
 
-  const createVoiceJob = async () => {
-    const fn = httpsCallable<{ mode?: string }, { jobId: string; storagePath: string }>(fbFunctions, "assistantCreateVoiceJob");
-    const res = await fn({ mode: "standalone" });
+  const createVoiceJob = async (mimeType: string, fileExtension: string) => {
+    const fn = httpsCallable<
+      { mode?: string; mimeType?: string; fileExtension?: string },
+      { jobId: string; storagePath: string }
+    >(fbFunctions, "assistantCreateVoiceJob");
+    const res = await fn({ mode: "standalone", mimeType, fileExtension });
     return res.data;
   };
 
@@ -1767,79 +1992,20 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
     }
   };
 
-  const executeLocalCreation = async (plan: LocalVoiceActionPlan) => {
-    if (typeof window === "undefined") return;
-
-    const buildPath = (path: string, extra: Record<string, string> = {}) => {
-      const params = new URLSearchParams();
-      if (workspaceId) params.set("workspaceId", workspaceId);
-      for (const [key, value] of Object.entries(extra)) {
-        if (value) params.set(key, value);
-      }
-      const query = params.toString();
-      return query ? `${path}?${query}` : path;
-    };
-
-    if (plan.kind === "note") {
-      window.sessionStorage.setItem(
-        "smartnotes:draft:new-note",
-        JSON.stringify({
-          title: plan.payload,
-          content: "",
-          workspaceId,
-        }),
-      );
-      closeModal();
-      router.push(buildPath("/notes/new"));
-      return;
-    }
-
-    if (plan.kind === "task") {
-      window.sessionStorage.setItem(
-        "smartnotes:draft:new-task",
-        JSON.stringify({
-          title: plan.payload,
-          status: "todo",
-          workspaceId,
-          startDate: plan.startDate ?? "",
-          dueDate: "",
-          priority: null,
-        }),
-      );
-      closeModal();
-      router.push(buildPath("/tasks/new", plan.startDate ? { startDate: plan.startDate } : {}));
-      return;
-    }
-
-    if (plan.kind === "checklist") {
-      closeModal();
-      router.push(buildPath("/todo/new", { title: plan.payload }));
-    }
-  };
-
   const handleConfirmReview = async () => {
-    if (!localActionPlan) {
-      setError("Commande non reconnue. Reformule plus simplement.");
+    if (!result) {
+      setError("Intention non confirmée. Réessaie la commande.");
       return;
     }
 
-    if (!localActionPlan.executable || !localActionPlan.payload.trim()) {
-      if (localActionPlan.kind === "search" || localActionPlan.kind === "navigation") {
-        setError("Cette commande est comprise, mais n’est pas exécutable dans cette version.");
-      } else {
-        setError("Commande incomplète. Ajoute un contenu clair puis réessaie.");
-      }
-      return;
-    }
-
-    if (localActionPlan.kind !== "note" && localActionPlan.kind !== "task" && localActionPlan.kind !== "checklist") {
-      setError("Cette intention n’est pas exécutable dans cette version.");
+    if (result.needsClarification || (result.missingFields?.length ?? 0) > 0) {
+      setError(null);
+      setFlowStep("clarify");
       return;
     }
 
     setError(null);
-    setFlowStep("executing");
-    await executeLocalCreation(localActionPlan);
+    await runIntent(true, transcript);
   };
 
   const processBlob = async (blob: Blob) => {
@@ -1859,14 +2025,28 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
       return;
     }
 
+    const audioMimeType = (blob.type || "audio/webm").trim();
+    const audioExtension = inferVoiceFileExtension(audioMimeType);
     setFlowStep("uploading");
 
+    let created: { jobId: string; storagePath: string };
     try {
-      const created = await createVoiceJob();
+      created = await createVoiceJob(audioMimeType, audioExtension);
       setJobId(created.jobId);
       voiceTimelineRef.current.jobId = created.jobId;
+    } catch (e) {
+      if (isCallableUnauthenticated(e)) {
+        void invalidateAuthSession();
+        return;
+      }
+      setError(mapVoiceFlowError("create_job", e));
+      setFlowStep("error");
+      return;
+    }
+
+    try {
       const fileRef = storageRef(storage, created.storagePath);
-      await uploadBytes(fileRef, blob, { contentType: blob.type || "audio/webm" });
+      await uploadBytes(fileRef, blob, { contentType: audioMimeType || "audio/webm" });
       const uploadDoneMs = Date.now();
       voiceTimelineRef.current.uploadDoneMs = uploadDoneMs;
       trackVoiceFlowEvent("voice_upload_done", {
@@ -1875,7 +2055,23 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
         stop_to_upload_ms: safeDeltaMs(voiceTimelineRef.current.recordStopMs, uploadDoneMs),
       });
       setFlowStep("transcribing");
+    } catch (e) {
+      if (isCallableUnauthenticated(e)) {
+        void invalidateAuthSession();
+        return;
+      }
+      setError(mapVoiceFlowError("upload", e));
+      setFlowStep("error");
+      return;
+    }
+
+    try {
       const tr = await requestTranscription(created.jobId);
+      if (!tr?.resultId || typeof tr.resultId !== "string") {
+        setError(mapVoiceFlowError("backend_invalid", new Error("missing resultId")));
+        setFlowStep("error");
+        return;
+      }
       setResultId(tr.resultId);
       voiceTimelineRef.current.resultId = tr.resultId;
     } catch (e) {
@@ -1883,7 +2079,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
         void invalidateAuthSession();
         return;
       }
-      setError(toUserErrorMessage(e, "Impossible de traiter l’audio."));
+      setError(mapVoiceFlowError("transcription_request", e));
       setFlowStep("error");
     }
   };
@@ -1928,8 +2124,12 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
       lastVoiceMsRef.current = Date.now();
 
       const recorder = (() => {
+        const supportedMimeType = pickSupportedRecordingMimeType();
         try {
-          return new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
+          if (supportedMimeType) {
+            return new MediaRecorder(stream, { mimeType: supportedMimeType });
+          }
+          return new MediaRecorder(stream);
         } catch {
           return new MediaRecorder(stream);
         }
@@ -2232,6 +2432,23 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
     if (flowStep === "executing" && elapsed > 2000) return "Exécution de l’action en cours…";
     return null;
   }, [flowStep]);
+  const helpfulErrorHint = useMemo(() => {
+    if (!error) return null;
+    const raw = error.toLowerCase();
+    if (raw.includes("permission micro") || raw.includes("accès au micro")) {
+      return "Autorise le micro pour Smart Notes dans le navigateur Android puis réessaie.";
+    }
+    if (raw.includes("audio vide") || raw.includes("capture")) {
+      return "Parle plus près du micro pendant 1-2 secondes pour valider la captation.";
+    }
+    if (raw.includes("envoi") || raw.includes("upload")) {
+      return "Vérifie la connexion réseau: l’audio a été capté mais l’upload a échoué.";
+    }
+    if (raw.includes("transcription")) {
+      return "La capture est faite, mais la transcription a échoué côté service vocal.";
+    }
+    return "Réessaie; si l’erreur persiste, la cause est côté backend vocal.";
+  }, [error]);
 
   const customTrigger = renderCustomTrigger
     ? renderCustomTrigger({
@@ -2369,7 +2586,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
             <div className="rounded-md border border-emerald-300/70 bg-emerald-50/70 p-2.5 text-sm text-emerald-900">{displayedHint}</div>
           </div>
         ) : null}
-        {localActionPlan && (localActionPlan.kind === "note" || localActionPlan.kind === "task" || localActionPlan.kind === "checklist") ? (
+        {!result && localActionPlan && (localActionPlan.kind === "note" || localActionPlan.kind === "task" || localActionPlan.kind === "checklist") ? (
           <div className="space-y-1">
             <div className="text-xs font-medium text-muted-foreground">Résumé de confirmation</div>
             <div className="rounded-md border border-border bg-background p-2.5 text-sm space-y-1">
@@ -2386,18 +2603,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
         {error ? (
           <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2">
             <div className="text-xs font-medium text-destructive">{error}</div>
-            <div className="mt-1 text-xs text-destructive/90">
-              {(() => {
-                const raw = error.toLowerCase();
-                if (raw.includes("micro") || raw.includes("permission")) {
-                  return "Vérifie l’accès micro dans le navigateur, puis réessaie.";
-                }
-                if (raw.includes("audio")) {
-                  return "Réessaie avec une commande plus courte et parle clairement.";
-                }
-                return "Tu peux réessayer ou reformuler la commande plus simplement.";
-              })()}
-            </div>
+            {helpfulErrorHint ? <div className="mt-1 text-xs text-destructive/90">{helpfulErrorHint}</div> : null}
           </div>
         ) : null}
 

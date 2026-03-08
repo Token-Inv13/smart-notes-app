@@ -666,59 +666,94 @@ export default function AgendaCalendar({
 
   return (
     <section ref={calendarShellRef} className="space-y-3 overflow-x-hidden">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit max-w-full">
-          <button type="button" className="px-3 py-1.5 text-sm hover:bg-accent/60 transition-colors" onClick={() => {
-            triggerViewTransition();
-            jump("prev");
-          }}>←</button>
-          <button type="button" className="px-3 py-1.5 text-sm border-l border-border hover:bg-accent/60 transition-colors" onClick={() => {
-            triggerViewTransition();
-            jump("today");
-          }}>Aujourd’hui</button>
-          <button type="button" className="px-3 py-1.5 text-sm border-l border-border hover:bg-accent/60 transition-colors" onClick={() => {
-            triggerViewTransition();
-            jump("next");
-          }}>→</button>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit max-w-full">
+            <button type="button" className="px-3 py-1.5 text-sm hover:bg-accent/60 transition-colors" onClick={() => {
+              triggerViewTransition();
+              jump("prev");
+            }}>←</button>
+            <button type="button" className="px-3 py-1.5 text-sm border-l border-border hover:bg-accent/60 transition-colors" onClick={() => {
+              triggerViewTransition();
+              jump("today");
+            }}>Aujourd’hui</button>
+            <button type="button" className="px-3 py-1.5 text-sm border-l border-border hover:bg-accent/60 transition-colors" onClick={() => {
+              triggerViewTransition();
+              jump("next");
+            }}>→</button>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <div className="inline-flex items-center rounded-md border border-border bg-background/90 shadow-sm overflow-hidden">
+              {displayMode === "calendar" ? (
+                <>
+                  <VoiceAgentButton
+                    renderCustomTrigger={({ onClick, ariaLabel, title }) => (
+                      <button
+                        type="button"
+                        onClick={onClick}
+                        aria-label={ariaLabel}
+                        title={title}
+                        className="h-9 w-10 text-base text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+                      >
+                        🎤
+                      </button>
+                    )}
+                  />
+                  <div className="h-6 w-px bg-border" aria-hidden="true" />
+                </>
+              ) : null}
+              <CreateButton
+                renderCustomTrigger={({ onClick, ariaLabel, title }) => (
+                  <button
+                    type="button"
+                    onClick={onClick}
+                    aria-label={ariaLabel}
+                    title={title}
+                    className="h-9 w-10 text-lg font-semibold leading-none text-primary hover:bg-primary/10 transition-colors"
+                  >
+                    +
+                  </button>
+                )}
+              />
+            </div>
+          </div>
         </div>
 
         <div className="text-sm font-semibold">{label}</div>
 
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          <div className="inline-flex items-center rounded-md border border-border bg-background/90 shadow-sm overflow-hidden">
-            {displayMode === "calendar" ? (
-              <>
-                <VoiceAgentButton
-                  renderCustomTrigger={({ onClick, ariaLabel, title }) => (
-                    <button
-                      type="button"
-                      onClick={onClick}
-                      aria-label={ariaLabel}
-                      title={title}
-                      className="h-9 w-10 text-base text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
-                    >
-                      🎤
-                    </button>
-                  )}
-                />
-                <div className="h-6 w-px bg-border" aria-hidden="true" />
-              </>
-            ) : null}
-            <CreateButton
-              renderCustomTrigger={({ onClick, ariaLabel, title }) => (
-                <button
-                  type="button"
-                  onClick={onClick}
-                  aria-label={ariaLabel}
-                  title={title}
-                  className="h-9 w-10 text-lg font-semibold leading-none text-primary hover:bg-primary/10 transition-colors"
-                >
-                  +
-                </button>
-              )}
-            />
-          </div>
+        <div className="sm:hidden grid grid-cols-2 gap-2">
+          <label className="space-y-1">
+            <span className="text-[11px] text-muted-foreground">Affichage</span>
+            <select
+              value={displayMode}
+              onChange={(event) => {
+                triggerViewTransition();
+                setDisplayMode(event.target.value as AgendaDisplayMode);
+              }}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+              aria-label="Choisir le mode d’affichage agenda"
+            >
+              <option value="calendar">Agenda</option>
+              <option value="planning">Liste du jour</option>
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className="text-[11px] text-muted-foreground">Période</span>
+            <select
+              value={viewMode}
+              onChange={(event) => changeView(event.target.value as CalendarViewMode)}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+              aria-label="Choisir la période de l’agenda"
+            >
+              <option value="dayGridMonth">Mois</option>
+              <option value="timeGridWeek">Semaine</option>
+              <option value="timeGridDay">Jour</option>
+            </select>
+          </label>
+        </div>
 
+        <div className="hidden sm:flex items-center gap-2 flex-wrap justify-end">
           <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit max-w-full">
           <button
             type="button"

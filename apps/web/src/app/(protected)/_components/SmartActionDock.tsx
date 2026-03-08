@@ -21,7 +21,7 @@ export default function SmartActionDock({
 }: Props) {
   const hasVoiceAction = Boolean(voiceAction);
   const visibilityClass = mobileHidden ? "hidden md:flex" : "flex";
-  const mobileLayoutClass = "max-md:left-1/2 max-md:-translate-x-1/2 max-md:rounded-full";
+  const mobileLayoutClass = "max-md:right-3 max-md:left-auto max-md:translate-x-0 max-md:rounded-full";
   const hiddenClass = hiddenOnScroll
     ? "translate-y-[130%] opacity-0 pointer-events-none md:translate-y-0 md:opacity-100 md:pointer-events-auto"
     : "translate-y-0 opacity-100";

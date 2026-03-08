@@ -671,6 +671,8 @@ type AssistantVoiceJobDoc = {
   mode: AssistantVoiceJobMode;
   status: AssistantVoiceJobStatus;
   storagePath: string;
+  audioMimeType?: string | null;
+  audioExtension?: string | null;
   lockedUntil?: FirebaseFirestore.Timestamp;
   fileHash?: string | null;
   usageCountedHash?: string | null;
@@ -909,6 +911,7 @@ const ASSISTANT_VOICE_TRANSCRIPT_PRO_DAILY_LIMIT = 200;
 const ASSISTANT_VOICE_MAX_BYTES = 25 * 1024 * 1024;
 const ASSISTANT_VOICE_SCHEMA_VERSION = 1;
 const ASSISTANT_FOLLOWUP_REJECT_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+const ASSISTANT_VOICE_ALLOWED_EXTENSIONS = new Set(['webm', 'ogg', 'mp3', 'wav', 'm4a', 'mp4']);
 
 function utcDayKey(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -936,6 +939,35 @@ function assistantAIJobIdForNote(noteId: string) {
 
 function assistantVoiceJobIdForNote(noteId: string) {
   return `current_voice_note_${noteId}`;
+}
+
+function voiceExtensionFromMimeType(mimeType: string | null): string | null {
+  const raw = typeof mimeType === 'string' ? mimeType.trim().toLowerCase() : '';
+  if (!raw) return null;
+  if (raw.includes('webm')) return 'webm';
+  if (raw.includes('ogg') || raw.includes('opus')) return 'ogg';
+  if (raw.includes('mpeg') || raw.includes('mp3')) return 'mp3';
+  if (raw.includes('wav')) return 'wav';
+  if (raw.includes('x-m4a') || raw.includes('m4a')) return 'm4a';
+  if (raw.includes('mp4') || raw.includes('aac')) return 'mp4';
+  return null;
+}
+
+function normalizeVoiceExtension(extensionRaw: string | null, mimeType: string | null): string {
+  const sanitized =
+    typeof extensionRaw === 'string'
+      ? extensionRaw
+          .trim()
+          .toLowerCase()
+          .replace(/^\.+/, '')
+          .replace(/[^a-z0-9]/g, '')
+      : '';
+  if (sanitized && ASSISTANT_VOICE_ALLOWED_EXTENSIONS.has(sanitized)) {
+    return sanitized;
+  }
+  const inferred = voiceExtensionFromMimeType(mimeType);
+  if (inferred && ASSISTANT_VOICE_ALLOWED_EXTENSIONS.has(inferred)) return inferred;
+  return 'webm';
 }
 
 type AssistantMetricsDoc = {
@@ -5362,6 +5394,10 @@ export const assistantCreateVoiceJob = functions.https.onCall(async (data, conte
 
   const noteId = typeof (data as any)?.noteId === 'string' ? String((data as any).noteId) : null;
   const modeRaw = typeof (data as any)?.mode === 'string' ? String((data as any).mode) : null;
+  const mimeTypeRaw = typeof (data as any)?.mimeType === 'string' ? String((data as any).mimeType) : '';
+  const mimeType = mimeTypeRaw.trim().slice(0, 120);
+  const extRaw = typeof (data as any)?.fileExtension === 'string' ? String((data as any).fileExtension) : '';
+  const audioExtension = normalizeVoiceExtension(extRaw, mimeType || null);
   const mode: AssistantVoiceJobMode = modeRaw === 'append_to_note' || modeRaw === 'standalone' ? (modeRaw as AssistantVoiceJobMode) : noteId ? 'append_to_note' : 'standalone';
 
   const db = admin.firestore();
@@ -5387,7 +5423,7 @@ export const assistantCreateVoiceJob = functions.https.onCall(async (data, conte
   const jobRef = noteId ? jobsCol.doc(assistantVoiceJobIdForNote(noteId)) : jobsCol.doc();
 
   const jobId = jobRef.id;
-  const storagePath = `users/${userId}/voice/${jobId}.webm`;
+  const storagePath = `users/${userId}/voice/${jobId}.${audioExtension}`;
   const nowServer = admin.firestore.FieldValue.serverTimestamp();
   const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000);
   const lockedUntilReady = admin.firestore.Timestamp.fromMillis(0);
@@ -5411,6 +5447,8 @@ export const assistantCreateVoiceJob = functions.https.onCall(async (data, conte
           mode,
           status: 'created',
           storagePath,
+          audioMimeType: mimeType || null,
+          audioExtension,
           lockedUntil: lockedUntilReady,
           fileHash: null,
           usageCountedHash: null,
@@ -5430,6 +5468,8 @@ export const assistantCreateVoiceJob = functions.https.onCall(async (data, conte
       mode,
       status: 'created',
       storagePath,
+      audioMimeType: mimeType || null,
+      audioExtension,
       lockedUntil: lockedUntilReady,
       fileHash: null,
       usageCountedHash: null,
@@ -5623,9 +5663,15 @@ export const assistantRequestVoiceTranscription = functions
     }
 
     try {
+      const filenameExt =
+        normalizeVoiceExtension(
+          typeof (jobData as any)?.audioExtension === 'string' ? String((jobData as any).audioExtension) : '',
+          contentType,
+        ) || 'webm';
+
       const whisper = await callOpenAIWhisperTranscription({
         buffer,
-        filename: `${jobId}.webm`,
+        filename: `${jobId}.${filenameExt}`,
         contentType,
         language: null,
       });

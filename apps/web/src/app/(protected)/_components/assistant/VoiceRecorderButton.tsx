@@ -55,6 +55,17 @@ function pickMimeType() {
   return candidates.find(can) ?? "";
 }
 
+function inferVoiceFileExtension(mimeType: string) {
+  const normalized = mimeType.toLowerCase();
+  if (normalized.includes("webm")) return "webm";
+  if (normalized.includes("ogg") || normalized.includes("opus")) return "ogg";
+  if (normalized.includes("mpeg") || normalized.includes("mp3")) return "mp3";
+  if (normalized.includes("wav")) return "wav";
+  if (normalized.includes("x-m4a") || normalized.includes("m4a")) return "m4a";
+  if (normalized.includes("mp4") || normalized.includes("aac")) return "mp4";
+  return "webm";
+}
+
 function mapMicrophoneAccessError(err: unknown): string {
   if (err instanceof DOMException) {
     const name = String(err.name || "").toLowerCase();
@@ -168,12 +179,15 @@ export default function VoiceRecorderButton({
     return typeof window.MediaRecorder !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
   }, []);
 
-  const createJob = async () => {
-    const fn = httpsCallable<{ noteId?: string; mode?: string }, { jobId: string; storagePath: string }>(
+  const createJob = async (mimeType: string, fileExtension: string) => {
+    const fn = httpsCallable<
+      { noteId?: string; mode?: string; mimeType?: string; fileExtension?: string },
+      { jobId: string; storagePath: string }
+    >(
       fbFunctions,
       "assistantCreateVoiceJob",
     );
-    const res = await fn({ noteId: noteId ?? undefined, mode: effectiveMode });
+    const res = await fn({ noteId: noteId ?? undefined, mode: effectiveMode, mimeType, fileExtension });
     return res.data;
   };
 
@@ -208,9 +222,11 @@ export default function VoiceRecorderButton({
     setStatus("uploading");
     setError(null);
 
+    const audioMimeType = (blob.type || "audio/webm").trim();
+    const audioExtension = inferVoiceFileExtension(audioMimeType);
     let created: { jobId: string; storagePath: string };
     try {
-      created = await createJob();
+      created = await createJob(audioMimeType, audioExtension);
     } catch (e) {
       if (isCallableUnauthenticated(e)) {
         void invalidateAuthSession();
@@ -226,7 +242,7 @@ export default function VoiceRecorderButton({
     try {
       const r = storageRef(storage, created.storagePath);
       await uploadBytes(r, blob, {
-        contentType: blob.type || "audio/webm",
+        contentType: audioMimeType || "audio/webm",
       });
     } catch (e) {
       console.error("voice.upload_failed", e);
