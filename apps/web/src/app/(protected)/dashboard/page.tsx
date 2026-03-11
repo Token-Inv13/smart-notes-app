@@ -51,6 +51,11 @@ function formatFrDateTime(ts?: unknown | null) {
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function toLocalDateParam(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 function formatTaskTiming(task: TaskDoc) {
   const dueLabel = formatFrDateTime(task.dueDate ?? null);
   if (dueLabel) return dueLabel;
@@ -86,6 +91,22 @@ export default function DashboardPage() {
     params.set("view", "calendar");
     const qs = params.toString();
     return qs ? `/tasks?${qs}` : "/tasks";
+  }, [workspaceId]);
+  const todayAgendaHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (workspaceId) params.set("workspaceId", workspaceId);
+    params.set("view", "calendar");
+    params.set("focusDate", toLocalDateParam(new Date()));
+    return `/tasks?${params.toString()}`;
+  }, [workspaceId]);
+  const overdueAgendaHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (workspaceId) params.set("workspaceId", workspaceId);
+    params.set("view", "list");
+    return `/tasks?${params.toString()}`;
+  }, [workspaceId]);
+  const activeChecklistHref = useMemo(() => {
+    return workspaceId ? `/todo?workspaceId=${encodeURIComponent(workspaceId)}` : "/todo";
   }, [workspaceId]);
 
   const {
@@ -245,21 +266,33 @@ export default function DashboardPage() {
       )}
 
       <section className="grid gap-3 sm:grid-cols-3">
-        <div className="sn-card p-4">
+        <Link
+          href={todayAgendaHref}
+          aria-label="Ouvrir l’agenda sur aujourd’hui"
+          className="sn-card block p-4 transition hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+        >
           <div className="text-sm text-muted-foreground">Aujourd’hui</div>
           <div className="mt-1 text-2xl font-semibold">{dashboardData.tasksToday}</div>
           <div className="mt-1 text-xs text-muted-foreground">tâche(s) prévues</div>
-        </div>
-        <div className="sn-card p-4">
+        </Link>
+        <Link
+          href={overdueAgendaHref}
+          aria-label="Ouvrir l’agenda pour traiter les tâches en retard"
+          className="sn-card block p-4 transition hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+        >
           <div className="text-sm text-muted-foreground">À rattraper</div>
           <div className="mt-1 text-2xl font-semibold">{dashboardData.overdueTasks}</div>
           <div className="mt-1 text-xs text-muted-foreground">tâche(s) en retard</div>
-        </div>
-        <div className="sn-card p-4">
+        </Link>
+        <Link
+          href={activeChecklistHref}
+          aria-label="Ouvrir la checklist active"
+          className="sn-card block p-4 transition hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+        >
           <div className="text-sm text-muted-foreground">Checklist active</div>
           <div className="mt-1 text-2xl font-semibold">{activeTodos.length}</div>
           <div className="mt-1 text-xs text-muted-foreground">élément(s) en cours</div>
-        </div>
+        </Link>
       </section>
 
       <section className="sn-card p-4">
@@ -375,6 +408,8 @@ export default function DashboardPage() {
                   <li
                     key={note.id ?? note.title}
                     className={`sn-card sn-card--note p-4 ${href ? "cursor-pointer" : ""}`}
+                    role={href ? "link" : undefined}
+                    aria-label={href ? `Ouvrir la note ${note.title}` : undefined}
                     tabIndex={href ? 0 : undefined}
                     onClick={() => {
                       if (href) router.push(href);
@@ -431,6 +466,8 @@ export default function DashboardPage() {
                   <li
                     key={todo.id ?? todo.title}
                     className={`sn-card sn-card--task p-4 ${href ? "cursor-pointer" : ""}`}
+                    role={href ? "link" : undefined}
+                    aria-label={href ? `Ouvrir la checklist ${todo.title}` : undefined}
                     tabIndex={href ? 0 : undefined}
                     onClick={() => {
                       if (href) router.push(href);
