@@ -110,10 +110,10 @@ export default function DashboardPage() {
   }, [workspaceId]);
 
   const {
-    data: recentNotesRaw,
+    data: favoriteNotesRaw,
     loading: notesLoading,
     error: notesError,
-  } = useUserNotes({ workspaceId, limit: 8 });
+  } = useUserNotes({ workspaceId, favoriteOnly: true, limit: 8 });
   const {
     data: dashboardTasks,
     loading: tasksLoading,
@@ -121,9 +121,12 @@ export default function DashboardPage() {
   } = useUserTasks({ workspaceId, limit: 300 });
   const {
     data: activeTodos,
+  } = useUserTodos({ workspaceId, completed: false, limit: 8 });
+  const {
+    data: favoriteTodosRaw,
     loading: todosLoading,
     error: todosError,
-  } = useUserTodos({ workspaceId, completed: false, limit: 8 });
+  } = useUserTodos({ workspaceId, favoriteOnly: true, limit: 8 });
   const { data: workspaces } = useUserWorkspaces();
 
   const [todoActionError, setTodoActionError] = useState<string | null>(null);
@@ -141,9 +144,14 @@ export default function DashboardPage() {
 
   const workspaceLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
 
-  const recentNotes = useMemo(
-    () => recentNotesRaw.filter((note) => note.archived !== true && note.completed !== true).slice(0, 5),
-    [recentNotesRaw],
+  const favoriteNotes = useMemo(
+    () => favoriteNotesRaw.filter((note) => note.archived !== true && note.completed !== true).slice(0, 5),
+    [favoriteNotesRaw],
+  );
+
+  const favoriteTodos = useMemo(
+    () => favoriteTodosRaw.slice(0, 5),
+    [favoriteTodosRaw],
   );
 
   const dashboardData = useMemo(() => {
@@ -376,8 +384,8 @@ export default function DashboardPage() {
         <section className="sn-card p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold">Notes récentes</h2>
-              <p className="text-sm text-muted-foreground">Tes dernières notes utiles, prêtes à reprendre.</p>
+              <h2 className="text-lg font-semibold">Notes favorites</h2>
+              <p className="text-sm text-muted-foreground">Tes notes épinglées, prêtes à rouvrir rapidement.</p>
             </div>
             <Link href={workspaceId ? `/notes?workspaceId=${encodeURIComponent(workspaceId)}` : "/notes"} className="sn-text-btn text-sm">
               Voir notes
@@ -385,16 +393,16 @@ export default function DashboardPage() {
           </div>
 
           {notesLoading && <div className="sn-empty"><div className="sn-empty-title">Chargement des notes…</div></div>}
-          {notesError && <div className="sn-alert sn-alert--error">Impossible de charger les notes récentes.</div>}
-          {!notesLoading && !notesError && recentNotes.length === 0 && (
+          {notesError && <div className="sn-alert sn-alert--error">Impossible de charger les notes favorites.</div>}
+          {!notesLoading && !notesError && favoriteNotes.length === 0 && (
             <div className="sn-empty">
-              <div className="sn-empty-title">Aucune note récente</div>
-              <div className="sn-empty-desc">Crée une note pour retrouver rapidement tes idées ici.</div>
+              <div className="sn-empty-title">Aucune note favorite</div>
+              <div className="sn-empty-desc">Ajoute une note en favori pour la retrouver rapidement ici.</div>
             </div>
           )}
-          {!notesLoading && !notesError && recentNotes.length > 0 && (
+          {!notesLoading && !notesError && favoriteNotes.length > 0 && (
             <ul className="space-y-2">
-              {recentNotes.map((note) => {
+              {favoriteNotes.map((note) => {
                 const href = note.id
                   ? (() => {
                       const params = new URLSearchParams();
@@ -441,8 +449,8 @@ export default function DashboardPage() {
         <section className="sn-card p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold">Checklist en cours</h2>
-              <p className="text-sm text-muted-foreground">Les éléments récents que tu peux finir vite.</p>
+              <h2 className="text-lg font-semibold">Checklists favorites</h2>
+              <p className="text-sm text-muted-foreground">Tes checklists épinglées, prêtes à reprendre rapidement.</p>
             </div>
             <Link href={workspaceId ? `/todo?workspaceId=${encodeURIComponent(workspaceId)}` : "/todo"} className="sn-text-btn text-sm">
               Voir checklist
@@ -451,16 +459,16 @@ export default function DashboardPage() {
 
           {todoActionError && <div className="sn-alert sn-alert--error">{todoActionError}</div>}
           {todosLoading && <div className="sn-empty"><div className="sn-empty-title">Chargement de la checklist…</div></div>}
-          {todosError && <div className="sn-alert sn-alert--error">Impossible de charger la checklist.</div>}
-          {!todosLoading && !todosError && activeTodos.length === 0 && (
+          {todosError && <div className="sn-alert sn-alert--error">Impossible de charger les checklists favorites.</div>}
+          {!todosLoading && !todosError && favoriteTodos.length === 0 && (
             <div className="sn-empty">
-              <div className="sn-empty-title">Checklist vide</div>
-              <div className="sn-empty-desc">Aucun élément actif pour le moment.</div>
+              <div className="sn-empty-title">Aucune checklist favorite</div>
+              <div className="sn-empty-desc">Ajoute une checklist en favori pour la retrouver rapidement ici.</div>
             </div>
           )}
-          {!todosLoading && !todosError && activeTodos.length > 0 && (
+          {!todosLoading && !todosError && favoriteTodos.length > 0 && (
             <ul className="space-y-2">
-              {activeTodos.slice(0, 5).map((todo) => {
+              {favoriteTodos.map((todo) => {
                 const href = todo.id ? `/todo/${encodeURIComponent(todo.id)}${suffix}` : null;
                 return (
                   <li
