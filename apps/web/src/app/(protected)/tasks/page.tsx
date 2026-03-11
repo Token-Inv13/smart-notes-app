@@ -114,6 +114,7 @@ export default function TasksPage() {
   const workspaceIdParam = searchParams.get("workspaceId");
   const createParam = searchParams.get("create");
   const viewParam = searchParams.get("view");
+  const dueParam = searchParams.get("due");
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === "pro";
   const freeLimitMessage = "Limite Free atteinte. Passe en Pro pour créer plus d’éléments d’agenda et utiliser les favoris sans limite.";
@@ -543,6 +544,16 @@ export default function TasksPage() {
     }
     hasAppliedViewParamRef.current = true;
   }, [applyViewMode, viewParam]);
+
+  useEffect(() => {
+    if (dueParam === "today" || dueParam === "overdue") {
+      setDueFilter(dueParam);
+      return;
+    }
+    if (dueParam === "all" || dueParam === null) {
+      setDueFilter("all");
+    }
+  }, [dueParam]);
 
   // Keep workspaceFilter in sync with ?workspaceId=... from the sidebar.
   useEffect(() => {

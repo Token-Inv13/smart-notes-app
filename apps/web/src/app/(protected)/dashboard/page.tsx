@@ -103,6 +103,7 @@ export default function DashboardPage() {
     const params = new URLSearchParams();
     if (workspaceId) params.set("workspaceId", workspaceId);
     params.set("view", "list");
+    params.set("due", "overdue");
     return `/tasks?${params.toString()}`;
   }, [workspaceId]);
   const activeChecklistHref = useMemo(() => {
