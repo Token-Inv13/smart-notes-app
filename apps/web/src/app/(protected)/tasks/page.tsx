@@ -28,6 +28,7 @@ import {
 } from "@/lib/datetime";
 import { FEATURE_FLAGS } from "@/lib/featureFlags";
 import { registerFcmToken } from "@/lib/fcm";
+import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import type { Priority, TaskDoc } from "@/types/firestore";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -400,6 +401,7 @@ export default function TasksPage() {
     }
     return m;
   }, [workspaces]);
+  const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -1154,7 +1156,7 @@ export default function TasksPage() {
                     <option value="all">Tous les dossiers</option>
                     {workspaces.map((ws) => (
                       <option key={ws.id ?? ws.name} value={ws.id ?? ""} disabled={!ws.id}>
-                        {ws.name}
+                        {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
                       </option>
                     ))}
                   </select>

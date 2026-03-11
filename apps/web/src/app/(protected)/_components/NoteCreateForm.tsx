@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { FirebaseError } from "firebase/app";
 import { httpsCallable } from "firebase/functions";
@@ -9,6 +9,7 @@ import { auth, db, functions as fbFunctions } from "@/lib/firebase";
 import { useUserNotes } from "@/hooks/useUserNotes";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
+import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import { toUserErrorMessage } from "@/lib/userError";
 import type { NoteDoc } from "@/types/firestore";
 import RichTextEditor from "./RichTextEditor";
@@ -126,6 +127,7 @@ type Props = {
 export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, onCreated }: Props) {
   const { data: workspaces } = useUserWorkspaces();
   const { data: userSettings } = useUserSettings();
+  const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
   const isPro = userSettings?.plan === "pro";
   const freeLimitMessage =
     "Limite Free atteinte. Tu peux passer en Pro pour créer plus de notes et utiliser les favoris sans limite.";
@@ -379,7 +381,7 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
             <option value="">—</option>
             {workspaces.map((ws) => (
               <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
-                {ws.name}
+                {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
               </option>
             ))}
           </select>

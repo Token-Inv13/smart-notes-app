@@ -34,6 +34,7 @@ import {
   parseLocalDateToTimestamp,
 } from "@/lib/datetime";
 import { toUserErrorMessage } from "@/lib/userError";
+import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import DictationMicButton from "@/app/(protected)/_components/DictationMicButton";
 import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
 import Modal from "../../../Modal";
@@ -120,6 +121,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
   const taskId: string | undefined = params?.id;
 
   const { data: workspaces } = useUserWorkspaces();
+  const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === "pro";
 
@@ -1347,7 +1349,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                       <option value="">—</option>
                       {workspaces.map((ws) => (
                         <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
-                          {ws.name}
+                          {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
                         </option>
                       ))}
                     </select>

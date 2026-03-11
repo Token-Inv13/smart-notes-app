@@ -9,6 +9,7 @@ import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import { formatTimestampToDateFr } from "@/lib/datetime";
 import { toUserErrorMessage } from "@/lib/userError";
+import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import type { TodoDoc } from "@/types/firestore";
 
 interface TodoInlineListProps {
@@ -98,6 +99,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
     }
     return m;
   }, [workspaces]);
+  const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
 
   const formatDueDate = (ts: TodoDoc["dueDate"] | null | undefined) => {
     if (!ts) return "";
@@ -362,7 +364,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                       <option value="all">Tous les dossiers</option>
                       {workspaces.map((ws) => (
                         <option key={ws.id ?? ws.name} value={ws.id ?? ""} disabled={!ws.id}>
-                          {ws.name}
+                          {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
                         </option>
                       ))}
                     </select>

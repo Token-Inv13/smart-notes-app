@@ -14,6 +14,7 @@ import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
+import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import type { NoteDoc } from "@/types/firestore";
 import { htmlToPlainText } from "@/lib/richText";
 import { toUserErrorMessage } from "@/lib/userError";
@@ -99,6 +100,7 @@ export default function NotesPage() {
     }
     return m;
   }, [workspaces]);
+  const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
 
   useEffect(() => {
     const nextFilter = workspaceId ?? "all";
@@ -438,7 +440,7 @@ export default function NotesPage() {
                     <option value="all">Tous les dossiers</option>
                     {workspaces.map((ws) => (
                       <option key={ws.id ?? ws.name} value={ws.id ?? ""} disabled={!ws.id}>
-                        {ws.name}
+                        {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
                       </option>
                     ))}
                   </select>

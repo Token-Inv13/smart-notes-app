@@ -21,10 +21,18 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
+import {
+  buildWorkspacePathLabelMap,
+  flattenWorkspaces,
+  getRootWorkspaceOptions,
+  getWorkspaceOptionLabel,
+  sortWorkspaces,
+} from "@/lib/workspaces";
 import type { WorkspaceDoc } from "@/types/firestore";
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1, "Le nom est requis."),
+  parentId: z.string().optional(),
 });
 
 const renameWorkspaceSchema = z.object({
@@ -102,6 +110,7 @@ export default function SidebarWorkspaces({
   };
 
   const [newName, setNewName] = useState("");
+  const [newParentId, setNewParentId] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -112,47 +121,78 @@ export default function SidebarWorkspaces({
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const baseSortedWorkspaces = useMemo(() => {
-    return workspaces
-      .slice()
-      .sort((a, b) => {
-        const ao = typeof a.order === "number" ? a.order : null;
-        const bo = typeof b.order === "number" ? b.order : null;
-        if (ao !== null && bo !== null && ao !== bo) return ao - bo;
-        if (ao !== null && bo === null) return -1;
-        if (ao === null && bo !== null) return 1;
-        return (a.name || "").localeCompare(b.name || "");
-      });
-  }, [workspaces]);
+  const baseSortedWorkspaces = useMemo(() => sortWorkspaces(workspaces), [workspaces]);
+  const workspacePathLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
+  const flattenedWorkspaces = useMemo(() => flattenWorkspaces(workspaces), [workspaces]);
+  const rootWorkspaceOptions = useMemo(() => getRootWorkspaceOptions(workspaces), [workspaces]);
 
-  // Hotfix: DnD disabled.
-  const sortedWorkspaces = baseSortedWorkspaces;
+  const WorkspaceRow = ({
+    ws,
+    selected,
+    depth,
+    pathLabel,
+  }: {
+    ws: WorkspaceDoc;
+    selected: boolean;
+    depth: number;
+    pathLabel: string;
+  }) => {
+    const isChild = depth > 0;
+    const pathParts = pathLabel.split(" / ");
+    const parentLabel = isChild ? pathParts.slice(0, -1).join(" / ") : null;
+    const indentPx = depth * 16;
+    const branchLeft = Math.max(indentPx - 8, 8);
 
-  const WorkspaceRow = ({ ws, selected }: { ws: WorkspaceDoc; selected: boolean }) => {
     return (
       <div
         data-ws-row="true"
         data-ws-id={ws.id ?? ""}
-        className={`group rounded-lg px-3 py-2 transition-colors ${
+        className={`group relative rounded-lg px-3 py-2 transition-colors ${
           selected
-            ? "bg-accent/70 border border-border"
-            : "border border-transparent hover:bg-accent/50"
+            ? "bg-primary/10 border border-primary/25 shadow-sm"
+            : isChild
+              ? "border border-transparent hover:bg-accent/50 bg-muted/20"
+              : "border border-transparent hover:bg-accent/50"
         }`}
       >
+        {selected ? <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r bg-primary" aria-hidden="true" /> : null}
         {!renamingId || ws.id !== renamingId ? (
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
               onClick={() => navigateWithWorkspace(ws.id ?? null)}
-              className={`min-w-0 flex-1 text-left text-sm truncate transition-colors ${
+              className={`min-w-0 flex-1 text-left transition-colors ${
                 selected ? "font-semibold text-foreground" : "text-foreground"
               }`}
-              aria-label={`Ouvrir le dossier ${ws.name}`}
+              aria-label={`Ouvrir le dossier ${pathLabel}`}
               disabled={!ws.id}
             >
-              <span className="inline-flex items-center gap-2 min-w-0">
-                <Folder className="h-4 w-4 text-muted-foreground shrink-0" />
-                <span className="truncate">{ws.name}</span>
+              <span className="relative block min-w-0" style={{ paddingLeft: `${indentPx}px` }}>
+                {isChild ? (
+                  <>
+                    <span
+                      aria-hidden="true"
+                      className="absolute w-px rounded-full bg-border/70"
+                      style={{ left: `${branchLeft}px`, top: "0.35rem", bottom: "0.35rem" }}
+                    />
+                    <span
+                      aria-hidden="true"
+                      className="absolute h-px w-3 bg-border/70"
+                      style={{ left: `${branchLeft}px`, top: "1.15rem" }}
+                    />
+                  </>
+                ) : null}
+                <span className="flex min-w-0 items-center gap-2">
+                  <Folder className={`shrink-0 ${isChild ? "h-3.5 w-3.5 text-muted-foreground/80" : "h-4 w-4 text-muted-foreground"}`} />
+                  <span className="min-w-0">
+                    {parentLabel ? (
+                      <span className="block truncate text-[11px] font-normal text-muted-foreground">
+                        {parentLabel}
+                      </span>
+                    ) : null}
+                    <span className={`block truncate text-sm ${isChild && !selected ? "text-foreground/90" : ""}`}>{ws.name}</span>
+                  </span>
+                </span>
               </span>
             </button>
             <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
@@ -160,7 +200,7 @@ export default function SidebarWorkspaces({
                 type="button"
                 onClick={() => startRename(ws)}
                 className="h-8 w-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-                aria-label={`Renommer le dossier ${ws.name}`}
+                aria-label={`Renommer le dossier ${pathLabel}`}
                 title="Renommer"
                 disabled={!ws.id}
               >
@@ -170,7 +210,7 @@ export default function SidebarWorkspaces({
                 type="button"
                 onClick={() => handleDelete(ws)}
                 className="h-8 w-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                aria-label={`Supprimer le dossier ${ws.name}`}
+                aria-label={`Supprimer le dossier ${pathLabel}`}
                 title="Supprimer"
                 disabled={!ws.id || deletingId === ws.id}
               >
@@ -279,9 +319,14 @@ export default function SidebarWorkspaces({
     }
 
     setCreateError(null);
-    const validation = createWorkspaceSchema.safeParse({ name: newName.trim() });
+    const validation = createWorkspaceSchema.safeParse({ name: newName.trim(), parentId: newParentId || undefined });
     if (!validation.success) {
       setCreateError(validation.error.issues[0]?.message ?? "Données invalides.");
+      return;
+    }
+
+    if (validation.data.parentId && !rootWorkspaceOptions.some((workspace) => workspace.id === validation.data.parentId)) {
+      setCreateError("Le dossier parent sélectionné n’est plus disponible.");
       return;
     }
 
@@ -300,6 +345,7 @@ export default function SidebarWorkspaces({
       const payload: Omit<WorkspaceDoc, "id"> = {
         ownerId: user.uid,
         name: validation.data.name,
+        parentId: validation.data.parentId ?? null,
         order: nextOrder,
         members: [],
         createdAt: new Date().toISOString(),
@@ -313,6 +359,7 @@ export default function SidebarWorkspaces({
       });
 
       setNewName("");
+      setNewParentId("");
       navigateWithWorkspace(ref.id);
     } catch (e) {
       console.error("Error creating workspace", e);
@@ -376,6 +423,9 @@ export default function SidebarWorkspaces({
       const res = await fetch(`/api/workspaces/${encodeURIComponent(ws.id)}`, { method: "DELETE" });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
+        if (res.status === 409) {
+          throw new Error("Supprime ou déplace d’abord les sous-dossiers de ce dossier.");
+        }
         throw new Error(text || "Failed to delete workspace");
       }
 
@@ -384,6 +434,9 @@ export default function SidebarWorkspaces({
       }
     } catch (e) {
       console.error("Error deleting workspace", e);
+      if (e instanceof Error && e.message) {
+        window.alert(e.message);
+      }
     } finally {
       setDeletingId(null);
     }
@@ -399,8 +452,8 @@ export default function SidebarWorkspaces({
               type="button"
               onClick={navigateToDashboard}
               className={iconButtonClass(isNavActive("/dashboard"))}
-              aria-label="Dashboard"
-              title="Dashboard"
+              aria-label="Accueil"
+              title="Accueil"
             >
               {isNavActive("/dashboard") && (
                 <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r bg-primary" />
@@ -450,25 +503,38 @@ export default function SidebarWorkspaces({
 
           <div className="border-t border-border/40 pt-3">
             <div className="flex flex-col items-center gap-2">
-              {sortedWorkspaces.map((ws) => {
-                const isSelected = ws.id && ws.id === currentWorkspaceId;
-                const initial = (ws.name || "?").trim().slice(0, 1).toUpperCase();
+              {flattenedWorkspaces.map(({ workspace, depth, pathLabel }) => {
+                const isSelected = workspace.id && workspace.id === currentWorkspaceId;
+                const initial = (workspace.name || "?").trim().slice(0, 1).toUpperCase();
+                const isChild = depth > 0;
                 return (
                   <button
-                    key={ws.id ?? ws.name}
+                    key={workspace.id ?? workspace.name}
                     type="button"
-                    onClick={() => navigateWithWorkspace(ws.id ?? null)}
+                    onClick={() => navigateWithWorkspace(workspace.id ?? null)}
                     className={iconButtonClass(!!isSelected)}
-                    aria-label={`Dossier ${ws.name}`}
-                    title={ws.name}
-                    disabled={!ws.id}
+                    aria-label={`Dossier ${pathLabel}`}
+                    title={pathLabel}
+                    disabled={!workspace.id}
                   >
                     {isSelected && (
                       <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r bg-primary" />
                     )}
-                    <span className="h-6 w-6 inline-flex items-center justify-center rounded-md bg-muted text-muted-foreground text-[11px] font-semibold">
+                    <span
+                      className={`h-6 w-6 inline-flex items-center justify-center rounded-md text-[11px] font-semibold ${
+                        isChild
+                          ? "border border-border/70 bg-background text-muted-foreground"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
                       {initial}
                     </span>
+                    {isChild ? (
+                      <span
+                        aria-hidden="true"
+                        className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-border"
+                      />
+                    ) : null}
                   </button>
                 );
               })}
@@ -524,7 +590,7 @@ export default function SidebarWorkspaces({
               className={navButtonClass(isNavActive("/dashboard"))}
             >
               <LayoutDashboard className="h-4 w-4" />
-              <span>Favoris</span>
+              <span>Accueil</span>
             </button>
 
             <button
@@ -576,13 +642,21 @@ export default function SidebarWorkspaces({
               )}
               {error && <div className="sn-alert sn-alert--error">{error.message}</div>}
 
-              {!loading && !error && sortedWorkspaces.length === 0 && (
+              {!loading && !error && flattenedWorkspaces.length === 0 && (
                 <div className="text-sm text-muted-foreground">Aucun dossier.</div>
               )}
 
-              {sortedWorkspaces.map((ws) => {
-                const isSelected = ws.id && ws.id === currentWorkspaceId;
-                return <WorkspaceRow key={ws.id ?? ws.name} ws={ws} selected={!!isSelected} />;
+              {flattenedWorkspaces.map(({ workspace, depth, pathLabel }) => {
+                const isSelected = workspace.id && workspace.id === currentWorkspaceId;
+                return (
+                  <WorkspaceRow
+                    key={workspace.id ?? workspace.name}
+                    ws={workspace}
+                    selected={!!isSelected}
+                    depth={depth}
+                    pathLabel={pathLabel}
+                  />
+                );
               })}
             </div>
           </div>
@@ -599,6 +673,19 @@ export default function SidebarWorkspaces({
               placeholder="Ex: Travail"
               className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
+            <select
+              value={newParentId}
+              onChange={(e) => setNewParentId(e.target.value)}
+              aria-label="Dossier parent du nouveau dossier"
+              className="mt-2 w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="">Aucun parent</option>
+              {rootWorkspaceOptions.map((workspace) => (
+                <option key={workspace.id ?? workspace.name} value={workspace.id ?? ""}>
+                  {getWorkspaceOptionLabel(workspace, workspacePathLabelById)}
+                </option>
+              ))}
+            </select>
             {createError && (
               <div className="mt-2 sn-alert sn-alert--error" role="status" aria-live="polite">
                 {createError}

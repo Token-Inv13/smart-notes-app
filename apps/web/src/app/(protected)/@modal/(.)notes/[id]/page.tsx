@@ -10,6 +10,7 @@ import { exportNotePdf } from "@/lib/pdf/exportPdf";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import { sanitizeNoteHtml } from "@/lib/richText";
 import { toUserErrorMessage } from "@/lib/userError";
+import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import type { NoteAttachment, NoteDoc } from "@/types/firestore";
@@ -173,6 +174,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
   const fullscreen = searchParams.get("fullscreen") === "1";
 
   const { data: workspaces } = useUserWorkspaces();
+  const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
   const { data: userSettings } = useUserSettings();
 
   const [note, setNote] = useState<NoteDoc | null>(null);
@@ -1089,7 +1091,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
                         <option value="">—</option>
                         {workspaces.map((ws) => (
                           <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
-                            {ws.name}
+                            {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
                           </option>
                         ))}
                       </select>

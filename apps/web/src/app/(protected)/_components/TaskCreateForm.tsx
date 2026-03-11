@@ -17,6 +17,7 @@ import {
   parseLocalDateToTimestamp,
 } from "@/lib/datetime";
 import { toUserErrorMessage } from "@/lib/userError";
+import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import type { TaskDoc } from "@/types/firestore";
 import DictationMicButton from "./DictationMicButton";
 import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
@@ -41,6 +42,7 @@ const newTaskSchema = z.object({
 
 export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, initialStartDate, onCreated }: Props) {
   const { data: workspaces } = useUserWorkspaces();
+  const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === "pro";
   const freeLimitMessage =
@@ -497,7 +499,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
             <option value="">—</option>
             {workspaces.map((ws) => (
               <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
-                {ws.name}
+                {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
               </option>
             ))}
           </select>

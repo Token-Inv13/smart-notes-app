@@ -545,7 +545,6 @@ export default function AgendaCalendar({
     openDraftFromSelect,
     openDraftFromEvent,
     saveDraft,
-    openQuickDraft,
     skipOccurrence,
   } = useAgendaDraftManager({
     onCreateEvent,
@@ -615,7 +614,7 @@ export default function AgendaCalendar({
     calendarRef.current?.getApi().changeView(viewMode);
   }, [displayMode, viewMode]);
 
-  const { agendaEvents, agendaConflictCount, isCompactDensity } = useAgendaMergedEvents({
+  const { agendaEvents, isCompactDensity } = useAgendaMergedEvents({
     calendarData,
     googleCalendarEvents,
   });
@@ -821,48 +820,29 @@ export default function AgendaCalendar({
         onReset={clearFilters}
       />
 
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span className="sn-badge">Affichés: {agendaEvents.length}</span>
-        <span className="sn-badge">Conflits: {agendaConflictCount}</span>
-        <span className="sn-badge hidden sm:inline-flex">Total local: {calendarData.stats.total}</span>
-        <span className="sn-badge hidden sm:inline-flex">Google: {googleCalendarEvents.length}</span>
-        <span className="sn-badge hidden sm:inline-flex">Récurrents: {calendarData.stats.recurring}</span>
-        {isCompactDensity && (
-          <span className="sn-badge">Auto compact (conflits élevés)</span>
-        )}
-      </div>
-
       {error && <div className="sn-alert sn-alert--error">{error}</div>}
 
       {!error && displayMode === "calendar" && agendaEvents.length === 0 && (
         <div className="sn-empty sn-empty--premium sn-animate-in">
-          <div className="sn-empty-title">
-            {hasActiveAgendaFilters ? "Aucun résultat avec ces filtres" : "Aucun événement dans cette fenêtre"}
-          </div>
-          <div className="sn-empty-desc">
-            {hasActiveAgendaFilters
-              ? "Essaie de réinitialiser les filtres de l’agenda pour afficher plus d’éléments."
-              : "Ajoute un élément pour démarrer, ou navigue vers une autre période."}
-          </div>
-          <div className="mt-3">
-            {hasActiveAgendaFilters ? (
-              <button
-                type="button"
-                className="inline-flex items-center justify-center h-10 px-4 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent/60"
-                onClick={clearFilters}
-              >
-                Réinitialiser les filtres
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 transition-opacity"
-                onClick={openQuickDraft}
-              >
-                Créer une tâche
-              </button>
-            )}
-          </div>
+          {hasActiveAgendaFilters ? (
+            <>
+              <div className="sn-empty-title">Aucun résultat avec ces filtres</div>
+              <div className="sn-empty-desc">
+                Essaie de réinitialiser les filtres de l’agenda pour afficher plus d’éléments.
+              </div>
+              <div className="mt-3">
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center h-10 px-4 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent/60"
+                  onClick={clearFilters}
+                >
+                  Réinitialiser les filtres
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="sn-empty-title">Aucune tâche planifiée</div>
+          )}
         </div>
       )}
 

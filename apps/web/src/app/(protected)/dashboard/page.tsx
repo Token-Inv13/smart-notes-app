@@ -1,34 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { TouchEvent as ReactTouchEvent } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase';
-import { useUserNotes } from '@/hooks/useUserNotes';
-import { useUserTasks } from '@/hooks/useUserTasks';
-import { useUserTodos } from '@/hooks/useUserTodos';
-import { useUserWorkspaces } from '@/hooks/useUserWorkspaces';
-import { useUserSettings } from '@/hooks/useUserSettings';
-import { useUserInboxMessages } from '@/hooks/useUserInboxMessages';
-import type { NoteDoc, TaskDoc, TodoDoc } from '@/types/firestore';
-import Link from 'next/link';
-import { trackEvent } from '@/lib/analytics';
-import { projectTaskToEvent } from '@/lib/agenda/taskEventProjector';
-
-const INBOX_FALLBACK_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
+import { useUserNotes } from "@/hooks/useUserNotes";
+import { useUserTasks } from "@/hooks/useUserTasks";
+import { useUserTodos } from "@/hooks/useUserTodos";
+import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
+import { projectTaskToEvent } from "@/lib/agenda/taskEventProjector";
+import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
+import type { TaskDoc, TodoDoc } from "@/types/firestore";
 
 function readTimestampMs(value: unknown): number | null {
-  if (!value || typeof value !== 'object') return null;
+  if (!value || typeof value !== "object") return null;
   const ts = value as { toMillis?: unknown; toDate?: unknown };
-  if (typeof ts.toMillis === 'function') {
+  if (typeof ts.toMillis === "function") {
     try {
       return (ts.toMillis as () => number)();
     } catch {
       return null;
     }
   }
-  if (typeof ts.toDate === 'function') {
+  if (typeof ts.toDate === "function") {
     try {
       return (ts.toDate as () => Date)().getTime();
     } catch {
@@ -38,426 +33,210 @@ function readTimestampMs(value: unknown): number | null {
   return null;
 }
 
-function formatFrDateTime(ts?: unknown | null) {
-  if (!ts) return '';
-  const maybeTs = ts as { toDate?: () => Date };
-  if (typeof maybeTs?.toDate !== 'function') return '';
-  const d = maybeTs.toDate();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(
-    d.getMinutes(),
-  )}`;
-}
-
 function formatFrDate(ts?: unknown | null) {
-  if (!ts) return '';
+  if (!ts) return "";
   const maybeTs = ts as { toDate?: () => Date };
-  if (typeof maybeTs?.toDate !== 'function') return '';
+  if (typeof maybeTs?.toDate !== "function") return "";
   const d = maybeTs.toDate();
-  const pad = (n: number) => String(n).padStart(2, '0');
+  const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
-function priorityLabel(p?: TaskDoc['priority'] | TodoDoc['priority'] | null) {
-  if (p === 'high') return 'Haute';
-  if (p === 'medium') return 'Moyenne';
-  if (p === 'low') return 'Basse';
-  return '';
+function formatFrDateTime(ts?: unknown | null) {
+  if (!ts) return "";
+  const maybeTs = ts as { toDate?: () => Date };
+  if (typeof maybeTs?.toDate !== "function") return "";
+  const d = maybeTs.toDate();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function priorityDotClass(p?: TaskDoc['priority'] | TodoDoc['priority'] | null) {
-  if (p === 'high') return 'bg-red-500/80';
-  if (p === 'medium') return 'bg-amber-500/80';
-  if (p === 'low') return 'bg-emerald-500/80';
-  return 'bg-muted-foreground/40';
+function formatTaskTiming(task: TaskDoc) {
+  const dueLabel = formatFrDateTime(task.dueDate ?? null);
+  if (dueLabel) return dueLabel;
+  const startLabel = formatFrDate(task.startDate ?? null);
+  if (startLabel) return startLabel;
+  return "Sans date";
 }
 
-function inboxSeverityClass(severity?: string | null) {
-  if (severity === 'critical') return 'bg-rose-100 text-rose-700 border-rose-200';
-  if (severity === 'warn') return 'bg-amber-100 text-amber-700 border-amber-200';
-  return 'bg-sky-100 text-sky-700 border-sky-200';
+function taskPriorityLabel(priority?: TaskDoc["priority"] | null) {
+  if (priority === "high") return "Haute";
+  if (priority === "medium") return "Moyenne";
+  if (priority === "low") return "Basse";
+  return "";
 }
+
+function priorityDotClass(priority?: TaskDoc["priority"] | TodoDoc["priority"] | null) {
+  if (priority === "high") return "bg-red-500/80";
+  if (priority === "medium") return "bg-amber-500/80";
+  if (priority === "low") return "bg-emerald-500/80";
+  return "bg-muted-foreground/40";
+}
+
+type TaskBucket = "overdue" | "today" | "upcoming";
 
 export default function DashboardPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const workspaceId = searchParams.get('workspaceId') || undefined;
-  const suffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : '';
+  const workspaceId = searchParams.get("workspaceId") || undefined;
+  const suffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
   const tasksCalendarHref = useMemo(() => {
     const params = new URLSearchParams();
-    if (workspaceId) params.set('workspaceId', workspaceId);
-    params.set('view', 'calendar');
+    if (workspaceId) params.set("workspaceId", workspaceId);
+    params.set("view", "calendar");
     const qs = params.toString();
-    return qs ? `/tasks?${qs}` : '/tasks';
+    return qs ? `/tasks?${qs}` : "/tasks";
   }, [workspaceId]);
 
   const {
-    data: notes,
+    data: recentNotesRaw,
     loading: notesLoading,
     error: notesError,
-  } = useUserNotes({ workspaceId, favoriteOnly: true, limit: 20 });
-
-  const { data: userSettings } = useUserSettings();
-  const { data: inboxMessages, loading: inboxLoading, error: inboxError } = useUserInboxMessages({ limit: 8 });
-  const isPro = userSettings?.plan === 'pro';
-  const freeLimitMessage = 'Limite Free atteinte. Passe en Pro pour épingler plus de favoris.';
-  const [optimisticReadIds, setOptimisticReadIds] = useState<string[]>([]);
-
-  const { data: favoriteNotesForLimit } = useUserNotes({ favoriteOnly: true, limit: 11 });
-  const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
-  const { data: favoriteTodos } = useUserTodos({ workspaceId, completed: false, favoriteOnly: true });
-  const { data: dashboardTasks } = useUserTasks({ workspaceId, limit: 300 });
-
-  const { data: workspaces } = useUserWorkspaces();
-
-  const workspaceNameById = useMemo(() => {
-    const m = new Map<string, string>();
-    workspaces.forEach((w) => {
-      if (w.id && w.name) m.set(w.id, w.name);
-    });
-    return m;
-  }, [workspaces]);
-
+  } = useUserNotes({ workspaceId, limit: 8 });
   const {
-    data: tasks,
+    data: dashboardTasks,
     loading: tasksLoading,
     error: tasksError,
-  } = useUserTasks({ workspaceId, favoriteOnly: true, limit: 20 });
+  } = useUserTasks({ workspaceId, limit: 300 });
+  const {
+    data: activeTodos,
+    loading: todosLoading,
+    error: todosError,
+  } = useUserTodos({ workspaceId, completed: false, limit: 8 });
+  const { data: workspaces } = useUserWorkspaces();
 
-  const activeFavoriteNotes = notes.filter((n) => n.completed !== true && n.archived !== true);
-  const activeFavoriteTasks = tasks.filter((t) => (t.status ?? 'todo') !== 'done' && t.archived !== true);
-  const favoriteAgendaItems = useMemo(
-    () =>
-      activeFavoriteTasks.map((task) => {
-        const projected = projectTaskToEvent(task);
-        return {
-          task,
-          projection: projected.event,
-        };
-      }),
-    [activeFavoriteTasks],
+  const [todoActionError, setTodoActionError] = useState<string | null>(null);
+  const [flashMessage] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.sessionStorage.getItem("smartnotes:flash");
+      if (!raw) return null;
+      window.sessionStorage.removeItem("smartnotes:flash");
+      return raw;
+    } catch {
+      return null;
+    }
+  });
+
+  const workspaceLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
+
+  const recentNotes = useMemo(
+    () => recentNotesRaw.filter((note) => note.archived !== true && note.completed !== true).slice(0, 5),
+    [recentNotesRaw],
   );
 
-  const todoFavoriteCount = favoriteTodos.length;
-  const notesFavoriteCount = activeFavoriteNotes.length;
-  const tasksFavoriteCount = activeFavoriteTasks.length;
-
-  const dashboardSummary = useMemo(() => {
+  const dashboardData = useMemo(() => {
     const now = new Date();
+    const nowMs = now.getTime();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
     const tomorrowStart = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+    const nextWeekStart = new Date(todayStart.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-    const activeTasksBase = dashboardTasks.filter((task) => {
-      const status = task.status ?? 'todo';
-      return task.archived !== true && status !== 'done';
+    const activeTasks = dashboardTasks.filter((task) => {
+      const status = task.status ?? "todo";
+      return task.archived !== true && status !== "done";
     });
 
-    let tasksToday = 0;
-    let checklistPlannedToday = 0;
-    let overdueTasks = 0;
+    const urgentTasks = activeTasks
+      .map((task) => {
+        const projected = projectTaskToEvent(task).event;
+        const taskDate = projected?.start?.getTime() ?? readTimestampMs(task.dueDate) ?? readTimestampMs(task.startDate);
+        if (taskDate == null) return null;
 
-    for (const task of activeTasksBase) {
-      const projected = projectTaskToEvent(task);
-      if (projected.event) {
-        const startsToday =
-          projected.event.start.getTime() >= todayStart.getTime() &&
-          projected.event.start.getTime() < tomorrowStart.getTime();
-        if (startsToday) {
-          tasksToday += 1;
-          if (task.sourceType === 'checklist_item') {
-            checklistPlannedToday += 1;
-          }
+        let bucket: TaskBucket | null = null;
+        if ((readTimestampMs(task.dueDate) ?? taskDate) < nowMs) {
+          bucket = "overdue";
+        } else if (taskDate >= todayStart.getTime() && taskDate < tomorrowStart.getTime()) {
+          bucket = "today";
+        } else if (taskDate < nextWeekStart.getTime()) {
+          bucket = "upcoming";
         }
-      }
 
+        if (!bucket) return null;
+
+        return {
+          task,
+          bucket,
+          taskDate,
+        };
+      })
+      .filter((item): item is { task: TaskDoc; bucket: TaskBucket; taskDate: number } => item !== null)
+      .sort((a, b) => {
+        const rank = { overdue: 0, today: 1, upcoming: 2 };
+        if (rank[a.bucket] !== rank[b.bucket]) return rank[a.bucket] - rank[b.bucket];
+        return a.taskDate - b.taskDate;
+      })
+      .slice(0, 6);
+
+    const tasksToday = activeTasks.filter((task) => {
+      const projected = projectTaskToEvent(task).event;
+      if (!projected) return false;
+      const startMs = projected.start.getTime();
+      return startMs >= todayStart.getTime() && startMs < tomorrowStart.getTime();
+    }).length;
+
+    const overdueTasks = activeTasks.filter((task) => {
       const dueMs = readTimestampMs(task.dueDate);
-      if (dueMs != null && dueMs < now.getTime()) {
-        overdueTasks += 1;
-      }
-    }
+      return dueMs != null && dueMs < nowMs;
+    }).length;
+
+    const upcomingTasks = urgentTasks.filter((item) => item.bucket === "upcoming").length;
 
     return {
       tasksToday,
       overdueTasks,
-      checklistPlannedToday,
+      upcomingTasks,
+      urgentTasks,
     };
   }, [dashboardTasks]);
-
-  const slidesContainerRef = useRef<HTMLDivElement | null>(null);
-  const slideRefs = useRef<Array<HTMLDivElement | null>>([]);
-  const [activeSlideIndex, setActiveSlideIndex] = useState<0 | 1 | 2>(0);
-  const swipeStartRef = useRef<{ x: number; y: number; scrollLeft: number } | null>(null);
-
-  const [flashMessage, setFlashMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const raw = window.sessionStorage.getItem('smartnotes:flash');
-      if (!raw) return;
-      setFlashMessage(raw);
-      window.sessionStorage.removeItem('smartnotes:flash');
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  useEffect(() => {
-    const root = slidesContainerRef.current;
-    if (!root) return;
-
-    const nodes = slideRefs.current;
-    if (!nodes[0] || !nodes[1] || !nodes[2]) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.filter((e) => e.isIntersecting);
-        if (visible.length === 0) return;
-        visible.sort((a, b) => b.intersectionRatio - a.intersectionRatio);
-        const top = visible[0];
-        if (!top) return;
-        const indexAttr = (top.target as HTMLElement).getAttribute('data-slide-index');
-        const idx = indexAttr ? Number(indexAttr) : 0;
-        if (idx === 0 || idx === 1 || idx === 2) setActiveSlideIndex(idx);
-      },
-      {
-        root,
-        threshold: [0.5, 0.6, 0.7, 0.8],
-      },
-    );
-
-    nodes.forEach((n) => n && observer.observe(n));
-    return () => observer.disconnect();
-  }, []);
-
-  const scrollToSlide = (index: 0 | 1 | 2) => {
-    slideRefs.current[index]?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
-  };
-
-  const handleTouchStart = (e: ReactTouchEvent<HTMLDivElement>) => {
-    const t = e.touches[0];
-    if (!t) return;
-    const root = slidesContainerRef.current;
-    swipeStartRef.current = {
-      x: t.clientX,
-      y: t.clientY,
-      scrollLeft: root?.scrollLeft ?? 0,
-    };
-  };
-
-  const handleTouchEnd = (e: ReactTouchEvent<HTMLDivElement>) => {
-    const start = swipeStartRef.current;
-    swipeStartRef.current = null;
-    const t = e.changedTouches[0];
-    if (!start || !t) return;
-
-    const root = slidesContainerRef.current;
-    const nextScrollLeft = root?.scrollLeft ?? 0;
-    if (Math.abs(nextScrollLeft - start.scrollLeft) > 20) return;
-
-    const dx = t.clientX - start.x;
-    const dy = t.clientY - start.y;
-
-    if (Math.abs(dx) < 60) return;
-    if (Math.abs(dx) < Math.abs(dy)) return;
-
-    if (dx < 0) {
-      const nextIndex = Math.min(2, activeSlideIndex + 1) as 0 | 1 | 2;
-      if (nextIndex !== activeSlideIndex) scrollToSlide(nextIndex);
-    } else {
-      const nextIndex = Math.max(0, activeSlideIndex - 1) as 0 | 1 | 2;
-      if (nextIndex !== activeSlideIndex) scrollToSlide(nextIndex);
-    }
-  };
-
-  const [noteActionError, setNoteActionError] = useState<string | null>(null);
-  const [taskActionError, setTaskActionError] = useState<string | null>(null);
-
-  const unreadInboxMessages = useMemo(
-    () => {
-      const nowMs = Date.now();
-      const seenFingerprints = new Set<string>();
-      return inboxMessages.filter((m) => {
-        if (m.readAt) return false;
-        if (!m.id) return false;
-        if (optimisticReadIds.includes(m.id)) return false;
-
-        const expiresAtMs = readTimestampMs(m.expiresAt);
-        if (expiresAtMs != null && expiresAtMs <= nowMs) return false;
-
-        const createdAtMs = readTimestampMs(m.createdAt);
-        if (expiresAtMs == null && createdAtMs != null && createdAtMs <= nowMs - INBOX_FALLBACK_TTL_MS) {
-          return false;
-        }
-
-        const fingerprint = [
-          m.title.trim().replace(/\s+/g, ' ').toLowerCase(),
-          m.body.trim().replace(/\s+/g, ' ').toLowerCase(),
-          typeof m.severity === 'string' ? m.severity : 'info',
-        ].join('::');
-
-        if (seenFingerprints.has(fingerprint)) return false;
-        seenFingerprints.add(fingerprint);
-        return true;
-      });
-    },
-    [inboxMessages, optimisticReadIds],
-  );
-  const activeInboxMessage = unreadInboxMessages[0] ?? null;
-
-  const markInboxMessageRead = async (messageId: string) => {
-    const uid = auth.currentUser?.uid;
-    if (!uid || !messageId) return;
-    setOptimisticReadIds((prev) => (prev.includes(messageId) ? prev : [...prev, messageId]));
-    try {
-      await updateDoc(doc(db, 'users', uid, 'inbox', messageId), {
-        readAt: serverTimestamp(),
-      });
-      void trackEvent('user_inbox_message_read', {
-        message_id_hint: messageId.slice(0, 6),
-      });
-    } catch (e) {
-      setOptimisticReadIds((prev) => prev.filter((id) => id !== messageId));
-      console.error('Error marking inbox message as read', e);
-    }
-  };
-
-  const toggleNoteFavorite = async (note: NoteDoc) => {
-    if (!note.id) return;
-    const user = auth.currentUser;
-    if (!user || user.uid !== note.userId) return;
-
-    if (!isPro && note.favorite !== true && favoriteNotesForLimit.length >= 10) {
-      setNoteActionError(freeLimitMessage);
-      return;
-    }
-
-    try {
-      await updateDoc(doc(db, 'notes', note.id), {
-        favorite: !note.favorite,
-        updatedAt: serverTimestamp(),
-      });
-    } catch (e) {
-      console.error('Error toggling note favorite', e);
-    }
-  };
-
-  const toggleTodoFavorite = async (todo: TodoDoc) => {
-    if (!todo.id) return;
-    const user = auth.currentUser;
-    if (!user || user.uid !== todo.userId) return;
-
-    try {
-      await updateDoc(doc(db, 'todos', todo.id), {
-        userId: todo.userId,
-        workspaceId: typeof todo.workspaceId === 'string' ? todo.workspaceId : null,
-        title: todo.title,
-        completed: todo.completed === true,
-        favorite: !(todo.favorite === true),
-        updatedAt: serverTimestamp(),
-      });
-    } catch (e) {
-      console.error('Error toggling todo favorite', e);
-    }
-  };
 
   const toggleTodoCompleted = async (todo: TodoDoc, nextCompleted: boolean) => {
     if (!todo.id) return;
     const user = auth.currentUser;
     if (!user || user.uid !== todo.userId) return;
 
+    setTodoActionError(null);
     try {
-      await updateDoc(doc(db, 'todos', todo.id), {
+      await updateDoc(doc(db, "todos", todo.id), {
         userId: todo.userId,
-        workspaceId: typeof todo.workspaceId === 'string' ? todo.workspaceId : null,
+        workspaceId: typeof todo.workspaceId === "string" ? todo.workspaceId : null,
         title: todo.title,
         favorite: todo.favorite === true,
         completed: nextCompleted,
         updatedAt: serverTimestamp(),
       });
     } catch (e) {
-      console.error('Error toggling todo completed', e);
+      console.error("Error toggling todo completed", e);
+      setTodoActionError("Impossible de mettre à jour cette checklist.");
     }
   };
 
-  const toggleTaskFavorite = async (task: TaskDoc) => {
-    if (!task.id) return;
-    const user = auth.currentUser;
-    if (!user || user.uid !== task.userId) return;
-
-    const activeFavoriteCount = favoriteTasksForLimit.filter((t) => t.archived !== true).length;
-    if (!isPro && task.favorite !== true && activeFavoriteCount >= 15) {
-      setTaskActionError(freeLimitMessage);
-      return;
-    }
-
-    try {
-      await updateDoc(doc(db, 'tasks', task.id), {
-        title: task.title,
-        status: (task.status ?? 'todo') as TaskDoc['status'],
-        workspaceId: typeof task.workspaceId === 'string' ? task.workspaceId : null,
-        dueDate: task.dueDate ?? null,
-        favorite: !(task.favorite === true),
-        updatedAt: serverTimestamp(),
-      });
-    } catch (e) {
-      console.error('Error toggling task favorite', e);
-    }
-  };
+  const quickLinks = [
+    { href: workspaceId ? `/notes/new?workspaceId=${encodeURIComponent(workspaceId)}` : "/notes/new", label: "Nouvelle note" },
+    { href: workspaceId ? `/tasks/new?workspaceId=${encodeURIComponent(workspaceId)}` : "/tasks/new", label: "Nouvelle tâche" },
+    { href: tasksCalendarHref, label: "Ouvrir l’agenda" },
+    { href: workspaceId ? `/todo?workspaceId=${encodeURIComponent(workspaceId)}` : "/todo", label: "Voir checklist" },
+  ];
 
   return (
-    <div className="space-y-6 min-h-[calc(100svh-2rem)]">
-      <header className="flex items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold">Dashboard</h1>
-        <div id="sn-create-slot" data-dashboard-slide-index={activeSlideIndex} />
+    <div className="space-y-6">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-xl font-semibold">Accueil</h1>
+          <p className="text-sm text-muted-foreground">Vue rapide pour savoir quoi faire maintenant.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {quickLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="inline-flex items-center justify-center rounded-md border border-border bg-background px-3 py-2 text-sm hover:bg-accent/60"
+            >
+              {link.label}
+            </Link>
+          ))}
+        </div>
       </header>
-
-      <section className="sn-card p-3 md:p-3.5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="inline-flex items-center gap-2 text-sm">
-            <span className="font-semibold">Aujourd’hui</span>
-            <span className="sn-badge">Prévues: {dashboardSummary.tasksToday}</span>
-            <span className="sn-badge">En retard: {dashboardSummary.overdueTasks}</span>
-          </div>
-          <Link href={tasksCalendarHref} className="sn-text-btn text-xs">
-            Voir l’agenda
-          </Link>
-        </div>
-        <details className="mt-2">
-          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
-            Détails
-          </summary>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-            <span className="sn-badge">Checklist planifiées: {dashboardSummary.checklistPlannedToday}</span>
-          </div>
-        </details>
-      </section>
-
-      <div className="sticky top-0 z-10 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="inline-flex rounded-md border border-border bg-background overflow-hidden max-w-full">
-          <button
-            type="button"
-            onClick={() => scrollToSlide(0)}
-            className={`px-3 py-1 text-sm transition-colors ${activeSlideIndex === 0 ? 'bg-accent font-semibold' : 'hover:bg-accent/60'}`}
-          >
-            Checklist ({todoFavoriteCount})
-          </button>
-          <button
-            type="button"
-            onClick={() => scrollToSlide(1)}
-            className={`px-3 py-1 text-sm transition-colors ${activeSlideIndex === 1 ? 'bg-accent font-semibold' : 'hover:bg-accent/60'}`}
-          >
-            Notes ({notesFavoriteCount})
-          </button>
-          <button
-            type="button"
-            onClick={() => scrollToSlide(2)}
-            className={`px-3 py-1 text-sm transition-colors ${activeSlideIndex === 2 ? 'bg-accent font-semibold' : 'hover:bg-accent/60'}`}
-          >
-            Favoris agenda ({tasksFavoriteCount})
-          </button>
-        </div>
-      </div>
 
       {flashMessage && (
         <div className="sn-alert sn-alert--info" role="status" aria-live="polite">
@@ -465,412 +244,238 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {!inboxLoading && !inboxError && activeInboxMessage && activeInboxMessage.id && (
-        <section className="fixed bottom-5 right-5 z-40 w-[min(92vw,360px)] rounded-2xl border border-border/70 bg-card/95 backdrop-blur shadow-2xl p-4 space-y-3 sn-animate-in">
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-1 min-w-0">
-              <p className="text-xs text-muted-foreground">Message Smart Notes</p>
-              <p className="text-sm font-semibold text-foreground truncate">{activeInboxMessage.title}</p>
+      <section className="grid gap-3 sm:grid-cols-3">
+        <div className="sn-card p-4">
+          <div className="text-sm text-muted-foreground">Aujourd’hui</div>
+          <div className="mt-1 text-2xl font-semibold">{dashboardData.tasksToday}</div>
+          <div className="mt-1 text-xs text-muted-foreground">tâche(s) prévues</div>
+        </div>
+        <div className="sn-card p-4">
+          <div className="text-sm text-muted-foreground">À rattraper</div>
+          <div className="mt-1 text-2xl font-semibold">{dashboardData.overdueTasks}</div>
+          <div className="mt-1 text-xs text-muted-foreground">tâche(s) en retard</div>
+        </div>
+        <div className="sn-card p-4">
+          <div className="text-sm text-muted-foreground">Checklist active</div>
+          <div className="mt-1 text-2xl font-semibold">{activeTodos.length}</div>
+          <div className="mt-1 text-xs text-muted-foreground">élément(s) en cours</div>
+        </div>
+      </section>
+
+      <section className="sn-card p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">À traiter maintenant</h2>
+            <p className="text-sm text-muted-foreground">En retard, aujourd’hui, puis dans les prochains jours.</p>
+          </div>
+          <Link href={tasksCalendarHref} className="sn-text-btn text-sm">
+            Voir l’agenda
+          </Link>
+        </div>
+
+        {tasksLoading && <div className="sn-empty"><div className="sn-empty-title">Chargement des tâches…</div></div>}
+        {tasksError && <div className="sn-alert sn-alert--error">Impossible de charger les tâches du dashboard.</div>}
+        {!tasksLoading && !tasksError && dashboardData.urgentTasks.length === 0 && (
+          <div className="sn-empty sn-empty--premium">
+            <div className="sn-empty-title">Rien d’urgent</div>
+            <div className="sn-empty-desc">Aucune tâche en retard ou proche à traiter pour le moment.</div>
+          </div>
+        )}
+        {!tasksLoading && !tasksError && dashboardData.urgentTasks.length > 0 && (
+          <ul className="space-y-2">
+            {dashboardData.urgentTasks.map(({ task, bucket, taskDate }) => {
+              const href = task.id ? `/tasks/${encodeURIComponent(task.id)}${suffix}` : null;
+              const bucketLabel =
+                bucket === "overdue" ? "En retard" : bucket === "today" ? "Aujourd’hui" : "À venir";
+              return (
+                <li
+                  key={task.id ?? `${task.title}-${taskDate}`}
+                  className={`sn-card sn-card--task p-4 ${href ? "cursor-pointer" : ""}`}
+                  tabIndex={href ? 0 : undefined}
+                  onClick={() => {
+                    if (href) router.push(href);
+                  }}
+                  onKeyDown={(e) => {
+                    if (!href) return;
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      router.push(href);
+                    }
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="sn-card-title truncate">{task.title}</div>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span className="sn-badge">{bucketLabel}</span>
+                        <span className="sn-badge">{formatTaskTiming(task)}</span>
+                        {task.workspaceId && (
+                          <span className="sn-badge">
+                            {workspaceLabelById.get(task.workspaceId) ?? task.workspaceId}
+                          </span>
+                        )}
+                        {task.priority && (
+                          <span className="sn-badge inline-flex items-center gap-2">
+                            <span className={`h-2 w-2 rounded-full ${priorityDotClass(task.priority)}`} aria-hidden />
+                            <span>{taskPriorityLabel(task.priority)}</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {href ? (
+                      <Link
+                        href={href}
+                        className="inline-flex shrink-0 items-center rounded-md border border-border bg-background px-2 py-1 text-xs hover:bg-accent/60"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Ouvrir
+                      </Link>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+        <section className="sn-card p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">Notes récentes</h2>
+              <p className="text-sm text-muted-foreground">Tes dernières notes utiles, prêtes à reprendre.</p>
             </div>
-            <span
-              className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-medium ${inboxSeverityClass(
-                typeof activeInboxMessage.severity === 'string' ? activeInboxMessage.severity : 'info',
-              )}`}
-            >
-              {typeof activeInboxMessage.severity === 'string' ? activeInboxMessage.severity : 'info'}
-            </span>
+            <Link href={workspaceId ? `/notes?workspaceId=${encodeURIComponent(workspaceId)}` : "/notes"} className="sn-text-btn text-sm">
+              Voir notes
+            </Link>
           </div>
 
-          <p className="text-sm text-muted-foreground whitespace-pre-wrap">{activeInboxMessage.body}</p>
-
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[11px] text-muted-foreground">{formatFrDateTime(activeInboxMessage.createdAt)}</p>
-            <button
-              type="button"
-              onClick={() => markInboxMessageRead(activeInboxMessage.id!)}
-              className="rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-xs font-medium hover:opacity-95"
-            >
-              Marquer comme lu
-            </button>
-          </div>
-
-          {unreadInboxMessages.length > 1 && (
-            <p className="text-[11px] text-muted-foreground">+ {unreadInboxMessages.length - 1} autre(s) message(s)</p>
+          {notesLoading && <div className="sn-empty"><div className="sn-empty-title">Chargement des notes…</div></div>}
+          {notesError && <div className="sn-alert sn-alert--error">Impossible de charger les notes récentes.</div>}
+          {!notesLoading && !notesError && recentNotes.length === 0 && (
+            <div className="sn-empty">
+              <div className="sn-empty-title">Aucune note récente</div>
+              <div className="sn-empty-desc">Crée une note pour retrouver rapidement tes idées ici.</div>
+            </div>
+          )}
+          {!notesLoading && !notesError && recentNotes.length > 0 && (
+            <ul className="space-y-2">
+              {recentNotes.map((note) => {
+                const href = note.id
+                  ? (() => {
+                      const params = new URLSearchParams();
+                      if (workspaceId) params.set("workspaceId", workspaceId);
+                      params.set("noteId", note.id);
+                      const qs = params.toString();
+                      return qs ? `/notes?${qs}` : "/notes";
+                    })()
+                  : null;
+                return (
+                  <li
+                    key={note.id ?? note.title}
+                    className={`sn-card sn-card--note p-4 ${href ? "cursor-pointer" : ""}`}
+                    tabIndex={href ? 0 : undefined}
+                    onClick={() => {
+                      if (href) router.push(href);
+                    }}
+                    onKeyDown={(e) => {
+                      if (!href) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        router.push(href);
+                      }
+                    }}
+                  >
+                    <div className="sn-card-title truncate">{note.title}</div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      {note.workspaceId && (
+                        <span className="sn-badge">
+                          {workspaceLabelById.get(note.workspaceId) ?? note.workspaceId}
+                        </span>
+                      )}
+                      <span className="sn-badge">Mise à jour: {formatFrDateTime(note.updatedAt ?? null)}</span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </section>
-      )}
 
-      {!inboxLoading && inboxError && (
-        <div className="sn-alert sn-alert--error">Impossible de charger les messages Smart Notes.</div>
-      )}
-
-      <div
-        ref={slidesContainerRef}
-        className="flex overflow-x-auto overscroll-x-contain snap-x snap-mandatory gap-6 pb-1"
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={() => {
-          swipeStartRef.current = null;
-        }}
-      >
-        <div
-          ref={(el) => {
-            slideRefs.current[0] = el;
-          }}
-          data-slide-index="0"
-          className="flex-none w-full min-w-0 snap-start"
-        >
-          <section>
-            <h2 className="text-lg font-semibold mb-2">Ta checklist importante</h2>
-            {favoriteTodos.length === 0 && (
-              <div className="sn-empty">
-                <div className="sn-empty-title">Aucun favori pour l’instant</div>
-                <div className="sn-empty-desc">Depuis Checklist, épingle les éléments à garder sous la main ⭐.</div>
-              </div>
-            )}
-            {favoriteTodos.length > 0 && (
-              <ul className="space-y-1">
-                {favoriteTodos.map((todo) => {
-                  const href = todo.id ? `/todo/${encodeURIComponent(todo.id)}${suffix}` : null;
-                  const dueLabel = todo.dueDate ? formatFrDate(todo.dueDate) : '';
-                  const prioText = todo.priority ? priorityLabel(todo.priority) : '';
-                  return (
-                    <li
-                      key={todo.id}
-                      className={`sn-card sn-card--task ${todo.favorite ? " sn-card--favorite" : ""} p-4 ${href ? "cursor-pointer" : ""}`}
-                      tabIndex={href ? 0 : undefined}
-                      onClick={() => {
-                        if (!href) return;
-                        router.push(href);
-                      }}
-                      onKeyDown={(e) => {
-                        if (!href) return;
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          router.push(href);
-                        }
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <label className="text-sm flex items-center gap-3 min-w-0">
-                          <input
-                            type="checkbox"
-                            checked={todo.completed === true}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => toggleTodoCompleted(todo, e.target.checked)}
-                            aria-label="Marquer comme terminée"
-                          />
-                          <span className="min-w-0">
-                            <span className="truncate block">{todo.title}</span>
-                            {(dueLabel || todo.priority) && (
-                              <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                                {dueLabel && (
-                                  <span className="inline-flex items-center gap-1">
-                                    <span aria-hidden>📅</span>
-                                    <span>{dueLabel}</span>
-                                  </span>
-                                )}
-                                {todo.priority && (
-                                  <span className="inline-flex items-center gap-1">
-                                    <span className={`h-2 w-2 rounded-full ${priorityDotClass(todo.priority)}`} aria-hidden />
-                                    <span>{prioText}</span>
-                                  </span>
-                                )}
-                              </span>
-                            )}
-                          </span>
-                        </label>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            toggleTodoFavorite(todo);
-                          }}
-                          className="sn-icon-btn shrink-0"
-                          aria-label={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                          title={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                        >
-                          {todo.favorite ? "★" : "☆"}
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
-        </div>
-
-        <div
-          ref={(el) => {
-            slideRefs.current[1] = el;
-          }}
-          data-slide-index="1"
-          className="flex-none w-full min-w-0 snap-start"
-        >
-          <section>
-            <h2 className="text-lg font-semibold mb-2">Tes notes importantes</h2>
-            {notesLoading && (
-              <div className="sn-empty sn-animate-in">
-                <div className="space-y-3">
-                  <div className="mx-auto sn-skeleton-avatar" />
-                  <div className="sn-skeleton-title w-40 mx-auto" />
-                  <div className="sn-skeleton-line w-64 mx-auto" />
-                  <div className="sn-skeleton-line w-56 mx-auto" />
-                </div>
-              </div>
-            )}
-            {notesError && <div className="sn-alert sn-alert--error">Impossible de charger les notes favorites.</div>}
-            {noteActionError && (
-              <div className="space-y-2">
-                <div className="sn-alert sn-alert--error" role="status" aria-live="polite">
-                  {noteActionError}
-                </div>
-                {!isPro && noteActionError.includes('Limite Free atteinte') && (
-                  <Link
-                    href="/upgrade"
-                    className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
-                  >
-                    Débloquer Pro
-                  </Link>
-                )}
-              </div>
-            )}
-            {!notesLoading && !notesError && activeFavoriteNotes.length === 0 && (
-              <div className="sn-empty">
-                <div className="sn-empty-title">Aucun favori pour l’instant</div>
-                <div className="sn-empty-desc">Depuis Notes, épingle les éléments à garder sous la main ⭐.</div>
-              </div>
-            )}
-            {!notesLoading && !notesError && activeFavoriteNotes.length > 0 && (
-              <ul className="space-y-1">
-                {activeFavoriteNotes.map((note) => {
-                  const href = note.id
-                    ? (() => {
-                        const params = new URLSearchParams(suffix.startsWith("?") ? suffix.slice(1) : suffix);
-                        params.set("noteId", note.id);
-                        const qs = params.toString();
-                        return qs ? `/notes?${qs}` : "/notes";
-                      })()
-                    : null;
-                  return (
-                    <li
-                      key={note.id}
-                      className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-4 relative ${
-                        note.id ? "cursor-pointer" : ""
-                      }`}
-                      tabIndex={href ? 0 : undefined}
-                      onClick={() => {
-                        if (!href) return;
-                        router.push(href);
-                      }}
-                      onKeyDown={(e) => {
-                        if (!href) return;
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          router.push(href);
-                        }
-                      }}
-                    >
-                      <div className="space-y-3">
-                        <div className="sn-card-header">
-                          <div className="min-w-0 relative z-10">
-                            <div className="sn-card-title truncate">{note.title}</div>
-                            <div className="sn-card-meta">
-                              {note.workspaceId && typeof note.workspaceId === "string" && (
-                                <span className="sn-badge">
-                                  {workspaceNameById.get(note.workspaceId) ?? note.workspaceId}
-                                </span>
-                              )}
-                              {note.favorite && <span className="sn-badge">Favori</span>}
-                            </div>
-                          </div>
-
-                          <div className="sn-card-actions sn-card-actions-secondary shrink-0 relative z-20">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                toggleNoteFavorite(note);
-                              }}
-                              className="sn-icon-btn"
-                              aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                              title={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                            >
-                              {note.favorite ? "★" : "☆"}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
-        </div>
-
-        <div
-          ref={(el) => {
-            slideRefs.current[2] = el;
-          }}
-          data-slide-index="2"
-          className="flex-none w-full min-w-0 snap-start"
-        >
-          <section>
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold">Favoris agenda</h2>
-              <Link
-                href={tasksCalendarHref}
-                className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1.5 text-sm hover:bg-accent/70 transition-colors"
-              >
-                Ouvrir l’Agenda
-              </Link>
+        <section className="sn-card p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">Checklist en cours</h2>
+              <p className="text-sm text-muted-foreground">Les éléments récents que tu peux finir vite.</p>
             </div>
-            <p className="mb-3 text-xs text-muted-foreground">
-              Affiche uniquement les tâches datées marquées en favoris.
-            </p>
-            {tasksLoading && (
-              <div className="sn-empty sn-animate-in">
-                <div className="space-y-3">
-                  <div className="mx-auto sn-skeleton-avatar" />
-                  <div className="sn-skeleton-title w-40 mx-auto" />
-                  <div className="sn-skeleton-line w-64 mx-auto" />
-                  <div className="sn-skeleton-line w-56 mx-auto" />
-                </div>
-              </div>
-            )}
-            {tasksError && <div className="sn-alert sn-alert--error">Impossible de charger l’agenda favori.</div>}
-            {taskActionError && (
-              <div className="space-y-2">
-                <div className="sn-alert sn-alert--error" role="status" aria-live="polite">
-                  {taskActionError}
-                </div>
-                {!isPro && taskActionError.includes('Limite Free atteinte') && (
-                  <Link
-                    href="/upgrade"
-                    className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
-                  >
-                    Débloquer Pro
-                  </Link>
-                )}
-              </div>
-            )}
-            {!tasksLoading && !tasksError && activeFavoriteTasks.length === 0 && (
-              <div className="sn-empty sn-empty--premium sn-animate-in">
-                <div className="sn-empty-title">Aucun favori pour l’instant</div>
-                <div className="sn-empty-desc">Depuis Agenda, épingle les priorités ⭐ pour les retrouver ici en un clic.</div>
-                <div className="mt-3">
-                  <Link
-                    href={tasksCalendarHref}
-                    className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 transition-opacity"
-                  >
-                    Ouvrir l’Agenda
-                  </Link>
-                </div>
-              </div>
-            )}
-            {!tasksLoading && !tasksError && favoriteAgendaItems.length > 0 && (
-              <ul className="space-y-1">
-                {favoriteAgendaItems.map(({ task, projection }, index) => {
-                  const href = task.id ? `/tasks/${encodeURIComponent(task.id)}${suffix}` : null;
-                  const dueLabel = formatFrDateTime(task.dueDate ?? null);
-                  const startLabel = formatFrDate(task.startDate ?? null);
-                  const prioText = task.priority ? priorityLabel(task.priority) : '';
-                  const calendarHref = (() => {
-                    const params = new URLSearchParams();
-                    if (workspaceId) params.set('workspaceId', workspaceId);
-                    params.set('view', 'calendar');
-                    if (task.id) params.set('taskId', task.id);
-                    if (projection) {
-                      const pad = (n: number) => String(n).padStart(2, '0');
-                      const focusDate = `${projection.start.getFullYear()}-${pad(projection.start.getMonth() + 1)}-${pad(
-                        projection.start.getDate(),
-                      )}`;
-                      params.set('focusDate', focusDate);
-                    }
-                    const qs = params.toString();
-                    return qs ? `/tasks?${qs}` : '/tasks?view=calendar';
-                  })();
-                  return (
-                    <li
-                      key={task.id ?? `favorite-${index}-${task.title}`}
-                      className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 relative ${
-                        task.id ? "cursor-pointer" : ""
-                      }`}
-                      tabIndex={href ? 0 : undefined}
-                      onClick={() => {
-                        if (!href) return;
-                        router.push(href);
-                      }}
-                      onKeyDown={(e) => {
-                        if (!href) return;
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          router.push(href);
-                        }
-                      }}
-                    >
-                      <div className="space-y-3">
-                        <div className="sn-card-header">
-                          <div className="min-w-0 relative z-10">
-                            <div className="sn-card-title truncate">{task.title}</div>
-                            <div className="sn-card-meta">
-                              {task.workspaceId && typeof task.workspaceId === "string" && (
-                                <span className="sn-badge">
-                                  {workspaceNameById.get(task.workspaceId) ?? task.workspaceId}
-                                </span>
-                              )}
-                              {startLabel && <span className="sn-badge">Début: {startLabel}</span>}
-                              {dueLabel && <span className="sn-badge">Échéance: {dueLabel}</span>}
-                              {task.priority && (
-                                <span className="sn-badge inline-flex items-center gap-2">
-                                  <span className={`h-2 w-2 rounded-full ${priorityDotClass(task.priority)}`} aria-hidden />
-                                  <span>Priorité: {prioText}</span>
-                                </span>
-                              )}
-                              {!projection && <span className="sn-badge">Non planifiée</span>}
-                              {task.favorite && <span className="sn-badge">Favori</span>}
-                            </div>
-                          </div>
+            <Link href={workspaceId ? `/todo?workspaceId=${encodeURIComponent(workspaceId)}` : "/todo"} className="sn-text-btn text-sm">
+              Voir checklist
+            </Link>
+          </div>
 
-                          <div className="sn-card-actions sn-card-actions-secondary shrink-0 relative z-20">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                router.push(calendarHref);
-                              }}
-                              className="inline-flex items-center rounded-md border border-border bg-background px-2 py-1 text-xs"
-                            >
-                              Ouvrir l’Agenda
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                toggleTaskFavorite(task);
-                              }}
-                              className="sn-icon-btn"
-                              aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                              title={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                            >
-                              {task.favorite ? "★" : "☆"}
-                            </button>
-                          </div>
+          {todoActionError && <div className="sn-alert sn-alert--error">{todoActionError}</div>}
+          {todosLoading && <div className="sn-empty"><div className="sn-empty-title">Chargement de la checklist…</div></div>}
+          {todosError && <div className="sn-alert sn-alert--error">Impossible de charger la checklist.</div>}
+          {!todosLoading && !todosError && activeTodos.length === 0 && (
+            <div className="sn-empty">
+              <div className="sn-empty-title">Checklist vide</div>
+              <div className="sn-empty-desc">Aucun élément actif pour le moment.</div>
+            </div>
+          )}
+          {!todosLoading && !todosError && activeTodos.length > 0 && (
+            <ul className="space-y-2">
+              {activeTodos.slice(0, 5).map((todo) => {
+                const href = todo.id ? `/todo/${encodeURIComponent(todo.id)}${suffix}` : null;
+                return (
+                  <li
+                    key={todo.id ?? todo.title}
+                    className={`sn-card sn-card--task p-4 ${href ? "cursor-pointer" : ""}`}
+                    tabIndex={href ? 0 : undefined}
+                    onClick={() => {
+                      if (href) router.push(href);
+                    }}
+                    onKeyDown={(e) => {
+                      if (!href) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        router.push(href);
+                      }
+                    }}
+                  >
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={todo.completed === true}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => toggleTodoCompleted(todo, e.target.checked)}
+                        aria-label="Marquer comme terminée"
+                        className="mt-1"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium">{todo.title}</div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          {todo.workspaceId && (
+                            <span className="sn-badge">
+                              {workspaceLabelById.get(todo.workspaceId) ?? todo.workspaceId}
+                            </span>
+                          )}
+                          {todo.dueDate && <span className="sn-badge">Échéance: {formatFrDate(todo.dueDate)}</span>}
+                          {todo.priority && (
+                            <span className="sn-badge inline-flex items-center gap-2">
+                              <span className={`h-2 w-2 rounded-full ${priorityDotClass(todo.priority)}`} aria-hidden />
+                              <span>{taskPriorityLabel(todo.priority)}</span>
+                            </span>
+                          )}
                         </div>
                       </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
-        </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
       </div>
     </div>
   );

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { Priority, TaskRecurrenceFreq, WorkspaceDoc } from "@/types/firestore";
+import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import {
   parseDateFromDraft,
   toLocalDateInputValue,
@@ -37,6 +38,7 @@ export default function AgendaCalendarDraftModal({
   const [closing, setClosing] = useState(false);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const hadDraftRef = useRef(false);
+  const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
 
   useEffect(() => {
     const hasDraft = Boolean(draft);
@@ -148,7 +150,7 @@ export default function AgendaCalendarDraftModal({
             <option value="">Sans dossier</option>
             {workspaces.map((ws) => (
               <option key={ws.id ?? ws.name} value={ws.id ?? ""} disabled={!ws.id}>
-                {ws.name}
+                {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
               </option>
             ))}
           </select>

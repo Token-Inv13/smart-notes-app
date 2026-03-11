@@ -163,6 +163,7 @@ export interface WorkspaceDoc {
   id?: string;
   ownerId: string;
   name: string;
+  parentId?: string | null;
   order?: number;
   members?: string[];
   createdAt?: Timestamp | FieldValue;

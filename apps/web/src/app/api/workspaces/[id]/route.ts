@@ -46,6 +46,11 @@ export async function DELETE(request: NextRequest) {
       return new NextResponse('Forbidden', { status: 403 });
     }
 
+    const childSnap = await db.collection('workspaces').where('parentId', '==', id).limit(1).get();
+    if (!childSnap.empty) {
+      return new NextResponse('Workspace has child folders', { status: 409 });
+    }
+
     // 1) Collect tasks ids in this workspace (for reminders cleanup)
     const tasksSnap = await db.collection('tasks').where('workspaceId', '==', id).get();
     const taskIds = tasksSnap.docs.map((d) => d.id);

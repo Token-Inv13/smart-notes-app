@@ -51,32 +51,11 @@ export default function AgendaCalendarFiltersBar({
     return count;
   }, [priorityFilter, showChecklistItems, showClassicTasks, showConflictsOnly, showRecurringOnly, statusFilter, timeWindowFilter]);
 
-  const [mobileExpanded, setMobileExpanded] = useState(activeFiltersCount > 0);
+  const [secondaryFiltersOpen, setSecondaryFiltersOpen] = useState(activeFiltersCount > 0);
 
   return (
     <div className="space-y-2">
-      <div className="md:hidden flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => setMobileExpanded((prev) => !prev)}
-          className="h-8 px-3 rounded-md border border-border bg-background text-xs"
-          aria-expanded={mobileExpanded}
-        >
-          {mobileExpanded ? "Masquer les filtres" : "Afficher les filtres"}
-        </button>
-        {activeFiltersCount > 0 ? (
-          <button
-            type="button"
-            className="sn-badge text-[11px]"
-            onClick={() => setMobileExpanded(true)}
-            aria-label="Ouvrir les filtres actifs"
-          >
-            {activeFiltersCount} actif(s)
-          </button>
-        ) : null}
-      </div>
-
-      <div className={`${mobileExpanded ? "flex" : "hidden"} md:flex flex-wrap items-center gap-2`}>
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={onToggleClassicTasks}
@@ -93,7 +72,28 @@ export default function AgendaCalendarFiltersBar({
         >
           Checklist
         </button>
+        <button
+          type="button"
+          onClick={() => setSecondaryFiltersOpen((prev) => !prev)}
+          className="h-8 px-3 rounded-md border border-border bg-background text-xs"
+          aria-expanded={secondaryFiltersOpen}
+          aria-label="Afficher les filtres secondaires"
+        >
+          {activeFiltersCount > 0 ? `Filtres (${activeFiltersCount})` : "Filtres"}
+        </button>
+        {activeFiltersCount > 0 ? (
+          <button
+            type="button"
+            onClick={onReset}
+            className="h-8 px-3 rounded-md border border-border bg-background text-xs"
+          >
+            Réinitialiser
+          </button>
+        ) : null}
+      </div>
 
+      {secondaryFiltersOpen ? (
+        <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex rounded-md border border-border bg-background overflow-hidden">
           <button
             type="button"
@@ -168,23 +168,8 @@ export default function AgendaCalendarFiltersBar({
           <option value="afternoon">Après-midi</option>
           <option value="evening">Soir</option>
         </select>
-
-        {(showRecurringOnly ||
-          showConflictsOnly ||
-          priorityFilter ||
-          timeWindowFilter ||
-          !showClassicTasks ||
-          !showChecklistItems ||
-          statusFilter !== "all") && (
-          <button
-            type="button"
-            onClick={onReset}
-            className="h-8 px-3 rounded-md border border-border bg-background text-xs"
-          >
-            Réinitialiser
-          </button>
-        )}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
