@@ -3,8 +3,6 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
 import { useUserNotes } from "@/hooks/useUserNotes";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserTodos } from "@/hooks/useUserTodos";
@@ -85,6 +83,9 @@ export default function DashboardPage() {
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId") || undefined;
   const suffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
+  const notesHref = useMemo(() => {
+    return workspaceId ? `/notes?workspaceId=${encodeURIComponent(workspaceId)}` : "/notes";
+  }, [workspaceId]);
   const tasksCalendarHref = useMemo(() => {
     const params = new URLSearchParams();
     if (workspaceId) params.set("workspaceId", workspaceId);
@@ -114,7 +115,7 @@ export default function DashboardPage() {
     data: favoriteNotesRaw,
     loading: notesLoading,
     error: notesError,
-  } = useUserNotes({ workspaceId, favoriteOnly: true, limit: 8 });
+  } = useUserNotes({ workspaceId, favoriteOnly: true });
   const {
     data: dashboardTasks,
     loading: tasksLoading,
@@ -127,10 +128,9 @@ export default function DashboardPage() {
     data: favoriteTodosRaw,
     loading: todosLoading,
     error: todosError,
-  } = useUserTodos({ workspaceId, favoriteOnly: true, limit: 8 });
+  } = useUserTodos({ workspaceId, favoriteOnly: true });
   const { data: workspaces } = useUserWorkspaces();
 
-  const [todoActionError, setTodoActionError] = useState<string | null>(null);
   const [flashMessage] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     try {
@@ -146,12 +146,12 @@ export default function DashboardPage() {
   const workspaceLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
 
   const favoriteNotes = useMemo(
-    () => favoriteNotesRaw.filter((note) => note.archived !== true && note.completed !== true).slice(0, 5),
+    () => favoriteNotesRaw.filter((note) => note.archived !== true && note.completed !== true),
     [favoriteNotesRaw],
   );
 
   const favoriteTodos = useMemo(
-    () => favoriteTodosRaw.slice(0, 5),
+    () => favoriteTodosRaw,
     [favoriteTodosRaw],
   );
 
@@ -219,27 +219,6 @@ export default function DashboardPage() {
       urgentTasks,
     };
   }, [dashboardTasks]);
-
-  const toggleTodoCompleted = async (todo: TodoDoc, nextCompleted: boolean) => {
-    if (!todo.id) return;
-    const user = auth.currentUser;
-    if (!user || user.uid !== todo.userId) return;
-
-    setTodoActionError(null);
-    try {
-      await updateDoc(doc(db, "todos", todo.id), {
-        userId: todo.userId,
-        workspaceId: typeof todo.workspaceId === "string" ? todo.workspaceId : null,
-        title: todo.title,
-        favorite: todo.favorite === true,
-        completed: nextCompleted,
-        updatedAt: serverTimestamp(),
-      });
-    } catch (e) {
-      console.error("Error toggling todo completed", e);
-      setTodoActionError("Impossible de mettre à jour cette checklist.");
-    }
-  };
 
   const quickLinks = [
     { href: workspaceId ? `/notes/new?workspaceId=${encodeURIComponent(workspaceId)}` : "/notes/new", label: "Nouvelle note" },
@@ -383,14 +362,23 @@ export default function DashboardPage() {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
         <section className="sn-card p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
+          <div
+            className="-m-4 mb-3 cursor-pointer rounded-t-[inherit] p-4 pb-3 transition hover:bg-accent/30 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            role="link"
+            tabIndex={0}
+            aria-label="Ouvrir la section notes"
+            onClick={() => router.push(notesHref)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                router.push(notesHref);
+              }
+            }}
+          >
             <div>
               <h2 className="text-lg font-semibold">Notes favorites</h2>
               <p className="text-sm text-muted-foreground">Tes notes épinglées, prêtes à rouvrir rapidement.</p>
             </div>
-            <Link href={workspaceId ? `/notes?workspaceId=${encodeURIComponent(workspaceId)}` : "/notes"} className="sn-text-btn text-sm">
-              Voir notes
-            </Link>
           </div>
 
           {notesLoading && <div className="sn-empty"><div className="sn-empty-title">Chargement des notes…</div></div>}
@@ -402,63 +390,73 @@ export default function DashboardPage() {
             </div>
           )}
           {!notesLoading && !notesError && favoriteNotes.length > 0 && (
-            <ul className="space-y-2">
-              {favoriteNotes.map((note) => {
-                const href = note.id
-                  ? (() => {
-                      const params = new URLSearchParams();
-                      if (workspaceId) params.set("workspaceId", workspaceId);
-                      params.set("noteId", note.id);
-                      const qs = params.toString();
-                      return qs ? `/notes?${qs}` : "/notes";
-                    })()
-                  : null;
-                return (
-                  <li
-                    key={note.id ?? note.title}
-                    className={`sn-card sn-card--note p-4 ${href ? "cursor-pointer" : ""}`}
-                    role={href ? "link" : undefined}
-                    aria-label={href ? `Ouvrir la note ${note.title}` : undefined}
-                    tabIndex={href ? 0 : undefined}
-                    onClick={() => {
-                      if (href) router.push(href);
-                    }}
-                    onKeyDown={(e) => {
-                      if (!href) return;
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        router.push(href);
-                      }
-                    }}
-                  >
-                    <div className="sn-card-title truncate">{note.title}</div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      {note.workspaceId && (
-                        <span className="sn-badge">
-                          {workspaceLabelById.get(note.workspaceId) ?? note.workspaceId}
-                        </span>
-                      )}
-                      <span className="sn-badge">Mise à jour: {formatFrDateTime(note.updatedAt ?? null)}</span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+            <div className="max-h-80 overflow-y-auto pr-1 sm:max-h-96" onClick={(e) => e.stopPropagation()}>
+              <ul className="space-y-2">
+                {favoriteNotes.map((note) => {
+                  const href = note.id
+                    ? (() => {
+                        const params = new URLSearchParams();
+                        if (workspaceId) params.set("workspaceId", workspaceId);
+                        params.set("noteId", note.id);
+                        const qs = params.toString();
+                        return qs ? `/notes?${qs}` : "/notes";
+                      })()
+                    : null;
+                  return (
+                    <li
+                      key={note.id ?? note.title}
+                      className={`sn-card sn-card--note p-4 ${href ? "cursor-pointer" : ""}`}
+                      role={href ? "link" : undefined}
+                      aria-label={href ? `Ouvrir la note ${note.title}` : undefined}
+                      tabIndex={href ? 0 : undefined}
+                      onClick={() => {
+                        if (href) router.push(href);
+                      }}
+                      onKeyDown={(e) => {
+                        if (!href) return;
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          router.push(href);
+                        }
+                      }}
+                    >
+                      <div className="sn-card-title truncate">{note.title}</div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        {note.workspaceId && (
+                          <span className="sn-badge">
+                            {workspaceLabelById.get(note.workspaceId) ?? note.workspaceId}
+                          </span>
+                        )}
+                        <span className="sn-badge">Mise à jour: {formatFrDateTime(note.updatedAt ?? null)}</span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           )}
         </section>
 
         <section className="sn-card p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
+          <div
+            className="-m-4 mb-3 cursor-pointer rounded-t-[inherit] p-4 pb-3 transition hover:bg-accent/30 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            role="link"
+            tabIndex={0}
+            aria-label="Ouvrir la section checklist"
+            onClick={() => router.push(activeChecklistHref)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                router.push(activeChecklistHref);
+              }
+            }}
+          >
             <div>
               <h2 className="text-lg font-semibold">Checklists favorites</h2>
               <p className="text-sm text-muted-foreground">Tes checklists épinglées, prêtes à reprendre rapidement.</p>
             </div>
-            <Link href={workspaceId ? `/todo?workspaceId=${encodeURIComponent(workspaceId)}` : "/todo"} className="sn-text-btn text-sm">
-              Voir checklist
-            </Link>
           </div>
 
-          {todoActionError && <div className="sn-alert sn-alert--error">{todoActionError}</div>}
           {todosLoading && <div className="sn-empty"><div className="sn-empty-title">Chargement de la checklist…</div></div>}
           {todosError && <div className="sn-alert sn-alert--error">Impossible de charger les checklists favorites.</div>}
           {!todosLoading && !todosError && favoriteTodos.length === 0 && (
@@ -468,58 +466,56 @@ export default function DashboardPage() {
             </div>
           )}
           {!todosLoading && !todosError && favoriteTodos.length > 0 && (
-            <ul className="space-y-2">
-              {favoriteTodos.map((todo) => {
-                const href = todo.id ? `/todo/${encodeURIComponent(todo.id)}${suffix}` : null;
-                return (
-                  <li
-                    key={todo.id ?? todo.title}
-                    className={`sn-card sn-card--task p-4 ${href ? "cursor-pointer" : ""}`}
-                    role={href ? "link" : undefined}
-                    aria-label={href ? `Ouvrir la checklist ${todo.title}` : undefined}
-                    tabIndex={href ? 0 : undefined}
-                    onClick={() => {
-                      if (href) router.push(href);
-                    }}
-                    onKeyDown={(e) => {
-                      if (!href) return;
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        router.push(href);
-                      }
-                    }}
-                  >
-                    <div className="flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        checked={todo.completed === true}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => toggleTodoCompleted(todo, e.target.checked)}
-                        aria-label="Marquer comme terminée"
-                        className="mt-1"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium">{todo.title}</div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                          {todo.workspaceId && (
-                            <span className="sn-badge">
-                              {workspaceLabelById.get(todo.workspaceId) ?? todo.workspaceId}
-                            </span>
-                          )}
-                          {todo.dueDate && <span className="sn-badge">Échéance: {formatFrDate(todo.dueDate)}</span>}
-                          {todo.priority && (
-                            <span className="sn-badge inline-flex items-center gap-2">
-                              <span className={`h-2 w-2 rounded-full ${priorityDotClass(todo.priority)}`} aria-hidden />
-                              <span>{taskPriorityLabel(todo.priority)}</span>
-                            </span>
-                          )}
+            <div className="max-h-80 overflow-y-auto pr-1 sm:max-h-96" onClick={(e) => e.stopPropagation()}>
+              <ul className="space-y-2">
+                {favoriteTodos.map((todo) => {
+                  const href = todo.id ? `/todo/${encodeURIComponent(todo.id)}${suffix}` : null;
+                  return (
+                    <li
+                      key={todo.id ?? todo.title}
+                      className={`sn-card sn-card--task p-4 ${href ? "cursor-pointer" : ""}`}
+                      role={href ? "link" : undefined}
+                      aria-label={href ? `Ouvrir la checklist ${todo.title}` : undefined}
+                      tabIndex={href ? 0 : undefined}
+                      onClick={() => {
+                        if (href) router.push(href);
+                      }}
+                      onKeyDown={(e) => {
+                        if (!href) return;
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          router.push(href);
+                        }
+                      }}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span
+                          aria-hidden="true"
+                          className="mt-1 h-4 w-4 shrink-0 rounded border border-muted-foreground/40 bg-background"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium">{todo.title}</div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            {todo.workspaceId && (
+                              <span className="sn-badge">
+                                {workspaceLabelById.get(todo.workspaceId) ?? todo.workspaceId}
+                              </span>
+                            )}
+                            {todo.dueDate && <span className="sn-badge">Échéance: {formatFrDate(todo.dueDate)}</span>}
+                            {todo.priority && (
+                              <span className="sn-badge inline-flex items-center gap-2">
+                                <span className={`h-2 w-2 rounded-full ${priorityDotClass(todo.priority)}`} aria-hidden />
+                                <span>{taskPriorityLabel(todo.priority)}</span>
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           )}
         </section>
       </div>
