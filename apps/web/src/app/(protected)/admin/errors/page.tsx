@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { getAdminHealthSummary, listErrorLogs } from '@/lib/adminClient';
+import { useAdminGuard } from '@/hooks/useAdminGuard';
 import type { AdminCursor, AdminErrorLogItem, AdminHealthSummary } from '@/types/admin';
 
 function formatDateTime(ms: number | null | undefined) {
@@ -19,6 +20,7 @@ const CATEGORY_OPTIONS = [
 ];
 
 export default function AdminErrorsPage() {
+  const { ready, loading: adminLoading, error: adminError } = useAdminGuard();
   const [logs, setLogs] = useState<AdminErrorLogItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +64,12 @@ export default function AdminErrorsPage() {
     }
   };
 
+  useEffect(() => {
+    if (!ready) return;
+    void Promise.all([loadHealthSummary(), loadLogs(true)]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
   return (
     <div className="space-y-6">
       <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
@@ -79,6 +87,7 @@ export default function AdminErrorsPage() {
       </header>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+        {adminError && <p className="mb-3 text-sm text-destructive">{adminError}</p>}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">KPI Santé (24h)</h2>
           <button
@@ -87,7 +96,7 @@ export default function AdminErrorsPage() {
             disabled={healthLoading}
             className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
           >
-            {healthLoading ? 'Calcul…' : 'Calculer KPI'}
+            {adminLoading || healthLoading ? 'Calcul…' : 'Calculer KPI'}
           </button>
         </div>
 
@@ -124,7 +133,7 @@ export default function AdminErrorsPage() {
             disabled={loading}
             className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
           >
-            {loading ? 'Chargement…' : 'Charger erreurs'}
+            {adminLoading || loading ? 'Chargement…' : 'Charger erreurs'}
           </button>
           <button
             type="button"

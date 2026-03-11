@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { getOperatorDashboard } from '@/lib/adminClient';
+import { useAdminGuard } from '@/hooks/useAdminGuard';
 import type { AdminOperatorDashboard } from '@/types/admin';
 
 function formatDateTime(ms?: number) {
@@ -16,6 +17,7 @@ function buildPath(points: Array<{ x: number; y: number }>) {
 }
 
 export default function AdminDashboardPage() {
+  const { ready, loading: adminLoading, error: adminError } = useAdminGuard();
   const [data, setData] = useState<AdminOperatorDashboard | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,8 +36,9 @@ export default function AdminDashboardPage() {
   };
 
   useEffect(() => {
+    if (!ready) return;
     void load();
-  }, []);
+  }, [ready]);
 
   const chart = useMemo(() => {
     if (!data || data.usersSeries30d.length === 0) return null;
@@ -106,9 +109,12 @@ export default function AdminDashboardPage() {
       </header>
 
       <div className="sticky top-0 z-10 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700 shadow-sm">
-        État: {loading ? 'mise à jour en cours…' : error ? 'erreur de chargement' : 'opérationnel'} · Dernière génération: {formatDateTime(data?.generatedAtMs)}
+        État: {adminLoading ? 'auth admin…' : loading ? 'mise à jour en cours…' : error || adminError ? 'erreur de chargement' : 'opérationnel'} · Dernière génération: {formatDateTime(data?.generatedAtMs)}
       </div>
 
+      {adminError && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{adminError}</div>
+      )}
       {error && <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

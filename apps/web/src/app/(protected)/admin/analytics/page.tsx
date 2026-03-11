@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { getAnalyticsOverview } from '@/lib/adminClient';
+import { useAdminGuard } from '@/hooks/useAdminGuard';
 import type { AdminAnalyticsOverview } from '@/types/admin';
 
 function formatDateTime(ms?: number) {
@@ -16,6 +17,7 @@ function buildPath(points: Array<{ x: number; y: number }>) {
 }
 
 export default function AdminAnalyticsPage() {
+  const { ready, loading: adminLoading, error: adminError } = useAdminGuard();
   const [data, setData] = useState<AdminAnalyticsOverview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,8 +36,9 @@ export default function AdminAnalyticsPage() {
   };
 
   useEffect(() => {
+    if (!ready) return;
     void load();
-  }, []);
+  }, [ready]);
 
   const chart = useMemo(() => {
     if (!data || data.usersSeries30d.length === 0) return null;
@@ -113,9 +116,10 @@ export default function AdminAnalyticsPage() {
       </header>
 
       <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700 shadow-sm">
-        Source: GA4 Data API · Cache: {data?.cached ? 'hit' : 'miss'} · Expire: {formatDateTime(data?.cacheExpiresAtMs)} · Généré: {formatDateTime(data?.generatedAtMs)}
+        Source: GA4 Data API · Cache: {data?.cached ? 'hit' : 'miss'} · État: {adminLoading ? 'auth admin…' : loading ? 'chargement…' : error || adminError ? 'erreur' : 'ok'} · Expire: {formatDateTime(data?.cacheExpiresAtMs)} · Généré: {formatDateTime(data?.generatedAtMs)}
       </div>
 
+      {adminError && <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{adminError}</div>}
       {error && <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

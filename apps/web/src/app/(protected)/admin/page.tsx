@@ -35,6 +35,7 @@ import type {
   AdminUsersSortBy,
 } from '@/types/admin';
 import { trackEvent } from '@/lib/analytics';
+import { useAdminGuard } from '@/hooks/useAdminGuard';
 
 function formatDateTime(ms: number | null | undefined) {
   if (!ms || !Number.isFinite(ms)) return '—';
@@ -101,6 +102,7 @@ function computeAccountHealth(user: AdminLookupUserResult): {
 }
 
 export default function AdminPage() {
+  const { ready, loading: adminLoading, error: adminError } = useAdminGuard();
   const searchParams = useSearchParams();
   const [query, setQuery] = useState('');
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -221,6 +223,7 @@ export default function AdminPage() {
   }, [searchParams]);
 
   const loadUsers = async (options?: { reset?: boolean }) => {
+    if (!ready) return;
     const reset = options?.reset === true;
     setUsersLoading(true);
     setUsersError(null);
@@ -248,6 +251,7 @@ export default function AdminPage() {
   };
 
   const loadEmailPreview = async () => {
+    if (!ready) return;
     setEmailPreviewLoading(true);
     setEmailError(null);
     try {
@@ -389,6 +393,7 @@ export default function AdminPage() {
   };
 
   const loadMessagingStats = async (targetUserUid: string) => {
+    if (!ready) return;
     setMessageStatsLoading(true);
     setMessageStatsError(null);
     try {
@@ -403,6 +408,7 @@ export default function AdminPage() {
   };
 
   const loadActivityEvents = async (targetUserUid: string, options?: { reset?: boolean }) => {
+    if (!ready) return;
     const reset = options?.reset === true;
     setActivityLoading(true);
     setActivityError(null);
@@ -424,9 +430,10 @@ export default function AdminPage() {
   };
 
   useEffect(() => {
+    if (!ready) return;
     void loadUsers({ reset: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usersSortBy, usersPageSize]);
+  }, [ready, usersSortBy, usersPageSize]);
 
   useEffect(() => {
     try {
@@ -442,13 +449,15 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
+    if (!ready) return;
     if (!lookupFromUrl) return;
     setQuery(lookupFromUrl);
     void openUserFromIndex(lookupFromUrl);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lookupFromUrl]);
+  }, [ready, lookupFromUrl]);
 
   const loadAuditLogs = async (options?: { reset?: boolean }) => {
+    if (!ready) return;
     const reset = options?.reset === true;
     setAuditLoading(true);
     setAuditError(null);
@@ -471,7 +480,14 @@ export default function AdminPage() {
     }
   };
 
+  useEffect(() => {
+    if (!ready) return;
+    void loadAuditLogs({ reset: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
   const openUserFromIndex = async (uid: string) => {
+    if (!ready) return;
     setQuery(uid);
     setLookupLoading(true);
     setLookupError(null);
@@ -503,13 +519,26 @@ export default function AdminPage() {
   };
 
   const runRebuildUsersIndex = async () => {
+    if (!ready) return;
     setRebuildLoading(true);
     setRebuildError(null);
     setRebuildInfo(null);
 
     try {
-      const res = await rebuildUsersIndex({ batchSize: 200 });
-      setRebuildInfo(res.message);
+      let processedTotal = 0;
+      let cursorUid: string | null = null;
+      let done = false;
+      let lastMessage = 'Rebuild terminé.';
+
+      while (!done) {
+        const res = await rebuildUsersIndex({ batchSize: 200, cursorUid });
+        processedTotal += res.processed;
+        cursorUid = res.nextCursorUid;
+        done = res.done;
+        lastMessage = res.message;
+      }
+
+      setRebuildInfo(`${lastMessage} ${processedTotal} utilisateur(s) traités.`);
       await loadUsers({ reset: true });
     } catch (e) {
       setRebuildError(e instanceof Error ? e.message : 'Rebuild impossible.');
@@ -520,6 +549,7 @@ export default function AdminPage() {
 
   const handleLookup = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!ready) return;
     const trimmed = query.trim();
     if (!trimmed) {
       setLookupError('Renseigne un email ou un UID.');
@@ -537,7 +567,7 @@ export default function AdminPage() {
       setAuditFilterUserUid(user.uid);
       rememberRecentUser(user.uid);
       setActivityCursor(null);
-      await loadActivityEvents(user.uid, { reset: true });
+      await Promise.all([loadActivityEvents(user.uid, { reset: true }), loadMessagingStats(user.uid)]);
     } catch (e) {
       setLookupResult(null);
       setLookupError(e instanceof Error ? e.message : 'Lookup impossible.');
@@ -551,6 +581,7 @@ export default function AdminPage() {
     callback: () => Promise<{ message: string }>;
     confirmText?: string;
   }) => {
+    if (!ready) return;
     if (!canActOnUid) return;
 
     if (params.confirmText) {
@@ -723,6 +754,10 @@ export default function AdminPage() {
         </div>
       </header>
 
+      {adminError && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{adminError}</div>
+      )}
+
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">Broadcast in-app</h2>
         <p className="mt-1 text-xs text-slate-500">Envoi segmenté global avec preview avant diffusion.</p>
@@ -778,18 +813,18 @@ export default function AdminPage() {
             <button
               type="button"
               onClick={() => void loadBroadcastPreview()}
-              disabled={broadcastLoading}
+              disabled={adminLoading || broadcastLoading}
               className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
             >
-              {broadcastLoading ? 'Preview…' : 'Preview'}
+              {adminLoading || broadcastLoading ? 'Preview…' : 'Preview'}
             </button>
             <button
               type="button"
               onClick={() => void handleBroadcastSend()}
-              disabled={broadcastSending}
+              disabled={adminLoading || broadcastSending}
               className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
             >
-              {broadcastSending ? 'Envoi…' : 'Envoyer broadcast'}
+              {adminLoading || broadcastSending ? 'Envoi…' : 'Envoyer broadcast'}
             </button>
           </div>
         </div>
@@ -842,23 +877,23 @@ export default function AdminPage() {
             <button
               type="button"
               onClick={() => void loadEmailPreview()}
-              disabled={emailPreviewLoading}
+              disabled={adminLoading || emailPreviewLoading}
               className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
             >
-              {emailPreviewLoading ? 'Preview…' : 'Preview'}
+              {adminLoading || emailPreviewLoading ? 'Preview…' : 'Preview'}
             </button>
             <button
               type="button"
               onClick={() => void handleSendSegmentEmail()}
-              disabled={emailSending}
+              disabled={adminLoading || emailSending}
               className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
             >
-              {emailSending ? 'Envoi…' : 'Envoyer segment'}
+              {adminLoading || emailSending ? 'Envoi…' : 'Envoyer segment'}
             </button>
             <button
               type="button"
               onClick={() => void handleSendUserEmail()}
-              disabled={emailSending || !lookupResult}
+              disabled={adminLoading || emailSending || !lookupResult}
               className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 disabled:opacity-60"
             >
               Envoyer à l’utilisateur ouvert
@@ -876,18 +911,18 @@ export default function AdminPage() {
             <button
               type="button"
               onClick={runRebuildUsersIndex}
-              disabled={rebuildLoading}
+              disabled={adminLoading || rebuildLoading}
               className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
             >
-              {rebuildLoading ? 'Rebuild…' : 'Rebuild index'}
+              {adminLoading || rebuildLoading ? 'Rebuild…' : 'Rebuild index'}
             </button>
             <button
               type="button"
               onClick={() => loadUsers({ reset: true })}
-              disabled={usersLoading}
+              disabled={adminLoading || usersLoading}
               className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
             >
-              {usersLoading ? 'Chargement…' : 'Rafraîchir'}
+              {adminLoading || usersLoading ? 'Chargement…' : 'Rafraîchir'}
             </button>
           </div>
         </div>
@@ -961,7 +996,7 @@ export default function AdminPage() {
           <button
             type="button"
             onClick={() => loadUsers({ reset: true })}
-            disabled={usersLoading}
+            disabled={adminLoading || usersLoading}
             className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
           >
             Appliquer filtres
@@ -1029,7 +1064,7 @@ export default function AdminPage() {
           <button
             type="button"
             onClick={() => loadUsers({ reset: false })}
-            disabled={usersLoading || !usersCursor}
+            disabled={adminLoading || usersLoading || !usersCursor}
             className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
           >
             Charger plus
@@ -1062,10 +1097,10 @@ export default function AdminPage() {
           />
           <button
             type="submit"
-            disabled={lookupLoading}
+            disabled={adminLoading || lookupLoading}
             className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
           >
-            {lookupLoading ? 'Recherche…' : 'Rechercher'}
+            {adminLoading || lookupLoading ? 'Recherche…' : 'Rechercher'}
           </button>
         </form>
         {lookupError && <p className="mt-3 text-sm text-destructive">{lookupError}</p>}
@@ -1133,10 +1168,10 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => loadActivityEvents(lookupResult.uid, { reset: true })}
-                  disabled={activityLoading}
+                  disabled={adminLoading || activityLoading}
                   className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                 >
-                  {activityLoading ? 'Chargement…' : 'Rafraîchir'}
+                  {adminLoading || activityLoading ? 'Chargement…' : 'Rafraîchir'}
                 </button>
               </div>
             </div>
@@ -1163,7 +1198,7 @@ export default function AdminPage() {
               <button
                 type="button"
                 onClick={() => loadActivityEvents(lookupResult.uid, { reset: false })}
-                disabled={activityLoading || !activityCursor}
+                disabled={adminLoading || activityLoading || !activityCursor}
                 className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
               >
                 Charger plus
@@ -1219,10 +1254,10 @@ export default function AdminPage() {
               <button
                 type="button"
                 onClick={handleSendMessage}
-                disabled={messageSending}
+                disabled={adminLoading || messageSending}
                 className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
               >
-                {messageSending ? 'Envoi…' : 'Envoyer message'}
+                {adminLoading || messageSending ? 'Envoi…' : 'Envoyer message'}
               </button>
             </div>
             {messageInfo && <p className="mt-2 text-xs text-emerald-600">{messageInfo}</p>}
@@ -1244,7 +1279,7 @@ export default function AdminPage() {
                     confirmText: `Confirmer la révocation des sessions pour ${lookupResult.uid} ?`,
                   })
                 }
-                disabled={actionBusy !== null}
+                disabled={adminLoading || actionBusy !== null}
                 className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 transition hover:bg-slate-50 disabled:opacity-60"
               >
                 {actionBusy === 'revoke' ? 'Révocation…' : 'Révoquer sessions'}
@@ -1283,7 +1318,7 @@ export default function AdminPage() {
                       confirmText: `Activer premium ${premiumDays} jours pour ${lookupResult.uid} ?`,
                     })
                   }
-                  disabled={actionBusy !== null}
+                  disabled={adminLoading || actionBusy !== null}
                   className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:opacity-60"
                 >
                   {actionBusy === 'enable-premium' ? 'Activation…' : 'Activer premium'}
@@ -1299,7 +1334,7 @@ export default function AdminPage() {
                     confirmText: `Désactiver premium pour ${lookupResult.uid} ?`,
                   })
                 }
-                disabled={actionBusy !== null}
+                disabled={adminLoading || actionBusy !== null}
                 className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-100 disabled:opacity-60"
               >
                 {actionBusy === 'disable-premium' ? 'Désactivation…' : 'Désactiver premium'}
@@ -1320,7 +1355,7 @@ export default function AdminPage() {
                     confirmText: `Confirmer le reset onboarding/flags pour ${lookupResult.uid} ?`,
                   })
                 }
-                disabled={actionBusy !== null}
+                disabled={adminLoading || actionBusy !== null}
                 className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100 disabled:opacity-60"
               >
                 {actionBusy === 'reset-flags' ? 'Reset…' : 'Reset onboarding/flags'}
@@ -1335,7 +1370,7 @@ export default function AdminPage() {
                     confirmText: `Soft delete de ${lookupResult.uid} (blocage login + revoke sessions + plan free) ?`,
                   })
                 }
-                disabled={actionBusy !== null}
+                disabled={adminLoading || actionBusy !== null}
                 className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-100 disabled:opacity-60"
               >
                 {actionBusy === 'soft-delete' ? 'Suppression soft…' : 'Soft delete utilisateur'}
@@ -1344,7 +1379,7 @@ export default function AdminPage() {
               <button
                 type="button"
                 onClick={() => void openHardDeleteFlow()}
-                disabled={actionBusy !== null}
+                disabled={adminLoading || actionBusy !== null}
                 className="rounded-md border border-rose-400 bg-rose-100 px-3 py-2 text-sm font-semibold text-rose-900 transition hover:bg-rose-200 disabled:opacity-60"
               >
                 {actionBusy === 'hard-delete' ? 'Suppression hard…' : 'Hard delete (avancé)'}
@@ -1365,10 +1400,10 @@ export default function AdminPage() {
           <button
             type="button"
             onClick={() => loadAuditLogs({ reset: true })}
-            disabled={auditLoading}
+            disabled={adminLoading || auditLoading}
             className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
           >
-            {auditLoading ? 'Chargement…' : 'Rafraîchir'}
+            {adminLoading || auditLoading ? 'Chargement…' : 'Rafraîchir'}
           </button>
         </div>
 
@@ -1429,7 +1464,7 @@ export default function AdminPage() {
           <button
             type="button"
             onClick={() => loadAuditLogs({ reset: false })}
-            disabled={auditLoading || !auditCursor}
+            disabled={adminLoading || auditLoading || !auditCursor}
             className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
           >
             Charger plus
@@ -1496,7 +1531,7 @@ export default function AdminPage() {
               <button
                 type="button"
                 onClick={() => void submitHardDelete()}
-                disabled={actionBusy === 'hard-delete'}
+                disabled={adminLoading || actionBusy === 'hard-delete'}
                 className="rounded-md bg-rose-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
               >
                 {actionBusy === 'hard-delete' ? 'Suppression…' : 'Supprimer définitivement'}
