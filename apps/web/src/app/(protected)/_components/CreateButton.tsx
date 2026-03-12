@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
@@ -30,6 +30,8 @@ export default function CreateButton({ mobileHidden, renderCustomTrigger }: Prop
   const searchParams = useSearchParams();
 
   const [favoritesPickerOpen, setFavoritesPickerOpen] = useState(false);
+  const [quickCreateBlocked, setQuickCreateBlocked] = useState(false);
+  const unblockTimeoutRef = useRef<number | null>(null);
 
   const shouldHide = (() => {
     if (pathname.startsWith("/notes/new") || pathname.startsWith("/tasks/new") || pathname.startsWith("/todo/new")) return true;
@@ -39,6 +41,11 @@ export default function CreateButton({ mobileHidden, renderCustomTrigger }: Prop
   })();
 
   const handleClick = () => {
+    if (quickCreateBlocked) {
+      setFavoritesPickerOpen(false);
+      return;
+    }
+
     if (isMainCreationView(pathname)) {
       setFavoritesPickerOpen(true);
       return;
@@ -59,6 +66,37 @@ export default function CreateButton({ mobileHidden, renderCustomTrigger }: Prop
     const href = qs.toString();
     router.push(href ? `/notes/new?${href}` : "/notes/new");
   };
+
+  useEffect(() => {
+    const onSuspendQuickCreate = (event: Event) => {
+      const detail =
+        event instanceof CustomEvent && typeof event.detail === "object" && event.detail
+          ? (event.detail as { durationMs?: unknown })
+          : null;
+      const durationMs =
+        typeof detail?.durationMs === "number" && Number.isFinite(detail.durationMs)
+          ? Math.max(0, detail.durationMs)
+          : 800;
+
+      setQuickCreateBlocked(true);
+      if (unblockTimeoutRef.current !== null) {
+        window.clearTimeout(unblockTimeoutRef.current);
+      }
+      unblockTimeoutRef.current = window.setTimeout(() => {
+        setQuickCreateBlocked(false);
+        unblockTimeoutRef.current = null;
+      }, durationMs);
+      setFavoritesPickerOpen(false);
+    };
+
+    window.addEventListener("smartnotes:suspend-quick-create", onSuspendQuickCreate);
+    return () => {
+      window.removeEventListener("smartnotes:suspend-quick-create", onSuspendQuickCreate);
+      if (unblockTimeoutRef.current !== null) {
+        window.clearTimeout(unblockTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const favoritesPickerContent = favoritesPickerOpen ? (
     <div

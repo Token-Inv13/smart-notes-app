@@ -40,6 +40,11 @@ function formatCount(value: number, singular: string, plural: string) {
   return `${value} ${value > 1 ? plural : singular}`;
 }
 
+function suspendQuickCreate(durationMs = 800) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("smartnotes:suspend-quick-create", { detail: { durationMs } }));
+}
+
 export default function WorkspaceFolderBrowser({
   sectionHrefBase,
   allWorkspaces,
@@ -81,6 +86,7 @@ export default function WorkspaceFolderBrowser({
 
     setIsSubmitting(true);
     setCreateError(null);
+    suspendQuickCreate(1200);
 
     try {
       const nextOrder =
@@ -102,6 +108,11 @@ export default function WorkspaceFolderBrowser({
 
       setNewFolderName("");
       setIsCreateOpen(false);
+      setCreateError(null);
+      if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      suspendQuickCreate(1200);
     } catch (error) {
       console.error("Error creating child workspace", error);
       setCreateError("Erreur lors de la creation du sous-dossier.");
@@ -111,9 +122,9 @@ export default function WorkspaceFolderBrowser({
   };
 
   return (
-    <section className="space-y-3 rounded-2xl border border-border/70 bg-card/70 p-4">
-      <div className="space-y-2">
-        <nav aria-label="Chemin du dossier" className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+    <section className="space-y-4 rounded-2xl border border-border/70 bg-card/70 p-4">
+      <div className="space-y-3">
+        <nav aria-label="Chemin du dossier" className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
           <Link href={sectionHrefBase} className="rounded px-1 py-0.5 hover:bg-accent hover:text-foreground">
             Tous les dossiers
           </Link>
@@ -136,15 +147,14 @@ export default function WorkspaceFolderBrowser({
           })}
         </nav>
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-foreground">{currentWorkspace.name}</h2>
-            <p className="text-sm text-muted-foreground">Sous-dossiers visibles d’abord, puis contenu direct du dossier courant.</p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold text-foreground">{currentWorkspace.name}</h2>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span className="rounded-full bg-accent/70 px-2.5 py-1">{formatCount(currentCounts.notes, "note", "notes")}</span>
-            <span className="rounded-full bg-accent/70 px-2.5 py-1">{formatCount(currentCounts.tasks, "tâche", "tâches")}</span>
-            <span className="rounded-full bg-accent/70 px-2.5 py-1">{formatCount(currentCounts.todos, "checklist", "checklists")}</span>
+            <span className="rounded-full bg-accent/70 px-2 py-1">{formatCount(currentCounts.notes, "note", "notes")}</span>
+            <span className="rounded-full bg-accent/70 px-2 py-1">{formatCount(currentCounts.tasks, "tâche", "tâches")}</span>
+            <span className="rounded-full bg-accent/70 px-2 py-1">{formatCount(currentCounts.todos, "checklist", "checklists")}</span>
             <button
               type="button"
               onClick={() => {
@@ -201,6 +211,7 @@ export default function WorkspaceFolderBrowser({
                 <button
                   type="button"
                   onClick={() => void handleCreateSubfolder()}
+                  onMouseDown={() => suspendQuickCreate(1200)}
                   className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={isSubmitting || !newFolderName.trim()}
                 >
@@ -215,7 +226,10 @@ export default function WorkspaceFolderBrowser({
 
       {childFolders.length > 0 ? (
         <div className="space-y-2">
-          <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Sous-dossiers</div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Sous-dossiers</div>
+            <div className="text-xs text-muted-foreground">{childFolders.length}</div>
+          </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {childFolders.map(({ workspace, href, counts }) => (
               <WorkspaceFolderTile
@@ -230,17 +244,10 @@ export default function WorkspaceFolderBrowser({
           </div>
         </div>
       ) : (
-        <div className="rounded-2xl border border-dashed border-border/80 bg-gradient-to-br from-background via-background to-accent/20 px-5 py-5">
-          <div className="flex items-start gap-3">
-            <div className="rounded-xl border border-border/70 bg-background/90 p-2.5 text-muted-foreground">
-              <FolderOpen className="h-5 w-5" aria-hidden="true" />
-            </div>
-            <div className="space-y-1">
-              <div className="text-sm font-semibold text-foreground">Aucun sous-dossier direct</div>
-              <p className="text-sm text-muted-foreground">
-                Ce dossier est vide côté arborescence pour le moment. Crée un sous-dossier pour structurer la suite.
-              </p>
-            </div>
+        <div className="rounded-xl border border-dashed border-border/80 bg-background/45 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <FolderOpen className="h-4 w-4" aria-hidden="true" />
+            <span>Aucun sous-dossier</span>
           </div>
         </div>
       )}

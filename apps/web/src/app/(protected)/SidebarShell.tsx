@@ -659,7 +659,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
             onClick={closeMobile}
           />
           <div
-            className="sn-drawer-panel absolute left-0 top-0 h-full w-72 bg-background border-r border-border pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
+            className="sn-drawer-panel absolute left-0 top-0 h-full w-[min(22rem,88vw)] bg-background border-r border-border pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
             role="dialog"
             aria-modal="true"
             aria-label="Menu"

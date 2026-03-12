@@ -693,20 +693,15 @@ export default function NotesPage() {
       )}
 
       {workspaceId && currentWorkspace && (
-        <section className="space-y-2 rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-3">
+        <section className="rounded-xl border-t border-border/60 pt-3">
           <div className="flex items-center justify-between gap-3">
             <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Contenu direct</div>
             <div className="text-xs text-muted-foreground">{directWorkspaceCounts.notes} note{directWorkspaceCounts.notes > 1 ? "s" : ""}</div>
           </div>
-          <p className="text-sm text-muted-foreground">
-            {directWorkspaceCounts.notes > 0
-              ? "Notes directement rangées dans ce dossier. Les sous-dossiers restent affichés au-dessus."
-              : "Aucune note directe ici pour le moment. Les sous-dossiers restent séparés au-dessus pour garder une lecture claire."}
-          </p>
         </section>
       )}
 
-      {showMicroGuide && (
+      {showMicroGuide && !workspaceId && (
         <div>
           <div className="sn-card sn-card--muted p-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -760,7 +755,7 @@ export default function NotesPage() {
                   ? `Aucune note ne correspond à “${activeSearchLabel}” avec les filtres actuels.`
                   : "Aucune note ne correspond à ta recherche ou à tes filtres actuels."
                 : workspaceId
-                  ? "Crée une note dans ce dossier ou ouvre un sous-dossier pour voir son contenu direct."
+                  ? "Crée une note ici ou ouvre un sous-dossier."
                   : "Commence simple : capture une idée, une liste ou un résumé."}
             </div>
             <div className="mt-3">

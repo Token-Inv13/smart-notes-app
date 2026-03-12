@@ -490,7 +490,7 @@ export default function TodoInlineList({
                   : todoView === "completed"
                     ? "Marque une checklist comme terminée pour la retrouver ici."
                     : workspaceId
-                      ? "Crée une checklist dans ce dossier ou ouvre un sous-dossier pour voir son contenu direct."
+                      ? "Crée une checklist ici ou ouvre un sous-dossier."
                       : "Appuie sur + pour en créer une."}
               </div>
               <div className="mt-3">

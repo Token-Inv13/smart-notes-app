@@ -274,16 +274,11 @@ export default function TodoPage() {
       )}
 
       {workspaceId && currentWorkspace && (
-        <section className="space-y-2 rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-3">
+        <section className="rounded-xl border-t border-border/60 pt-3">
           <div className="flex items-center justify-between gap-3">
             <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Contenu direct</div>
             <div className="text-xs text-muted-foreground">{directWorkspaceCounts.todos} checklist{directWorkspaceCounts.todos > 1 ? "s" : ""}</div>
           </div>
-          <p className="text-sm text-muted-foreground">
-            {directWorkspaceCounts.todos > 0
-              ? "Checklists directement rangées dans ce dossier. Les sous-dossiers restent affichés au-dessus."
-              : "Aucune checklist directe ici pour le moment. Les sous-dossiers restent au-dessus pour séparer la navigation du contenu."}
-          </p>
         </section>
       )}
 

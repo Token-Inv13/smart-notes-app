@@ -180,6 +180,7 @@ export default function SidebarWorkspaces({
     depth,
     pathLabel,
     hasChildren,
+    childCount,
     collapsed: rowCollapsed,
   }: {
     ws: WorkspaceDoc;
@@ -187,21 +188,29 @@ export default function SidebarWorkspaces({
     depth: number;
     pathLabel: string;
     hasChildren: boolean;
+    childCount: number;
     collapsed: boolean;
   }) => {
     const isChild = depth > 0;
-    const indentPx = depth * 18;
-    const lineLeft = indentPx + 15;
+    const indentPx = depth * 14;
+    const lineLeft = indentPx + 13;
     const rowClass = selected
-      ? "border-primary/30 bg-primary/10 shadow-sm"
+      ? "border-primary/25 bg-primary/8 shadow-sm"
       : isChild
-        ? "border-transparent bg-muted/20 hover:bg-accent/60"
+        ? "border-transparent bg-muted/10 hover:bg-accent/60"
         : "border-transparent hover:bg-accent/60";
     const iconClass = selected
-      ? "border-primary/30 bg-primary/15 text-primary"
+      ? "border-primary/30 bg-primary/12 text-primary"
       : isChild
         ? "border-border/70 bg-background text-muted-foreground"
-        : "border-transparent bg-muted text-foreground/80";
+        : "border-border/60 bg-muted/50 text-foreground/80";
+    const helperLabel = selected
+      ? "Ouvert"
+      : hasChildren
+        ? `${childCount} sous-dossier${childCount > 1 ? "s" : ""}`
+        : isChild
+          ? "Sous-dossier"
+          : null;
 
     return (
       <div
@@ -212,40 +221,40 @@ export default function SidebarWorkspaces({
         {selected ? <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r bg-primary" aria-hidden="true" /> : null}
         {!renamingId || ws.id !== renamingId ? (
           <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0 flex flex-1 items-center gap-1">
-              <span className="relative shrink-0" style={{ width: `${indentPx + 28}px` }}>
+            <div className="min-w-0 flex flex-1 items-center gap-2">
+              <span className="relative shrink-0" style={{ width: `${indentPx + 24}px` }}>
                 {isChild ? (
                   <span
                     aria-hidden="true"
-                    className="absolute top-[-0.7rem] bottom-[-0.7rem] w-px bg-border/60"
+                    className="absolute top-[-0.6rem] bottom-[-0.6rem] w-px bg-border/50"
                     style={{ left: `${lineLeft}px` }}
                   />
                 ) : null}
                 {isChild ? (
                   <span
                     aria-hidden="true"
-                    className="absolute top-1/2 h-px w-3 -translate-y-1/2 bg-border/60"
+                    className="absolute top-1/2 h-px w-2.5 -translate-y-1/2 bg-border/50"
                     style={{ left: `${lineLeft}px` }}
                   />
                 ) : null}
                 <span
-                  className="absolute top-1/2 flex -translate-y-1/2 items-center gap-1"
+                  className="absolute top-1/2 flex -translate-y-1/2 items-center gap-0.5"
                   style={{ left: `${indentPx}px` }}
                 >
                   {hasChildren ? (
                     <button
                       type="button"
                       onClick={() => ws.id && toggleWorkspaceCollapse(ws.id)}
-                      className="inline-flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      className="inline-flex h-4.5 w-4.5 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                       aria-label={rowCollapsed ? `Déplier ${pathLabel}` : `Replier ${pathLabel}`}
                     >
                       {rowCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                     </button>
                   ) : (
-                    <span className="block h-5 w-5" aria-hidden="true" />
+                    <span className="block h-4.5 w-4.5" aria-hidden="true" />
                   )}
-                  <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border ${iconClass}`}>
-                    <Folder className={isChild ? "h-3.5 w-3.5" : "h-4 w-4"} />
+                  <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border ${iconClass}`}>
+                    <Folder className="h-3.5 w-3.5" />
                   </span>
                 </span>
               </span>
@@ -253,30 +262,27 @@ export default function SidebarWorkspaces({
               <button
                 type="button"
                 onClick={() => navigateWithWorkspace(ws.id ?? null)}
-                className={`min-w-0 flex-1 rounded-lg px-1.5 py-1 text-left transition-colors ${
+                className={`min-w-0 flex-1 rounded-lg px-1 py-1 text-left transition-colors ${
                   selected ? "text-foreground" : "text-foreground/95"
                 }`}
                 aria-label={`Ouvrir le dossier ${pathLabel}`}
                 disabled={!ws.id}
               >
                 <span className="block min-w-0">
-                  <span className="flex items-center gap-2">
-                    <span className={`truncate text-sm ${selected ? "font-semibold" : isChild ? "font-medium" : "font-semibold"}`}>
+                  <span className="block truncate text-sm leading-5 text-left">
+                    <span className={`${selected ? "font-semibold" : "font-medium"}`}>
                       {ws.name}
                     </span>
-                    {!isChild ? (
-                      <span className="rounded-full border border-border/70 bg-background/80 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                        Racine
-                      </span>
-                    ) : null}
                   </span>
-                  <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                    {selected ? "Dossier courant" : hasChildren ? "Contient des sous-dossiers" : "Aucun sous-dossier"}
-                  </span>
+                  {helperLabel ? (
+                    <span className="mt-0.5 block truncate text-[11px] text-muted-foreground max-md:hidden">
+                      {helperLabel}
+                    </span>
+                  ) : null}
                 </span>
               </button>
             </div>
-            <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+            <div className="hidden shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 md:flex">
               <button
                 type="button"
                 onClick={() => startRename(ws)}
@@ -345,10 +351,17 @@ export default function SidebarWorkspaces({
     const qs = params.toString();
 
     const isTodoPage = pathname.startsWith("/todo");
+    const isDashboardPage = pathname.startsWith("/dashboard");
     const sectionFromPath = pathname.startsWith("/tasks") || isTodoPage ? "tasks" : "notes";
     const isContentPage = pathname.startsWith("/notes") || pathname.startsWith("/tasks") || isTodoPage;
 
-    const targetBase = isTodoPage ? "/todo" : isContentPage ? `/${sectionFromPath}` : `/${lastSection}`;
+    const targetBase = isDashboardPage
+      ? "/dashboard"
+      : isTodoPage
+        ? "/todo"
+        : isContentPage
+          ? `/${sectionFromPath}`
+          : `/${lastSection}`;
     router.push(qs ? `${targetBase}?${qs}` : targetBase);
     onNavigate?.();
   };
@@ -729,7 +742,8 @@ export default function SidebarWorkspaces({
 
               {visibleFlattenedWorkspaces.map(({ workspace, depth, pathLabel }) => {
                 const isSelected = workspace.id && workspace.id === currentWorkspaceId;
-                const hasChildren = !!(workspace.id && childCountByWorkspaceId.get(workspace.id));
+                const childCount = workspace.id ? childCountByWorkspaceId.get(workspace.id) ?? 0 : 0;
+                const hasChildren = childCount > 0;
                 return (
                   <WorkspaceRow
                     key={workspace.id ?? workspace.name}
@@ -738,6 +752,7 @@ export default function SidebarWorkspaces({
                     depth={depth}
                     pathLabel={pathLabel}
                     hasChildren={hasChildren}
+                    childCount={childCount}
                     collapsed={!!(workspace.id && collapsedWorkspaceIds[workspace.id])}
                   />
                 );
