@@ -12,7 +12,7 @@ import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { projectTaskToEvent } from "@/lib/agenda/taskEventProjector";
 import { auth, db } from "@/lib/firebase";
 import { toUserErrorMessage } from "@/lib/userError";
-import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
+import { buildWorkspacePathLabelMap, getWorkspaceSelfAndDescendantIds } from "@/lib/workspaces";
 import type { TaskDoc, TodoDoc } from "@/types/firestore";
 
 type TaskStatus = "todo" | "doing" | "done";
@@ -134,22 +134,22 @@ export default function DashboardPage() {
     data: favoriteNotesRaw,
     loading: notesLoading,
     error: notesError,
-  } = useUserNotes({ workspaceId, favoriteOnly: true });
+  } = useUserNotes({ favoriteOnly: true });
   const {
     data: dashboardTasks,
     loading: tasksLoading,
     error: tasksError,
-  } = useUserTasks({ workspaceId, limit: 300 });
-  const { data: favoriteTasksForLimit } = useUserTasks({ workspaceId, favoriteOnly: true, limit: 16 });
+  } = useUserTasks({ limit: 300 });
+  const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
   const { data: userSettings } = useUserSettings();
   const {
     data: activeTodos,
-  } = useUserTodos({ workspaceId, completed: false, limit: 8 });
+  } = useUserTodos({ completed: false, limit: 8 });
   const {
     data: favoriteTodosRaw,
     loading: todosLoading,
     error: todosError,
-  } = useUserTodos({ workspaceId, favoriteOnly: true });
+  } = useUserTodos({ favoriteOnly: true });
   const { data: workspaces } = useUserWorkspaces();
 
   const [flashMessage] = useState<string | null>(() => {
@@ -174,15 +174,37 @@ export default function DashboardPage() {
   const freeLimitMessage = "Limite Free atteinte. Passe en Pro pour créer plus d’éléments d’agenda et utiliser les favoris sans limite.";
 
   const workspaceLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
+  const selectedWorkspaceIds = useMemo(
+    () => getWorkspaceSelfAndDescendantIds(workspaces, workspaceId),
+    [workspaceId, workspaces],
+  );
 
   const favoriteNotes = useMemo(
-    () => favoriteNotesRaw.filter((note) => note.archived !== true && note.completed !== true),
-    [favoriteNotesRaw],
+    () =>
+      favoriteNotesRaw.filter((note) => {
+        if (note.archived === true || note.completed === true) return false;
+        if (!selectedWorkspaceIds) return true;
+        return selectedWorkspaceIds.has(note.workspaceId ?? "");
+      }),
+    [favoriteNotesRaw, selectedWorkspaceIds],
   );
 
   const favoriteTodos = useMemo(
-    () => favoriteTodosRaw.filter((todo) => todo.completed !== true),
-    [favoriteTodosRaw],
+    () =>
+      favoriteTodosRaw.filter((todo) => {
+        if (todo.completed === true) return false;
+        if (!selectedWorkspaceIds) return true;
+        return selectedWorkspaceIds.has(todo.workspaceId ?? "");
+      }),
+    [favoriteTodosRaw, selectedWorkspaceIds],
+  );
+  const visibleActiveTodos = useMemo(
+    () =>
+      activeTodos.filter((todo) => {
+        if (!selectedWorkspaceIds) return true;
+        return selectedWorkspaceIds.has(todo.workspaceId ?? "");
+      }),
+    [activeTodos, selectedWorkspaceIds],
   );
 
   const favoriteActiveCount = useMemo(() => {
@@ -197,12 +219,17 @@ export default function DashboardPage() {
 
   const displayDashboardTasks = useMemo(
     () =>
-      dashboardTasks.map((task) => {
+      dashboardTasks
+        .filter((task) => {
+          if (!selectedWorkspaceIds) return true;
+          return selectedWorkspaceIds.has(task.workspaceId ?? "");
+        })
+        .map((task) => {
         if (!task.id) return task;
         const patch = optimisticTaskById[task.id];
         return patch ? { ...task, ...patch } : task;
       }),
-    [dashboardTasks, optimisticTaskById],
+    [dashboardTasks, optimisticTaskById, selectedWorkspaceIds],
   );
 
   const toggleTodoCompleted = async (todo: TodoDoc, nextCompleted: boolean) => {
@@ -519,7 +546,7 @@ export default function DashboardPage() {
           className="sn-card block p-4 transition hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
         >
           <div className="text-sm text-muted-foreground">Checklist active</div>
-          <div className="mt-1 text-2xl font-semibold">{activeTodos.length}</div>
+          <div className="mt-1 text-2xl font-semibold">{visibleActiveTodos.length}</div>
           <div className="mt-1 text-xs text-muted-foreground">élément(s) en cours</div>
         </Link>
       </section>

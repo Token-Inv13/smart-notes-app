@@ -7,28 +7,50 @@ import { useUserNotes } from "@/hooks/useUserNotes";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserTodos } from "@/hooks/useUserTodos";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
+import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
+import { getWorkspaceSelfAndDescendantIds } from "@/lib/workspaces";
 
 export default function TodoPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId") || undefined;
+  const { data: workspaces } = useUserWorkspaces();
 
-  const { data: notesForCounter } = useUserNotes({ workspaceId });
-  const { data: tasksForCounter } = useUserTasks({ workspaceId });
-  const { data: todosForCounter } = useUserTodos({ workspaceId });
+  const { data: notesForCounter } = useUserNotes();
+  const { data: tasksForCounter } = useUserTasks();
+  const { data: todosForCounter } = useUserTodos();
+  const selectedWorkspaceIds = useMemo(
+    () => getWorkspaceSelfAndDescendantIds(workspaces, workspaceId),
+    [workspaceId, workspaces],
+  );
 
   const visibleNotesCount = useMemo(
-    () => notesForCounter.filter((n) => n.archived !== true).length,
-    [notesForCounter],
+    () =>
+      notesForCounter.filter((note) => {
+        if (note.archived === true) return false;
+        if (!selectedWorkspaceIds) return true;
+        return selectedWorkspaceIds.has(note.workspaceId ?? "");
+      }).length,
+    [notesForCounter, selectedWorkspaceIds],
   );
   const visibleTasksCount = useMemo(
-    () => tasksForCounter.filter((t) => t.archived !== true).length,
-    [tasksForCounter],
+    () =>
+      tasksForCounter.filter((task) => {
+        if (task.archived === true) return false;
+        if (!selectedWorkspaceIds) return true;
+        return selectedWorkspaceIds.has(task.workspaceId ?? "");
+      }).length,
+    [selectedWorkspaceIds, tasksForCounter],
   );
   const visibleTodosCount = useMemo(
-    () => todosForCounter.filter((t) => t.completed !== true).length,
-    [todosForCounter],
+    () =>
+      todosForCounter.filter((todo) => {
+        if (todo.completed === true) return false;
+        if (!selectedWorkspaceIds) return true;
+        return selectedWorkspaceIds.has(todo.workspaceId ?? "");
+      }).length,
+    [selectedWorkspaceIds, todosForCounter],
   );
 
   const hrefSuffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";

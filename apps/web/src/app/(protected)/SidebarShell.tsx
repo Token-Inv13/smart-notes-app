@@ -12,6 +12,7 @@ import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useAuth } from "@/hooks/useAuth";
 import { invalidateAuthSession } from "@/lib/authInvalidation";
 import { sanitizeAssistantText } from "@/lib/assistantText";
+import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import { useAssistantSettings } from "@/hooks/useAssistantSettings";
 import { useUserAssistantSuggestions } from "@/hooks/useUserAssistantSuggestions";
 import type { WorkspaceDoc } from "@/types/firestore";
@@ -124,10 +125,11 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
 
   // Hotfix: DnD disabled (dnd-kit). We keep a sorted list only.
   const localWorkspaces: WorkspaceDoc[] = baseSortedWorkspaces;
+  const workspacePathLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
 
   const currentWorkspaceName = (() => {
     if (!workspaceId) return null;
-    return workspaces.find((w) => w.id === workspaceId)?.name ?? workspaceId;
+    return workspacePathLabelById.get(workspaceId) ?? workspaces.find((w) => w.id === workspaceId)?.name ?? workspaceId;
   })();
 
   const [collapsed, setCollapsed] = useState(false);

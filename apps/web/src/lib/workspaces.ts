@@ -4,6 +4,7 @@ export type FlattenedWorkspaceItem = {
   workspace: WorkspaceDoc;
   depth: number;
   pathLabel: string;
+  ancestorIds: string[];
 };
 
 function compareWorkspaces(a: WorkspaceDoc, b: WorkspaceDoc) {
@@ -70,7 +71,7 @@ export function flattenWorkspaces(workspaces: WorkspaceDoc[]): FlattenedWorkspac
   const flattened: FlattenedWorkspaceItem[] = [];
   const visited = new Set<string>();
 
-  const visit = (workspace: WorkspaceDoc, depth: number, ancestors: string[]) => {
+  const visit = (workspace: WorkspaceDoc, depth: number, ancestors: string[], ancestorIds: string[]) => {
     const workspaceId = getWorkspaceId(workspace);
     if (workspaceId && visited.has(workspaceId)) return;
     if (workspaceId) visited.add(workspaceId);
@@ -82,22 +83,23 @@ export function flattenWorkspaces(workspaces: WorkspaceDoc[]): FlattenedWorkspac
       workspace,
       depth,
       pathLabel,
+      ancestorIds,
     });
 
     const children = childrenByParent.get(workspaceId) ?? [];
     for (const child of children) {
-      visit(child, depth + 1, [...ancestors, safeName]);
+      visit(child, depth + 1, [...ancestors, safeName], workspaceId ? [...ancestorIds, workspaceId] : ancestorIds);
     }
   };
 
   for (const rootWorkspace of childrenByParent.get(null) ?? []) {
-    visit(rootWorkspace, 0, []);
+    visit(rootWorkspace, 0, [], []);
   }
 
   for (const workspace of sortWorkspaces(workspaces)) {
     const workspaceId = getWorkspaceId(workspace);
     if (!workspaceId || !visited.has(workspaceId)) {
-      visit(workspace, 0, []);
+      visit(workspace, 0, [], []);
     }
   }
 
@@ -114,6 +116,32 @@ export function buildWorkspacePathLabelMap(workspaces: WorkspaceDoc[]) {
   }
 
   return labels;
+}
+
+export function buildWorkspaceDescendantIdsMap(workspaces: WorkspaceDoc[]) {
+  const items = flattenWorkspaces(workspaces);
+  const descendantIdsById = new Map<string, Set<string>>();
+
+  for (const item of items) {
+    const workspaceId = getWorkspaceId(item.workspace);
+    if (!workspaceId) continue;
+    descendantIdsById.set(workspaceId, new Set([workspaceId]));
+  }
+
+  for (const item of items) {
+    const workspaceId = getWorkspaceId(item.workspace);
+    if (!workspaceId) continue;
+    for (const ancestorId of item.ancestorIds) {
+      descendantIdsById.get(ancestorId)?.add(workspaceId);
+    }
+  }
+
+  return descendantIdsById;
+}
+
+export function getWorkspaceSelfAndDescendantIds(workspaces: WorkspaceDoc[], workspaceId?: string | null) {
+  if (!workspaceId) return null;
+  return buildWorkspaceDescendantIdsMap(workspaces).get(workspaceId) ?? new Set([workspaceId]);
 }
 
 export function getWorkspaceOptionLabel(workspace: WorkspaceDoc, labels?: Map<string, string>) {

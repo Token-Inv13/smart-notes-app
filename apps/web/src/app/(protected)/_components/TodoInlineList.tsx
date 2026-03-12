@@ -9,7 +9,7 @@ import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import { formatTimestampToDateFr } from "@/lib/datetime";
 import { toUserErrorMessage } from "@/lib/userError";
-import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
+import { buildWorkspacePathLabelMap, getWorkspaceSelfAndDescendantIds } from "@/lib/workspaces";
 import type { TodoDoc } from "@/types/firestore";
 
 interface TodoInlineListProps {
@@ -20,7 +20,7 @@ interface TodoInlineListProps {
 export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { data: todos, loading, error } = useUserTodos({ workspaceId });
+  const { data: todos, loading, error } = useUserTodos();
   const { data: workspaces } = useUserWorkspaces();
   const [editError, setEditError] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
@@ -100,6 +100,10 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
     return m;
   }, [workspaces]);
   const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
+  const selectedWorkspaceIds = useMemo(
+    () => (workspaceFilter === "all" ? null : getWorkspaceSelfAndDescendantIds(workspaces, workspaceFilter)),
+    [workspaceFilter, workspaces],
+  );
 
   const formatDueDate = (ts: TodoDoc["dueDate"] | null | undefined) => {
     if (!ts) return "";
@@ -130,8 +134,8 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
     const q = normalizeText(debouncedSearch);
     let result = todoView === "completed" ? completedTodos : activeTodos;
 
-    if (workspaceFilter !== "all") {
-      result = result.filter((t) => t.workspaceId === workspaceFilter);
+    if (selectedWorkspaceIds) {
+      result = result.filter((t) => selectedWorkspaceIds.has(t.workspaceId ?? ""));
     }
 
     if (priorityFilter !== "all") {
@@ -187,7 +191,7 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
     });
 
     return sorted;
-  }, [activeTodos, completedTodos, debouncedSearch, dueFilter, priorityFilter, sortBy, todoView, workspaceFilter, workspaceNameById]);
+  }, [activeTodos, completedTodos, debouncedSearch, dueFilter, priorityFilter, selectedWorkspaceIds, sortBy, todoView, workspaceNameById]);
 
   const hasActiveSearchOrFilters = useMemo(() => {
     const q = debouncedSearch.trim();

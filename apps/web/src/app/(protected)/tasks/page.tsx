@@ -28,7 +28,7 @@ import {
 } from "@/lib/datetime";
 import { FEATURE_FLAGS } from "@/lib/featureFlags";
 import { registerFcmToken } from "@/lib/fcm";
-import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
+import { buildWorkspacePathLabelMap, getWorkspaceSelfAndDescendantIds } from "@/lib/workspaces";
 import type { Priority, TaskDoc } from "@/types/firestore";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -403,6 +403,14 @@ export default function TasksPage() {
     return m;
   }, [workspaces]);
   const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
+  const selectedWorkspaceIds = useMemo(
+    () => (workspaceFilter === "all" ? null : getWorkspaceSelfAndDescendantIds(workspaces, workspaceFilter)),
+    [workspaceFilter, workspaces],
+  );
+  const tabWorkspaceIds = useMemo(
+    () => getWorkspaceSelfAndDescendantIds(workspaces, workspaceIdParam),
+    [workspaceIdParam, workspaces],
+  );
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -428,8 +436,8 @@ export default function TasksPage() {
   const userId = auth.currentUser?.uid;
   const showMicroGuide = !!userId && !getOnboardingFlag(userId, "tasks_microguide_v1");
 
-  const { data: notesForCounter } = useUserNotes({ workspaceId: workspaceIdParam ?? undefined });
-  const { data: todosForCounter } = useUserTodos({ workspaceId: workspaceIdParam ?? undefined, completed: false });
+  const { data: notesForCounter } = useUserNotes();
+  const { data: todosForCounter } = useUserTodos({ completed: false });
 
   useEffect(() => {
     if (createParam !== "1") return;
@@ -585,8 +593,8 @@ export default function TasksPage() {
 
     result = result.filter((t) => (archiveView === "archived" ? t.archived === true : t.archived !== true));
 
-    if (workspaceFilter !== "all") {
-      result = result.filter((task) => task.workspaceId === workspaceFilter);
+    if (selectedWorkspaceIds) {
+      result = result.filter((task) => selectedWorkspaceIds.has(task.workspaceId ?? ""));
     }
 
     if (priorityFilter !== "all") {
@@ -662,7 +670,7 @@ export default function TasksPage() {
     });
 
     return sorted;
-  }, [tasks, archiveView, workspaceFilter, priorityFilter, debouncedSearch, dueFilter, statusFilter, sortBy, workspaceNameById, statusForTask]);
+  }, [tasks, archiveView, selectedWorkspaceIds, priorityFilter, debouncedSearch, dueFilter, statusFilter, sortBy, workspaceNameById, statusForTask]);
 
   useEffect(() => {
     setOptimisticStatusById((prev) => {
@@ -724,13 +732,22 @@ export default function TasksPage() {
   );
 
   const visibleNotesCount = useMemo(
-    () => notesForCounter.filter((n) => n.archived !== true).length,
-    [notesForCounter],
+    () =>
+      notesForCounter.filter((note) => {
+        if (note.archived === true) return false;
+        if (!tabWorkspaceIds) return true;
+        return tabWorkspaceIds.has(note.workspaceId ?? "");
+      }).length,
+    [notesForCounter, tabWorkspaceIds],
   );
 
   const visibleTodosCount = useMemo(
-    () => todosForCounter.length,
-    [todosForCounter.length],
+    () =>
+      todosForCounter.filter((todo) => {
+        if (!tabWorkspaceIds) return true;
+        return tabWorkspaceIds.has(todo.workspaceId ?? "");
+      }).length,
+    [tabWorkspaceIds, todosForCounter],
   );
 
   const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";

@@ -14,7 +14,7 @@ import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
-import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
+import { buildWorkspacePathLabelMap, getWorkspaceSelfAndDescendantIds } from "@/lib/workspaces";
 import type { NoteDoc } from "@/types/firestore";
 import { htmlToPlainText } from "@/lib/richText";
 import { toUserErrorMessage } from "@/lib/userError";
@@ -45,12 +45,10 @@ export default function NotesPage() {
   const freeLimitMessage =
     "Limite Free atteinte. Tu peux passer en Pro pour créer plus de notes et utiliser les favoris sans limite.";
 
-  const { data: notes, loading, error } = useUserNotes({
-    workspaceId: workspaceFilter === "all" ? undefined : workspaceFilter,
-  });
+  const { data: notes, loading, error } = useUserNotes();
   const { data: favoriteNotesForLimit } = useUserNotes({ favoriteOnly: true, limit: 11 });
-  const { data: tasksForCounter } = useUserTasks({ workspaceId });
-  const { data: todosForCounter } = useUserTodos({ workspaceId, completed: false });
+  const { data: tasksForCounter } = useUserTasks();
+  const { data: todosForCounter } = useUserTodos({ completed: false });
 
   const userId = auth.currentUser?.uid;
   const showMicroGuide = !!userId && !getOnboardingFlag(userId, "notes_microguide_v1");
@@ -101,6 +99,14 @@ export default function NotesPage() {
     return m;
   }, [workspaces]);
   const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
+  const selectedWorkspaceIds = useMemo(
+    () => (workspaceFilter === "all" ? null : getWorkspaceSelfAndDescendantIds(workspaces, workspaceFilter)),
+    [workspaceFilter, workspaces],
+  );
+  const tabWorkspaceIds = useMemo(
+    () => getWorkspaceSelfAndDescendantIds(workspaces, workspaceId),
+    [workspaceId, workspaces],
+  );
 
   useEffect(() => {
     const nextFilter = workspaceId ?? "all";
@@ -125,7 +131,12 @@ export default function NotesPage() {
   );
 
   const sortedNotes = useMemo(() => {
-    const sorted = notes.slice();
+    const sorted = notes
+      .filter((note) => {
+        if (!selectedWorkspaceIds) return true;
+        return selectedWorkspaceIds.has(note.workspaceId ?? "");
+      })
+      .slice();
     sorted.sort((a, b) => {
       const aMillis = sortBy === "createdAt" ? toMillisSafe(a.createdAt) : toMillisSafe(a.updatedAt);
       const bMillis = sortBy === "createdAt" ? toMillisSafe(b.createdAt) : toMillisSafe(b.updatedAt);
@@ -137,7 +148,7 @@ export default function NotesPage() {
       return bUpdated - aUpdated;
     });
     return sorted;
-  }, [notes, sortBy]);
+  }, [notes, selectedWorkspaceIds, sortBy]);
 
   useEffect(() => {
     try {
@@ -153,7 +164,11 @@ export default function NotesPage() {
   const archivedNotesSorted = useMemo(() => {
     if (sortBy === "createdAt") {
       return notes
-        .filter((n) => n.archived === true)
+        .filter((n) => {
+          if (n.archived !== true) return false;
+          if (!selectedWorkspaceIds) return true;
+          return selectedWorkspaceIds.has(n.workspaceId ?? "");
+        })
         .slice()
         .sort((a, b) => {
           const aCreated = toMillisSafe(a.createdAt);
@@ -167,7 +182,11 @@ export default function NotesPage() {
     }
 
     return notes
-      .filter((n) => n.archived === true)
+      .filter((n) => {
+        if (n.archived !== true) return false;
+        if (!selectedWorkspaceIds) return true;
+        return selectedWorkspaceIds.has(n.workspaceId ?? "");
+      })
       .slice()
       .sort((a, b) => {
         const aArchived = toMillisSafe(a.archivedAt ?? a.updatedAt);
@@ -178,13 +197,14 @@ export default function NotesPage() {
         const bUpdated = toMillisSafe(b.updatedAt);
         return bUpdated - aUpdated;
       });
-  }, [notes, sortBy]);
+  }, [notes, selectedWorkspaceIds, sortBy]);
 
   const visibleNotes = useMemo(() => {
     const base = archiveView === "archived" ? archivedNotesSorted : sortedNotes.filter((n) => n.archived !== true);
     const q = normalizeText(debouncedSearch);
 
     return base.filter((n) => {
+      if (selectedWorkspaceIds && !selectedWorkspaceIds.has(n.workspaceId ?? "")) return false;
       if (favoriteOnly && n.favorite !== true) return false;
 
       if (!q) return true;
@@ -196,7 +216,7 @@ export default function NotesPage() {
       );
       return text.includes(q);
     });
-  }, [archiveView, archivedNotesSorted, debouncedSearch, favoriteOnly, sortedNotes, workspaceNameById]);
+  }, [archiveView, archivedNotesSorted, debouncedSearch, favoriteOnly, selectedWorkspaceIds, sortedNotes, workspaceNameById]);
 
   const visibleNotesCount = useMemo(
     () => (archiveView === "archived" ? archivedNotesSorted.length : sortedNotes.filter((n) => n.archived !== true).length),
@@ -209,13 +229,22 @@ export default function NotesPage() {
   }, [debouncedSearch, favoriteOnly, workspaceFilter, workspaceId]);
   const activeSearchLabel = useMemo(() => debouncedSearch.trim().slice(0, 60), [debouncedSearch]);
   const visibleTasksCount = useMemo(
-    () => tasksForCounter.filter((t) => t.archived !== true).length,
-    [tasksForCounter],
+    () =>
+      tasksForCounter.filter((t) => {
+        if (t.archived === true) return false;
+        if (!tabWorkspaceIds) return true;
+        return tabWorkspaceIds.has(t.workspaceId ?? "");
+      }).length,
+    [tabWorkspaceIds, tasksForCounter],
   );
 
   const visibleTodosCount = useMemo(
-    () => todosForCounter.length,
-    [todosForCounter.length],
+    () =>
+      todosForCounter.filter((todo) => {
+        if (!tabWorkspaceIds) return true;
+        return tabWorkspaceIds.has(todo.workspaceId ?? "");
+      }).length,
+    [tabWorkspaceIds, todosForCounter],
   );
 
   const hrefSuffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";

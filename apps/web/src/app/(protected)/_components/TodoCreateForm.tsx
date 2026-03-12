@@ -5,8 +5,10 @@ import { FirebaseError } from "firebase/app";
 import { httpsCallable } from "firebase/functions";
 import { collection, doc, serverTimestamp, writeBatch } from "firebase/firestore";
 import { auth, db, functions as fbFunctions } from "@/lib/firebase";
+import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { scheduleChecklistItem, type ChecklistItemScheduleData } from "@/lib/checklistAgenda";
 import { DATE_PLACEHOLDER_FR, formatTimestampToDateFr, parseLocalDateToTimestamp } from "@/lib/datetime";
+import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import { toUserErrorMessage } from "@/lib/userError";
 import type { TodoDoc, TodoItemDoc } from "@/types/firestore";
 import DictationMicButton from "./DictationMicButton";
@@ -128,7 +130,10 @@ export default function TodoCreateForm({
   showActions,
   assistantMode = "full",
 }: Props) {
+  const { data: workspaces } = useUserWorkspaces();
+  const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
   const [title, setTitle] = useState(initialTitle ?? "");
+  const [workspaceId, setWorkspaceId] = useState(initialWorkspaceId ?? "");
   const [newItemText, setNewItemText] = useState("");
   const [itemsDraft, setItemsDraft] = useState<TodoDraftItem[]>([]);
   const [itemsOpen, setItemsOpen] = useState(false);
@@ -164,6 +169,10 @@ export default function TodoCreateForm({
     if (!initialTitle) return;
     setTitle((prev) => prev || initialTitle);
   }, [initialTitle]);
+
+  useEffect(() => {
+    setWorkspaceId(initialWorkspaceId ?? "");
+  }, [initialWorkspaceId]);
 
   useEffect(() => {
     if (itemsDraft.length > 0) setItemsOpen(true);
@@ -272,7 +281,7 @@ export default function TodoCreateForm({
     setCreating(true);
     try {
       const dueTimestamp = dueDateDraft ? parseLocalDateToTimestamp(dueDateDraft) : null;
-      const workspaceId = typeof initialWorkspaceId === "string" ? initialWorkspaceId : null;
+      const normalizedWorkspaceId = workspaceId || null;
       const todoRef = doc(collection(db, "todos"));
       const batch = writeBatch(db);
 
@@ -290,7 +299,7 @@ export default function TodoCreateForm({
           userId: user.uid,
           todoId: todoRef.id,
           todoTitle: trimmed,
-          workspaceId,
+          workspaceId: normalizedWorkspaceId,
           priority: priorityDraft || null,
           item: sourceItem,
           schedule: draftItem.draftSchedule,
@@ -308,7 +317,7 @@ export default function TodoCreateForm({
 
       const payload: Omit<TodoDoc, "id"> = {
         userId: user.uid,
-        workspaceId,
+        workspaceId: normalizedWorkspaceId,
         title: trimmed,
         items: persistedItems,
         dueDate: dueTimestamp,
@@ -324,6 +333,7 @@ export default function TodoCreateForm({
       setTitle("");
       setNewItemText("");
       setItemsDraft([]);
+      setWorkspaceId(initialWorkspaceId ?? "");
       setDueDateDraft("");
       setPriorityDraft("");
       onCreated?.(todoRef.id);
@@ -529,8 +539,27 @@ export default function TodoCreateForm({
                 <option value="medium">Moyenne</option>
                 <option value="high">Haute</option>
               </select>
-            </div>
-          </div>
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-sm font-medium" htmlFor="todo-workspace">
+          Dossier
+        </label>
+        <select
+          id="todo-workspace"
+          value={workspaceId}
+          onChange={(e) => setWorkspaceId(e.target.value)}
+          className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="">—</option>
+          {workspaces.map((ws) => (
+            <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
+              {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
+            </option>
+          ))}
+        </select>
+      </div>
         </details>
       )}
 
