@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -13,6 +13,8 @@ import { auth, db } from "@/lib/firebase";
 import { toUserErrorMessage } from "@/lib/userError";
 import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import type { TaskDoc, TodoDoc } from "@/types/firestore";
+
+type TaskStatus = "todo" | "doing" | "done";
 
 function readTimestampMs(value: unknown): number | null {
   if (!value || typeof value !== "object") return null;
@@ -77,6 +79,11 @@ function priorityDotClass(priority?: TaskDoc["priority"] | TodoDoc["priority"] |
   if (priority === "medium") return "bg-amber-500/80";
   if (priority === "low") return "bg-emerald-500/80";
   return "bg-muted-foreground/40";
+}
+
+function taskStatus(task: TaskDoc, optimisticStatus?: TaskStatus): TaskStatus {
+  if (optimisticStatus) return optimisticStatus;
+  return (task.status as TaskStatus | undefined) ?? (task.completed ? "done" : "todo");
 }
 
 type TaskBucket = "overdue" | "today" | "upcoming";
@@ -148,6 +155,28 @@ export default function DashboardPage() {
   const [todoActionError, setTodoActionError] = useState<string | null>(null);
   const [todoActionFeedback, setTodoActionFeedback] = useState<string | null>(null);
   const [pendingTodoId, setPendingTodoId] = useState<string | null>(null);
+  const [taskActionError, setTaskActionError] = useState<string | null>(null);
+  const [taskActionFeedback, setTaskActionFeedback] = useState<string | null>(null);
+  const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
+  const [optimisticTaskStatusById, setOptimisticTaskStatusById] = useState<Record<string, TaskStatus>>({});
+
+  useEffect(() => {
+    setOptimisticTaskStatusById((prev) => {
+      let changed = false;
+      const next = { ...prev };
+
+      for (const [taskId, optimisticStatus] of Object.entries(prev)) {
+        const task = dashboardTasks.find((item) => item.id === taskId);
+        const serverStatus = task ? taskStatus(task) : null;
+        if (!task || serverStatus === optimisticStatus) {
+          delete next[taskId];
+          changed = true;
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }, [dashboardTasks]);
 
   const workspaceLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
 
@@ -194,6 +223,46 @@ export default function DashboardPage() {
     }
   };
 
+  const toggleTaskDone = async (task: TaskDoc, nextDone: boolean) => {
+    if (!task.id) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== task.userId) {
+      setTaskActionError("Impossible de modifier cet élément d’agenda.");
+      return;
+    }
+    if (pendingTaskId === task.id) return;
+
+    const nextStatus: TaskStatus = nextDone ? "done" : "todo";
+    setTaskActionError(null);
+    setTaskActionFeedback(null);
+    setPendingTaskId(task.id);
+    setOptimisticTaskStatusById((prev) => ({ ...prev, [task.id!]: nextStatus }));
+
+    try {
+      await updateDoc(doc(db, "tasks", task.id), {
+        title: task.title,
+        status: nextStatus,
+        workspaceId: typeof task.workspaceId === "string" ? task.workspaceId : null,
+        dueDate: task.dueDate ?? null,
+        favorite: task.favorite === true,
+        updatedAt: serverTimestamp(),
+      });
+
+      setTaskActionFeedback(nextDone ? "Élément d’agenda terminé." : "Élément d’agenda restauré.");
+      window.setTimeout(() => setTaskActionFeedback(null), 1800);
+    } catch (e) {
+      console.error("Error toggling dashboard task done", e);
+      setOptimisticTaskStatusById((prev) => {
+        const next = { ...prev };
+        delete next[task.id!];
+        return next;
+      });
+      setTaskActionError(toUserErrorMessage(e, "Erreur lors de la mise à jour de l’élément d’agenda."));
+    } finally {
+      setPendingTaskId((current) => (current === task.id ? null : current));
+    }
+  };
+
   const dashboardData = useMemo(() => {
     const now = new Date();
     const nowMs = now.getTime();
@@ -202,7 +271,7 @@ export default function DashboardPage() {
     const nextWeekStart = new Date(todayStart.getTime() + 7 * 24 * 60 * 60 * 1000);
 
     const activeTasks = dashboardTasks.filter((task) => {
-      const status = task.status ?? "todo";
+      const status = taskStatus(task, task.id ? optimisticTaskStatusById[task.id] : undefined);
       return task.archived !== true && status !== "done";
     });
 
@@ -257,7 +326,7 @@ export default function DashboardPage() {
       upcomingTasks,
       urgentTasks,
     };
-  }, [dashboardTasks]);
+  }, [dashboardTasks, optimisticTaskStatusById]);
 
   const quickLinks = [
     { href: workspaceId ? `/notes/new?workspaceId=${encodeURIComponent(workspaceId)}` : "/notes/new", label: "Nouvelle note" },
@@ -335,6 +404,8 @@ export default function DashboardPage() {
 
         {tasksLoading && <div className="sn-empty"><div className="sn-empty-title">Chargement des tâches…</div></div>}
         {tasksError && <div className="sn-alert sn-alert--error">Impossible de charger les tâches du dashboard.</div>}
+        {taskActionError && <div className="sn-alert sn-alert--error">{taskActionError}</div>}
+        {taskActionFeedback && <div className="sn-alert" role="status" aria-live="polite">{taskActionFeedback}</div>}
         {!tasksLoading && !tasksError && dashboardData.urgentTasks.length === 0 && (
           <div className="sn-empty sn-empty--premium">
             <div className="sn-empty-title">Rien d’urgent</div>
@@ -350,7 +421,9 @@ export default function DashboardPage() {
               return (
                 <li
                   key={task.id ?? `${task.title}-${taskDate}`}
-                  className={`sn-card sn-card--task p-4 ${href ? "cursor-pointer" : ""}`}
+                  className={`sn-card sn-card--task p-4 ${href ? "cursor-pointer" : ""} ${pendingTaskId === task.id ? "opacity-70" : ""}`}
+                  role={href ? "link" : undefined}
+                  aria-label={href ? `Ouvrir l’élément d’agenda ${task.title}` : undefined}
                   tabIndex={href ? 0 : undefined}
                   onClick={() => {
                     if (href) router.push(href);
@@ -363,8 +436,18 @@ export default function DashboardPage() {
                     }
                   }}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={taskStatus(task, task.id ? optimisticTaskStatusById[task.id] : undefined) === "done"}
+                      disabled={pendingTaskId === task.id}
+                      aria-label={`Marquer l’élément d’agenda ${task.title} comme terminé`}
+                      onChange={(e) => void toggleTaskDone(task, e.target.checked)}
+                      onClick={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      className="mt-1 h-4 w-4 shrink-0 cursor-pointer"
+                    />
+                    <div className="min-w-0 flex-1">
                       <div className="sn-card-title truncate">{task.title}</div>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                         <span className="sn-badge">{bucketLabel}</span>
@@ -382,15 +465,6 @@ export default function DashboardPage() {
                         )}
                       </div>
                     </div>
-                    {href ? (
-                      <Link
-                        href={href}
-                        className="inline-flex shrink-0 items-center rounded-md border border-border bg-background px-2 py-1 text-xs hover:bg-accent/60"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        Ouvrir
-                      </Link>
-                    ) : null}
                   </div>
                 </li>
               );
