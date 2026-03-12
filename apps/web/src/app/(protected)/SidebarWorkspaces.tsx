@@ -10,6 +10,8 @@ import {
   PanelLeft,
   Pencil,
   Trash2,
+  ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import { z } from "zod";
 import {
@@ -125,76 +127,155 @@ export default function SidebarWorkspaces({
   const workspacePathLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
   const flattenedWorkspaces = useMemo(() => flattenWorkspaces(workspaces), [workspaces]);
   const rootWorkspaceOptions = useMemo(() => getRootWorkspaceOptions(workspaces), [workspaces]);
+  const [collapsedWorkspaceIds, setCollapsedWorkspaceIds] = useState<Record<string, boolean>>({});
+
+  const childCountByWorkspaceId = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    for (const item of flattenedWorkspaces) {
+      const parentId = item.ancestorIds[item.ancestorIds.length - 1];
+      if (!parentId) continue;
+      counts.set(parentId, (counts.get(parentId) ?? 0) + 1);
+    }
+
+    return counts;
+  }, [flattenedWorkspaces]);
+
+  useEffect(() => {
+    if (!currentWorkspaceId) return;
+
+    const currentItem = flattenedWorkspaces.find(({ workspace }) => workspace.id === currentWorkspaceId);
+    if (!currentItem) return;
+
+    setCollapsedWorkspaceIds((prev) => {
+      let changed = false;
+      const next = { ...prev };
+
+      for (const ancestorId of currentItem.ancestorIds) {
+        if (!next[ancestorId]) continue;
+        next[ancestorId] = false;
+        changed = true;
+      }
+
+      return changed ? next : prev;
+    });
+  }, [currentWorkspaceId, flattenedWorkspaces]);
+
+  const visibleFlattenedWorkspaces = useMemo(
+    () =>
+      flattenedWorkspaces.filter(({ ancestorIds }) => ancestorIds.every((ancestorId) => !collapsedWorkspaceIds[ancestorId])),
+    [collapsedWorkspaceIds, flattenedWorkspaces],
+  );
+
+  const toggleWorkspaceCollapse = (workspaceId: string) => {
+    setCollapsedWorkspaceIds((prev) => ({
+      ...prev,
+      [workspaceId]: !prev[workspaceId],
+    }));
+  };
 
   const WorkspaceRow = ({
     ws,
     selected,
     depth,
     pathLabel,
+    hasChildren,
+    collapsed: rowCollapsed,
   }: {
     ws: WorkspaceDoc;
     selected: boolean;
     depth: number;
     pathLabel: string;
+    hasChildren: boolean;
+    collapsed: boolean;
   }) => {
     const isChild = depth > 0;
-    const pathParts = pathLabel.split(" / ");
-    const parentLabel = isChild ? pathParts.slice(0, -1).join(" / ") : null;
-    const indentPx = depth * 16;
-    const branchLeft = Math.max(indentPx - 8, 8);
+    const indentPx = depth * 18;
+    const lineLeft = indentPx + 15;
+    const rowClass = selected
+      ? "border-primary/30 bg-primary/10 shadow-sm"
+      : isChild
+        ? "border-transparent bg-muted/20 hover:bg-accent/60"
+        : "border-transparent hover:bg-accent/60";
+    const iconClass = selected
+      ? "border-primary/30 bg-primary/15 text-primary"
+      : isChild
+        ? "border-border/70 bg-background text-muted-foreground"
+        : "border-transparent bg-muted text-foreground/80";
 
     return (
       <div
         data-ws-row="true"
         data-ws-id={ws.id ?? ""}
-        className={`group relative rounded-lg px-3 py-2 transition-colors ${
-          selected
-            ? "bg-primary/10 border border-primary/25 shadow-sm"
-            : isChild
-              ? "border border-transparent hover:bg-accent/50 bg-muted/20"
-              : "border border-transparent hover:bg-accent/50"
-        }`}
+        className={`group relative rounded-xl border px-2 py-1.5 transition-colors ${rowClass}`}
       >
-        {selected ? <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r bg-primary" aria-hidden="true" /> : null}
+        {selected ? <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r bg-primary" aria-hidden="true" /> : null}
         {!renamingId || ws.id !== renamingId ? (
           <div className="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => navigateWithWorkspace(ws.id ?? null)}
-              className={`min-w-0 flex-1 text-left transition-colors ${
-                selected ? "font-semibold text-foreground" : "text-foreground"
-              }`}
-              aria-label={`Ouvrir le dossier ${pathLabel}`}
-              disabled={!ws.id}
-            >
-              <span className="relative block min-w-0" style={{ paddingLeft: `${indentPx}px` }}>
+            <div className="min-w-0 flex flex-1 items-center gap-1">
+              <span className="relative shrink-0" style={{ width: `${indentPx + 28}px` }}>
                 {isChild ? (
-                  <>
-                    <span
-                      aria-hidden="true"
-                      className="absolute w-px rounded-full bg-border/70"
-                      style={{ left: `${branchLeft}px`, top: "0.35rem", bottom: "0.35rem" }}
-                    />
-                    <span
-                      aria-hidden="true"
-                      className="absolute h-px w-3 bg-border/70"
-                      style={{ left: `${branchLeft}px`, top: "1.15rem" }}
-                    />
-                  </>
+                  <span
+                    aria-hidden="true"
+                    className="absolute top-[-0.7rem] bottom-[-0.7rem] w-px bg-border/60"
+                    style={{ left: `${lineLeft}px` }}
+                  />
                 ) : null}
-                <span className="flex min-w-0 items-center gap-2">
-                  <Folder className={`shrink-0 ${isChild ? "h-3.5 w-3.5 text-muted-foreground/80" : "h-4 w-4 text-muted-foreground"}`} />
-                  <span className="min-w-0">
-                    {parentLabel ? (
-                      <span className="block truncate text-[11px] font-normal text-muted-foreground">
-                        {parentLabel}
-                      </span>
-                    ) : null}
-                    <span className={`block truncate text-sm ${isChild && !selected ? "text-foreground/90" : ""}`}>{ws.name}</span>
+                {isChild ? (
+                  <span
+                    aria-hidden="true"
+                    className="absolute top-1/2 h-px w-3 -translate-y-1/2 bg-border/60"
+                    style={{ left: `${lineLeft}px` }}
+                  />
+                ) : null}
+                <span
+                  className="absolute top-1/2 flex -translate-y-1/2 items-center gap-1"
+                  style={{ left: `${indentPx}px` }}
+                >
+                  {hasChildren ? (
+                    <button
+                      type="button"
+                      onClick={() => ws.id && toggleWorkspaceCollapse(ws.id)}
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      aria-label={rowCollapsed ? `Déplier ${pathLabel}` : `Replier ${pathLabel}`}
+                    >
+                      {rowCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                    </button>
+                  ) : (
+                    <span className="block h-5 w-5" aria-hidden="true" />
+                  )}
+                  <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border ${iconClass}`}>
+                    <Folder className={isChild ? "h-3.5 w-3.5" : "h-4 w-4"} />
                   </span>
                 </span>
               </span>
-            </button>
+
+              <button
+                type="button"
+                onClick={() => navigateWithWorkspace(ws.id ?? null)}
+                className={`min-w-0 flex-1 rounded-lg px-1.5 py-1 text-left transition-colors ${
+                  selected ? "text-foreground" : "text-foreground/95"
+                }`}
+                aria-label={`Ouvrir le dossier ${pathLabel}`}
+                disabled={!ws.id}
+              >
+                <span className="block min-w-0">
+                  <span className="flex items-center gap-2">
+                    <span className={`truncate text-sm ${selected ? "font-semibold" : isChild ? "font-medium" : "font-semibold"}`}>
+                      {ws.name}
+                    </span>
+                    {!isChild ? (
+                      <span className="rounded-full border border-border/70 bg-background/80 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                        Racine
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                    {selected ? "Dossier courant" : hasChildren ? "Contient des sous-dossiers" : "Aucun sous-dossier"}
+                  </span>
+                </span>
+              </button>
+            </div>
             <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
               <button
                 type="button"
@@ -646,8 +727,9 @@ export default function SidebarWorkspaces({
                 <div className="text-sm text-muted-foreground">Aucun dossier.</div>
               )}
 
-              {flattenedWorkspaces.map(({ workspace, depth, pathLabel }) => {
+              {visibleFlattenedWorkspaces.map(({ workspace, depth, pathLabel }) => {
                 const isSelected = workspace.id && workspace.id === currentWorkspaceId;
+                const hasChildren = !!(workspace.id && childCountByWorkspaceId.get(workspace.id));
                 return (
                   <WorkspaceRow
                     key={workspace.id ?? workspace.name}
@@ -655,6 +737,8 @@ export default function SidebarWorkspaces({
                     selected={!!isSelected}
                     depth={depth}
                     pathLabel={pathLabel}
+                    hasChildren={hasChildren}
+                    collapsed={!!(workspace.id && collapsedWorkspaceIds[workspace.id])}
                   />
                 );
               })}

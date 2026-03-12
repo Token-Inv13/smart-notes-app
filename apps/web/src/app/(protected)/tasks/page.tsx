@@ -1426,6 +1426,7 @@ export default function TasksPage() {
       {workspaceIdParam && currentWorkspace && (
         <WorkspaceFolderBrowser
           sectionHrefBase="/tasks"
+          allWorkspaces={effectiveWorkspaces}
           workspaceChain={currentWorkspaceChain}
           childFolders={childWorkspaceCards}
           currentCounts={directWorkspaceCounts}
@@ -1435,9 +1436,16 @@ export default function TasksPage() {
       )}
 
       {workspaceIdParam && currentWorkspace && (
-        <section className="space-y-1 rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-3">
-          <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Contenu direct</div>
-          <p className="text-sm text-muted-foreground">Tâches et éléments d’agenda directement rangés dans ce dossier. Les sous-dossiers restent au-dessus.</p>
+        <section className="space-y-2 rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Contenu direct</div>
+            <div className="text-xs text-muted-foreground">{directWorkspaceCounts.tasks} élément{directWorkspaceCounts.tasks > 1 ? "s" : ""}</div>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {directWorkspaceCounts.tasks > 0
+              ? "Tâches et éléments d’agenda directement rangés dans ce dossier. Les sous-dossiers restent au-dessus."
+              : "Aucun élément direct ici pour le moment. Les sous-dossiers restent distincts pour une navigation plus lisible."}
+          </p>
         </section>
       )}
 

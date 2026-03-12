@@ -683,6 +683,7 @@ export default function NotesPage() {
       {workspaceId && currentWorkspace && (
         <WorkspaceFolderBrowser
           sectionHrefBase="/notes"
+          allWorkspaces={effectiveWorkspaces}
           workspaceChain={currentWorkspaceChain}
           childFolders={childWorkspaceCards}
           currentCounts={directWorkspaceCounts}
@@ -692,9 +693,16 @@ export default function NotesPage() {
       )}
 
       {workspaceId && currentWorkspace && (
-        <section className="space-y-1 rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-3">
-          <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Contenu direct</div>
-          <p className="text-sm text-muted-foreground">Notes directement rangées dans ce dossier. Les sous-dossiers restent affichés au-dessus.</p>
+        <section className="space-y-2 rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Contenu direct</div>
+            <div className="text-xs text-muted-foreground">{directWorkspaceCounts.notes} note{directWorkspaceCounts.notes > 1 ? "s" : ""}</div>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {directWorkspaceCounts.notes > 0
+              ? "Notes directement rangées dans ce dossier. Les sous-dossiers restent affichés au-dessus."
+              : "Aucune note directe ici pour le moment. Les sous-dossiers restent séparés au-dessus pour garder une lecture claire."}
+          </p>
         </section>
       )}
 
