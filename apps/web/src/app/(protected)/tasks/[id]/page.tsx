@@ -35,7 +35,11 @@ export default function TaskDetailPage() {
   const params = useParams<{ id?: string }>();
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId");
+  const returnToParam = searchParams.get("returnTo");
   const suffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
+  const fallbackHref = returnToParam && returnToParam.startsWith("/") && !returnToParam.startsWith("//")
+    ? returnToParam
+    : `/tasks${suffix}`;
 
   const taskId = typeof params?.id === "string" ? params.id : undefined;
 
@@ -169,10 +173,16 @@ export default function TaskDetailPage() {
         <h1 className="text-xl font-semibold truncate">Détail de l’élément d’agenda</h1>
         <button
           type="button"
-          onClick={() => router.push(`/dashboard${suffix}`)}
+          onClick={() => {
+            if (typeof window !== "undefined" && window.history.length > 1) {
+              router.back();
+              return;
+            }
+            router.push(fallbackHref);
+          }}
           className="border border-border rounded px-3 py-2 bg-background text-sm hover:bg-accent"
         >
-          Retour au dashboard
+          Retour
         </button>
       </div>
 

@@ -12,7 +12,11 @@ export default function TodoDetailPage(props: { params: Promise<{ id: string }> 
   const searchParams = useSearchParams();
   const params = use(props.params);
   const workspaceId = searchParams.get("workspaceId");
+  const returnToParam = searchParams.get("returnTo");
   const suffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
+  const fallbackHref = returnToParam && returnToParam.startsWith("/") && !returnToParam.startsWith("//")
+    ? returnToParam
+    : `/todo${suffix}`;
 
   const todoId: string | undefined = params?.id;
 
@@ -79,10 +83,16 @@ export default function TodoDetailPage(props: { params: Promise<{ id: string }> 
         <h1 className="text-xl font-semibold truncate">Détail de la checklist</h1>
         <button
           type="button"
-          onClick={() => router.push(`/dashboard${suffix}`)}
+          onClick={() => {
+            if (typeof window !== "undefined" && window.history.length > 1) {
+              router.back();
+              return;
+            }
+            router.push(fallbackHref);
+          }}
           className="border border-border rounded px-3 py-2 bg-background text-sm hover:bg-accent"
         >
-          Retour au dashboard
+          Retour
         </button>
       </div>
 
