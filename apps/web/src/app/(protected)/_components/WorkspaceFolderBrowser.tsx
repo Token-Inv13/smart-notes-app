@@ -1,8 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useDroppable } from "@dnd-kit/core";
 import { ChevronRight, Folder } from "lucide-react";
 import type { WorkspaceDoc } from "@/types/firestore";
+import {
+  buildFolderDropId,
+  DraggableCard,
+  type FolderDropData,
+  type FolderDragData,
+} from "./folderDnd";
 
 type ContentCounts = {
   notes: number;
@@ -21,6 +28,8 @@ interface WorkspaceFolderBrowserProps {
   workspaceChain: WorkspaceDoc[];
   childFolders: ChildFolderItem[];
   currentCounts: ContentCounts;
+  activeDragItem?: FolderDragData | null;
+  isFolderDropDisabled?: (workspaceId: string, dragItem: FolderDragData | null) => boolean;
 }
 
 function formatCount(value: number, singular: string, plural: string) {
@@ -32,6 +41,8 @@ export default function WorkspaceFolderBrowser({
   workspaceChain,
   childFolders,
   currentCounts,
+  activeDragItem = null,
+  isFolderDropDisabled,
 }: WorkspaceFolderBrowserProps) {
   const currentWorkspace = workspaceChain[workspaceChain.length - 1];
 
@@ -81,25 +92,14 @@ export default function WorkspaceFolderBrowser({
           <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Sous-dossiers</div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {childFolders.map(({ workspace, href, counts }) => (
-              <Link
+              <WorkspaceFolderTile
                 key={workspace.id ?? workspace.name}
+                workspace={workspace}
                 href={href}
-                className="group rounded-xl border border-border/70 bg-background/80 p-4 transition-colors hover:border-primary/30 hover:bg-accent/40"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="rounded-lg bg-primary/10 p-2 text-primary">
-                    <Folder className="h-5 w-5" aria-hidden="true" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold text-foreground">{workspace.name}</div>
-                    <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
-                      <span className="rounded-full bg-accent px-2 py-0.5">{formatCount(counts.notes, "note", "notes")}</span>
-                      <span className="rounded-full bg-accent px-2 py-0.5">{formatCount(counts.tasks, "tâche", "tâches")}</span>
-                      <span className="rounded-full bg-accent px-2 py-0.5">{formatCount(counts.todos, "checklist", "checklists")}</span>
-                    </div>
-                  </div>
-                </div>
-              </Link>
+                counts={counts}
+                activeDragItem={activeDragItem}
+                isDropDisabled={workspace.id ? isFolderDropDisabled?.(workspace.id, activeDragItem) ?? false : true}
+              />
             ))}
           </div>
         </div>
@@ -109,5 +109,72 @@ export default function WorkspaceFolderBrowser({
         </div>
       )}
     </section>
+  );
+}
+
+interface WorkspaceFolderTileProps {
+  workspace: WorkspaceDoc;
+  href: string;
+  counts: ContentCounts;
+  activeDragItem: FolderDragData | null;
+  isDropDisabled: boolean;
+}
+
+function WorkspaceFolderTile({ workspace, href, counts, activeDragItem, isDropDisabled }: WorkspaceFolderTileProps) {
+  const workspaceId = workspace.id ?? "";
+  const { setNodeRef, isOver } = useDroppable({
+    id: buildFolderDropId(workspaceId),
+    data: {
+      kind: "folder-target",
+      workspaceId,
+    } satisfies FolderDropData,
+    disabled: !workspaceId || isDropDisabled,
+  });
+
+  return (
+    <div ref={setNodeRef}>
+      <DraggableCard
+        dragData={{
+          kind: "workspace",
+          id: workspaceId,
+          parentId: typeof workspace.parentId === "string" && workspace.parentId.trim() ? workspace.parentId : null,
+        }}
+        disabled={!workspaceId}
+        className={isOver ? "rounded-xl ring-2 ring-primary/40 ring-offset-2 ring-offset-background" : ""}
+      >
+        {({ dragHandle, isDragging }) => (
+          <div
+            className={`group rounded-xl border bg-background/80 p-4 transition-colors ${
+              isDropDisabled && activeDragItem ? "border-dashed border-border/60 opacity-80" : "border-border/70 hover:border-primary/30 hover:bg-accent/40"
+            } ${isDragging ? "cursor-grabbing" : ""}`}
+          >
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="rounded-lg bg-primary/10 p-2 text-primary">
+                  <Folder className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-semibold text-foreground">{workspace.name}</div>
+                  {isOver && !isDropDisabled ? (
+                    <div className="mt-1 text-xs font-medium text-primary">Relacher pour deplacer ici</div>
+                  ) : isDropDisabled && activeDragItem ? (
+                    <div className="mt-1 text-xs text-muted-foreground">Deplacement non autorise</div>
+                  ) : null}
+                </div>
+              </div>
+              {dragHandle}
+            </div>
+
+            <Link href={href} className="block rounded-lg">
+              <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+                <span className="rounded-full bg-accent px-2 py-0.5">{formatCount(counts.notes, "note", "notes")}</span>
+                <span className="rounded-full bg-accent px-2 py-0.5">{formatCount(counts.tasks, "tâche", "tâches")}</span>
+                <span className="rounded-full bg-accent px-2 py-0.5">{formatCount(counts.todos, "checklist", "checklists")}</span>
+              </div>
+            </Link>
+          </div>
+        )}
+      </DraggableCard>
+    </div>
   );
 }

@@ -1,8 +1,12 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
+import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { db } from "@/lib/firebase";
 import TodoInlineList from "../_components/TodoInlineList";
+import { type FolderDragData } from "../_components/folderDnd";
 import WorkspaceFolderBrowser from "../_components/WorkspaceFolderBrowser";
 import { useUserNotes } from "@/hooks/useUserNotes";
 import { useUserTasks } from "@/hooks/useUserTasks";
@@ -10,12 +14,16 @@ import { useUserTodos } from "@/hooks/useUserTodos";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import {
+  applyWorkspaceAssignmentOverrides,
+  applyWorkspaceParentOverrides,
+  canMoveWorkspaceToParent,
   countItemsByWorkspaceId,
   getWorkspaceById,
   getWorkspaceChain,
   getWorkspaceDirectContentIds,
   getWorkspaceDirectChildren,
 } from "@/lib/workspaces";
+import { toUserErrorMessage } from "@/lib/userError";
 
 export default function TodoPage() {
   const router = useRouter();
@@ -23,14 +31,32 @@ export default function TodoPage() {
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId") || undefined;
   const { data: workspaces } = useUserWorkspaces();
+  const [activeDragItem, setActiveDragItem] = useState<FolderDragData | null>(null);
+  const [optimisticWorkspaceIdByTodoId, setOptimisticWorkspaceIdByTodoId] = useState<Record<string, string | null>>({});
+  const [optimisticParentIdByWorkspaceId, setOptimisticParentIdByWorkspaceId] = useState<Record<string, string | null>>({});
+  const [moveFeedback, setMoveFeedback] = useState<string | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+  );
 
   const { data: notesForCounter } = useUserNotes();
   const { data: tasksForCounter } = useUserTasks();
   const { data: todosForCounter } = useUserTodos();
+  const effectiveWorkspaces = useMemo(
+    () => applyWorkspaceParentOverrides(workspaces, optimisticParentIdByWorkspaceId),
+    [optimisticParentIdByWorkspaceId, workspaces],
+  );
+  const effectiveTodosForCounter = useMemo(
+    () => applyWorkspaceAssignmentOverrides(todosForCounter, optimisticWorkspaceIdByTodoId),
+    [optimisticWorkspaceIdByTodoId, todosForCounter],
+  );
   const selectedWorkspaceIds = useMemo(() => getWorkspaceDirectContentIds(workspaceId), [workspaceId]);
-  const currentWorkspace = useMemo(() => getWorkspaceById(workspaces, workspaceId), [workspaceId, workspaces]);
-  const currentWorkspaceChain = useMemo(() => getWorkspaceChain(workspaces, workspaceId), [workspaceId, workspaces]);
-  const directChildWorkspaces = useMemo(() => getWorkspaceDirectChildren(workspaces, workspaceId), [workspaceId, workspaces]);
+  const currentWorkspace = useMemo(() => getWorkspaceById(effectiveWorkspaces, workspaceId), [effectiveWorkspaces, workspaceId]);
+  const currentWorkspaceChain = useMemo(() => getWorkspaceChain(effectiveWorkspaces, workspaceId), [effectiveWorkspaces, workspaceId]);
+  const directChildWorkspaces = useMemo(() => getWorkspaceDirectChildren(effectiveWorkspaces, workspaceId), [effectiveWorkspaces, workspaceId]);
   const activeNoteCountByWorkspaceId = useMemo(
     () => countItemsByWorkspaceId(notesForCounter, (note) => note.archived !== true),
     [notesForCounter],
@@ -40,8 +66,8 @@ export default function TodoPage() {
     [tasksForCounter],
   );
   const activeTodoCountByWorkspaceId = useMemo(
-    () => countItemsByWorkspaceId(todosForCounter, (todo) => todo.completed !== true),
-    [todosForCounter],
+    () => countItemsByWorkspaceId(effectiveTodosForCounter, (todo) => todo.completed !== true),
+    [effectiveTodosForCounter],
   );
   const directWorkspaceCounts = useMemo(
     () => ({
@@ -87,12 +113,12 @@ export default function TodoPage() {
   );
   const visibleTodosCount = useMemo(
     () =>
-      todosForCounter.filter((todo) => {
+      effectiveTodosForCounter.filter((todo) => {
         if (todo.completed === true) return false;
         if (!selectedWorkspaceIds) return true;
         return selectedWorkspaceIds.has(todo.workspaceId ?? "");
       }).length,
-    [selectedWorkspaceIds, todosForCounter],
+    [selectedWorkspaceIds, effectiveTodosForCounter],
   );
 
   const hrefSuffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
@@ -136,13 +162,104 @@ export default function TodoPage() {
     </div>
   );
 
+  const isFolderDropDisabled = useCallback(
+    (targetWorkspaceId: string, dragItem: FolderDragData | null) => {
+      if (!dragItem) return false;
+      if (dragItem.kind === "workspace") {
+        return !canMoveWorkspaceToParent(effectiveWorkspaces, dragItem.id, targetWorkspaceId);
+      }
+      return dragItem.workspaceId === targetWorkspaceId;
+    },
+    [effectiveWorkspaces],
+  );
+
+  const moveTodoToWorkspace = useCallback(async (todoId: string, targetWorkspaceId: string, currentWorkspaceId: string | null) => {
+    if (currentWorkspaceId === targetWorkspaceId) return;
+
+    setOptimisticWorkspaceIdByTodoId((prev) => ({ ...prev, [todoId]: targetWorkspaceId }));
+    setMoveFeedback("Checklist deplacee.");
+    setMoveError(null);
+
+    try {
+      await updateDoc(doc(db, "todos", todoId), {
+        workspaceId: targetWorkspaceId,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      setOptimisticWorkspaceIdByTodoId((prev) => {
+        const next = { ...prev };
+        delete next[todoId];
+        return next;
+      });
+      setMoveError(toUserErrorMessage(error, "Erreur lors du deplacement de la checklist."));
+    }
+  }, []);
+
+  const moveWorkspaceToParent = useCallback(async (draggedWorkspaceId: string, targetWorkspaceId: string) => {
+    if (!canMoveWorkspaceToParent(effectiveWorkspaces, draggedWorkspaceId, targetWorkspaceId)) return;
+
+    setOptimisticParentIdByWorkspaceId((prev) => ({ ...prev, [draggedWorkspaceId]: targetWorkspaceId }));
+    setMoveFeedback("Dossier deplace.");
+    setMoveError(null);
+
+    try {
+      await updateDoc(doc(db, "workspaces", draggedWorkspaceId), {
+        parentId: targetWorkspaceId,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      setOptimisticParentIdByWorkspaceId((prev) => {
+        const next = { ...prev };
+        delete next[draggedWorkspaceId];
+        return next;
+      });
+      setMoveError(toUserErrorMessage(error, "Erreur lors du deplacement du dossier."));
+    }
+  }, [effectiveWorkspaces]);
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    const dragData = event.active.data.current as FolderDragData | undefined;
+    setActiveDragItem(dragData ?? null);
+    setMoveError(null);
+  }, []);
+
+  const handleDragCancel = useCallback(() => {
+    setActiveDragItem(null);
+  }, []);
+
+  const handleDragEnd = useCallback(
+    async (event: DragEndEvent) => {
+      const dragData = event.active.data.current as FolderDragData | undefined;
+      const dropData = event.over?.data.current as { kind?: string; workspaceId?: string } | undefined;
+
+      setActiveDragItem(null);
+
+      if (!dragData || dropData?.kind !== "folder-target" || !dropData.workspaceId) return;
+      if (isFolderDropDisabled(dropData.workspaceId, dragData)) return;
+
+      if (dragData.kind === "todo") {
+        await moveTodoToWorkspace(dragData.id, dropData.workspaceId, dragData.workspaceId);
+        return;
+      }
+
+      if (dragData.kind === "workspace") {
+        await moveWorkspaceToParent(dragData.id, dropData.workspaceId);
+      }
+    },
+    [isFolderDropDisabled, moveTodoToWorkspace, moveWorkspaceToParent],
+  );
+
   return (
-    <div className="space-y-4" {...workspaceTabsSwipeHandlers}>
+    <DndContext sensors={dndSensors} onDragStart={handleDragStart} onDragCancel={handleDragCancel} onDragEnd={handleDragEnd}>
+      <div className="space-y-4" {...workspaceTabsSwipeHandlers}>
       {workspaceId && tabs}
       <header className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Checklist</h1>
         <div id="sn-create-slot" />
       </header>
+
+      {moveError && <div className="sn-alert sn-alert--error">{moveError}</div>}
+      {moveFeedback && <div className="sn-alert" role="status" aria-live="polite">{moveFeedback}</div>}
 
       {workspaceId && currentWorkspace && (
         <WorkspaceFolderBrowser
@@ -150,6 +267,8 @@ export default function TodoPage() {
           workspaceChain={currentWorkspaceChain}
           childFolders={childWorkspaceCards}
           currentCounts={directWorkspaceCounts}
+          activeDragItem={activeDragItem}
+          isFolderDropDisabled={isFolderDropDisabled}
         />
       )}
 
@@ -160,7 +279,12 @@ export default function TodoPage() {
         </section>
       )}
 
-      <TodoInlineList workspaceId={workspaceId} />
-    </div>
+      <TodoInlineList
+        workspaceId={workspaceId}
+        workspaces={effectiveWorkspaces}
+        optimisticWorkspaceIdByTodoId={optimisticWorkspaceIdByTodoId}
+      />
+      </div>
+    </DndContext>
   );
 }

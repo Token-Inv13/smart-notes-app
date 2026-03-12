@@ -4,24 +4,37 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { DraggableCard } from "./folderDnd";
 import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import { formatTimestampToDateFr } from "@/lib/datetime";
 import { toUserErrorMessage } from "@/lib/userError";
-import { buildWorkspacePathLabelMap, getWorkspaceDirectContentIds, getWorkspaceSelfAndDescendantIds } from "@/lib/workspaces";
-import type { TodoDoc } from "@/types/firestore";
+import {
+  applyWorkspaceAssignmentOverrides,
+  buildWorkspacePathLabelMap,
+  getWorkspaceDirectContentIds,
+  getWorkspaceSelfAndDescendantIds,
+} from "@/lib/workspaces";
+import type { TodoDoc, WorkspaceDoc } from "@/types/firestore";
 
 interface TodoInlineListProps {
   workspaceId?: string;
   showTabsHeader?: boolean;
+  workspaces?: WorkspaceDoc[];
+  optimisticWorkspaceIdByTodoId?: Record<string, string | null>;
 }
 
-export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
+export default function TodoInlineList({
+  workspaceId,
+  workspaces: workspacesProp,
+  optimisticWorkspaceIdByTodoId = {},
+}: TodoInlineListProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: todos, loading, error } = useUserTodos();
-  const { data: workspaces } = useUserWorkspaces();
+  const hook = useUserWorkspaces();
+  const workspaces = workspacesProp ?? hook.data;
   const [editError, setEditError] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [todoView, setTodoView] = useState<"active" | "completed">("active");
@@ -100,6 +113,10 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
     return m;
   }, [workspaces]);
   const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
+  const effectiveTodos = useMemo(
+    () => applyWorkspaceAssignmentOverrides(todos, optimisticWorkspaceIdByTodoId),
+    [optimisticWorkspaceIdByTodoId, todos],
+  );
   const selectedWorkspaceIds = useMemo(
     () =>
       workspaceFilter === "all"
@@ -132,8 +149,8 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
     return "bg-emerald-500/80";
   };
 
-  const activeTodos = useMemo(() => todos.filter((t) => t.completed !== true), [todos]);
-  const completedTodos = useMemo(() => todos.filter((t) => t.completed === true), [todos]);
+  const activeTodos = useMemo(() => effectiveTodos.filter((t) => t.completed !== true), [effectiveTodos]);
+  const completedTodos = useMemo(() => effectiveTodos.filter((t) => t.completed === true), [effectiveTodos]);
 
   const filteredTodos = useMemo(() => {
     const now = new Date();
@@ -511,82 +528,95 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
 
           {filteredTodos.length > 0 && (
             <ul className="space-y-1.5">
-              {filteredTodos.map((todo) => (
-                <li key={todo.id}>
-                  <div
-                    className={`sn-card relative p-3 ${todo.completed ? "opacity-80" : ""} ${todo.id ? "cursor-pointer" : ""} ${todo.id ? "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40" : ""}`}
-                    aria-label={todo.id ? `Ouvrir la checklist ${todo.title}` : undefined}
-                    onClick={() => openTodoDetail(todo.id)}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex min-w-0 flex-1 items-center gap-2.5">
-                        <input
-                          type="checkbox"
-                          checked={todo.completed === true}
-                          onChange={(e) => toggleCompleted(todo, e.target.checked)}
-                          aria-label="Marquer comme terminée"
-                          onClick={(e) => e.stopPropagation()}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          className="pointer-events-auto"
-                        />
-                        <div className="min-w-0">
-                          <div className={`truncate select-text ${todo.completed ? "line-through text-muted-foreground" : ""}`}>{todo.title}</div>
-                          {(todo.dueDate || todo.priority) && (
-                            <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                              {todo.dueDate && (
-                                <span title={`Échéance: ${formatDueDate(todo.dueDate)}`} className="inline-flex items-center gap-1">
-                                  <span aria-hidden>📅</span>
-                                  <span>{formatDueDate(todo.dueDate)}</span>
-                                </span>
-                              )}
-                              {todo.priority && (
-                                <span title={`Priorité: ${priorityLabel(todo.priority)}`} className="inline-flex items-center gap-1">
-                                  <span className={`h-2 w-2 rounded-full ${priorityDotClass(todo.priority)}`} aria-hidden />
-                                  <span>{priorityLabel(todo.priority)}</span>
-                                </span>
+              {filteredTodos.map((todo) => {
+                const todoWorkspaceId =
+                  typeof todo.workspaceId === "string" && todo.workspaceId.trim() ? todo.workspaceId : null;
+
+                return (
+                  <li key={todo.id}>
+                    <DraggableCard
+                      dragData={{ kind: "todo", id: todo.id ?? "", workspaceId: todoWorkspaceId }}
+                      disabled={!todo.id}
+                    >
+                      {({ dragHandle }) => (
+                        <div
+                          className={`sn-card relative p-3 ${todo.completed ? "opacity-80" : ""} ${todo.id ? "cursor-pointer" : ""} ${todo.id ? "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40" : ""}`}
+                          aria-label={todo.id ? `Ouvrir la checklist ${todo.title}` : undefined}
+                          onClick={() => openTodoDetail(todo.id)}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                              <input
+                                type="checkbox"
+                                checked={todo.completed === true}
+                                onChange={(e) => toggleCompleted(todo, e.target.checked)}
+                                aria-label="Marquer comme terminée"
+                                onClick={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                className="pointer-events-auto"
+                              />
+                              <div className="min-w-0">
+                                <div className={`truncate select-text ${todo.completed ? "line-through text-muted-foreground" : ""}`}>{todo.title}</div>
+                                {(todo.dueDate || todo.priority) && (
+                                  <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                                    {todo.dueDate && (
+                                      <span title={`Échéance: ${formatDueDate(todo.dueDate)}`} className="inline-flex items-center gap-1">
+                                        <span aria-hidden>📅</span>
+                                        <span>{formatDueDate(todo.dueDate)}</span>
+                                      </span>
+                                    )}
+                                    {todo.priority && (
+                                      <span title={`Priorité: ${priorityLabel(todo.priority)}`} className="inline-flex items-center gap-1">
+                                        <span className={`h-2 w-2 rounded-full ${priorityDotClass(todo.priority)}`} aria-hidden />
+                                        <span>{priorityLabel(todo.priority)}</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="ml-auto shrink-0 flex items-center gap-2">
+                              {dragHandle}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleFavorite(todo);
+                                }}
+                                className="sn-icon-btn shrink-0 pointer-events-auto"
+                                aria-label={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                                title={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
+                              >
+                                {todo.favorite ? "★" : "☆"}
+                              </button>
+
+                              {todo.completed === true && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void toggleCompleted(todo, false);
+                                  }}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  className="sn-text-btn shrink-0"
+                                  aria-label="Restaurer la checklist"
+                                  title="Restaurer"
+                                >
+                                  Restaurer
+                                </button>
                               )}
                             </div>
-                          )}
+                          </div>
                         </div>
-                      </div>
-
-                      <div className="ml-auto shrink-0 flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleFavorite(todo);
-                          }}
-                          className="sn-icon-btn shrink-0 pointer-events-auto"
-                          aria-label={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                          title={todo.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onPointerDown={(e) => e.stopPropagation()}
-                        >
-                          {todo.favorite ? "★" : "☆"}
-                        </button>
-
-                        {todo.completed === true && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void toggleCompleted(todo, false);
-                            }}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onPointerDown={(e) => e.stopPropagation()}
-                            className="sn-text-btn shrink-0"
-                            aria-label="Restaurer la checklist"
-                            title="Restaurer"
-                          >
-                            Restaurer
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </li>
-              ))}
+                      )}
+                    </DraggableCard>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

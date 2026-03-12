@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
 import {
   doc,
   serverTimestamp,
@@ -14,9 +15,13 @@ import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
+import { DraggableCard, type FolderDragData } from "../_components/folderDnd";
 import WorkspaceFolderBrowser from "../_components/WorkspaceFolderBrowser";
 import {
+  applyWorkspaceAssignmentOverrides,
+  applyWorkspaceParentOverrides,
   buildWorkspacePathLabelMap,
+  canMoveWorkspaceToParent,
   countItemsByWorkspaceId,
   getWorkspaceById,
   getWorkspaceChain,
@@ -77,6 +82,15 @@ export default function NotesPage() {
 
   const [editError, setEditError] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [activeDragItem, setActiveDragItem] = useState<FolderDragData | null>(null);
+  const [optimisticWorkspaceIdByNoteId, setOptimisticWorkspaceIdByNoteId] = useState<Record<string, string | null>>({});
+  const [optimisticParentIdByWorkspaceId, setOptimisticParentIdByWorkspaceId] = useState<Record<string, string | null>>({});
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+  );
 
   const showUpgradeCta = !!editError?.includes("Limite Free atteinte");
 
@@ -100,20 +114,32 @@ export default function NotesPage() {
     }
   };
 
+  const effectiveWorkspaces = useMemo(
+    () => applyWorkspaceParentOverrides(workspaces, optimisticParentIdByWorkspaceId),
+    [optimisticParentIdByWorkspaceId, workspaces],
+  );
+  const effectiveNotes = useMemo(
+    () => applyWorkspaceAssignmentOverrides(notes, optimisticWorkspaceIdByNoteId),
+    [notes, optimisticWorkspaceIdByNoteId],
+  );
+
   const workspaceNameById = useMemo(() => {
     const m = new Map<string, string>();
-    for (const ws of workspaces) {
+    for (const ws of effectiveWorkspaces) {
       if (ws.id) m.set(ws.id, ws.name);
     }
     return m;
-  }, [workspaces]);
-  const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
-  const currentWorkspace = useMemo(() => getWorkspaceById(workspaces, workspaceId), [workspaceId, workspaces]);
-  const currentWorkspaceChain = useMemo(() => getWorkspaceChain(workspaces, workspaceId), [workspaceId, workspaces]);
-  const directChildWorkspaces = useMemo(() => getWorkspaceDirectChildren(workspaces, workspaceId), [workspaceId, workspaces]);
+  }, [effectiveWorkspaces]);
+  const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(effectiveWorkspaces), [effectiveWorkspaces]);
+  const currentWorkspace = useMemo(() => getWorkspaceById(effectiveWorkspaces, workspaceId), [effectiveWorkspaces, workspaceId]);
+  const currentWorkspaceChain = useMemo(() => getWorkspaceChain(effectiveWorkspaces, workspaceId), [effectiveWorkspaces, workspaceId]);
+  const directChildWorkspaces = useMemo(
+    () => getWorkspaceDirectChildren(effectiveWorkspaces, workspaceId),
+    [effectiveWorkspaces, workspaceId],
+  );
   const activeNoteCountByWorkspaceId = useMemo(
-    () => countItemsByWorkspaceId(notes, (note) => note.archived !== true),
-    [notes],
+    () => countItemsByWorkspaceId(effectiveNotes, (note) => note.archived !== true),
+    [effectiveNotes],
   );
   const activeTaskCountByWorkspaceId = useMemo(
     () => countItemsByWorkspaceId(tasksForCounter, (task) => task.archived !== true),
@@ -129,8 +155,8 @@ export default function NotesPage() {
         ? null
         : workspaceId && workspaceFilter === workspaceId
           ? new Set([workspaceId])
-          : getWorkspaceSelfAndDescendantIds(workspaces, workspaceFilter),
-    [workspaceFilter, workspaceId, workspaces],
+          : getWorkspaceSelfAndDescendantIds(effectiveWorkspaces, workspaceFilter),
+    [workspaceFilter, workspaceId, effectiveWorkspaces],
   );
   const tabWorkspaceIds = useMemo(() => getWorkspaceDirectContentIds(workspaceId), [workspaceId]);
   const directWorkspaceCounts = useMemo(
@@ -180,7 +206,7 @@ export default function NotesPage() {
   );
 
   const sortedNotes = useMemo(() => {
-    const sorted = notes
+    const sorted = effectiveNotes
       .filter((note) => {
         if (!selectedWorkspaceIds) return true;
         return selectedWorkspaceIds.has(note.workspaceId ?? "");
@@ -197,7 +223,7 @@ export default function NotesPage() {
       return bUpdated - aUpdated;
     });
     return sorted;
-  }, [notes, selectedWorkspaceIds, sortBy]);
+  }, [effectiveNotes, selectedWorkspaceIds, sortBy]);
 
   useEffect(() => {
     try {
@@ -212,7 +238,7 @@ export default function NotesPage() {
 
   const archivedNotesSorted = useMemo(() => {
     if (sortBy === "createdAt") {
-      return notes
+      return effectiveNotes
         .filter((n) => {
           if (n.archived !== true) return false;
           if (!selectedWorkspaceIds) return true;
@@ -230,7 +256,7 @@ export default function NotesPage() {
         });
     }
 
-    return notes
+    return effectiveNotes
       .filter((n) => {
         if (n.archived !== true) return false;
         if (!selectedWorkspaceIds) return true;
@@ -246,7 +272,7 @@ export default function NotesPage() {
         const bUpdated = toMillisSafe(b.updatedAt);
         return bUpdated - aUpdated;
       });
-  }, [notes, selectedWorkspaceIds, sortBy]);
+  }, [effectiveNotes, selectedWorkspaceIds, sortBy]);
 
   const visibleNotes = useMemo(() => {
     const base = archiveView === "archived" ? archivedNotesSorted : sortedNotes.filter((n) => n.archived !== true);
@@ -403,8 +429,96 @@ export default function NotesPage() {
     }
   };
 
+  const isFolderDropDisabled = useCallback(
+    (targetWorkspaceId: string, dragItem: FolderDragData | null) => {
+      if (!dragItem) return false;
+      if (dragItem.kind === "workspace") {
+        return !canMoveWorkspaceToParent(effectiveWorkspaces, dragItem.id, targetWorkspaceId);
+      }
+      return dragItem.workspaceId === targetWorkspaceId;
+    },
+    [effectiveWorkspaces],
+  );
+
+  const moveNoteToWorkspace = useCallback(async (noteId: string, targetWorkspaceId: string, currentWorkspaceId: string | null) => {
+    if (currentWorkspaceId === targetWorkspaceId) return;
+
+    setOptimisticWorkspaceIdByNoteId((prev) => ({ ...prev, [noteId]: targetWorkspaceId }));
+    setActionFeedback("Note deplacee.");
+    window.setTimeout(() => setActionFeedback(null), 1800);
+
+    try {
+      await updateDoc(doc(db, "notes", noteId), {
+        workspaceId: targetWorkspaceId,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      setOptimisticWorkspaceIdByNoteId((prev) => {
+        const next = { ...prev };
+        delete next[noteId];
+        return next;
+      });
+      setEditError(toUserErrorMessage(error, "Erreur lors du deplacement de la note."));
+    }
+  }, []);
+
+  const moveWorkspaceToParent = useCallback(async (draggedWorkspaceId: string, targetWorkspaceId: string) => {
+    if (!canMoveWorkspaceToParent(effectiveWorkspaces, draggedWorkspaceId, targetWorkspaceId)) return;
+
+    setOptimisticParentIdByWorkspaceId((prev) => ({ ...prev, [draggedWorkspaceId]: targetWorkspaceId }));
+    setActionFeedback("Dossier deplace.");
+    window.setTimeout(() => setActionFeedback(null), 1800);
+
+    try {
+      await updateDoc(doc(db, "workspaces", draggedWorkspaceId), {
+        parentId: targetWorkspaceId,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      setOptimisticParentIdByWorkspaceId((prev) => {
+        const next = { ...prev };
+        delete next[draggedWorkspaceId];
+        return next;
+      });
+      setEditError(toUserErrorMessage(error, "Erreur lors du deplacement du dossier."));
+    }
+  }, [effectiveWorkspaces]);
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    const dragData = event.active.data.current as FolderDragData | undefined;
+    setActiveDragItem(dragData ?? null);
+    setEditError(null);
+  }, []);
+
+  const handleDragCancel = useCallback(() => {
+    setActiveDragItem(null);
+  }, []);
+
+  const handleDragEnd = useCallback(
+    async (event: DragEndEvent) => {
+      const dragData = event.active.data.current as FolderDragData | undefined;
+      const dropData = event.over?.data.current as { kind?: string; workspaceId?: string } | undefined;
+
+      setActiveDragItem(null);
+
+      if (!dragData || dropData?.kind !== "folder-target" || !dropData.workspaceId) return;
+      if (isFolderDropDisabled(dropData.workspaceId, dragData)) return;
+
+      if (dragData.kind === "note") {
+        await moveNoteToWorkspace(dragData.id, dropData.workspaceId, dragData.workspaceId);
+        return;
+      }
+
+      if (dragData.kind === "workspace") {
+        await moveWorkspaceToParent(dragData.id, dropData.workspaceId);
+      }
+    },
+    [isFolderDropDisabled, moveNoteToWorkspace, moveWorkspaceToParent],
+  );
+
   return (
-    <div className="space-y-4" {...workspaceTabsSwipeHandlers}>
+    <DndContext sensors={dndSensors} onDragStart={handleDragStart} onDragCancel={handleDragCancel} onDragEnd={handleDragEnd}>
+      <div className="space-y-4" {...workspaceTabsSwipeHandlers}>
       {workspaceId && tabs}
       <header className="mb-3 flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
@@ -516,7 +630,7 @@ export default function NotesPage() {
                     className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
                   >
                     <option value="all">Tous les dossiers</option>
-                    {workspaces.map((ws) => (
+                    {effectiveWorkspaces.map((ws) => (
                       <option key={ws.id ?? ws.name} value={ws.id ?? ""} disabled={!ws.id}>
                         {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
                       </option>
@@ -572,6 +686,8 @@ export default function NotesPage() {
           workspaceChain={currentWorkspaceChain}
           childFolders={childWorkspaceCards}
           currentCounts={directWorkspaceCounts}
+          activeDragItem={activeDragItem}
+          isFolderDropDisabled={isFolderDropDisabled}
         />
       )}
 
@@ -689,7 +805,7 @@ export default function NotesPage() {
         {!loading && !error && archiveView === "archived" && visibleNotes.length > 0 && (
           <ul className="space-y-2">
             {visibleNotes.map((note) => {
-              const workspaceName = workspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";
+              const workspaceName = effectiveWorkspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";
 
               const archivedLabel = (() => {
                 const ts = note.archivedAt ?? note.updatedAt;
@@ -742,46 +858,56 @@ export default function NotesPage() {
         {!loading && !error && archiveView === "active" && viewMode === "list" && visibleNotes.length > 0 && (
           <ul className="space-y-2">
             {visibleNotes.map((note) => {
-              const workspaceName = workspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";
+              const workspaceName = effectiveWorkspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";
+              const noteWorkspaceId =
+                typeof note.workspaceId === "string" && note.workspaceId.trim() ? note.workspaceId : null;
 
               return (
                 <li key={note.id}>
-                  <div
-                    className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-3`}
-                    onClick={() => {
-                      if (!note.id) return;
-                      openNoteModal(note.id);
-                    }}
+                  <DraggableCard
+                    dragData={{ kind: "note", id: note.id ?? "", workspaceId: noteWorkspaceId }}
+                    disabled={!note.id}
                   >
-                    <div className="space-y-2">
-                      <div className="sn-card-header">
-                        <div className="min-w-0">
-                          <div className="sn-card-title truncate">{note.title}</div>
-                          <div className="sn-card-meta">
-                            <span className="sn-badge">{workspaceName}</span>
-                            {note.favorite && <span className="sn-badge">Favori</span>}
-                          </div>
-                        </div>
+                    {({ dragHandle }) => (
+                      <div
+                        className={`sn-card sn-card--note ${note.favorite ? " sn-card--favorite" : ""} p-3`}
+                        onClick={() => {
+                          if (!note.id) return;
+                          openNoteModal(note.id);
+                        }}
+                      >
+                        <div className="space-y-2">
+                          <div className="sn-card-header">
+                            <div className="min-w-0">
+                              <div className="sn-card-title truncate">{note.title}</div>
+                              <div className="sn-card-meta">
+                                <span className="sn-badge">{workspaceName}</span>
+                                {note.favorite && <span className="sn-badge">Favori</span>}
+                              </div>
+                            </div>
 
-                        <div className="sn-card-actions sn-card-actions-secondary shrink-0">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleFavorite(note);
-                            }}
-                            className="sn-icon-btn"
-                            aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                            title={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                          >
-                            {note.favorite ? "★" : "☆"}
-                          </button>
+                            <div className="sn-card-actions sn-card-actions-secondary shrink-0">
+                              {dragHandle}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleFavorite(note);
+                                }}
+                                className="sn-icon-btn"
+                                aria-label={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                                title={note.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                              >
+                                {note.favorite ? "★" : "☆"}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="sn-card-body line-clamp-4">{htmlToPlainText(note.content ?? "")}</div>
                         </div>
                       </div>
-
-                      <div className="sn-card-body line-clamp-4">{htmlToPlainText(note.content ?? "")}</div>
-                    </div>
-                  </div>
+                    )}
+                  </DraggableCard>
                 </li>
               );
             })}
@@ -791,7 +917,7 @@ export default function NotesPage() {
         {archiveView === "active" && viewMode === "grid" && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {visibleNotes.map((note) => {
-              const workspaceName = workspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";
+              const workspaceName = effectiveWorkspaces.find((ws) => ws.id === note.workspaceId)?.name ?? "—";
 
               return (
                 <div
@@ -836,6 +962,7 @@ export default function NotesPage() {
           </div>
         )}
       </section>
-    </div>
+      </div>
+    </DndContext>
   );
 }

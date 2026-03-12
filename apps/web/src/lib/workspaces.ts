@@ -149,6 +149,14 @@ export function getWorkspaceDirectContentIds(workspaceId?: string | null) {
   return new Set([workspaceId]);
 }
 
+export function getWorkspaceResolvedParentId(workspaces: WorkspaceDoc[], workspaceId?: string | null) {
+  if (!workspaceId) return null;
+  const byId = buildWorkspaceById(workspaces);
+  const workspace = byId.get(workspaceId);
+  if (!workspace) return null;
+  return getResolvedParentId(workspace, byId);
+}
+
 export function getWorkspaceById(workspaces: WorkspaceDoc[], workspaceId?: string | null) {
   if (!workspaceId) return null;
   return buildWorkspaceById(workspaces).get(workspaceId) ?? null;
@@ -194,6 +202,43 @@ export function countItemsByWorkspaceId<T extends { workspaceId?: string | null 
   }
 
   return counts;
+}
+
+export function applyWorkspaceAssignmentOverrides<T extends { id?: string; workspaceId?: string | null }>(
+  items: T[],
+  overrides: Record<string, string | null>,
+) {
+  return items.map((item) => {
+    if (!item.id || !Object.prototype.hasOwnProperty.call(overrides, item.id)) return item;
+    return { ...item, workspaceId: overrides[item.id] ?? null };
+  });
+}
+
+export function applyWorkspaceParentOverrides(
+  workspaces: WorkspaceDoc[],
+  overrides: Record<string, string | null>,
+) {
+  return workspaces.map((workspace) => {
+    if (!workspace.id || !Object.prototype.hasOwnProperty.call(overrides, workspace.id)) return workspace;
+    return { ...workspace, parentId: overrides[workspace.id] ?? null };
+  });
+}
+
+export function canMoveWorkspaceToParent(
+  workspaces: WorkspaceDoc[],
+  workspaceId?: string | null,
+  targetParentId?: string | null,
+) {
+  if (!workspaceId || !targetParentId) return false;
+  if (workspaceId === targetParentId) return false;
+
+  const currentParentId = getWorkspaceResolvedParentId(workspaces, workspaceId);
+  if (currentParentId === targetParentId) return false;
+
+  const descendantIds = getWorkspaceSelfAndDescendantIds(workspaces, workspaceId);
+  if (descendantIds?.has(targetParentId)) return false;
+
+  return true;
 }
 
 export function getWorkspaceOptionLabel(workspace: WorkspaceDoc, labels?: Map<string, string>) {

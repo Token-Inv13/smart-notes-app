@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
 import { addDoc, arrayUnion, collection, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
@@ -28,9 +29,13 @@ import {
 } from "@/lib/datetime";
 import { FEATURE_FLAGS } from "@/lib/featureFlags";
 import { registerFcmToken } from "@/lib/fcm";
+import { DraggableCard, type FolderDragData } from "../_components/folderDnd";
 import WorkspaceFolderBrowser from "../_components/WorkspaceFolderBrowser";
 import {
+  applyWorkspaceAssignmentOverrides,
+  applyWorkspaceParentOverrides,
   buildWorkspacePathLabelMap,
+  canMoveWorkspaceToParent,
   countItemsByWorkspaceId,
   getWorkspaceById,
   getWorkspaceChain,
@@ -322,6 +327,9 @@ export default function TasksPage() {
 
   const [editError, setEditError] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [activeDragItem, setActiveDragItem] = useState<FolderDragData | null>(null);
+  const [optimisticWorkspaceIdByTaskId, setOptimisticWorkspaceIdByTaskId] = useState<Record<string, string | null>>({});
+  const [optimisticParentIdByWorkspaceId, setOptimisticParentIdByWorkspaceId] = useState<Record<string, string | null>>({});
   const [pushStatus, setPushStatus] = useState<string | null>(null);
   const [enablingPush, setEnablingPush] = useState(false);
   const [calendarPrefsLocalFallback, setCalendarPrefsLocalFallback] = useState<AgendaCalendarPreferences | null>(null);
@@ -375,9 +383,17 @@ export default function TasksPage() {
     return Array.from(byId.values());
   }, [calendarWindowDueTasks, calendarWindowStartTasks]);
 
-  const tasks = viewMode === "calendar" ? calendarWindowTasks : allTasks;
+  const effectiveCalendarWindowTasks = useMemo(
+    () => applyWorkspaceAssignmentOverrides(calendarWindowTasks, optimisticWorkspaceIdByTaskId),
+    [calendarWindowTasks, optimisticWorkspaceIdByTaskId],
+  );
 
   const suppressNextKanbanClickRef = useRef(false);
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+  );
 
   const toErrorMessage = (e: unknown, fallback: string) => {
     if (e instanceof Error && e.message) return e.message;
@@ -404,29 +420,39 @@ export default function TasksPage() {
     }
   };
 
+  const effectiveWorkspaces = useMemo(
+    () => applyWorkspaceParentOverrides(workspaces, optimisticParentIdByWorkspaceId),
+    [optimisticParentIdByWorkspaceId, workspaces],
+  );
+  const effectiveAllTasks = useMemo(
+    () => applyWorkspaceAssignmentOverrides(allTasks, optimisticWorkspaceIdByTaskId),
+    [allTasks, optimisticWorkspaceIdByTaskId],
+  );
+  const tasks = viewMode === "calendar" ? effectiveCalendarWindowTasks : effectiveAllTasks;
+
   const workspaceNameById = useMemo(() => {
     const m = new Map<string, string>();
-    for (const ws of workspaces) {
+    for (const ws of effectiveWorkspaces) {
       if (ws.id) m.set(ws.id, ws.name);
     }
     return m;
-  }, [workspaces]);
+  }, [effectiveWorkspaces]);
   const { data: notesForCounter } = useUserNotes();
   const { data: todosForCounter } = useUserTodos({ completed: false });
-  const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
-  const currentWorkspace = useMemo(() => getWorkspaceById(workspaces, workspaceIdParam), [workspaceIdParam, workspaces]);
-  const currentWorkspaceChain = useMemo(() => getWorkspaceChain(workspaces, workspaceIdParam), [workspaceIdParam, workspaces]);
+  const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(effectiveWorkspaces), [effectiveWorkspaces]);
+  const currentWorkspace = useMemo(() => getWorkspaceById(effectiveWorkspaces, workspaceIdParam), [effectiveWorkspaces, workspaceIdParam]);
+  const currentWorkspaceChain = useMemo(() => getWorkspaceChain(effectiveWorkspaces, workspaceIdParam), [effectiveWorkspaces, workspaceIdParam]);
   const directChildWorkspaces = useMemo(
-    () => getWorkspaceDirectChildren(workspaces, workspaceIdParam),
-    [workspaceIdParam, workspaces],
+    () => getWorkspaceDirectChildren(effectiveWorkspaces, workspaceIdParam),
+    [effectiveWorkspaces, workspaceIdParam],
   );
   const activeNoteCountByWorkspaceId = useMemo(
     () => countItemsByWorkspaceId(notesForCounter, (note) => note.archived !== true),
     [notesForCounter],
   );
   const activeTaskCountByWorkspaceId = useMemo(
-    () => countItemsByWorkspaceId(allTasks, (task) => task.archived !== true),
-    [allTasks],
+    () => countItemsByWorkspaceId(effectiveAllTasks, (task) => task.archived !== true),
+    [effectiveAllTasks],
   );
   const activeTodoCountByWorkspaceId = useMemo(
     () => countItemsByWorkspaceId(todosForCounter),
@@ -438,8 +464,8 @@ export default function TasksPage() {
         ? null
         : workspaceIdParam && workspaceFilter === workspaceIdParam
           ? new Set([workspaceIdParam])
-          : getWorkspaceSelfAndDescendantIds(workspaces, workspaceFilter),
-    [workspaceFilter, workspaceIdParam, workspaces],
+          : getWorkspaceSelfAndDescendantIds(effectiveWorkspaces, workspaceFilter),
+    [workspaceFilter, workspaceIdParam, effectiveWorkspaces],
   );
   const tabWorkspaceIds = useMemo(() => getWorkspaceDirectContentIds(workspaceIdParam), [workspaceIdParam]);
   const directWorkspaceCounts = useMemo(
@@ -1057,6 +1083,93 @@ export default function TasksPage() {
     }
   };
 
+  const isFolderDropDisabled = useCallback(
+    (targetWorkspaceId: string, dragItem: FolderDragData | null) => {
+      if (!dragItem) return false;
+      if (dragItem.kind === "workspace") {
+        return !canMoveWorkspaceToParent(effectiveWorkspaces, dragItem.id, targetWorkspaceId);
+      }
+      return dragItem.workspaceId === targetWorkspaceId;
+    },
+    [effectiveWorkspaces],
+  );
+
+  const moveTaskToWorkspace = useCallback(async (taskId: string, targetWorkspaceId: string, currentWorkspaceId: string | null) => {
+    if (currentWorkspaceId === targetWorkspaceId) return;
+
+    setOptimisticWorkspaceIdByTaskId((prev) => ({ ...prev, [taskId]: targetWorkspaceId }));
+    setActionFeedback("Element d'agenda deplace.");
+    window.setTimeout(() => setActionFeedback(null), 1800);
+
+    try {
+      await updateDoc(doc(db, "tasks", taskId), {
+        workspaceId: targetWorkspaceId,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      setOptimisticWorkspaceIdByTaskId((prev) => {
+        const next = { ...prev };
+        delete next[taskId];
+        return next;
+      });
+      setEditError(toErrorMessage(error, "Erreur lors du deplacement de l'element d'agenda."));
+    }
+  }, []);
+
+  const moveWorkspaceToParent = useCallback(async (draggedWorkspaceId: string, targetWorkspaceId: string) => {
+    if (!canMoveWorkspaceToParent(effectiveWorkspaces, draggedWorkspaceId, targetWorkspaceId)) return;
+
+    setOptimisticParentIdByWorkspaceId((prev) => ({ ...prev, [draggedWorkspaceId]: targetWorkspaceId }));
+    setActionFeedback("Dossier deplace.");
+    window.setTimeout(() => setActionFeedback(null), 1800);
+
+    try {
+      await updateDoc(doc(db, "workspaces", draggedWorkspaceId), {
+        parentId: targetWorkspaceId,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      setOptimisticParentIdByWorkspaceId((prev) => {
+        const next = { ...prev };
+        delete next[draggedWorkspaceId];
+        return next;
+      });
+      setEditError(toErrorMessage(error, "Erreur lors du deplacement du dossier."));
+    }
+  }, [effectiveWorkspaces]);
+
+  const handleFolderDragStart = useCallback((event: DragStartEvent) => {
+    const dragData = event.active.data.current as FolderDragData | undefined;
+    setActiveDragItem(dragData ?? null);
+    setEditError(null);
+  }, []);
+
+  const handleFolderDragCancel = useCallback(() => {
+    setActiveDragItem(null);
+  }, []);
+
+  const handleFolderDragEnd = useCallback(
+    async (event: DragEndEvent) => {
+      const dragData = event.active.data.current as FolderDragData | undefined;
+      const dropData = event.over?.data.current as { kind?: string; workspaceId?: string } | undefined;
+
+      setActiveDragItem(null);
+
+      if (!dragData || dropData?.kind !== "folder-target" || !dropData.workspaceId) return;
+      if (isFolderDropDisabled(dropData.workspaceId, dragData)) return;
+
+      if (dragData.kind === "task") {
+        await moveTaskToWorkspace(dragData.id, dropData.workspaceId, dragData.workspaceId);
+        return;
+      }
+
+      if (dragData.kind === "workspace") {
+        await moveWorkspaceToParent(dragData.id, dropData.workspaceId);
+      }
+    },
+    [isFolderDropDisabled, moveTaskToWorkspace, moveWorkspaceToParent],
+  );
+
   const notificationPermission: NotificationPermission | "unsupported" = (() => {
     if (typeof window === "undefined") return "unsupported";
     if (!("Notification" in window)) return "unsupported";
@@ -1111,7 +1224,13 @@ export default function TasksPage() {
   }, [highlightedTaskId, archiveView, viewMode, filteredTasks.length]);
 
   return (
-    <div className="space-y-4" {...workspaceTabsSwipeHandlers}>
+    <DndContext
+      sensors={dndSensors}
+      onDragStart={handleFolderDragStart}
+      onDragCancel={handleFolderDragCancel}
+      onDragEnd={handleFolderDragEnd}
+    >
+      <div className="space-y-4" {...workspaceTabsSwipeHandlers}>
       {workspaceIdParam && tabs}
       <header className="flex flex-col gap-2 mb-4">
         <div className="flex items-center justify-between gap-3">
@@ -1234,7 +1353,7 @@ export default function TasksPage() {
                     className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
                   >
                     <option value="all">Tous les dossiers</option>
-                    {workspaces.map((ws) => (
+                    {effectiveWorkspaces.map((ws) => (
                       <option key={ws.id ?? ws.name} value={ws.id ?? ""} disabled={!ws.id}>
                         {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
                       </option>
@@ -1310,6 +1429,8 @@ export default function TasksPage() {
           workspaceChain={currentWorkspaceChain}
           childFolders={childWorkspaceCards}
           currentCounts={directWorkspaceCounts}
+          activeDragItem={activeDragItem}
+          isFolderDropDisabled={isFolderDropDisabled}
         />
       )}
 
@@ -1417,7 +1538,7 @@ export default function TasksPage() {
         <ul className="space-y-2">
           {archivedTasks.map((task) => {
             const status = (task.status as TaskStatus | undefined) ?? "todo";
-            const workspaceName = workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
+            const workspaceName = effectiveWorkspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
             const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
             const dueLabel = formatDueDate(task.dueDate ?? null);
             const startLabel = formatStartDate(task.startDate ?? null);
@@ -1482,7 +1603,7 @@ export default function TasksPage() {
       {!loading && !error && archiveView === "active" && viewMode === "calendar" && (
         <AgendaCalendar
           tasks={mainTasks}
-          workspaces={workspaces}
+          workspaces={effectiveWorkspaces}
           initialAnchorDate={initialCalendarAnchorDate}
           initialPreferences={calendarInitialPreferences}
           onPreferencesChange={handleAgendaCalendarPreferencesChange}
@@ -1502,73 +1623,83 @@ export default function TasksPage() {
           {mainTasks.map((task) => {
             const status = (task.status as TaskStatus | undefined) ?? "todo";
             const workspaceName =
-              workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
+              effectiveWorkspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
             const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
             const dueLabel = formatDueDate(task.dueDate ?? null);
             const startLabel = formatStartDate(task.startDate ?? null);
+            const taskWorkspaceId =
+              typeof task.workspaceId === "string" && task.workspaceId.trim() ? task.workspaceId : null;
 
             return (
               <li key={task.id ?? `list-${task.title}-${toMillisSafe(task.updatedAt)}`} id={task.id ? `task-${task.id}` : undefined}>
-                <div
-                  className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 ${
-                    task.id && task.id === highlightedTaskId
-                      ? flashHighlightTaskId === task.id
-                        ? "sn-highlight-soft"
-                        : "border-primary"
-                      : ""
-                  }`}
-                  onClick={() => {
-                    if (!task.id) return;
-                    router.push(`/tasks/${task.id}${hrefSuffix}`);
-                  }}
+                <DraggableCard
+                  dragData={{ kind: "task", id: task.id ?? "", workspaceId: taskWorkspaceId }}
+                  disabled={!task.id}
                 >
-                  <div className="space-y-3">
-                    <div className="sn-card-header">
-                      <div className="min-w-0">
-                        <div className="sn-card-title truncate">{task.title}</div>
-                        <div className="sn-card-meta">
-                          <span className="sn-badge">{workspaceName}</span>
-                          <span className="sn-badge">{statusLabel(status)}</span>
-                          {startLabel && <span className="sn-badge">Début: {startLabel}</span>}
-                          {dueLabel && <span className="sn-badge">Échéance: {dueLabel}</span>}
-                          {task.priority && (
-                            <span className="sn-badge inline-flex items-center gap-2">
-                              <span className={`h-2 w-2 rounded-full ${priorityDotClass(task.priority)}`} aria-hidden />
-                              <span>Priorité: {priorityLabel(task.priority)}</span>
-                            </span>
-                          )}
+                  {({ dragHandle }) => (
+                    <div
+                      className={`sn-card sn-card--task ${task.favorite ? " sn-card--favorite" : ""} p-4 ${
+                        task.id && task.id === highlightedTaskId
+                          ? flashHighlightTaskId === task.id
+                            ? "sn-highlight-soft"
+                            : "border-primary"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        if (!task.id) return;
+                        router.push(`/tasks/${task.id}${hrefSuffix}`);
+                      }}
+                    >
+                      <div className="space-y-3">
+                        <div className="sn-card-header">
+                          <div className="min-w-0">
+                            <div className="sn-card-title truncate">{task.title}</div>
+                            <div className="sn-card-meta">
+                              <span className="sn-badge">{workspaceName}</span>
+                              <span className="sn-badge">{statusLabel(status)}</span>
+                              {startLabel && <span className="sn-badge">Début: {startLabel}</span>}
+                              {dueLabel && <span className="sn-badge">Échéance: {dueLabel}</span>}
+                              {task.priority && (
+                                <span className="sn-badge inline-flex items-center gap-2">
+                                  <span className={`h-2 w-2 rounded-full ${priorityDotClass(task.priority)}`} aria-hidden />
+                                  <span>Priorité: {priorityLabel(task.priority)}</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="sn-card-actions sn-card-actions-secondary shrink-0">
+                            {dragHandle}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFavorite(task);
+                              }}
+                              className="sn-icon-btn"
+                              aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                              title={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                            >
+                              {task.favorite ? "★" : "☆"}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="text-xs flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={status === "done"}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => toggleDone(task, e.target.checked)}
+                            />
+                            <span className="text-muted-foreground">Terminé</span>
+                          </label>
                         </div>
                       </div>
-
-                      <div className="sn-card-actions sn-card-actions-secondary shrink-0">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleFavorite(task);
-                          }}
-                          className="sn-icon-btn"
-                          aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                          title={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-                        >
-                          {task.favorite ? "★" : "☆"}
-                        </button>
-                      </div>
                     </div>
-
-                    <div className="flex items-center justify-between gap-3">
-                      <label className="text-xs flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={status === "done"}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => toggleDone(task, e.target.checked)}
-                        />
-                        <span className="text-muted-foreground">Terminé</span>
-                      </label>
-                    </div>
-                  </div>
-                </div>
+                  )}
+                </DraggableCard>
               </li>
             );
           })}
@@ -1580,7 +1711,7 @@ export default function TasksPage() {
           {mainTasks.map((task) => {
             const status = (task.status as TaskStatus | undefined) ?? "todo";
             const workspaceName =
-              workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
+              effectiveWorkspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
             const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
             const dueLabel = formatDueDate(task.dueDate ?? null);
             const startLabel = formatStartDate(task.startDate ?? null);
@@ -1868,6 +1999,7 @@ export default function TasksPage() {
           </ul>
         </section>
       )}
-    </div>
+      </div>
+    </DndContext>
   );
 }
