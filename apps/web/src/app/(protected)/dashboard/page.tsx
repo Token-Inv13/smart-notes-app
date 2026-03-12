@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUserNotes } from "@/hooks/useUserNotes";
@@ -8,6 +9,8 @@ import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { projectTaskToEvent } from "@/lib/agenda/taskEventProjector";
+import { auth, db } from "@/lib/firebase";
+import { toUserErrorMessage } from "@/lib/userError";
 import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import type { TaskDoc, TodoDoc } from "@/types/firestore";
 
@@ -142,6 +145,9 @@ export default function DashboardPage() {
       return null;
     }
   });
+  const [todoActionError, setTodoActionError] = useState<string | null>(null);
+  const [todoActionFeedback, setTodoActionFeedback] = useState<string | null>(null);
+  const [pendingTodoId, setPendingTodoId] = useState<string | null>(null);
 
   const workspaceLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
 
@@ -151,9 +157,42 @@ export default function DashboardPage() {
   );
 
   const favoriteTodos = useMemo(
-    () => favoriteTodosRaw,
+    () => favoriteTodosRaw.filter((todo) => todo.completed !== true),
     [favoriteTodosRaw],
   );
+
+  const toggleTodoCompleted = async (todo: TodoDoc, nextCompleted: boolean) => {
+    if (!todo.id) return;
+    const user = auth.currentUser;
+    if (!user) {
+      setTodoActionError("Tu dois être connecté.");
+      return;
+    }
+    if (user.uid !== todo.userId || pendingTodoId === todo.id) return;
+
+    setTodoActionError(null);
+    setTodoActionFeedback(null);
+    setPendingTodoId(todo.id);
+
+    try {
+      await updateDoc(doc(db, "todos", todo.id), {
+        userId: todo.userId,
+        workspaceId: typeof todo.workspaceId === "string" ? todo.workspaceId : null,
+        title: todo.title,
+        favorite: todo.favorite === true,
+        completed: nextCompleted,
+        updatedAt: serverTimestamp(),
+      });
+
+      setTodoActionFeedback(nextCompleted ? "Checklist terminée." : "Checklist restaurée.");
+      window.setTimeout(() => setTodoActionFeedback(null), 1800);
+    } catch (e) {
+      console.error("Error toggling todo completed", e);
+      setTodoActionError(toUserErrorMessage(e, "Erreur lors de la mise à jour."));
+    } finally {
+      setPendingTodoId((current) => (current === todo.id ? null : current));
+    }
+  };
 
   const dashboardData = useMemo(() => {
     const now = new Date();
@@ -463,10 +502,12 @@ export default function DashboardPage() {
 
           {todosLoading && <div className="sn-empty"><div className="sn-empty-title">Chargement de la checklist…</div></div>}
           {todosError && <div className="sn-alert sn-alert--error">Impossible de charger les checklists favorites.</div>}
+          {todoActionError && <div className="sn-alert sn-alert--error">{todoActionError}</div>}
+          {todoActionFeedback && <div className="sn-alert" role="status" aria-live="polite">{todoActionFeedback}</div>}
           {!todosLoading && !todosError && favoriteTodos.length === 0 && (
             <div className="sn-empty">
               <div className="sn-empty-title">Aucune checklist favorite</div>
-              <div className="sn-empty-desc">Ajoute une checklist en favori pour la retrouver rapidement ici.</div>
+              <div className="sn-empty-desc">Ajoute une checklist active en favori pour la retrouver rapidement ici.</div>
             </div>
           )}
           {!todosLoading && !todosError && favoriteTodos.length > 0 && (
@@ -493,9 +534,15 @@ export default function DashboardPage() {
                       }}
                     >
                       <div className="flex min-w-0 items-start gap-3">
-                        <span
-                          aria-hidden="true"
-                          className="mt-1 h-4 w-4 shrink-0 rounded border border-muted-foreground/40 bg-background"
+                        <input
+                          type="checkbox"
+                          checked={todo.completed === true}
+                          disabled={pendingTodoId === todo.id}
+                          aria-label={`Marquer la checklist ${todo.title} comme terminée`}
+                          onChange={(e) => void toggleTodoCompleted(todo, e.target.checked)}
+                          onClick={(e) => e.stopPropagation()}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className="mt-1 h-4 w-4 shrink-0 cursor-pointer"
                         />
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium break-words [overflow-wrap:anywhere]">{todo.title}</div>
