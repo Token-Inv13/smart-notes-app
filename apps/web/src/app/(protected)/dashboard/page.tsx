@@ -361,7 +361,7 @@ export default function DashboardPage() {
       </section>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-        <section className="sn-card p-4">
+        <section className="sn-card min-w-0 p-4">
           <div
             className="-m-4 mb-3 cursor-pointer rounded-t-[inherit] p-4 pb-3 transition hover:bg-accent/30 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
             role="link"
@@ -405,7 +405,7 @@ export default function DashboardPage() {
                   return (
                     <li
                       key={note.id ?? note.title}
-                      className={`sn-card sn-card--note p-4 ${href ? "cursor-pointer" : ""}`}
+                      className={`sn-card sn-card--note min-w-0 overflow-hidden p-4 ${href ? "cursor-pointer" : ""}`}
                       role={href ? "link" : undefined}
                       aria-label={href ? `Ouvrir la note ${note.title}` : undefined}
                       tabIndex={href ? 0 : undefined}
@@ -420,14 +420,18 @@ export default function DashboardPage() {
                         }
                       }}
                     >
-                      <div className="sn-card-title truncate">{note.title}</div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        {note.workspaceId && (
-                          <span className="sn-badge">
-                            {workspaceLabelById.get(note.workspaceId) ?? note.workspaceId}
+                      <div className="min-w-0">
+                        <div className="sn-card-title break-words [overflow-wrap:anywhere]">{note.title}</div>
+                        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          {note.workspaceId && (
+                            <span className="sn-badge max-w-full whitespace-normal text-left [overflow-wrap:anywhere]">
+                              {workspaceLabelById.get(note.workspaceId) ?? note.workspaceId}
+                            </span>
+                          )}
+                          <span className="sn-badge max-w-full whitespace-normal text-left [overflow-wrap:anywhere]">
+                            Mise à jour: {formatFrDateTime(note.updatedAt ?? null)}
                           </span>
-                        )}
-                        <span className="sn-badge">Mise à jour: {formatFrDateTime(note.updatedAt ?? null)}</span>
+                        </div>
                       </div>
                     </li>
                   );
@@ -437,7 +441,7 @@ export default function DashboardPage() {
           )}
         </section>
 
-        <section className="sn-card p-4">
+        <section className="sn-card min-w-0 p-4">
           <div
             className="-m-4 mb-3 cursor-pointer rounded-t-[inherit] p-4 pb-3 transition hover:bg-accent/30 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
             role="link"
@@ -473,7 +477,7 @@ export default function DashboardPage() {
                   return (
                     <li
                       key={todo.id ?? todo.title}
-                      className={`sn-card sn-card--task p-4 ${href ? "cursor-pointer" : ""}`}
+                      className={`sn-card sn-card--task min-w-0 overflow-hidden p-4 ${href ? "cursor-pointer" : ""}`}
                       role={href ? "link" : undefined}
                       aria-label={href ? `Ouvrir la checklist ${todo.title}` : undefined}
                       tabIndex={href ? 0 : undefined}
@@ -488,22 +492,26 @@ export default function DashboardPage() {
                         }
                       }}
                     >
-                      <div className="flex items-start gap-3">
+                      <div className="flex min-w-0 items-start gap-3">
                         <span
                           aria-hidden="true"
                           className="mt-1 h-4 w-4 shrink-0 rounded border border-muted-foreground/40 bg-background"
                         />
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium">{todo.title}</div>
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <div className="text-sm font-medium break-words [overflow-wrap:anywhere]">{todo.title}</div>
+                          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
                             {todo.workspaceId && (
-                              <span className="sn-badge">
+                              <span className="sn-badge max-w-full whitespace-normal text-left [overflow-wrap:anywhere]">
                                 {workspaceLabelById.get(todo.workspaceId) ?? todo.workspaceId}
                               </span>
                             )}
-                            {todo.dueDate && <span className="sn-badge">Échéance: {formatFrDate(todo.dueDate)}</span>}
+                            {todo.dueDate && (
+                              <span className="sn-badge max-w-full whitespace-normal text-left [overflow-wrap:anywhere]">
+                                Échéance: {formatFrDate(todo.dueDate)}
+                              </span>
+                            )}
                             {todo.priority && (
-                              <span className="sn-badge inline-flex items-center gap-2">
+                              <span className="sn-badge inline-flex max-w-full items-center gap-2 whitespace-normal text-left [overflow-wrap:anywhere]">
                                 <span className={`h-2 w-2 rounded-full ${priorityDotClass(todo.priority)}`} aria-hidden />
                                 <span>{taskPriorityLabel(todo.priority)}</span>
                               </span>
