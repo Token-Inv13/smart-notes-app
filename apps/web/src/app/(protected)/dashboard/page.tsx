@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { useMemo, useState } from "react";
+import { Timestamp, doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUserNotes } from "@/hooks/useUserNotes";
+import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
@@ -15,6 +16,7 @@ import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import type { TaskDoc, TodoDoc } from "@/types/firestore";
 
 type TaskStatus = "todo" | "doing" | "done";
+type TaskOptimisticPatch = Pick<TaskDoc, "status" | "favorite" | "startDate" | "dueDate">;
 
 function readTimestampMs(value: unknown): number | null {
   if (!value || typeof value !== "object") return null;
@@ -86,6 +88,13 @@ function taskStatus(task: TaskDoc, optimisticStatus?: TaskStatus): TaskStatus {
   return (task.status as TaskStatus | undefined) ?? (task.completed ? "done" : "todo");
 }
 
+function addDaysToTimestamp(ts: TaskDoc["dueDate"] | TaskDoc["startDate"], days: number) {
+  if (!ts || typeof ts.toDate !== "function") return null;
+  const next = ts.toDate();
+  next.setDate(next.getDate() + days);
+  return Timestamp.fromDate(next);
+}
+
 type TaskBucket = "overdue" | "today" | "upcoming";
 
 export default function DashboardPage() {
@@ -131,6 +140,8 @@ export default function DashboardPage() {
     loading: tasksLoading,
     error: tasksError,
   } = useUserTasks({ workspaceId, limit: 300 });
+  const { data: favoriteTasksForLimit } = useUserTasks({ workspaceId, favoriteOnly: true, limit: 16 });
+  const { data: userSettings } = useUserSettings();
   const {
     data: activeTodos,
   } = useUserTodos({ workspaceId, completed: false, limit: 8 });
@@ -158,25 +169,9 @@ export default function DashboardPage() {
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
   const [taskActionFeedback, setTaskActionFeedback] = useState<string | null>(null);
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
-  const [optimisticTaskStatusById, setOptimisticTaskStatusById] = useState<Record<string, TaskStatus>>({});
-
-  useEffect(() => {
-    setOptimisticTaskStatusById((prev) => {
-      let changed = false;
-      const next = { ...prev };
-
-      for (const [taskId, optimisticStatus] of Object.entries(prev)) {
-        const task = dashboardTasks.find((item) => item.id === taskId);
-        const serverStatus = task ? taskStatus(task) : null;
-        if (!task || serverStatus === optimisticStatus) {
-          delete next[taskId];
-          changed = true;
-        }
-      }
-
-      return changed ? next : prev;
-    });
-  }, [dashboardTasks]);
+  const [optimisticTaskById, setOptimisticTaskById] = useState<Record<string, TaskOptimisticPatch>>({});
+  const isPro = userSettings?.plan === "pro";
+  const freeLimitMessage = "Limite Free atteinte. Passe en Pro pour créer plus d’éléments d’agenda et utiliser les favoris sans limite.";
 
   const workspaceLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
 
@@ -188,6 +183,26 @@ export default function DashboardPage() {
   const favoriteTodos = useMemo(
     () => favoriteTodosRaw.filter((todo) => todo.completed !== true),
     [favoriteTodosRaw],
+  );
+
+  const favoriteActiveCount = useMemo(() => {
+    const serverFavoriteIds = new Set(favoriteTasksForLimit.filter((task) => task.archived !== true).map((task) => task.id).filter(Boolean));
+    for (const [taskId, patch] of Object.entries(optimisticTaskById)) {
+      if (!taskId) continue;
+      if (patch.favorite === true) serverFavoriteIds.add(taskId);
+      if (patch.favorite === false) serverFavoriteIds.delete(taskId);
+    }
+    return serverFavoriteIds.size;
+  }, [favoriteTasksForLimit, optimisticTaskById]);
+
+  const displayDashboardTasks = useMemo(
+    () =>
+      dashboardTasks.map((task) => {
+        if (!task.id) return task;
+        const patch = optimisticTaskById[task.id];
+        return patch ? { ...task, ...patch } : task;
+      }),
+    [dashboardTasks, optimisticTaskById],
   );
 
   const toggleTodoCompleted = async (todo: TodoDoc, nextCompleted: boolean) => {
@@ -236,7 +251,10 @@ export default function DashboardPage() {
     setTaskActionError(null);
     setTaskActionFeedback(null);
     setPendingTaskId(task.id);
-    setOptimisticTaskStatusById((prev) => ({ ...prev, [task.id!]: nextStatus }));
+    setOptimisticTaskById((prev) => ({
+      ...prev,
+      [task.id!]: { ...(prev[task.id!] ?? {}), status: nextStatus },
+    }));
 
     try {
       await updateDoc(doc(db, "tasks", task.id), {
@@ -252,12 +270,127 @@ export default function DashboardPage() {
       window.setTimeout(() => setTaskActionFeedback(null), 1800);
     } catch (e) {
       console.error("Error toggling dashboard task done", e);
-      setOptimisticTaskStatusById((prev) => {
+      setOptimisticTaskById((prev) => {
         const next = { ...prev };
-        delete next[task.id!];
+        const current = next[task.id!];
+        if (!current) return prev;
+        delete current.status;
+        if (Object.keys(current).length === 0) delete next[task.id!];
+        else next[task.id!] = current;
         return next;
       });
       setTaskActionError(toUserErrorMessage(e, "Erreur lors de la mise à jour de l’élément d’agenda."));
+    } finally {
+      setPendingTaskId((current) => (current === task.id ? null : current));
+    }
+  };
+
+  const toggleTaskFavorite = async (task: TaskDoc) => {
+    if (!task.id) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== task.userId) {
+      setTaskActionError("Impossible de modifier cet élément d’agenda.");
+      return;
+    }
+    if (pendingTaskId === task.id) return;
+
+    const nextFavorite = !(task.favorite === true);
+    if (!isPro && nextFavorite && favoriteActiveCount >= 15) {
+      setTaskActionError(freeLimitMessage);
+      return;
+    }
+
+    setTaskActionError(null);
+    setTaskActionFeedback(null);
+    setPendingTaskId(task.id);
+    setOptimisticTaskById((prev) => ({
+      ...prev,
+      [task.id!]: { ...(prev[task.id!] ?? {}), favorite: nextFavorite },
+    }));
+
+    try {
+      await updateDoc(doc(db, "tasks", task.id), {
+        title: task.title,
+        status: (task.status ?? "todo") as TaskDoc["status"],
+        workspaceId: typeof task.workspaceId === "string" ? task.workspaceId : null,
+        dueDate: task.dueDate ?? null,
+        favorite: nextFavorite,
+        updatedAt: serverTimestamp(),
+      });
+
+      setTaskActionFeedback(nextFavorite ? "Ajouté aux favoris." : "Retiré des favoris.");
+      window.setTimeout(() => setTaskActionFeedback(null), 1800);
+    } catch (e) {
+      console.error("Error toggling dashboard task favorite", e);
+      setOptimisticTaskById((prev) => {
+        const next = { ...prev };
+        const current = next[task.id!];
+        if (!current) return prev;
+        delete current.favorite;
+        if (Object.keys(current).length === 0) delete next[task.id!];
+        else next[task.id!] = current;
+        return next;
+      });
+      setTaskActionError(toUserErrorMessage(e, "Erreur lors de la mise à jour des favoris."));
+    } finally {
+      setPendingTaskId((current) => (current === task.id ? null : current));
+    }
+  };
+
+  const postponeTaskToTomorrow = async (task: TaskDoc) => {
+    if (!task.id) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== task.userId) {
+      setTaskActionError("Impossible de modifier cet élément d’agenda.");
+      return;
+    }
+    if (pendingTaskId === task.id) return;
+
+    const nextDueDate = addDaysToTimestamp(task.dueDate ?? null, 1);
+    const nextStartDate = addDaysToTimestamp(task.startDate ?? null, 1);
+    if (!nextDueDate && !nextStartDate) {
+      setTaskActionError("Impossible de reporter cet élément sans date.");
+      return;
+    }
+
+    setTaskActionError(null);
+    setTaskActionFeedback(null);
+    setPendingTaskId(task.id);
+    setOptimisticTaskById((prev) => ({
+      ...prev,
+      [task.id!]: {
+        ...(prev[task.id!] ?? {}),
+        startDate: nextStartDate ?? undefined,
+        dueDate: nextDueDate ?? undefined,
+      },
+    }));
+
+    try {
+      await updateDoc(doc(db, "tasks", task.id), {
+        title: task.title,
+        status: (task.status ?? "todo") as TaskDoc["status"],
+        workspaceId: typeof task.workspaceId === "string" ? task.workspaceId : null,
+        startDate: nextStartDate ?? null,
+        dueDate: nextDueDate ?? null,
+        favorite: task.favorite === true,
+        updatedAt: serverTimestamp(),
+      });
+
+      setTaskActionFeedback("Reporté à demain.");
+      window.setTimeout(() => setTaskActionFeedback(null), 1800);
+    } catch (e) {
+      console.error("Error postponing dashboard task", e);
+      setOptimisticTaskById((prev) => {
+        const next = { ...prev };
+        const current = next[task.id!];
+        if (!current) return prev;
+        delete current.startDate;
+        delete current.dueDate;
+        if (Object.keys(current).length === 0) delete next[task.id!];
+        else next[task.id!] = current;
+        return next;
+      });
+      setTaskActionError(toUserErrorMessage(e, "Erreur lors du report de l’élément d’agenda."));
     } finally {
       setPendingTaskId((current) => (current === task.id ? null : current));
     }
@@ -270,9 +403,9 @@ export default function DashboardPage() {
     const tomorrowStart = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
     const nextWeekStart = new Date(todayStart.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-    const activeTasks = dashboardTasks.filter((task) => {
-      const status = taskStatus(task, task.id ? optimisticTaskStatusById[task.id] : undefined);
-      return task.archived !== true && status !== "done";
+    const activeTasks = displayDashboardTasks.filter((displayTask) => {
+      const status = taskStatus(displayTask, displayTask.status as TaskStatus | undefined);
+      return displayTask.archived !== true && status !== "done";
     });
 
     const urgentTasks = activeTasks
@@ -326,7 +459,7 @@ export default function DashboardPage() {
       upcomingTasks,
       urgentTasks,
     };
-  }, [dashboardTasks, optimisticTaskStatusById]);
+  }, [displayDashboardTasks]);
 
   const quickLinks = [
     { href: workspaceId ? `/notes/new?workspaceId=${encodeURIComponent(workspaceId)}` : "/notes/new", label: "Nouvelle note" },
@@ -413,6 +546,7 @@ export default function DashboardPage() {
           </div>
         )}
         {!tasksLoading && !tasksError && dashboardData.urgentTasks.length > 0 && (
+          <div className="max-h-80 overflow-y-auto pr-1 sm:max-h-96">
           <ul className="space-y-2">
             {dashboardData.urgentTasks.map(({ task, bucket, taskDate }) => {
               const href = task.id ? `/tasks/${encodeURIComponent(task.id)}${suffix}` : null;
@@ -439,7 +573,7 @@ export default function DashboardPage() {
                   <div className="flex min-w-0 items-start gap-3">
                     <input
                       type="checkbox"
-                      checked={taskStatus(task, task.id ? optimisticTaskStatusById[task.id] : undefined) === "done"}
+                      checked={taskStatus(task, task.status as TaskStatus | undefined) === "done"}
                       disabled={pendingTaskId === task.id}
                       aria-label={`Marquer l’élément d’agenda ${task.title} comme terminé`}
                       onChange={(e) => void toggleTaskDone(task, e.target.checked)}
@@ -448,7 +582,41 @@ export default function DashboardPage() {
                       className="mt-1 h-4 w-4 shrink-0 cursor-pointer"
                     />
                     <div className="min-w-0 flex-1">
-                      <div className="sn-card-title truncate">{task.title}</div>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="sn-card-title truncate">{task.title}</div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void toggleTaskFavorite(task);
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            disabled={pendingTaskId === task.id}
+                            className="sn-icon-btn"
+                            aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                            title={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                          >
+                            {task.favorite ? "★" : "☆"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void postponeTaskToTomorrow(task);
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            disabled={pendingTaskId === task.id}
+                            className="rounded-md border border-border bg-background px-2 py-1 text-xs hover:bg-accent/60 disabled:opacity-50"
+                            aria-label={`Reporter ${task.title} à demain`}
+                            title="Reporter à demain"
+                          >
+                            Demain
+                          </button>
+                        </div>
+                      </div>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                         <span className="sn-badge">{bucketLabel}</span>
                         <span className="sn-badge">{formatTaskTiming(task)}</span>
@@ -470,6 +638,7 @@ export default function DashboardPage() {
               );
             })}
           </ul>
+          </div>
         )}
       </section>
 
