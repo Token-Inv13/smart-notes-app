@@ -9,7 +9,7 @@ import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import { formatTimestampToDateFr } from "@/lib/datetime";
 import { toUserErrorMessage } from "@/lib/userError";
-import { buildWorkspacePathLabelMap, getWorkspaceSelfAndDescendantIds } from "@/lib/workspaces";
+import { buildWorkspacePathLabelMap, getWorkspaceDirectContentIds, getWorkspaceSelfAndDescendantIds } from "@/lib/workspaces";
 import type { TodoDoc } from "@/types/firestore";
 
 interface TodoInlineListProps {
@@ -101,9 +101,15 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
   }, [workspaces]);
   const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
   const selectedWorkspaceIds = useMemo(
-    () => (workspaceFilter === "all" ? null : getWorkspaceSelfAndDescendantIds(workspaces, workspaceFilter)),
-    [workspaceFilter, workspaces],
+    () =>
+      workspaceFilter === "all"
+        ? null
+        : workspaceId && workspaceFilter === workspaceId
+          ? getWorkspaceDirectContentIds(workspaceId)
+          : getWorkspaceSelfAndDescendantIds(workspaces, workspaceFilter),
+    [workspaceFilter, workspaceId, workspaces],
   );
+  const showWorkspaceFilter = !workspaceId;
 
   const formatDueDate = (ts: TodoDoc["dueDate"] | null | undefined) => {
     if (!ts) return "";
@@ -195,8 +201,9 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
 
   const hasActiveSearchOrFilters = useMemo(() => {
     const q = debouncedSearch.trim();
-    return q.length > 0 || workspaceFilter !== "all" || priorityFilter !== "all" || dueFilter !== "all" || sortBy !== "updatedAt";
-  }, [debouncedSearch, dueFilter, priorityFilter, sortBy, workspaceFilter]);
+    const baselineWorkspace = workspaceId ?? "all";
+    return q.length > 0 || workspaceFilter !== baselineWorkspace || priorityFilter !== "all" || dueFilter !== "all" || sortBy !== "updatedAt";
+  }, [debouncedSearch, dueFilter, priorityFilter, sortBy, workspaceFilter, workspaceId]);
   const activeSearchLabel = useMemo(() => debouncedSearch.trim().slice(0, 60), [debouncedSearch]);
 
   const resetSearchAndFilters = () => {
@@ -357,22 +364,24 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                   </button>
                 </div>
                 <div className="p-4 space-y-4">
-                  <div className="space-y-1">
-                    <div className="text-xs text-muted-foreground">Dossier</div>
-                    <select
-                      value={workspaceFilter}
-                      onChange={(e) => setWorkspaceFilter(e.target.value)}
-                      aria-label="Filtrer par dossier"
-                      className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-                    >
-                      <option value="all">Tous les dossiers</option>
-                      {workspaces.map((ws) => (
-                        <option key={ws.id ?? ws.name} value={ws.id ?? ""} disabled={!ws.id}>
-                          {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {showWorkspaceFilter && (
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">Dossier</div>
+                      <select
+                        value={workspaceFilter}
+                        onChange={(e) => setWorkspaceFilter(e.target.value)}
+                        aria-label="Filtrer par dossier"
+                        className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                      >
+                        <option value="all">Tous les dossiers</option>
+                        {workspaces.map((ws) => (
+                          <option key={ws.id ?? ws.name} value={ws.id ?? ""} disabled={!ws.id}>
+                            {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">
@@ -448,7 +457,13 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
           {filteredTodos.length === 0 && (
             <div className="sn-empty">
               <div className="sn-empty-title">
-                {hasActiveSearchOrFilters ? "Aucun résultat" : todoView === "completed" ? "Aucune checklist terminée" : "Aucune checklist"}
+                {hasActiveSearchOrFilters
+                  ? "Aucun résultat"
+                  : todoView === "completed"
+                    ? "Aucune checklist terminée"
+                    : workspaceId
+                      ? "Aucune checklist directe dans ce dossier"
+                      : "Aucune checklist"}
               </div>
               <div className="sn-empty-desc">
                 {hasActiveSearchOrFilters
@@ -457,7 +472,9 @@ export default function TodoInlineList({ workspaceId }: TodoInlineListProps) {
                     : "Aucune checklist ne correspond à ta recherche ou à tes filtres actuels."
                   : todoView === "completed"
                     ? "Marque une checklist comme terminée pour la retrouver ici."
-                    : "Appuie sur + pour en créer une."}
+                    : workspaceId
+                      ? "Crée une checklist dans ce dossier ou ouvre un sous-dossier pour voir son contenu direct."
+                      : "Appuie sur + pour en créer une."}
               </div>
               <div className="mt-3">
                 {hasActiveSearchOrFilters ? (

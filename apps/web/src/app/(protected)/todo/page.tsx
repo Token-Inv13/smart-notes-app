@@ -3,12 +3,19 @@
 import { useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import TodoInlineList from "../_components/TodoInlineList";
+import WorkspaceFolderBrowser from "../_components/WorkspaceFolderBrowser";
 import { useUserNotes } from "@/hooks/useUserNotes";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserTodos } from "@/hooks/useUserTodos";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
-import { getWorkspaceSelfAndDescendantIds } from "@/lib/workspaces";
+import {
+  countItemsByWorkspaceId,
+  getWorkspaceById,
+  getWorkspaceChain,
+  getWorkspaceDirectContentIds,
+  getWorkspaceDirectChildren,
+} from "@/lib/workspaces";
 
 export default function TodoPage() {
   const router = useRouter();
@@ -20,9 +27,44 @@ export default function TodoPage() {
   const { data: notesForCounter } = useUserNotes();
   const { data: tasksForCounter } = useUserTasks();
   const { data: todosForCounter } = useUserTodos();
-  const selectedWorkspaceIds = useMemo(
-    () => getWorkspaceSelfAndDescendantIds(workspaces, workspaceId),
-    [workspaceId, workspaces],
+  const selectedWorkspaceIds = useMemo(() => getWorkspaceDirectContentIds(workspaceId), [workspaceId]);
+  const currentWorkspace = useMemo(() => getWorkspaceById(workspaces, workspaceId), [workspaceId, workspaces]);
+  const currentWorkspaceChain = useMemo(() => getWorkspaceChain(workspaces, workspaceId), [workspaceId, workspaces]);
+  const directChildWorkspaces = useMemo(() => getWorkspaceDirectChildren(workspaces, workspaceId), [workspaceId, workspaces]);
+  const activeNoteCountByWorkspaceId = useMemo(
+    () => countItemsByWorkspaceId(notesForCounter, (note) => note.archived !== true),
+    [notesForCounter],
+  );
+  const activeTaskCountByWorkspaceId = useMemo(
+    () => countItemsByWorkspaceId(tasksForCounter, (task) => task.archived !== true),
+    [tasksForCounter],
+  );
+  const activeTodoCountByWorkspaceId = useMemo(
+    () => countItemsByWorkspaceId(todosForCounter, (todo) => todo.completed !== true),
+    [todosForCounter],
+  );
+  const directWorkspaceCounts = useMemo(
+    () => ({
+      notes: workspaceId ? activeNoteCountByWorkspaceId.get(workspaceId) ?? 0 : 0,
+      tasks: workspaceId ? activeTaskCountByWorkspaceId.get(workspaceId) ?? 0 : 0,
+      todos: workspaceId ? activeTodoCountByWorkspaceId.get(workspaceId) ?? 0 : 0,
+    }),
+    [activeNoteCountByWorkspaceId, activeTaskCountByWorkspaceId, activeTodoCountByWorkspaceId, workspaceId],
+  );
+  const childWorkspaceCards = useMemo(
+    () =>
+      directChildWorkspaces
+        .filter((workspace) => workspace.id)
+        .map((workspace) => ({
+          workspace,
+          href: `/todo?workspaceId=${encodeURIComponent(workspace.id ?? "")}`,
+          counts: {
+            notes: activeNoteCountByWorkspaceId.get(workspace.id ?? "") ?? 0,
+            tasks: activeTaskCountByWorkspaceId.get(workspace.id ?? "") ?? 0,
+            todos: activeTodoCountByWorkspaceId.get(workspace.id ?? "") ?? 0,
+          },
+        })),
+    [activeNoteCountByWorkspaceId, activeTaskCountByWorkspaceId, activeTodoCountByWorkspaceId, directChildWorkspaces],
   );
 
   const visibleNotesCount = useMemo(
@@ -101,6 +143,22 @@ export default function TodoPage() {
         <h1 className="text-xl font-semibold">Checklist</h1>
         <div id="sn-create-slot" />
       </header>
+
+      {workspaceId && currentWorkspace && (
+        <WorkspaceFolderBrowser
+          sectionHrefBase="/todo"
+          workspaceChain={currentWorkspaceChain}
+          childFolders={childWorkspaceCards}
+          currentCounts={directWorkspaceCounts}
+        />
+      )}
+
+      {workspaceId && currentWorkspace && (
+        <section className="space-y-1 rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-3">
+          <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Contenu direct</div>
+          <p className="text-sm text-muted-foreground">Checklists directement rangées dans ce dossier. Les sous-dossiers restent affichés au-dessus.</p>
+        </section>
+      )}
 
       <TodoInlineList workspaceId={workspaceId} />
     </div>

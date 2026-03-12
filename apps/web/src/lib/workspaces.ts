@@ -144,6 +144,58 @@ export function getWorkspaceSelfAndDescendantIds(workspaces: WorkspaceDoc[], wor
   return buildWorkspaceDescendantIdsMap(workspaces).get(workspaceId) ?? new Set([workspaceId]);
 }
 
+export function getWorkspaceDirectContentIds(workspaceId?: string | null) {
+  if (!workspaceId) return null;
+  return new Set([workspaceId]);
+}
+
+export function getWorkspaceById(workspaces: WorkspaceDoc[], workspaceId?: string | null) {
+  if (!workspaceId) return null;
+  return buildWorkspaceById(workspaces).get(workspaceId) ?? null;
+}
+
+export function getWorkspaceDirectChildren(workspaces: WorkspaceDoc[], parentId?: string | null) {
+  if (!parentId) return [];
+
+  const byId = buildWorkspaceById(workspaces);
+  return sortWorkspaces(workspaces).filter((workspace) => getResolvedParentId(workspace, byId) === parentId);
+}
+
+export function getWorkspaceChain(workspaces: WorkspaceDoc[], workspaceId?: string | null) {
+  if (!workspaceId) return [];
+
+  const byId = buildWorkspaceById(workspaces);
+  const chain: WorkspaceDoc[] = [];
+  const visited = new Set<string>();
+  let currentId: string | null = workspaceId;
+
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const workspace = byId.get(currentId);
+    if (!workspace) break;
+    chain.unshift(workspace);
+    currentId = getResolvedParentId(workspace, byId);
+  }
+
+  return chain;
+}
+
+export function countItemsByWorkspaceId<T extends { workspaceId?: string | null }>(
+  items: T[],
+  predicate?: (item: T) => boolean,
+) {
+  const counts = new Map<string, number>();
+
+  for (const item of items) {
+    if (predicate && !predicate(item)) continue;
+    const workspaceId = typeof item.workspaceId === "string" && item.workspaceId.trim() ? item.workspaceId.trim() : null;
+    if (!workspaceId) continue;
+    counts.set(workspaceId, (counts.get(workspaceId) ?? 0) + 1);
+  }
+
+  return counts;
+}
+
 export function getWorkspaceOptionLabel(workspace: WorkspaceDoc, labels?: Map<string, string>) {
   const workspaceId = getWorkspaceId(workspace);
   if (workspaceId && labels?.has(workspaceId)) {

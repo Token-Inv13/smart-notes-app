@@ -28,7 +28,16 @@ import {
 } from "@/lib/datetime";
 import { FEATURE_FLAGS } from "@/lib/featureFlags";
 import { registerFcmToken } from "@/lib/fcm";
-import { buildWorkspacePathLabelMap, getWorkspaceSelfAndDescendantIds } from "@/lib/workspaces";
+import WorkspaceFolderBrowser from "../_components/WorkspaceFolderBrowser";
+import {
+  buildWorkspacePathLabelMap,
+  countItemsByWorkspaceId,
+  getWorkspaceById,
+  getWorkspaceChain,
+  getWorkspaceDirectContentIds,
+  getWorkspaceDirectChildren,
+  getWorkspaceSelfAndDescendantIds,
+} from "@/lib/workspaces";
 import type { Priority, TaskDoc } from "@/types/firestore";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -402,14 +411,59 @@ export default function TasksPage() {
     }
     return m;
   }, [workspaces]);
+  const { data: notesForCounter } = useUserNotes();
+  const { data: todosForCounter } = useUserTodos({ completed: false });
   const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
-  const selectedWorkspaceIds = useMemo(
-    () => (workspaceFilter === "all" ? null : getWorkspaceSelfAndDescendantIds(workspaces, workspaceFilter)),
-    [workspaceFilter, workspaces],
-  );
-  const tabWorkspaceIds = useMemo(
-    () => getWorkspaceSelfAndDescendantIds(workspaces, workspaceIdParam),
+  const currentWorkspace = useMemo(() => getWorkspaceById(workspaces, workspaceIdParam), [workspaceIdParam, workspaces]);
+  const currentWorkspaceChain = useMemo(() => getWorkspaceChain(workspaces, workspaceIdParam), [workspaceIdParam, workspaces]);
+  const directChildWorkspaces = useMemo(
+    () => getWorkspaceDirectChildren(workspaces, workspaceIdParam),
     [workspaceIdParam, workspaces],
+  );
+  const activeNoteCountByWorkspaceId = useMemo(
+    () => countItemsByWorkspaceId(notesForCounter, (note) => note.archived !== true),
+    [notesForCounter],
+  );
+  const activeTaskCountByWorkspaceId = useMemo(
+    () => countItemsByWorkspaceId(allTasks, (task) => task.archived !== true),
+    [allTasks],
+  );
+  const activeTodoCountByWorkspaceId = useMemo(
+    () => countItemsByWorkspaceId(todosForCounter),
+    [todosForCounter],
+  );
+  const selectedWorkspaceIds = useMemo(
+    () =>
+      workspaceFilter === "all"
+        ? null
+        : workspaceIdParam && workspaceFilter === workspaceIdParam
+          ? new Set([workspaceIdParam])
+          : getWorkspaceSelfAndDescendantIds(workspaces, workspaceFilter),
+    [workspaceFilter, workspaceIdParam, workspaces],
+  );
+  const tabWorkspaceIds = useMemo(() => getWorkspaceDirectContentIds(workspaceIdParam), [workspaceIdParam]);
+  const directWorkspaceCounts = useMemo(
+    () => ({
+      notes: workspaceIdParam ? activeNoteCountByWorkspaceId.get(workspaceIdParam) ?? 0 : 0,
+      tasks: workspaceIdParam ? activeTaskCountByWorkspaceId.get(workspaceIdParam) ?? 0 : 0,
+      todos: workspaceIdParam ? activeTodoCountByWorkspaceId.get(workspaceIdParam) ?? 0 : 0,
+    }),
+    [activeNoteCountByWorkspaceId, activeTaskCountByWorkspaceId, activeTodoCountByWorkspaceId, workspaceIdParam],
+  );
+  const childWorkspaceCards = useMemo(
+    () =>
+      directChildWorkspaces
+        .filter((workspace) => workspace.id)
+        .map((workspace) => ({
+          workspace,
+          href: `/tasks?workspaceId=${encodeURIComponent(workspace.id ?? "")}`,
+          counts: {
+            notes: activeNoteCountByWorkspaceId.get(workspace.id ?? "") ?? 0,
+            tasks: activeTaskCountByWorkspaceId.get(workspace.id ?? "") ?? 0,
+            todos: activeTodoCountByWorkspaceId.get(workspace.id ?? "") ?? 0,
+          },
+        })),
+    [activeNoteCountByWorkspaceId, activeTaskCountByWorkspaceId, activeTodoCountByWorkspaceId, directChildWorkspaces],
   );
 
   useEffect(() => {
@@ -435,9 +489,6 @@ export default function TasksPage() {
 
   const userId = auth.currentUser?.uid;
   const showMicroGuide = !!userId && !getOnboardingFlag(userId, "tasks_microguide_v1");
-
-  const { data: notesForCounter } = useUserNotes();
-  const { data: todosForCounter } = useUserTodos({ completed: false });
 
   useEffect(() => {
     if (createParam !== "1") return;
@@ -716,14 +767,15 @@ export default function TasksPage() {
 
   const hasActiveSearchOrFilters = useMemo(() => {
     const q = debouncedSearch.trim();
+    const baselineWorkspace = workspaceIdParam ?? "all";
     return (
       q.length > 0 ||
       statusFilter !== "all" ||
       priorityFilter !== "all" ||
       dueFilter !== "all" ||
-      workspaceFilter !== "all"
+      workspaceFilter !== baselineWorkspace
     );
-  }, [debouncedSearch, dueFilter, priorityFilter, statusFilter, workspaceFilter]);
+  }, [debouncedSearch, dueFilter, priorityFilter, statusFilter, workspaceFilter, workspaceIdParam]);
   const activeSearchLabel = useMemo(() => debouncedSearch.trim().slice(0, 60), [debouncedSearch]);
 
   const visibleTasksCount = useMemo(
@@ -1252,6 +1304,22 @@ export default function TasksPage() {
         )}
       </header>
 
+      {workspaceIdParam && currentWorkspace && (
+        <WorkspaceFolderBrowser
+          sectionHrefBase="/tasks"
+          workspaceChain={currentWorkspaceChain}
+          childFolders={childWorkspaceCards}
+          currentCounts={directWorkspaceCounts}
+        />
+      )}
+
+      {workspaceIdParam && currentWorkspace && (
+        <section className="space-y-1 rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-3">
+          <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Contenu direct</div>
+          <p className="text-sm text-muted-foreground">Tâches et éléments d’agenda directement rangés dans ce dossier. Les sous-dossiers restent au-dessus.</p>
+        </section>
+      )}
+
       {showMicroGuide && (
         <div>
           <div className="sn-card sn-card--muted p-4">
@@ -1292,13 +1360,17 @@ export default function TasksPage() {
 
       {!loading && !error && archiveView === "active" && mainTasks.length === 0 && (
         <div className="sn-empty sn-empty--premium sn-animate-in">
-          <div className="sn-empty-title">{hasActiveSearchOrFilters ? "Aucun résultat" : "Aucun élément d’agenda pour le moment"}</div>
+          <div className="sn-empty-title">
+            {hasActiveSearchOrFilters ? "Aucun résultat" : workspaceIdParam ? "Aucun élément direct dans ce dossier" : "Aucun élément d’agenda pour le moment"}
+          </div>
           <div className="sn-empty-desc">
             {hasActiveSearchOrFilters
               ? activeSearchLabel
                 ? `Aucun élément ne correspond à “${activeSearchLabel}” avec les filtres actuels.`
                 : "Aucun élément ne correspond à ta recherche ou à tes filtres actuels."
-              : "Commence par ajouter un élément à l’agenda."}
+              : workspaceIdParam
+                ? "Ajoute un élément dans ce dossier ou ouvre un sous-dossier pour voir son contenu direct."
+                : "Commence par ajouter un élément à l’agenda."}
           </div>
           {hasActiveSearchOrFilters ? (
             <div className="mt-3">

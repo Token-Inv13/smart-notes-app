@@ -14,7 +14,16 @@ import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
-import { buildWorkspacePathLabelMap, getWorkspaceSelfAndDescendantIds } from "@/lib/workspaces";
+import WorkspaceFolderBrowser from "../_components/WorkspaceFolderBrowser";
+import {
+  buildWorkspacePathLabelMap,
+  countItemsByWorkspaceId,
+  getWorkspaceById,
+  getWorkspaceChain,
+  getWorkspaceDirectContentIds,
+  getWorkspaceDirectChildren,
+  getWorkspaceSelfAndDescendantIds,
+} from "@/lib/workspaces";
 import type { NoteDoc } from "@/types/firestore";
 import { htmlToPlainText } from "@/lib/richText";
 import { toUserErrorMessage } from "@/lib/userError";
@@ -99,13 +108,53 @@ export default function NotesPage() {
     return m;
   }, [workspaces]);
   const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
-  const selectedWorkspaceIds = useMemo(
-    () => (workspaceFilter === "all" ? null : getWorkspaceSelfAndDescendantIds(workspaces, workspaceFilter)),
-    [workspaceFilter, workspaces],
+  const currentWorkspace = useMemo(() => getWorkspaceById(workspaces, workspaceId), [workspaceId, workspaces]);
+  const currentWorkspaceChain = useMemo(() => getWorkspaceChain(workspaces, workspaceId), [workspaceId, workspaces]);
+  const directChildWorkspaces = useMemo(() => getWorkspaceDirectChildren(workspaces, workspaceId), [workspaceId, workspaces]);
+  const activeNoteCountByWorkspaceId = useMemo(
+    () => countItemsByWorkspaceId(notes, (note) => note.archived !== true),
+    [notes],
   );
-  const tabWorkspaceIds = useMemo(
-    () => getWorkspaceSelfAndDescendantIds(workspaces, workspaceId),
-    [workspaceId, workspaces],
+  const activeTaskCountByWorkspaceId = useMemo(
+    () => countItemsByWorkspaceId(tasksForCounter, (task) => task.archived !== true),
+    [tasksForCounter],
+  );
+  const activeTodoCountByWorkspaceId = useMemo(
+    () => countItemsByWorkspaceId(todosForCounter),
+    [todosForCounter],
+  );
+  const selectedWorkspaceIds = useMemo(
+    () =>
+      workspaceFilter === "all"
+        ? null
+        : workspaceId && workspaceFilter === workspaceId
+          ? new Set([workspaceId])
+          : getWorkspaceSelfAndDescendantIds(workspaces, workspaceFilter),
+    [workspaceFilter, workspaceId, workspaces],
+  );
+  const tabWorkspaceIds = useMemo(() => getWorkspaceDirectContentIds(workspaceId), [workspaceId]);
+  const directWorkspaceCounts = useMemo(
+    () => ({
+      notes: workspaceId ? activeNoteCountByWorkspaceId.get(workspaceId) ?? 0 : 0,
+      tasks: workspaceId ? activeTaskCountByWorkspaceId.get(workspaceId) ?? 0 : 0,
+      todos: workspaceId ? activeTodoCountByWorkspaceId.get(workspaceId) ?? 0 : 0,
+    }),
+    [activeNoteCountByWorkspaceId, activeTaskCountByWorkspaceId, activeTodoCountByWorkspaceId, workspaceId],
+  );
+  const childWorkspaceCards = useMemo(
+    () =>
+      directChildWorkspaces
+        .filter((workspace) => workspace.id)
+        .map((workspace) => ({
+          workspace,
+          href: `/notes?workspaceId=${encodeURIComponent(workspace.id ?? "")}`,
+          counts: {
+            notes: activeNoteCountByWorkspaceId.get(workspace.id ?? "") ?? 0,
+            tasks: activeTaskCountByWorkspaceId.get(workspace.id ?? "") ?? 0,
+            todos: activeTodoCountByWorkspaceId.get(workspace.id ?? "") ?? 0,
+          },
+        })),
+    [activeNoteCountByWorkspaceId, activeTaskCountByWorkspaceId, activeTodoCountByWorkspaceId, directChildWorkspaces],
   );
 
   useEffect(() => {
@@ -517,6 +566,22 @@ export default function NotesPage() {
         )}
       </header>
 
+      {workspaceId && currentWorkspace && (
+        <WorkspaceFolderBrowser
+          sectionHrefBase="/notes"
+          workspaceChain={currentWorkspaceChain}
+          childFolders={childWorkspaceCards}
+          currentCounts={directWorkspaceCounts}
+        />
+      )}
+
+      {workspaceId && currentWorkspace && (
+        <section className="space-y-1 rounded-2xl border border-dashed border-border/70 bg-background/40 px-4 py-3">
+          <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Contenu direct</div>
+          <p className="text-sm text-muted-foreground">Notes directement rangées dans ce dossier. Les sous-dossiers restent affichés au-dessus.</p>
+        </section>
+      )}
+
       {showMicroGuide && (
         <div>
           <div className="sn-card sn-card--muted p-4">
@@ -563,14 +628,16 @@ export default function NotesPage() {
         {!loading && !error && archiveView === "active" && visibleNotes.length === 0 && (
           <div className="sn-empty">
             <div className="sn-empty-title">
-              {hasActiveSearchOrFilters ? "Aucun résultat" : "Aucune note pour le moment"}
+              {hasActiveSearchOrFilters ? "Aucun résultat" : workspaceId ? "Aucune note directe dans ce dossier" : "Aucune note pour le moment"}
             </div>
             <div className="sn-empty-desc">
               {hasActiveSearchOrFilters
                 ? activeSearchLabel
                   ? `Aucune note ne correspond à “${activeSearchLabel}” avec les filtres actuels.`
                   : "Aucune note ne correspond à ta recherche ou à tes filtres actuels."
-                : "Commence simple : capture une idée, une liste ou un résumé."}
+                : workspaceId
+                  ? "Crée une note dans ce dossier ou ouvre un sous-dossier pour voir son contenu direct."
+                  : "Commence simple : capture une idée, une liste ou un résumé."}
             </div>
             <div className="mt-3">
               {hasActiveSearchOrFilters ? (
