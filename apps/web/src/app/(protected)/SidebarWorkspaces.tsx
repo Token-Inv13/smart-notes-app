@@ -142,6 +142,31 @@ export default function SidebarWorkspaces({
   }, [flattenedWorkspaces]);
 
   useEffect(() => {
+    setCollapsedWorkspaceIds((prev) => {
+      const next = { ...prev };
+      let changed = false;
+
+      for (const { workspace } of flattenedWorkspaces) {
+        const workspaceId = workspace.id;
+        if (!workspaceId) continue;
+        if (childCountByWorkspaceId.get(workspaceId)) continue;
+        if (workspaceId in next) {
+          delete next[workspaceId];
+          changed = true;
+        }
+      }
+
+      for (const [workspaceId, childCount] of childCountByWorkspaceId.entries()) {
+        if (!childCount || workspaceId in next) continue;
+        next[workspaceId] = true;
+        changed = true;
+      }
+
+      return changed ? next : prev;
+    });
+  }, [childCountByWorkspaceId, flattenedWorkspaces]);
+
+  useEffect(() => {
     if (!currentWorkspaceId) return;
 
     const currentItem = flattenedWorkspaces.find(({ workspace }) => workspace.id === currentWorkspaceId);
@@ -194,6 +219,7 @@ export default function SidebarWorkspaces({
     const isChild = depth > 0;
     const indentPx = depth * 14;
     const lineLeft = indentPx + 13;
+    const leadingSlotWidth = indentPx + 50;
     const rowClass = selected
       ? "border-primary/25 bg-primary/8 shadow-sm"
       : isChild
@@ -222,7 +248,7 @@ export default function SidebarWorkspaces({
         {!renamingId || ws.id !== renamingId ? (
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0 flex flex-1 items-center gap-2">
-              <span className="relative shrink-0" style={{ width: `${indentPx + 24}px` }}>
+              <span className="relative shrink-0" style={{ width: `${leadingSlotWidth}px` }}>
                 {isChild ? (
                   <span
                     aria-hidden="true"
@@ -262,13 +288,13 @@ export default function SidebarWorkspaces({
               <button
                 type="button"
                 onClick={() => navigateWithWorkspace(ws.id ?? null)}
-                className={`min-w-0 flex-1 rounded-lg px-1 py-1 text-left transition-colors ${
+                className={`min-w-0 flex-1 overflow-hidden rounded-lg px-1 py-1 text-left transition-colors ${
                   selected ? "text-foreground" : "text-foreground/95"
                 }`}
                 aria-label={`Ouvrir le dossier ${pathLabel}`}
                 disabled={!ws.id}
               >
-                <span className="block min-w-0">
+                <span className="block min-w-0 overflow-hidden">
                   <span className="block truncate text-sm leading-5 text-left">
                     <span className={`${selected ? "font-semibold" : "font-medium"}`}>
                       {ws.name}
