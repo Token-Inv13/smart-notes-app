@@ -16,7 +16,7 @@ import {
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { auth, db } from "@/lib/firebase";
-import type { TaskDoc, TaskReminderDoc } from "@/types/firestore";
+import type { TaskDoc, TaskReminderDoc, TodoDoc } from "@/types/firestore";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { exportTaskPdf } from "@/lib/pdf/exportPdf";
@@ -87,6 +87,13 @@ type NavigatorWithShare = {
   share?: (data: { title?: string; text?: string; url?: string }) => Promise<void>;
 };
 
+type ChecklistSourceState = {
+  loading: boolean;
+  title: string | null;
+  itemText: string | null;
+  notFound: boolean;
+};
+
 function downloadBlobFile(blob: Blob, filename: string) {
   const objectUrl = URL.createObjectURL(blob);
   try {
@@ -146,6 +153,12 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
   const [snoozing, setSnoozing] = useState(false);
   const [snoozeFeedback, setSnoozeFeedback] = useState<string | null>(null);
   const [taskReminders, setTaskReminders] = useState<TaskReminderDoc[]>([]);
+  const [checklistSource, setChecklistSource] = useState<ChecklistSourceState>({
+    loading: false,
+    title: null,
+    itemText: null,
+    notFound: false,
+  });
   const [remindersLoading, setRemindersLoading] = useState(false);
   const [addingReminder, setAddingReminder] = useState(false);
   const [busyReminderId, setBusyReminderId] = useState<string | null>(null);
@@ -392,6 +405,70 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
   }, [task]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadChecklistSource() {
+      if (task?.sourceType !== "checklist_item" || !task.sourceTodoId) {
+        setChecklistSource({
+          loading: false,
+          title: null,
+          itemText: null,
+          notFound: false,
+        });
+        return;
+      }
+
+      setChecklistSource((prev) => ({
+        ...prev,
+        loading: true,
+        notFound: false,
+      }));
+
+      try {
+        const snap = await getDoc(doc(db, "todos", task.sourceTodoId));
+        if (!snap.exists()) {
+          throw new Error("Checklist source introuvable.");
+        }
+
+        const data = snap.data() as TodoDoc;
+        if (data.userId !== task.userId) {
+          throw new Error("Accès refusé à la checklist source.");
+        }
+
+        const sourceItem =
+          task.sourceTodoItemId && Array.isArray(data.items)
+            ? data.items.find((item) => item.id === task.sourceTodoItemId) ?? null
+            : null;
+
+        if (!cancelled) {
+          setChecklistSource({
+            loading: false,
+            title: data.title?.trim() || "Checklist",
+            itemText: sourceItem?.text?.trim() || task.title?.trim() || null,
+            notFound: false,
+          });
+        }
+      } catch (e) {
+        console.error("Error loading checklist source for task modal", e);
+        if (!cancelled) {
+          setChecklistSource({
+            loading: false,
+            title: null,
+            itemText: task.title?.trim() || null,
+            notFound: true,
+          });
+        }
+      }
+    }
+
+    void loadChecklistSource();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [task?.sourceTodoId, task?.sourceTodoItemId, task?.sourceType, task?.title, task?.userId]);
+
+  useEffect(() => {
     if (!isPro) {
       setTaskReminders([]);
       setReminderDraft("");
@@ -403,6 +480,15 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
   const dueLabel = useMemo(() => formatFrDateTime(task?.dueDate ?? null), [task?.dueDate]);
   const startLabel = useMemo(() => formatFrDate(task?.startDate ?? null), [task?.startDate]);
+  const checklistSourceHref = useMemo(() => {
+    if (task?.sourceType !== "checklist_item" || !task.sourceTodoId) return null;
+    const searchParams = new URLSearchParams();
+    if (typeof task.workspaceId === "string" && task.workspaceId) {
+      searchParams.set("workspaceId", task.workspaceId);
+    }
+    const suffix = searchParams.toString();
+    return `/todo/${encodeURIComponent(task.sourceTodoId)}${suffix ? `?${suffix}` : ""}`;
+  }, [task?.sourceTodoId, task?.sourceType, task?.workspaceId]);
   const editDateWarning = useMemo(() => {
     if (!editStartDate || !editDueDate) return null;
     const startTs = parseLocalDateToTimestamp(editStartDate);
@@ -981,6 +1067,36 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
             {mode === "view" ? (
               <>
+                {task.sourceType === "checklist_item" && (
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50/80 p-3 text-sm text-emerald-950 space-y-2">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
+                      Provenance checklist
+                    </div>
+                    <div>Cette tâche agenda provient d’un item de checklist planifié.</div>
+                    <div>
+                      <span className="font-medium">Checklist:</span>{" "}
+                      {checklistSource.loading
+                        ? "Chargement…"
+                        : checklistSource.title ?? (checklistSource.notFound ? "Checklist source indisponible" : "—")}
+                    </div>
+                    <div>
+                      <span className="font-medium">Élément source:</span>{" "}
+                      {checklistSource.loading ? "Chargement…" : checklistSource.itemText ?? "—"}
+                    </div>
+                    {checklistSourceHref && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          close();
+                          router.push(checklistSourceHref);
+                        }}
+                        className="px-3 py-2 rounded-md border border-emerald-300 bg-white/70 text-sm font-medium text-emerald-900"
+                      >
+                        Ouvrir la checklist source
+                      </button>
+                    )}
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                   <div>
                     <span className="font-medium">Statut:</span> {statusLabel(task.status ?? null)}

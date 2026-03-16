@@ -1,18 +1,18 @@
 "use client";
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
-import { addDoc, collection, deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { scheduleChecklistItem, type ChecklistItemScheduleData } from "@/lib/checklistAgenda";
 import {
   DATE_PLACEHOLDER_FR,
   formatTimestampForDateInput,
   formatTimestampToDateTimeFr,
   formatTimestampToDateFr,
-  normalizeAgendaWindowForFirestore,
   parseLocalDateToTimestamp,
 } from "@/lib/datetime";
 import { toUserErrorMessage } from "@/lib/userError";
-import type { TaskDoc, TodoDoc } from "@/types/firestore";
+import type { TodoDoc } from "@/types/firestore";
 import { useRouter } from "next/navigation";
 import DictationMicButton from "@/app/(protected)/_components/DictationMicButton";
 import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
@@ -20,6 +20,11 @@ import Modal from "../../../Modal";
 
 function safeItemId() {
   return `it_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+}
+
+function toLocalDateInputValue(date: Date) {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 type TodoItem = NonNullable<TodoDoc["items"]>[number];
@@ -41,65 +46,6 @@ function normalizeTodoItems(items: TodoDoc["items"] | null | undefined): TodoIte
       };
     })
     .filter((item): item is TodoItem => item !== null);
-}
-
-function buildAgendaDescription(todo: TodoDoc) {
-  const items = Array.isArray(todo.items) ? todo.items : [];
-  if (items.length === 0) return "";
-
-  const lines = ["Checklist:", ""];
-  for (const item of items) {
-    const text = typeof item?.text === "string" ? item.text.trim() : "";
-    if (!text) continue;
-    lines.push(`- [${item.done === true ? "x" : " "}] ${text}`);
-  }
-  return lines.join("\n");
-}
-
-function mapChecklistDueDateToAgendaWindow(dueDate: TodoDoc["dueDate"] | null | undefined) {
-  const now = new Date();
-  if (!dueDate?.toDate) {
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1, 0, 0, 0, 0);
-    return {
-      start,
-      end,
-      allDay: true,
-    };
-  }
-
-  const base = dueDate.toDate();
-  const hasExplicitTime =
-    base.getHours() !== 0 ||
-    base.getMinutes() !== 0 ||
-    base.getSeconds() !== 0 ||
-    base.getMilliseconds() !== 0;
-
-  if (hasExplicitTime) {
-    const start = new Date(base.getTime());
-    const end = new Date(start.getTime() + 60 * 60 * 1000);
-    return {
-      start,
-      end,
-      allDay: false,
-    };
-  }
-
-  const start = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 0, 0, 0, 0);
-  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1, 0, 0, 0, 0);
-
-  if (
-    process.env.NODE_ENV !== "production" &&
-    (end.getHours() !== 0 || end.getMinutes() !== 0 || end.getSeconds() !== 0 || end.getMilliseconds() !== 0)
-  ) {
-    console.warn("[todo->agenda] Invalid all-day end normalization", { start, end });
-  }
-
-  return {
-    start,
-    end,
-    allDay: true,
-  };
 }
 
 function formatAgendaPlanLabel(item: TodoItem): string {
@@ -141,9 +87,12 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
   const [doneSectionOpen, setDoneSectionOpen] = useState(false);
   const [dueDateDraft, setDueDateDraft] = useState("");
   const [priorityDraft, setPriorityDraft] = useState<"" | NonNullable<TodoDoc["priority"]>>("");
-  const [agendaBusy, setAgendaBusy] = useState(false);
-  const [agendaFeedback, setAgendaFeedback] = useState<string | null>(null);
-  const [agendaTaskId, setAgendaTaskId] = useState<string | null>(null);
+  const [planningItemId, setPlanningItemId] = useState<string | null>(null);
+  const [planningDate, setPlanningDate] = useState("");
+  const [planningTime, setPlanningTime] = useState("09:00");
+  const [planningAllDay, setPlanningAllDay] = useState(true);
+  const [planningBusyId, setPlanningBusyId] = useState<string | null>(null);
+  const [planningError, setPlanningError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -304,72 +253,89 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
     };
   }, [dueDateDraft]);
 
-  const addToAgenda = async () => {
+  const planningDateFeedback = useMemo(() => {
+    if (!planningDate) return null;
+    const ts = parseLocalDateToTimestamp(planningDate);
+    if (!ts) {
+      return {
+        tone: "error" as const,
+        text: `Format attendu: ${DATE_PLACEHOLDER_FR}.`,
+      };
+    }
+    return {
+      tone: "muted" as const,
+      text: planningAllDay ? `Planifié le ${formatTimestampToDateFr(ts)}` : `Début le ${formatTimestampToDateFr(ts)} à ${planningTime || "09:00"}`,
+    };
+  }, [planningAllDay, planningDate, planningTime]);
+
+  const openPlanningForItem = (item: TodoItem) => {
+    if (item.agendaPlan?.taskId) return;
+    const nextDate = formatTimestampForDateInput(todo?.dueDate ?? null) || toLocalDateInputValue(new Date());
+    setPlanningItemId(item.id);
+    setPlanningDate(nextDate);
+    setPlanningTime("09:00");
+    setPlanningAllDay(true);
+    setPlanningError(null);
+    setEditError(null);
+  };
+
+  const closePlanning = () => {
+    setPlanningItemId(null);
+    setPlanningDate("");
+    setPlanningTime("09:00");
+    setPlanningAllDay(true);
+    setPlanningError(null);
+  };
+
+  const scheduleItemInAgenda = async (item: TodoItem) => {
     if (!todo?.id) return;
     const user = auth.currentUser;
     if (!user || user.uid !== todo.userId) {
-      setEditError("Impossible de modifier cette checklist.");
+      setPlanningError("Impossible de planifier cet élément.");
       return;
     }
 
-    if (agendaBusy) return;
+    if (planningBusyId === item.id) return;
 
-    setAgendaBusy(true);
+    const schedule: ChecklistItemScheduleData = {
+      date: planningDate,
+      time: planningAllDay ? undefined : planningTime,
+      allDay: planningAllDay,
+      timezone: "Europe/Paris",
+    };
+
+    setPlanningBusyId(item.id);
+    setPlanningError(null);
     setEditError(null);
-    setAgendaFeedback(null);
 
     try {
-      const linkedTaskId = typeof todo.agendaTaskId === "string" && todo.agendaTaskId.trim() ? todo.agendaTaskId : null;
-      if (linkedTaskId) {
-        const linkedSnap = await getDoc(doc(db, "tasks", linkedTaskId));
-        if (linkedSnap.exists()) {
-          const linkedData = linkedSnap.data() as TaskDoc;
-          if (linkedData.userId === user.uid) {
-            setAgendaTaskId(linkedTaskId);
-            setAgendaFeedback("Déjà ajouté à l’agenda.");
-            return;
-          }
-        }
-      }
-
-      const agendaWindow = mapChecklistDueDateToAgendaWindow(todo.dueDate ?? null);
-      const normalizedWindow = normalizeAgendaWindowForFirestore(agendaWindow);
-      if (!normalizedWindow?.startDate || !normalizedWindow?.dueDate) {
-        throw new Error("Date invalide pour l’ajout à l’agenda.");
-      }
-
-      const taskPayload: Omit<TaskDoc, "id"> = {
+      const agendaPlan = await scheduleChecklistItem({
+        db,
         userId: user.uid,
-        workspaceId: typeof todo.workspaceId === "string" ? todo.workspaceId : null,
-        title: todo.title?.trim() || "Checklist",
-        description: buildAgendaDescription(todo),
-        status: "todo",
-        allDay: normalizedWindow.allDay,
-        startDate: normalizedWindow.startDate,
-        dueDate: normalizedWindow.dueDate,
+        todoId: todo.id,
+        todoTitle: todo.title,
+        workspaceId: todo.workspaceId ?? null,
         priority: todo.priority ?? null,
-        recurrence: null,
-        favorite: false,
-        archived: false,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        sourceTodoId: todo.id,
-      };
-
-      const taskRef = await addDoc(collection(db, "tasks"), taskPayload);
-      await updateDoc(doc(db, "todos", todo.id), {
-        agendaTaskId: taskRef.id,
-        updatedAt: serverTimestamp(),
+        item,
+        schedule,
       });
 
-      setAgendaTaskId(taskRef.id);
-      setTodo((prev) => (prev ? { ...prev, agendaTaskId: taskRef.id } : prev));
-      setAgendaFeedback("Ajouté à l’agenda.");
+      const nextItems = (todo.items ?? []).map((currentItem) =>
+        currentItem.id === item.id
+          ? {
+              ...currentItem,
+              agendaPlan,
+            }
+          : currentItem,
+      );
+
+      await persistTodo({ items: nextItems });
+      closePlanning();
     } catch (e) {
-      console.error("Error adding checklist to agenda", e);
-      setEditError(toUserErrorMessage(e, "Impossible de rajouter cette checklist à l’agenda."));
+      console.error("Error scheduling checklist item", e);
+      setPlanningError(toUserErrorMessage(e, "Impossible de planifier cet élément."));
     } finally {
-      setAgendaBusy(false);
+      setPlanningBusyId((current) => (current === item.id ? null : current));
     }
   };
 
@@ -460,22 +426,6 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
         return (
           <div className="space-y-4 max-h-[90svh] md:max-h-[90vh] overflow-y-auto">
             {editError && <div className="sn-alert sn-alert--error">{editError}</div>}
-            {agendaFeedback && (
-              <div className="sn-alert" role="status" aria-live="polite">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span>{agendaFeedback}</span>
-                  {agendaTaskId && (
-                    <button
-                      type="button"
-                      className="sn-text-btn"
-                      onClick={() => router.push(`/tasks/${encodeURIComponent(agendaTaskId)}`)}
-                    >
-                      Modifier
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
 
             <div className="sn-card p-4 sm:p-5 space-y-4">
               <div className="space-y-3">
@@ -522,34 +472,25 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                 </div>
               </div>
 
-              <div className="rounded-md border border-border/70 bg-background/40 px-3 py-2.5 space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-muted-foreground">Action rapide</span>
-                  <button
-                    type="button"
-                    onClick={() => void addToAgenda()}
-                    disabled={saving || agendaBusy}
-                    className="h-8 px-3 rounded-md border border-input text-xs font-medium hover:bg-accent disabled:opacity-50"
-                  >
-                    {agendaBusy ? "Ajout…" : "Rajouter à l’agenda"}
-                  </button>
-                </div>
-              </div>
-
               <details
                 className="rounded-md border border-border bg-card"
                 open={optionsOpen}
                 onToggle={(e) => setOptionsOpen((e.currentTarget as HTMLDetailsElement).open)}
               >
                 <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium">
-                  Options
-                  <span className="text-muted-foreground font-normal"> (planification)</span>
+                  Détails de la checklist
+                  <span className="text-muted-foreground font-normal"> (date limite et priorité)</span>
                 </summary>
 
-                <div className="px-3 pb-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="px-3 pb-3 space-y-3">
+                  <div className="rounded-md border border-border/60 bg-background/50 px-3 py-2 text-xs text-muted-foreground">
+                    Ces réglages concernent la checklist elle-même. La planification dans l’agenda se fait uniquement au niveau des éléments via l’action <span className="font-medium text-foreground">Planifier</span>.
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <label className="text-sm font-medium" htmlFor="todo-modal-due">
-                      Échéance
+                      Date limite checklist
                     </label>
                     <input
                       id="todo-modal-due"
@@ -582,7 +523,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
 
                   <div className="space-y-1">
                     <label className="text-sm font-medium" htmlFor="todo-modal-priority">
-                      Priorité
+                      Priorité checklist
                     </label>
                     <select
                       id="todo-modal-priority"
@@ -605,6 +546,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                       <option value="medium">Moyenne</option>
                       <option value="high">Haute</option>
                     </select>
+                  </div>
                   </div>
                 </div>
               </details>
@@ -688,7 +630,10 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-sm font-medium">À faire</div>
+                  <div className="space-y-0.5">
+                    <div className="text-sm font-medium">Éléments à faire</div>
+                    <div className="text-xs text-muted-foreground">Planifie un élément pour créer une tâche agenda liée.</div>
+                  </div>
                   <span className="sn-badge">{activeItems.length}</span>
                 </div>
 
@@ -731,7 +676,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                             disabled={saving}
                             aria-label="Texte de l’élément"
                           />
-                          {it.agendaPlan?.taskId && (
+                          {it.agendaPlan?.taskId ? (
                             <button
                               type="button"
                               className="shrink-0 sn-text-btn"
@@ -740,6 +685,15 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                               title="Ouvrir dans l’agenda"
                             >
                               📅
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="shrink-0 rounded-md border border-input px-2 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50"
+                              onClick={() => openPlanningForItem(it)}
+                              disabled={saving || planningBusyId === it.id}
+                            >
+                              Planifier
                             </button>
                           )}
                           <button
@@ -753,6 +707,76 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
                             ✕
                           </button>
                         </div>
+                        {!it.agendaPlan?.taskId && planningItemId === it.id ? (
+                          <div className="mt-3 ml-6 rounded-md border border-border/70 bg-background/50 p-3 space-y-3">
+                            <div className="text-xs font-medium text-muted-foreground">
+                              Créer une tâche agenda liée à cet élément
+                            </div>
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                              <div className="space-y-1">
+                                <label className="text-xs font-medium" htmlFor={`todo-item-plan-date-${it.id}`}>
+                                  Date
+                                </label>
+                                <input
+                                  id={`todo-item-plan-date-${it.id}`}
+                                  type="date"
+                                  value={planningDate}
+                                  onChange={(e) => setPlanningDate(e.target.value)}
+                                  className={`w-full min-w-[11rem] rounded-md border px-3 py-2 bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary ${planningDateFeedback?.tone === "error" ? "border-destructive" : "border-input"}`}
+                                  disabled={planningBusyId === it.id}
+                                />
+                              </div>
+                              <label className="flex items-center gap-2 text-sm sm:pt-6">
+                                <input
+                                  type="checkbox"
+                                  checked={planningAllDay}
+                                  onChange={(e) => setPlanningAllDay(e.target.checked)}
+                                  disabled={planningBusyId === it.id}
+                                />
+                                <span>Toute la journée</span>
+                              </label>
+                            </div>
+                            {!planningAllDay ? (
+                              <div className="space-y-1">
+                                <label className="text-xs font-medium" htmlFor={`todo-item-plan-time-${it.id}`}>
+                                  Heure
+                                </label>
+                                <input
+                                  id={`todo-item-plan-time-${it.id}`}
+                                  type="time"
+                                  value={planningTime}
+                                  onChange={(e) => setPlanningTime(e.target.value)}
+                                  className="w-full rounded-md border border-input px-3 py-2 bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary sm:max-w-[12rem]"
+                                  disabled={planningBusyId === it.id}
+                                />
+                              </div>
+                            ) : null}
+                            {planningDateFeedback ? (
+                              <div className={`text-xs ${planningDateFeedback.tone === "error" ? "text-destructive" : "text-muted-foreground"}`}>
+                                {planningDateFeedback.text}
+                              </div>
+                            ) : null}
+                            {planningError ? <div className="text-xs text-destructive">{planningError}</div> : null}
+                            <div className="flex flex-wrap items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                className="rounded-md border border-input px-3 py-2 text-xs"
+                                onClick={closePlanning}
+                                disabled={planningBusyId === it.id}
+                              >
+                                Annuler
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground disabled:opacity-50"
+                                onClick={() => void scheduleItemInAgenda(it)}
+                                disabled={planningBusyId === it.id || !planningDate}
+                              >
+                                {planningBusyId === it.id ? "Planification…" : "Planifier dans l’agenda"}
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
                         {it.agendaPlan?.taskId && (
                           <div className="mt-2 flex flex-wrap items-center gap-2 pl-6">
                             <span className="sn-badge inline-flex items-center gap-1">
