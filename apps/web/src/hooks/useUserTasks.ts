@@ -15,7 +15,7 @@ import {
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/hooks/useAuth';
 import { useCollection } from '@/hooks/useCollection';
-import type { TaskDoc } from '@/types/firestore';
+import type { TaskDoc, TaskRecurrenceFreq } from '@/types/firestore';
 
 interface UseUserTasksParams {
   enabled?: boolean;
@@ -27,66 +27,87 @@ interface UseUserTasksParams {
   startDateTo?: Timestamp;
   dueDateFrom?: Timestamp;
   dueDateTo?: Timestamp;
+  recurrenceFreqs?: TaskRecurrenceFreq[];
 }
 
 export function useUserTasks(params?: UseUserTasksParams) {
   const { user } = useAuth();
   const userUid = user?.uid;
+  const enabled = params?.enabled;
+  const workspaceId = params?.workspaceId;
+  const status = params?.status;
+  const favoriteOnly = params?.favoriteOnly;
+  const queryLimit = params?.limit;
+  const startDateFrom = params?.startDateFrom;
+  const startDateTo = params?.startDateTo;
+  const dueDateFrom = params?.dueDateFrom;
+  const dueDateTo = params?.dueDateTo;
+  const recurrenceFreqs = params?.recurrenceFreqs;
 
   const tasksQuery: Query<TaskDoc> | null = useMemo(() => {
-    if (params?.enabled === false) return null;
+    if (enabled === false) return null;
     if (!userUid) return null;
 
     const baseRef = collection(db, 'tasks') as CollectionReference<TaskDoc>;
     const constraints: QueryConstraint[] = [where('userId', '==', userUid)];
 
-    if (params?.workspaceId) {
-      constraints.push(where('workspaceId', '==', params.workspaceId));
+    if (workspaceId) {
+      constraints.push(where('workspaceId', '==', workspaceId));
     }
 
-    if (params?.favoriteOnly) {
+    if (favoriteOnly) {
       constraints.push(where('favorite', '==', true));
     }
 
-    if (params?.status) {
-      constraints.push(where('status', '==', params.status));
+    if (status) {
+      constraints.push(where('status', '==', status));
     }
 
-    if (params?.startDateFrom) {
-      constraints.push(where('startDate', '>=', params.startDateFrom));
+    if (startDateFrom) {
+      constraints.push(where('startDate', '>=', startDateFrom));
     }
 
-    if (params?.startDateTo) {
-      constraints.push(where('startDate', '<=', params.startDateTo));
+    if (startDateTo) {
+      constraints.push(where('startDate', '<=', startDateTo));
     }
 
-    if (params?.dueDateFrom) {
-      constraints.push(where('dueDate', '>=', params.dueDateFrom));
+    if (dueDateFrom) {
+      constraints.push(where('dueDate', '>=', dueDateFrom));
     }
 
-    if (params?.dueDateTo) {
-      constraints.push(where('dueDate', '<=', params.dueDateTo));
+    if (dueDateTo) {
+      constraints.push(where('dueDate', '<=', dueDateTo));
     }
 
-    const orderField = params?.startDateFrom || params?.startDateTo ? 'startDate' : 'dueDate';
-    constraints.push(orderBy(orderField, 'asc'));
+    if (recurrenceFreqs?.length) {
+      constraints.push(where('recurrence.freq', 'in', recurrenceFreqs));
+    }
 
-    if (params?.limit && params.limit > 0) {
-      constraints.push(fsLimit(params.limit));
+    const shouldOrderByStart = startDateFrom || startDateTo;
+    const shouldOrderByDue = dueDateFrom || dueDateTo || !recurrenceFreqs?.length;
+    if (shouldOrderByStart) {
+      constraints.push(orderBy('startDate', 'asc'));
+    } else if (shouldOrderByDue) {
+      constraints.push(orderBy('dueDate', 'asc'));
+    }
+
+    if (queryLimit && queryLimit > 0) {
+      constraints.push(fsLimit(queryLimit));
     }
 
     return query(baseRef, ...constraints) as Query<TaskDoc>;
   }, [
     userUid,
-    params?.enabled,
-    params?.workspaceId,
-    params?.favoriteOnly,
-    params?.status,
-    params?.limit,
-    params?.startDateFrom,
-    params?.startDateTo,
-    params?.dueDateFrom,
-    params?.dueDateTo,
+    enabled,
+    workspaceId,
+    favoriteOnly,
+    status,
+    queryLimit,
+    startDateFrom,
+    startDateTo,
+    dueDateFrom,
+    dueDateTo,
+    recurrenceFreqs,
   ]);
 
   return useCollection<TaskDoc>(tasksQuery);

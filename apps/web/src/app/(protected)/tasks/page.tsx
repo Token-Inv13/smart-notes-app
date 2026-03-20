@@ -513,6 +513,13 @@ export default function TasksPage() {
     limit: 500,
   });
 
+  const { data: recurringCalendarTasks } = useUserTasks({
+    enabled: viewMode === "calendar",
+    workspaceId: workspaceFilter !== "all" ? workspaceFilter : undefined,
+    recurrenceFreqs: ["daily", "weekly", "monthly", "yearly"],
+    limit: 500,
+  });
+
   const calendarWindowTasks = useMemo(() => {
     const byId = new Map<string, TaskDoc>();
     for (const task of calendarWindowDueTasks) {
@@ -523,9 +530,13 @@ export default function TasksPage() {
       if (!task.id) continue;
       byId.set(task.id, task);
     }
+    for (const task of recurringCalendarTasks) {
+      if (!task.id) continue;
+      byId.set(task.id, task);
+    }
 
     return Array.from(byId.values());
-  }, [calendarWindowDueTasks, calendarWindowStartTasks]);
+  }, [calendarWindowDueTasks, calendarWindowStartTasks, recurringCalendarTasks]);
 
   const optimisticAllTasks = useMemo(
     () => mergeTaskCollections(allTasks, optimisticAgendaTaskById, optimisticCreatedAgendaTasks),
