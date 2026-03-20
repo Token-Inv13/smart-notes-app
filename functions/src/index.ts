@@ -2767,8 +2767,21 @@ export const checkAndSendReminders = functions.pubsub
 
         const tokens = Object.keys(fcmTokens);
 
-        const pushEnabled = !!userData?.settings?.notifications?.taskReminders;
+        const remindersEnabled = !!userData?.settings?.notifications?.taskReminders;
         const userEmail = typeof userData?.email === 'string' ? userData.email : null;
+
+        if (!remindersEnabled) {
+          console.log(`Reminders disabled for user ${reminder.userId}, skipping reminder ${doc.id}`);
+          try {
+            await doc.ref.update({
+              processingAt: admin.firestore.FieldValue.delete(),
+              processingBy: admin.firestore.FieldValue.delete(),
+            });
+          } catch {
+            // ignore
+          }
+          return;
+        }
 
         // Prepare notification message
         const message = {
@@ -2786,7 +2799,7 @@ export const checkAndSendReminders = functions.pubsub
         let delivered = false;
         let deliveryChannel: TaskReminder['deliveryChannel'] | undefined;
 
-        if (pushEnabled && tokens.length > 0) {
+        if (tokens.length > 0) {
           const invalidTokens = new Set<string>();
           let sentAny = false;
 
