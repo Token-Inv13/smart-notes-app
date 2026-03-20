@@ -792,7 +792,6 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                   dueDate: dueTimestamp ? dueTimestamp.toDate().toISOString() : "",
                   reminderTime: reminderDate.toISOString(),
                   sent: false,
-                  updatedAt: serverTimestamp(),
                 });
               } else {
                 await addDoc(remindersRef, {
@@ -809,6 +808,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
           }
         } catch (e) {
           console.error("Error syncing task reminder (modal)", e);
+          setEditError(toUserErrorMessage(e, "Erreur lors de la resynchronisation du rappel."));
         }
       }
 
