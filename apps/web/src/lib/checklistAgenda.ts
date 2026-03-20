@@ -1,8 +1,12 @@
 import {
   collection,
   doc,
+  getDocs,
+  query,
   setDoc,
   serverTimestamp,
+  writeBatch,
+  where,
   type Firestore,
   type Timestamp,
   type WriteBatch,
@@ -36,6 +40,14 @@ type ScheduleChecklistItemInput = {
   item: { id: string; text: string; done: boolean };
   schedule: ChecklistItemScheduleData;
   batch?: WriteBatch;
+};
+
+type CleanupChecklistAgendaTasksInput = {
+  db: Firestore;
+  userId: string;
+  todoId: string;
+  itemId?: string | null;
+  taskId?: string | null;
 };
 
 function parseDateAndTime(dateRaw: string, timeRaw: string): Date | null {
@@ -130,4 +142,36 @@ export async function scheduleChecklistItem(input: ScheduleChecklistItemInput): 
     startDate: normalizedWindow.startDate,
     dueDate: normalizedWindow.dueDate,
   };
+}
+
+export async function cleanupChecklistAgendaTasks(input: CleanupChecklistAgendaTasksInput): Promise<number> {
+  const { db, userId, todoId, itemId, taskId } = input;
+  const tasksRef = collection(db, "tasks");
+  const baseConstraints = [
+    where("userId", "==", userId),
+    where("sourceType", "==", "checklist_item"),
+    where("sourceTodoId", "==", todoId),
+  ];
+  const constraints = itemId
+    ? [...baseConstraints, where("sourceTodoItemId", "==", itemId)]
+    : baseConstraints;
+
+  const linkedTasksSnap = await getDocs(query(tasksRef, ...constraints));
+  const linkedTaskIds = new Set(linkedTasksSnap.docs.map((taskDoc) => taskDoc.id));
+  if (taskId) linkedTaskIds.add(taskId);
+  if (linkedTaskIds.size === 0) return 0;
+
+  let deletedCount = 0;
+  const linkedTaskIdList = Array.from(linkedTaskIds);
+  for (let index = 0; index < linkedTaskIdList.length; index += 400) {
+    const batch = writeBatch(db);
+    const chunk = linkedTaskIdList.slice(index, index + 400);
+    for (const linkedTaskId of chunk) {
+      batch.delete(doc(db, "tasks", linkedTaskId));
+    }
+    await batch.commit();
+    deletedCount += chunk.length;
+  }
+
+  return deletedCount;
 }

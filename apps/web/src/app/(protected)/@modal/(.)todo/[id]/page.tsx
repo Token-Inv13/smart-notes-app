@@ -3,7 +3,11 @@
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import { deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { scheduleChecklistItem, type ChecklistItemScheduleData } from "@/lib/checklistAgenda";
+import {
+  cleanupChecklistAgendaTasks,
+  scheduleChecklistItem,
+  type ChecklistItemScheduleData,
+} from "@/lib/checklistAgenda";
 import {
   DATE_PLACEHOLDER_FR,
   formatTimestampForDateInput,
@@ -356,6 +360,11 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
     setEditError(null);
     setDeleting(true);
     try {
+      await cleanupChecklistAgendaTasks({
+        db,
+        userId: user.uid,
+        todoId: todo.id,
+      });
       await deleteDoc(doc(db, "todos", todo.id));
       setTodo(null);
       close();
@@ -370,7 +379,17 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
 
   const removeItem = async (itemId: string) => {
     if (!todo) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== todo.userId || !todo.id) return;
+    const item = (todo.items ?? []).find((entry) => entry.id === itemId) ?? null;
     const next = (todo.items ?? []).filter((x) => x.id !== itemId);
+    await cleanupChecklistAgendaTasks({
+      db,
+      userId: user.uid,
+      todoId: todo.id,
+      itemId,
+      taskId: item?.agendaPlan?.taskId ?? null,
+    });
     await persistTodo({ items: next });
   };
 
