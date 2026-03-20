@@ -30,7 +30,7 @@ import CreateButton from "./CreateButton";
 import VoiceAgentButton from "./assistant/VoiceAgentButton";
 import { projectTasksToEvents } from "@/lib/agenda/taskEventProjector";
 import { getUserTimezone } from "@/lib/datetime";
-import type { TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq } from "@/types/firestore";
+import type { TaskCalendarKind, TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq } from "@/types/firestore";
 
 type CalendarViewMode = "dayGridMonth" | "timeGridWeek" | "timeGridDay";
 type AgendaDisplayMode = "calendar" | "planning";
@@ -67,6 +67,7 @@ interface AgendaCalendarProps {
     allDay: boolean;
     workspaceId?: string | null;
     priority?: Priority | null;
+    calendarKind?: TaskCalendarKind | null;
     recurrence?: CalendarRecurrenceInput;
   }) => Promise<void>;
   onUpdateEvent: (input: {
@@ -77,6 +78,7 @@ interface AgendaCalendarProps {
     allDay: boolean;
     workspaceId?: string | null;
     priority?: Priority | null;
+    calendarKind?: TaskCalendarKind | null;
     recurrence?: CalendarRecurrenceInput;
   }) => Promise<void>;
   onSkipOccurrence?: (taskId: string, occurrenceDate: string) => Promise<void>;
@@ -452,6 +454,7 @@ export default function AgendaCalendar({
     for (const item of withDates) {
       const { task, start, end, allDay, recurrence, taskId, eventId, instanceDate } = item;
       const itemPriority = (task.priority ?? "") as Priority | "";
+      const itemCalendarKind = (task.calendarKind ?? "task") as TaskCalendarKind;
       const itemHasConflict = conflictIds.has(eventId);
       const itemIsRecurring = Boolean(recurrence?.freq);
       const itemIsChecklist = task.sourceType === "checklist_item";
@@ -486,14 +489,20 @@ export default function AgendaCalendar({
         start: fcStart,
         end: fcEnd,
         allDay,
-        backgroundColor: priorityColor(itemPriority),
-        borderColor: priorityColor(itemPriority),
-        classNames: ["agenda-event", "agenda-event-local", `agenda-priority-${itemPriority || "none"}`],
+        backgroundColor: itemCalendarKind === "birthday" ? "#db2777" : priorityColor(itemPriority),
+        borderColor: itemCalendarKind === "birthday" ? "#db2777" : priorityColor(itemPriority),
+        classNames: [
+          "agenda-event",
+          "agenda-event-local",
+          `agenda-priority-${itemPriority || "none"}`,
+          `agenda-kind-${itemCalendarKind}`,
+        ],
         extendedProps: {
           taskId,
           workspaceId: task.workspaceId ?? "",
           workspaceName: (task.workspaceId ? workspaceNameById.get(task.workspaceId) : null) ?? "Sans dossier",
           priority: itemPriority,
+          calendarKind: itemCalendarKind,
           sourceType: task.sourceType ?? null,
           sourceTodoId: task.sourceTodoId ?? null,
           sourceTodoItemId: task.sourceTodoItemId ?? null,

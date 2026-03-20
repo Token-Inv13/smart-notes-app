@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import type { Priority, TaskDoc, TaskRecurrenceFreq } from "@/types/firestore";
+import type { Priority, TaskCalendarKind, TaskDoc, TaskRecurrenceFreq } from "@/types/firestore";
 
 type CalendarRecurrenceInput = {
   freq: TaskRecurrenceFreq;
@@ -27,6 +27,7 @@ type UseAgendaEventMutationParams = {
     allDay: boolean;
     workspaceId?: string | null;
     priority?: Priority | null;
+    calendarKind?: TaskCalendarKind | null;
     recurrence?: CalendarRecurrenceInput;
   }) => Promise<void>;
   onUpdateEvent: (input: {
@@ -37,6 +38,7 @@ type UseAgendaEventMutationParams = {
     allDay: boolean;
     workspaceId?: string | null;
     priority?: Priority | null;
+    calendarKind?: TaskCalendarKind | null;
     recurrence?: CalendarRecurrenceInput;
   }) => Promise<void>;
   onSkipOccurrence?: (taskId: string, occurrenceDate: string) => Promise<void>;
@@ -84,6 +86,7 @@ export function useAgendaEventMutation({
             allDay: arg.event.allDay,
             workspaceId: (arg.event.extendedProps.workspaceId as string) || null,
             priority: (arg.event.extendedProps.priority as Priority | "") || null,
+            calendarKind: ((arg.event.extendedProps.calendarKind as TaskCalendarKind | null) ?? "task") as TaskCalendarKind,
             recurrence: null,
           });
           return;
@@ -96,6 +99,7 @@ export function useAgendaEventMutation({
           allDay: arg.event.allDay,
           workspaceId: (arg.event.extendedProps.workspaceId as string) || null,
           priority: (arg.event.extendedProps.priority as Priority | "") || null,
+          calendarKind: ((arg.event.extendedProps.calendarKind as TaskCalendarKind | null) ?? "task") as TaskCalendarKind,
           recurrence: (() => {
             const rec = (arg.event.extendedProps.recurrence as TaskDoc["recurrence"] | null) ?? null;
             if (!rec?.freq) return null;

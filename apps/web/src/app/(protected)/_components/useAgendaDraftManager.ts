@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import type { DateSelectArg, EventClickArg } from "@fullcalendar/core";
 import { toUserErrorMessage } from "@/lib/userError";
-import type { Priority, TaskDoc, TaskRecurrenceFreq } from "@/types/firestore";
+import type { Priority, TaskCalendarKind, TaskDoc, TaskRecurrenceFreq } from "@/types/firestore";
 import {
   parseDateFromDraft,
   toLocalDateInputValue,
@@ -24,6 +24,7 @@ export interface CalendarDraft {
   allDay: boolean;
   workspaceId: string;
   priority: "" | Priority;
+  calendarKind: TaskCalendarKind;
   recurrenceFreq: "" | TaskRecurrenceFreq;
   recurrenceUntil: string;
   recurrenceInterval: number;
@@ -38,6 +39,7 @@ type UseAgendaDraftManagerParams = {
     allDay: boolean;
     workspaceId?: string | null;
     priority?: Priority | null;
+    calendarKind?: TaskCalendarKind | null;
     recurrence?: CalendarRecurrenceInput;
   }) => Promise<void>;
   onUpdateEvent: (input: {
@@ -48,6 +50,7 @@ type UseAgendaDraftManagerParams = {
     allDay: boolean;
     workspaceId?: string | null;
     priority?: Priority | null;
+    calendarKind?: TaskCalendarKind | null;
     recurrence?: CalendarRecurrenceInput;
   }) => Promise<void>;
   onSkipOccurrence?: (taskId: string, occurrenceDate: string) => Promise<void>;
@@ -80,6 +83,7 @@ export function useAgendaDraftManager({
       allDay: allDaySelection,
       workspaceId: "",
       priority: "",
+      calendarKind: "task",
       recurrenceFreq: "",
       recurrenceUntil: "",
       recurrenceInterval: 1,
@@ -108,6 +112,7 @@ export function useAgendaDraftManager({
       allDay: arg.event.allDay,
       workspaceId: (arg.event.extendedProps.workspaceId as string) ?? "",
       priority: ((arg.event.extendedProps.priority as Priority | "") ?? "") as "" | Priority,
+      calendarKind: ((arg.event.extendedProps.calendarKind as TaskCalendarKind | null) ?? "task") as TaskCalendarKind,
       recurrenceFreq: recurrence?.freq ?? "",
       recurrenceUntil: recurrence?.until?.toDate ? toLocalDateInputValue(recurrence.until.toDate()) : "",
       recurrenceInterval: Math.max(1, Number(recurrence?.interval ?? 1)),
@@ -118,14 +123,18 @@ export function useAgendaDraftManager({
   const saveDraft = useCallback(async () => {
     if (!draft) return;
 
-    const start = parseDateFromDraft(draft.startLocal, draft.allDay);
-    const end = parseDateFromDraft(draft.endLocal, draft.allDay);
+    const isBirthday = draft.calendarKind === "birthday";
+    const effectiveAllDay = isBirthday ? true : draft.allDay;
+    const effectiveRecurrenceFreq = isBirthday ? "yearly" : draft.recurrenceFreq;
+
+    const start = parseDateFromDraft(draft.startLocal, effectiveAllDay);
+    const end = parseDateFromDraft(draft.endLocal, effectiveAllDay);
     if (!start || !end) {
       setError("Date/heure invalide.");
       return;
     }
 
-    const allDayEnd = draft.allDay
+    const allDayEnd = effectiveAllDay
       ? new Date(end.getFullYear(), end.getMonth(), end.getDate() + 1, 0, 0, 0, 0)
       : end;
 
@@ -139,9 +148,9 @@ export function useAgendaDraftManager({
       return;
     }
 
-    const recurrence = draft.recurrenceFreq
+    const recurrence = effectiveRecurrenceFreq
       ? {
-          freq: draft.recurrenceFreq,
+          freq: effectiveRecurrenceFreq,
           interval: Math.max(1, Number(draft.recurrenceInterval || 1)),
           until: draft.recurrenceUntil ? new Date(`${draft.recurrenceUntil}T23:59:59`) : null,
           exceptions: draft.recurrenceExceptions,
@@ -162,9 +171,10 @@ export function useAgendaDraftManager({
           title: draft.title.trim(),
           start,
           end: allDayEnd,
-          allDay: draft.allDay,
+          allDay: effectiveAllDay,
           workspaceId: draft.workspaceId || null,
           priority: draft.priority || null,
+          calendarKind: draft.calendarKind,
           recurrence: null,
         });
         setDraft(null);
@@ -177,9 +187,10 @@ export function useAgendaDraftManager({
           title: draft.title.trim(),
           start,
           end: allDayEnd,
-          allDay: draft.allDay,
+          allDay: effectiveAllDay,
           workspaceId: draft.workspaceId || null,
           priority: draft.priority || null,
+          calendarKind: draft.calendarKind,
           recurrence,
         });
       } else {
@@ -187,9 +198,10 @@ export function useAgendaDraftManager({
           title: draft.title.trim(),
           start,
           end: allDayEnd,
-          allDay: draft.allDay,
+          allDay: effectiveAllDay,
           workspaceId: draft.workspaceId || null,
           priority: draft.priority || null,
+          calendarKind: draft.calendarKind,
           recurrence,
         });
       }
@@ -212,6 +224,7 @@ export function useAgendaDraftManager({
       allDay: false,
       workspaceId: "",
       priority: "",
+      calendarKind: "task",
       recurrenceFreq: "",
       recurrenceUntil: "",
       recurrenceInterval: 1,

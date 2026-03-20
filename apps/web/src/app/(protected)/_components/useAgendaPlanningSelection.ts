@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { EventInput } from "@fullcalendar/core";
-import type { Priority } from "@/types/firestore";
+import type { Priority, TaskCalendarKind } from "@/types/firestore";
 import { toUserErrorMessage } from "@/lib/userError";
 
 type AgendaDisplayMode = "calendar" | "planning";
@@ -12,6 +12,7 @@ type CreateEventInput = {
   allDay: boolean;
   workspaceId?: string | null;
   priority?: Priority | null;
+  calendarKind?: TaskCalendarKind | null;
   recurrence?: {
     freq: "daily" | "weekly" | "monthly" | "yearly";
     interval?: number;
@@ -101,6 +102,10 @@ export function useAgendaPlanningSelection({
               source.extendedProps?.priority === "high"
                 ? (source.extendedProps.priority as Priority)
                 : null,
+            calendarKind:
+              source.extendedProps?.calendarKind === "birthday"
+                ? "birthday"
+                : "task",
             recurrence: null,
           });
         }

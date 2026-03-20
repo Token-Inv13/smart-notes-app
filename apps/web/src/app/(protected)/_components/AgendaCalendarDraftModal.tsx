@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import type { Priority, TaskRecurrenceFreq, WorkspaceDoc } from "@/types/firestore";
+import type { Priority, TaskCalendarKind, TaskRecurrenceFreq, WorkspaceDoc } from "@/types/firestore";
 import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import {
   parseDateFromDraft,
@@ -58,6 +58,33 @@ export default function AgendaCalendarDraftModal({
   };
 
   if (!draft) return null;
+  const isBirthday = draft.calendarKind === "birthday";
+
+  const applyCalendarKind = (nextKind: TaskCalendarKind) => {
+    setDraft((prev) => {
+      if (!prev) return prev;
+      if (nextKind === "birthday") {
+        const start = parseDateFromDraft(prev.startLocal, prev.allDay) ?? new Date();
+        const end =
+          parseDateFromDraft(prev.endLocal, prev.allDay) ??
+          new Date(start.getTime() + 60 * 60 * 1000);
+        const safeEnd = end.getTime() > start.getTime() ? end : new Date(start.getTime() + 60 * 60 * 1000);
+        return {
+          ...prev,
+          calendarKind: "birthday",
+          allDay: true,
+          startLocal: toLocalDateInputValue(start),
+          endLocal: toLocalDateInputValue(safeEnd),
+          recurrenceFreq: "yearly",
+        };
+      }
+
+      return {
+        ...prev,
+        calendarKind: "task",
+      };
+    });
+  };
 
   return (
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Éditeur agenda">
@@ -102,6 +129,7 @@ export default function AgendaCalendarDraftModal({
           <input
             type="checkbox"
             checked={draft.allDay}
+            disabled={isBirthday}
             onChange={(e) =>
               setDraft((prev) => {
                 if (!prev) return prev;
@@ -142,6 +170,36 @@ export default function AgendaCalendarDraftModal({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <select
+            value={draft.calendarKind}
+            onChange={(e) => applyCalendarKind(e.target.value as TaskCalendarKind)}
+            className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+            aria-label="Type d’événement"
+          >
+            <option value="task">Élément agenda</option>
+            <option value="birthday">Anniversaire</option>
+          </select>
+
+          <select
+            value={draft.recurrenceFreq}
+            onChange={(e) =>
+              setDraft((prev) =>
+                prev ? { ...prev, recurrenceFreq: e.target.value as "" | TaskRecurrenceFreq } : prev,
+              )
+            }
+            className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+            aria-label="Récurrence"
+            disabled={isBirthday}
+          >
+            <option value="">Sans récurrence</option>
+            <option value="daily">Chaque jour</option>
+            <option value="weekly">Chaque semaine</option>
+            <option value="monthly">Chaque mois</option>
+            <option value="yearly">Chaque année</option>
+          </select>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <select
             value={draft.workspaceId}
             onChange={(e) => setDraft((prev) => (prev ? { ...prev, workspaceId: e.target.value } : prev))}
             className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
@@ -171,23 +229,6 @@ export default function AgendaCalendarDraftModal({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <select
-            value={draft.recurrenceFreq}
-            onChange={(e) =>
-              setDraft((prev) =>
-                prev ? { ...prev, recurrenceFreq: e.target.value as "" | TaskRecurrenceFreq } : prev,
-              )
-            }
-            className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-            aria-label="Récurrence"
-          >
-            <option value="">Sans récurrence</option>
-            <option value="daily">Chaque jour</option>
-            <option value="weekly">Chaque semaine</option>
-            <option value="monthly">Chaque mois</option>
-            <option value="yearly">Chaque année</option>
-          </select>
-
           <input
             type="date"
             value={draft.recurrenceUntil}
@@ -196,8 +237,9 @@ export default function AgendaCalendarDraftModal({
             }
             className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
             aria-label="Récurrence jusqu’au"
-            disabled={!draft.recurrenceFreq}
+            disabled={!draft.recurrenceFreq && !isBirthday}
           />
+          <div className="hidden sm:block" aria-hidden />
         </div>
 
         <div className="flex items-center justify-between gap-3">

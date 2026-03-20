@@ -43,7 +43,7 @@ import {
   getWorkspaceDirectChildren,
   getWorkspaceSelfAndDescendantIds,
 } from "@/lib/workspaces";
-import type { Priority, TaskDoc } from "@/types/firestore";
+import type { Priority, TaskCalendarKind, TaskDoc } from "@/types/firestore";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
@@ -155,6 +155,7 @@ export default function TasksPage() {
     allDay: boolean;
     workspaceId?: string | null;
     priority?: Priority | null;
+    calendarKind?: TaskCalendarKind | null;
     recurrence?: CalendarRecurrenceInput;
   }) => {
     const user = auth.currentUser;
@@ -183,6 +184,7 @@ export default function TasksPage() {
       dueDate: normalizedWindow.dueDate,
       workspaceId: input.workspaceId ?? null,
       priority: input.priority ?? null,
+      calendarKind: input.calendarKind ?? "task",
       recurrence: input.recurrence
         ? {
             freq: input.recurrence.freq,
@@ -228,6 +230,7 @@ export default function TasksPage() {
     allDay: boolean;
     workspaceId?: string | null;
     priority?: Priority | null;
+    calendarKind?: TaskCalendarKind | null;
     recurrence?: CalendarRecurrenceInput;
   }) => {
     const user = auth.currentUser;
@@ -254,6 +257,7 @@ export default function TasksPage() {
       dueDate: normalizedWindow.dueDate,
       workspaceId: input.workspaceId ?? current.workspaceId ?? null,
       priority: input.priority ?? current.priority ?? null,
+      calendarKind: input.calendarKind ?? current.calendarKind ?? "task",
       recurrence:
         input.recurrence === undefined
           ? (current.recurrence ?? null)
