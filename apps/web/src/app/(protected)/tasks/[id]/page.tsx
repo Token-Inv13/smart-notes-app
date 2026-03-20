@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { arrayRemove, arrayUnion, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { toUserErrorMessage } from "@/lib/userError";
+import { formatTaskRecurrenceLabel } from "@/lib/agenda/recurrenceLabel";
 import type { TaskDoc } from "@/types/firestore";
 
 function formatFrDateTime(ts?: TaskDoc["dueDate"] | null) {
@@ -20,14 +21,6 @@ function statusLabel(s?: TaskDoc["status"] | null) {
   if (s === "doing") return "En cours";
   if (s === "done") return "Terminée";
   return "À faire";
-}
-
-function recurrenceLabel(task: TaskDoc | null) {
-  const rec = task?.recurrence;
-  if (!rec?.freq) return "Aucune";
-  if (rec.freq === "daily") return "Tous les jours";
-  if (rec.freq === "weekly") return "Toutes les semaines";
-  return "Tous les mois";
 }
 
 export default function TaskDetailPage() {
@@ -227,7 +220,7 @@ export default function TaskDetailPage() {
             <div className="text-sm font-medium">Récurrence & exceptions</div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
               <div>
-                <span className="font-medium">Règle:</span> {recurrenceLabel(task)}
+                <span className="font-medium">Règle:</span> {formatTaskRecurrenceLabel(task.recurrence ?? null)}
               </div>
               <div>
                 <span className="font-medium">Jusqu’au:</span> {recurrenceUntilLabel || "Sans fin"}

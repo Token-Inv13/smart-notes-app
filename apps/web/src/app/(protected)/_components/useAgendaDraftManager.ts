@@ -26,6 +26,8 @@ export interface CalendarDraft {
   priority: "" | Priority;
   recurrenceFreq: "" | TaskRecurrenceFreq;
   recurrenceUntil: string;
+  recurrenceInterval: number;
+  recurrenceExceptions: string[];
 }
 
 type UseAgendaDraftManagerParams = {
@@ -80,6 +82,8 @@ export function useAgendaDraftManager({
       priority: "",
       recurrenceFreq: "",
       recurrenceUntil: "",
+      recurrenceInterval: 1,
+      recurrenceExceptions: [],
     });
   }, []);
 
@@ -106,6 +110,8 @@ export function useAgendaDraftManager({
       priority: ((arg.event.extendedProps.priority as Priority | "") ?? "") as "" | Priority,
       recurrenceFreq: recurrence?.freq ?? "",
       recurrenceUntil: recurrence?.until?.toDate ? toLocalDateInputValue(recurrence.until.toDate()) : "",
+      recurrenceInterval: Math.max(1, Number(recurrence?.interval ?? 1)),
+      recurrenceExceptions: Array.isArray(recurrence?.exceptions) ? recurrence.exceptions : [],
     });
   }, []);
 
@@ -136,9 +142,9 @@ export function useAgendaDraftManager({
     const recurrence = draft.recurrenceFreq
       ? {
           freq: draft.recurrenceFreq,
-          interval: 1,
+          interval: Math.max(1, Number(draft.recurrenceInterval || 1)),
           until: draft.recurrenceUntil ? new Date(`${draft.recurrenceUntil}T23:59:59`) : null,
-          exceptions: [],
+          exceptions: draft.recurrenceExceptions,
         }
       : null;
 
@@ -208,6 +214,8 @@ export function useAgendaDraftManager({
       priority: "",
       recurrenceFreq: "",
       recurrenceUntil: "",
+      recurrenceInterval: 1,
+      recurrenceExceptions: [],
     });
   }, []);
 

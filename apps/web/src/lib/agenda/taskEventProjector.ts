@@ -58,7 +58,13 @@ export function projectTaskToEvent(task: TaskDoc): {
   const explicitAllDay = task.allDay === true;
   if (explicitAllDay) {
     const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0);
-    const endDay = new Date(startDay.getTime() + 24 * 60 * 60 * 1000);
+    const dueDay =
+      dueRaw && dueRaw.getTime() > startDay.getTime()
+        ? new Date(dueRaw.getFullYear(), dueRaw.getMonth(), dueRaw.getDate(), dueRaw.getHours(), dueRaw.getMinutes(), dueRaw.getSeconds(), dueRaw.getMilliseconds())
+        : null;
+    const endDay = dueDay && dueDay.getTime() > startDay.getTime()
+      ? dueDay
+      : new Date(startDay.getTime() + 24 * 60 * 60 * 1000);
     return {
       event: {
         start: startDay,
