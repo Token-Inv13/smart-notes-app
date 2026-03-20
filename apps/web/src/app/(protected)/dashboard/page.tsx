@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Timestamp, doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -129,6 +129,11 @@ export default function DashboardPage() {
   const activeChecklistHref = useMemo(() => {
     return workspaceId ? `/todo?workspaceId=${encodeURIComponent(workspaceId)}` : "/todo";
   }, [workspaceId]);
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    router.replace(notesHref);
+  }, [notesHref, router, workspaceId]);
 
   const {
     data: favoriteNotesRaw,
@@ -488,30 +493,16 @@ export default function DashboardPage() {
     };
   }, [displayDashboardTasks]);
 
-  const quickLinks = [
-    { href: workspaceId ? `/notes/new?workspaceId=${encodeURIComponent(workspaceId)}` : "/notes/new", label: "Nouvelle note" },
-    { href: workspaceId ? `/tasks/new?workspaceId=${encodeURIComponent(workspaceId)}` : "/tasks/new", label: "Nouvelle tâche" },
-    { href: tasksCalendarHref, label: "Ouvrir l’agenda" },
-    { href: workspaceId ? `/todo?workspaceId=${encodeURIComponent(workspaceId)}` : "/todo", label: "Voir checklist" },
-  ];
+  if (workspaceId) {
+    return null;
+  }
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <header>
         <div>
           <h1 className="text-xl font-semibold">Accueil</h1>
           <p className="text-sm text-muted-foreground">Vue rapide pour savoir quoi faire maintenant.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {quickLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="inline-flex items-center justify-center rounded-md border border-border bg-background px-3 py-2 text-sm hover:bg-accent/60"
-            >
-              {link.label}
-            </Link>
-          ))}
         </div>
       </header>
 

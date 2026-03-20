@@ -69,27 +69,6 @@ export default function SidebarWorkspaces({
 
   const currentWorkspaceId = searchParams.get("workspaceId");
 
-  const [lastSection, setLastSection] = useState<"notes" | "tasks">("notes");
-
-  useEffect(() => {
-    const saved = typeof window !== "undefined" ? window.localStorage.getItem("lastSection") : null;
-    if (saved === "tasks" || saved === "notes") {
-      setLastSection(saved);
-    }
-  }, []);
-
-  useEffect(() => {
-    const next = pathname.startsWith("/tasks") ? "tasks" : pathname.startsWith("/notes") ? "notes" : null;
-    if (!next) return;
-    if (lastSection === next) return;
-    setLastSection(next);
-    try {
-      window.localStorage.setItem("lastSection", next);
-    } catch {
-      // ignore
-    }
-  }, [pathname, lastSection]);
-
   const navButtonClass = (active: boolean) =>
     `w-full inline-flex items-center justify-start gap-2 px-3 py-2 rounded-lg text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background ${
       active
@@ -381,13 +360,15 @@ export default function SidebarWorkspaces({
     const sectionFromPath = pathname.startsWith("/tasks") || isTodoPage ? "tasks" : "notes";
     const isContentPage = pathname.startsWith("/notes") || pathname.startsWith("/tasks") || isTodoPage;
 
-    const targetBase = isDashboardPage
-      ? "/dashboard"
-      : isTodoPage
-        ? "/todo"
-        : isContentPage
-          ? `/${sectionFromPath}`
-          : `/${lastSection}`;
+    const targetBase = workspaceId
+      ? "/notes"
+      : isDashboardPage
+        ? "/dashboard"
+        : isTodoPage
+          ? "/todo"
+          : isContentPage
+            ? `/${sectionFromPath}`
+            : "/notes";
     router.push(qs ? `${targetBase}?${qs}` : targetBase);
     onNavigate?.();
   };
