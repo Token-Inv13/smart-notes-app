@@ -13,7 +13,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
-import { addDoc, arrayUnion, collection, doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { addDoc, arrayUnion, collection, doc, Timestamp, updateDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserNotes } from "@/hooks/useUserNotes";
@@ -70,6 +70,56 @@ type CalendarRecurrenceInput = {
 type TaskPriorityFilter = "all" | NonNullable<TaskDoc["priority"]>;
 type DueFilter = "all" | "today" | "overdue";
 type TaskSortBy = "dueDate" | "updatedAt" | "createdAt";
+
+function toTimestampOrNull(date: Date | null) {
+  return date ? Timestamp.fromDate(date) : null;
+}
+
+function taskMatchesSnapshot(current: TaskDoc, optimistic: TaskDoc) {
+  const currentStart = current.startDate?.toMillis?.() ?? null;
+  const optimisticStart = optimistic.startDate?.toMillis?.() ?? null;
+  const currentDue = current.dueDate?.toMillis?.() ?? null;
+  const optimisticDue = optimistic.dueDate?.toMillis?.() ?? null;
+  const currentUntil = current.recurrence?.until?.toMillis?.() ?? null;
+  const optimisticUntil = optimistic.recurrence?.until?.toMillis?.() ?? null;
+  const currentExceptions = Array.isArray(current.recurrence?.exceptions) ? current.recurrence.exceptions : [];
+  const optimisticExceptions = Array.isArray(optimistic.recurrence?.exceptions) ? optimistic.recurrence.exceptions : [];
+
+  return (
+    current.title === optimistic.title &&
+    (current.allDay ?? false) === (optimistic.allDay ?? false) &&
+    (current.workspaceId ?? null) === (optimistic.workspaceId ?? null) &&
+    (current.priority ?? null) === (optimistic.priority ?? null) &&
+    (current.calendarKind ?? "task") === (optimistic.calendarKind ?? "task") &&
+    currentStart === optimisticStart &&
+    currentDue === optimisticDue &&
+    (current.recurrence?.freq ?? null) === (optimistic.recurrence?.freq ?? null) &&
+    (current.recurrence?.interval ?? 1) === (optimistic.recurrence?.interval ?? 1) &&
+    currentUntil === optimisticUntil &&
+    currentExceptions.length === optimisticExceptions.length &&
+    currentExceptions.every((value, index) => value === optimisticExceptions[index])
+  );
+}
+
+function mergeTaskCollections(baseTasks: TaskDoc[], optimisticTaskById: Record<string, TaskDoc>, optimisticCreatedTasks: TaskDoc[]) {
+  const byId = new Map<string, TaskDoc>();
+
+  for (const task of baseTasks) {
+    if (!task.id) continue;
+    byId.set(task.id, task);
+  }
+
+  for (const [taskId, task] of Object.entries(optimisticTaskById)) {
+    byId.set(taskId, task);
+  }
+
+  for (const task of optimisticCreatedTasks) {
+    if (!task.id) continue;
+    byId.set(task.id, task);
+  }
+
+  return Array.from(byId.values());
+}
 
 function normalizeAgendaCalendarPreferences(raw: unknown): AgendaCalendarPreferences | null {
   if (!raw || typeof raw !== "object") return null;
@@ -174,7 +224,7 @@ export default function TasksPage() {
       return;
     }
 
-    await addDoc(collection(db, "tasks"), {
+    const createdRef = await addDoc(collection(db, "tasks"), {
       userId: user.uid,
       title: input.title,
       description: "",
@@ -198,11 +248,42 @@ export default function TasksPage() {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+
+    const optimisticCreatedTask: TaskDoc = {
+      id: createdRef.id,
+      userId: user.uid,
+      title: input.title,
+      description: "",
+      status: "todo",
+      allDay: normalizedWindow.allDay,
+      startDate: normalizedWindow.startDate,
+      dueDate: normalizedWindow.dueDate,
+      workspaceId: input.workspaceId ?? null,
+      priority: input.priority ?? null,
+      calendarKind: input.calendarKind ?? "task",
+      recurrence: input.recurrence
+        ? {
+            freq: input.recurrence.freq,
+            interval: input.recurrence.interval ?? 1,
+            until: toTimestampOrNull(input.recurrence.until ?? null),
+            exceptions: input.recurrence.exceptions ?? [],
+          }
+        : null,
+      favorite: false,
+      archived: false,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    };
+
+    setOptimisticCreatedAgendaTasks((prev) => [
+      ...prev.filter((task) => task.id !== createdRef.id),
+      optimisticCreatedTask,
+    ]);
   };
 
   const handleSkipOccurrence = async (taskId: string, occurrenceDate: string) => {
     const user = auth.currentUser;
-    const current = allTasks.find((t) => t.id === taskId);
+    const current = effectiveAllTasks.find((t) => t.id === taskId);
     if (!user || !current || current.userId !== user.uid) {
       setEditError("Impossible de modifier cet élément d’agenda.");
       return;
@@ -213,10 +294,40 @@ export default function TasksPage() {
       return;
     }
 
-    await updateDoc(doc(db, "tasks", taskId), {
-      "recurrence.exceptions": arrayUnion(occurrenceDate),
-      updatedAt: serverTimestamp(),
-    });
+    const currentRecurrence = current.recurrence;
+    const currentExceptions = Array.isArray(currentRecurrence?.exceptions) ? currentRecurrence.exceptions : [];
+    const nextExceptions = currentExceptions.includes(occurrenceDate)
+      ? currentExceptions
+      : [...currentExceptions, occurrenceDate];
+
+    setOptimisticAgendaTaskById((prev) => ({
+      ...prev,
+      [taskId]: {
+        ...current,
+        recurrence: {
+          freq: currentRecurrence.freq,
+          interval: currentRecurrence.interval ?? 1,
+          until: currentRecurrence.until ?? null,
+          exceptions: nextExceptions,
+        },
+        updatedAt: Timestamp.now(),
+      },
+    }));
+
+    try {
+      await updateDoc(doc(db, "tasks", taskId), {
+        "recurrence.exceptions": arrayUnion(occurrenceDate),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (e) {
+      setOptimisticAgendaTaskById((prev) => {
+        if (!prev[taskId]) return prev;
+        const next = { ...prev };
+        delete next[taskId];
+        return next;
+      });
+      throw e;
+    }
 
     setActionFeedback("Occurrence ignorée.");
     window.setTimeout(() => setActionFeedback(null), 1800);
@@ -234,7 +345,7 @@ export default function TasksPage() {
     recurrence?: CalendarRecurrenceInput;
   }) => {
     const user = auth.currentUser;
-    const current = allTasks.find((t) => t.id === input.taskId);
+    const current = effectiveAllTasks.find((t) => t.id === input.taskId);
     if (!user || !current || current.userId !== user.uid) {
       setEditError("Impossible de modifier cet élément d’agenda.");
       return;
@@ -250,7 +361,20 @@ export default function TasksPage() {
       return;
     }
 
-    await updateDoc(doc(db, "tasks", input.taskId), {
+    const nextRecurrence =
+      input.recurrence === undefined
+        ? (current.recurrence ?? null)
+        : input.recurrence
+          ? {
+              freq: input.recurrence.freq,
+              interval: input.recurrence.interval ?? 1,
+              until: normalizeDateForFirestore(input.recurrence.until ?? null),
+              exceptions: input.recurrence.exceptions ?? [],
+            }
+          : null;
+
+    const optimisticTask: TaskDoc = {
+      ...current,
       title: input.title ?? current.title,
       allDay: normalizedWindow.allDay,
       startDate: normalizedWindow.startDate,
@@ -258,19 +382,33 @@ export default function TasksPage() {
       workspaceId: input.workspaceId ?? current.workspaceId ?? null,
       priority: input.priority ?? current.priority ?? null,
       calendarKind: input.calendarKind ?? current.calendarKind ?? "task",
-      recurrence:
-        input.recurrence === undefined
-          ? (current.recurrence ?? null)
-          : input.recurrence
-            ? {
-                freq: input.recurrence.freq,
-                interval: input.recurrence.interval ?? 1,
-                until: normalizeDateForFirestore(input.recurrence.until ?? null),
-                exceptions: input.recurrence.exceptions ?? [],
-              }
-            : null,
-      updatedAt: serverTimestamp(),
-    });
+      recurrence: nextRecurrence,
+      updatedAt: Timestamp.now(),
+    };
+
+    setOptimisticAgendaTaskById((prev) => ({ ...prev, [input.taskId]: optimisticTask }));
+
+    try {
+      await updateDoc(doc(db, "tasks", input.taskId), {
+        title: optimisticTask.title,
+        allDay: optimisticTask.allDay,
+        startDate: optimisticTask.startDate ?? null,
+        dueDate: optimisticTask.dueDate ?? null,
+        workspaceId: optimisticTask.workspaceId ?? null,
+        priority: optimisticTask.priority ?? null,
+        calendarKind: optimisticTask.calendarKind ?? "task",
+        recurrence: optimisticTask.recurrence ?? null,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (e) {
+      setOptimisticAgendaTaskById((prev) => {
+        if (!prev[input.taskId]) return prev;
+        const next = { ...prev };
+        delete next[input.taskId];
+        return next;
+      });
+      throw e;
+    }
   };
 
   const formatStartDate = (ts: TaskDoc["startDate"] | null | undefined) => {
@@ -334,6 +472,8 @@ export default function TasksPage() {
   const [activeDragItem, setActiveDragItem] = useState<FolderDragData | null>(null);
   const [optimisticWorkspaceIdByTaskId, setOptimisticWorkspaceIdByTaskId] = useState<Record<string, string | null>>({});
   const [optimisticParentIdByWorkspaceId, setOptimisticParentIdByWorkspaceId] = useState<Record<string, string | null>>({});
+  const [optimisticAgendaTaskById, setOptimisticAgendaTaskById] = useState<Record<string, TaskDoc>>({});
+  const [optimisticCreatedAgendaTasks, setOptimisticCreatedAgendaTasks] = useState<TaskDoc[]>([]);
   const [pushStatus, setPushStatus] = useState<string | null>(null);
   const [enablingPush, setEnablingPush] = useState(false);
   const [calendarPrefsLocalFallback, setCalendarPrefsLocalFallback] = useState<AgendaCalendarPreferences | null>(null);
@@ -387,9 +527,19 @@ export default function TasksPage() {
     return Array.from(byId.values());
   }, [calendarWindowDueTasks, calendarWindowStartTasks]);
 
+  const optimisticAllTasks = useMemo(
+    () => mergeTaskCollections(allTasks, optimisticAgendaTaskById, optimisticCreatedAgendaTasks),
+    [allTasks, optimisticAgendaTaskById, optimisticCreatedAgendaTasks],
+  );
+
+  const optimisticCalendarWindowTasks = useMemo(
+    () => mergeTaskCollections(calendarWindowTasks, optimisticAgendaTaskById, optimisticCreatedAgendaTasks),
+    [calendarWindowTasks, optimisticAgendaTaskById, optimisticCreatedAgendaTasks],
+  );
+
   const effectiveCalendarWindowTasks = useMemo(
-    () => applyWorkspaceAssignmentOverrides(calendarWindowTasks, optimisticWorkspaceIdByTaskId),
-    [calendarWindowTasks, optimisticWorkspaceIdByTaskId],
+    () => applyWorkspaceAssignmentOverrides(optimisticCalendarWindowTasks, optimisticWorkspaceIdByTaskId),
+    [optimisticCalendarWindowTasks, optimisticWorkspaceIdByTaskId],
   );
 
   const suppressNextKanbanClickRef = useRef(false);
@@ -429,10 +579,34 @@ export default function TasksPage() {
     [optimisticParentIdByWorkspaceId, workspaces],
   );
   const effectiveAllTasks = useMemo(
-    () => applyWorkspaceAssignmentOverrides(allTasks, optimisticWorkspaceIdByTaskId),
-    [allTasks, optimisticWorkspaceIdByTaskId],
+    () => applyWorkspaceAssignmentOverrides(optimisticAllTasks, optimisticWorkspaceIdByTaskId),
+    [optimisticAllTasks, optimisticWorkspaceIdByTaskId],
   );
   const tasks = viewMode === "calendar" ? effectiveCalendarWindowTasks : effectiveAllTasks;
+
+  useEffect(() => {
+    setOptimisticAgendaTaskById((prev) => {
+      const entries = Object.entries(prev);
+      if (entries.length === 0) return prev;
+
+      const nextEntries = entries.filter(([taskId, optimisticTask]) => {
+        const current = allTasks.find((task) => task.id === taskId);
+        if (!current) return true;
+        return !taskMatchesSnapshot(current, optimisticTask);
+      });
+
+      if (nextEntries.length === entries.length) return prev;
+      return Object.fromEntries(nextEntries);
+    });
+  }, [allTasks]);
+
+  useEffect(() => {
+    setOptimisticCreatedAgendaTasks((prev) => {
+      if (prev.length === 0) return prev;
+      const next = prev.filter((task) => !allTasks.some((current) => current.id === task.id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [allTasks]);
 
   const workspaceNameById = useMemo(() => {
     const m = new Map<string, string>();

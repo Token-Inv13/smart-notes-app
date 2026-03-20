@@ -11,6 +11,7 @@ type CalendarRecurrenceInput = {
 export interface CalendarMutationArg {
   event: {
     id: string;
+    title: string;
     start: Date | null;
     end: Date | null;
     allDay: boolean;
@@ -77,10 +78,7 @@ export function useAgendaEventMutation({
 
           await onSkipOccurrence(taskId, instanceDate);
           await onCreateEvent({
-            title:
-              typeof arg.event.extendedProps.title === "string"
-                ? (arg.event.extendedProps.title as string)
-                : "Occurrence",
+            title: arg.event.title || "Occurrence",
             start,
             end,
             allDay: arg.event.allDay,
