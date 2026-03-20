@@ -422,19 +422,54 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
 
   const commitItemText = async (itemId: string) => {
     if (!todo) return;
+    const user = auth.currentUser;
+    if (!user || user.uid !== todo.userId || !todo.id) return;
     const current = todo.items ?? [];
     const item = current.find((x) => x.id === itemId);
     if (!item) return;
+    const trimmedText = item.text.trim();
 
-    if (!item.text.trim()) {
-      const next = current.filter((x) => x.id !== itemId);
+    if (!trimmedText) {
+      await removeItem(itemId);
+      return;
+    }
+
+    const next = current.map((x) => (x.id === itemId ? { ...x, text: trimmedText } : x));
+    const taskId = item.agendaPlan?.taskId ?? null;
+
+    if (!taskId) {
+      setTodo((prev) => (prev ? { ...prev, items: next } : prev));
       await persistTodo({ items: next });
       return;
     }
 
-    const next = current.map((x) => (x.id === itemId ? { ...x, text: item.text.trim() } : x));
-    setTodo((prev) => (prev ? { ...prev, items: next } : prev));
-    await persistTodo({ items: next });
+    setSaving(true);
+    setEditError(null);
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, "todos", todo.id), {
+        userId: todo.userId,
+        workspaceId: typeof todo.workspaceId === "string" ? todo.workspaceId : null,
+        title: todo.title,
+        completed: todo.completed === true,
+        favorite: todo.favorite === true,
+        items: next,
+        dueDate: todo.dueDate ?? null,
+        priority: todo.priority ?? null,
+        updatedAt: serverTimestamp(),
+      });
+      batch.update(doc(db, "tasks", taskId), {
+        title: trimmedText,
+        updatedAt: serverTimestamp(),
+      });
+      await batch.commit();
+      setTodo((prev) => (prev ? { ...prev, items: next } : prev));
+    } catch (e) {
+      console.error("Error syncing checklist item text to agenda task", e);
+      setEditError(toUserErrorMessage(e, "Erreur lors de la mise à jour."));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
