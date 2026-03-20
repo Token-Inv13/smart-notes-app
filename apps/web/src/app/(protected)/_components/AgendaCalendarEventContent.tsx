@@ -5,6 +5,7 @@ export function renderAgendaCalendarEventContent(arg: EventContentArg, isCompact
   const workspaceName = (arg.event.extendedProps.workspaceName as string) ?? "";
   const priority = ((arg.event.extendedProps.priority as Priority | "") ?? "") as "" | Priority;
   const calendarKind = (arg.event.extendedProps.calendarKind as "task" | "birthday" | null) ?? "task";
+  const source = (arg.event.extendedProps.source as "google-calendar" | "holiday" | undefined) ?? undefined;
   const hasConflict = arg.event.extendedProps.conflict === true;
   const conflictSource = (arg.event.extendedProps.conflictSource as "local" | "google" | "mix" | null) ?? null;
   const conflictScore = typeof arg.event.extendedProps.conflictScore === "number" ? arg.event.extendedProps.conflictScore : 0;
@@ -16,9 +17,10 @@ export function renderAgendaCalendarEventContent(arg: EventContentArg, isCompact
         ? "Mixte"
         : "Local";
 
-  const sourceLabel = arg.event.extendedProps.source === "google-calendar" ? "Google" : "Local";
+  const sourceLabel = source === "google-calendar" ? "Google" : source === "holiday" ? "Férié" : "Local";
   const fromChecklist = arg.event.extendedProps.sourceType === "checklist_item";
   const isBirthday = calendarKind === "birthday";
+  const isHoliday = source === "holiday";
   const isRecurring = Boolean(arg.event.extendedProps.recurrence?.freq);
   const start = arg.event.start;
   const end = arg.event.end;
@@ -32,6 +34,7 @@ export function renderAgendaCalendarEventContent(arg: EventContentArg, isCompact
     return (
       <div className="px-1 py-0.5 text-[11px] leading-tight text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]">
         <div className="flex items-center gap-1.5">
+          {isHoliday && <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-slate-200" aria-hidden />}
           {isBirthday && <span className="inline-block shrink-0 text-[10px]" aria-hidden>🎂</span>}
           {fromChecklist && <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-200" aria-hidden />}
           {isRecurring && <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-sky-200" aria-hidden />}
@@ -47,7 +50,10 @@ export function renderAgendaCalendarEventContent(arg: EventContentArg, isCompact
       <div className="font-semibold truncate">{arg.event.title}</div>
       {compactPresentation ? (
         <div className="mt-0.5 inline-flex items-center gap-1 text-[9px] text-white/90">
-          <span className="rounded-full bg-black/25 px-1.5 py-0.5 font-semibold uppercase tracking-wide">{sourceLabel === "Google" ? "G" : "L"}</span>
+          <span className="rounded-full bg-black/25 px-1.5 py-0.5 font-semibold uppercase tracking-wide">
+            {sourceLabel === "Google" ? "G" : sourceLabel === "Férié" ? "F" : "L"}
+          </span>
+          {isHoliday && <span className="rounded-full bg-slate-500/85 px-1.5 py-0.5 font-semibold">Férié</span>}
           {isBirthday && <span className="rounded-full bg-pink-500/85 px-1.5 py-0.5 font-semibold">🎂</span>}
           {isRecurring && <span className="rounded-full bg-sky-500/85 px-1.5 py-0.5 font-semibold">Rec</span>}
           {fromChecklist && <span className="rounded-full bg-emerald-500/80 px-1.5 py-0.5 font-semibold">Checklist</span>}
@@ -58,6 +64,9 @@ export function renderAgendaCalendarEventContent(arg: EventContentArg, isCompact
           <div className="truncate text-white/90">{workspaceName}</div>
           <div className="mt-0.5 inline-flex flex-wrap items-center gap-1">
             <span className="rounded-full bg-black/25 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white/95">{sourceLabel}</span>
+            {isHoliday && (
+              <span className="rounded-full bg-slate-500/85 px-1.5 py-0.5 text-[9px] font-semibold text-white">Jour férié</span>
+            )}
             {isBirthday && (
               <span className="rounded-full bg-pink-500/85 px-1.5 py-0.5 text-[9px] font-semibold text-white">🎂 Anniversaire</span>
             )}

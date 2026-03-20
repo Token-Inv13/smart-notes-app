@@ -35,6 +35,9 @@ function getPlanningEventMeta(event: EventInput) {
   const workspaceName =
     typeof event.extendedProps?.workspaceName === "string" ? event.extendedProps.workspaceName : "Sans dossier";
   const taskId = typeof event.extendedProps?.taskId === "string" ? event.extendedProps.taskId : "";
+  const source = event.extendedProps?.source === "google-calendar" || event.extendedProps?.source === "holiday"
+    ? event.extendedProps.source
+    : "local";
   const conflict = event.extendedProps?.conflict === true;
   const conflictSource = (event.extendedProps?.conflictSource as "local" | "google" | "mix" | null) ?? null;
   const conflictScore = typeof event.extendedProps?.conflictScore === "number" ? event.extendedProps.conflictScore : 0;
@@ -42,10 +45,11 @@ function getPlanningEventMeta(event: EventInput) {
   return {
     workspaceName,
     taskId,
+    source,
     conflict,
     conflictSource,
     conflictScore,
-    isExternal: !taskId,
+    isExternal: source !== "local" || !taskId,
   };
 }
 
@@ -169,7 +173,7 @@ export default function AgendaCalendarPlanningView({
                     <div className="flex items-start gap-2 rounded-md border border-border bg-background px-2 py-2">
                       {meta.isExternal ? (
                         <span className="mt-1 inline-flex h-4 min-w-4 items-center justify-center rounded border border-border px-1 text-[10px] text-muted-foreground">
-                          G
+                          {meta.source === "holiday" ? "F" : "G"}
                         </span>
                       ) : (
                         <input
@@ -190,7 +194,8 @@ export default function AgendaCalendarPlanningView({
                         <div className="flex items-center justify-between gap-2">
                           <div className="text-sm font-medium truncate">{event.title}</div>
                           <div className="inline-flex items-center gap-1">
-                            {meta.isExternal && <span className="text-[10px] text-blue-600">Google</span>}
+                            {meta.source === "google-calendar" && <span className="text-[10px] text-blue-600">Google</span>}
+                            {meta.source === "holiday" && <span className="text-[10px] text-slate-600">Férié</span>}
                             {meta.conflict && (
                               <span className="text-[10px] text-red-600">
                                 {formatConflictBadge(meta.conflictSource, meta.conflictScore)}

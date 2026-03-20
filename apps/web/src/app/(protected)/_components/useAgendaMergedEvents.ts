@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { EventInput } from "@fullcalendar/core";
 import { priorityConflictWeight } from "./agendaCalendarUtils";
+import { buildFrancePublicHolidayEvents } from "@/lib/agenda/francePublicHolidays";
 
 type GoogleCalendarEvent = {
   id: string;
@@ -23,8 +24,9 @@ type CalendarData = {
 export function useAgendaMergedEvents(params: {
   calendarData: CalendarData;
   googleCalendarEvents: GoogleCalendarEvent[];
+  visibleRange: { start: Date; end: Date } | null;
 }) {
-  const { calendarData, googleCalendarEvents } = params;
+  const { calendarData, googleCalendarEvents, visibleRange } = params;
 
   const googleCalendarEventInputs = useMemo(() => {
     return googleCalendarEvents
@@ -53,8 +55,13 @@ export function useAgendaMergedEvents(params: {
       .filter((event): event is EventInput => Boolean(event));
   }, [googleCalendarEvents]);
 
+  const holidayEventInputs = useMemo(() => {
+    if (!visibleRange) return [];
+    return buildFrancePublicHolidayEvents(visibleRange);
+  }, [visibleRange]);
+
   const agendaEvents = useMemo(() => {
-    const base = [...calendarData.events, ...googleCalendarEventInputs].sort((a, b) => {
+    const base = [...calendarData.events, ...googleCalendarEventInputs, ...holidayEventInputs].sort((a, b) => {
       const aStart = a.start instanceof Date ? a.start.getTime() : 0;
       const bStart = b.start instanceof Date ? b.start.getTime() : 0;
       return aStart - bStart;
@@ -81,8 +88,19 @@ export function useAgendaMergedEvents(params: {
         if (!(right?.start instanceof Date) || !(right?.end instanceof Date)) continue;
         if (right.start.getTime() >= left.end.getTime()) break;
 
-        const leftSource = left.extendedProps?.source === "google-calendar" ? "google" : "local";
-        const rightSource = right.extendedProps?.source === "google-calendar" ? "google" : "local";
+        const leftSource =
+          left.extendedProps?.source === "google-calendar"
+            ? "google"
+            : left.extendedProps?.source === "holiday"
+              ? "holiday"
+              : "local";
+        const rightSource =
+          right.extendedProps?.source === "google-calendar"
+            ? "google"
+            : right.extendedProps?.source === "holiday"
+              ? "holiday"
+              : "local";
+        if (leftSource === "holiday" || rightSource === "holiday") continue;
         const mixedSource = leftSource !== rightSource;
 
         bumpConflict(left, leftSource, mixedSource);
@@ -97,6 +115,7 @@ export function useAgendaMergedEvents(params: {
       const classNames = Array.isArray(event.classNames) ? [...event.classNames] : [];
       if (hasConflict) classNames.push("agenda-event-conflict");
       if (event.extendedProps?.source === "google-calendar") classNames.push("agenda-source-google");
+      else if (event.extendedProps?.source === "holiday") classNames.push("agenda-source-holiday");
       else classNames.push("agenda-source-local");
       return {
         ...event,
@@ -109,7 +128,7 @@ export function useAgendaMergedEvents(params: {
         },
       } as EventInput;
     });
-  }, [calendarData.events, googleCalendarEventInputs]);
+  }, [calendarData.events, googleCalendarEventInputs, holidayEventInputs]);
 
   const agendaConflictCount = useMemo(
     () => agendaEvents.reduce((acc, event) => (event.extendedProps?.conflict === true ? acc + 1 : acc), 0),

@@ -626,6 +626,7 @@ export default function AgendaCalendar({
   const { agendaEvents, isCompactDensity } = useAgendaMergedEvents({
     calendarData,
     googleCalendarEvents,
+    visibleRange: effectiveVisibleRange,
   });
   const hasActiveAgendaFilters =
     showRecurringOnly ||

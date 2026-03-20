@@ -92,7 +92,7 @@ export function useAgendaDraftManager({
   }, []);
 
   const openDraftFromEvent = useCallback((arg: EventClickArg) => {
-    if (arg.event.extendedProps.source === "google-calendar") {
+    if (arg.event.extendedProps.source === "google-calendar" || arg.event.extendedProps.source === "holiday") {
       return;
     }
 
