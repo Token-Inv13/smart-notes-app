@@ -61,7 +61,7 @@ type WorkspaceFilter = "all" | string;
 type TaskViewMode = "list" | "grid" | "kanban" | "calendar";
 const AGENDA_GRID_ENABLED = FEATURE_FLAGS.agendaGridEnabled;
 type CalendarRecurrenceInput = {
-  freq: "daily" | "weekly" | "monthly";
+  freq: "daily" | "weekly" | "monthly" | "yearly";
   interval?: number;
   until?: Date | null;
   exceptions?: string[];

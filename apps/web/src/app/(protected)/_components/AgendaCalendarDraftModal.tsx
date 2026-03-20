@@ -43,8 +43,8 @@ export default function AgendaCalendarDraftModal({
   useEffect(() => {
     const hasDraft = Boolean(draft);
     if (hasDraft && !hadDraftRef.current) {
-      setClosing(false);
       window.requestAnimationFrame(() => {
+        setClosing(false);
         titleInputRef.current?.focus();
         titleInputRef.current?.select();
       });
@@ -185,6 +185,7 @@ export default function AgendaCalendarDraftModal({
             <option value="daily">Chaque jour</option>
             <option value="weekly">Chaque semaine</option>
             <option value="monthly">Chaque mois</option>
+            <option value="yearly">Chaque année</option>
           </select>
 
           <input

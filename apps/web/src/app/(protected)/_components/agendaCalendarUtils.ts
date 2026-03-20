@@ -98,7 +98,8 @@ export function addRecurrenceStep(base: Date, freq: TaskRecurrenceFreq, interval
   const next = new Date(base);
   if (freq === "daily") next.setDate(next.getDate() + interval);
   else if (freq === "weekly") next.setDate(next.getDate() + interval * 7);
-  else next.setMonth(next.getMonth() + interval);
+  else if (freq === "monthly") next.setMonth(next.getMonth() + interval);
+  else next.setFullYear(next.getFullYear() + interval);
   return next;
 }
 

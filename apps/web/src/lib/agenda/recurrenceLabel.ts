@@ -4,5 +4,6 @@ export function formatTaskRecurrenceLabel(recurrence: TaskDoc["recurrence"] | nu
   if (!recurrence?.freq) return "Aucune";
   if (recurrence.freq === "daily") return "Chaque jour";
   if (recurrence.freq === "weekly") return "Chaque semaine";
-  return "Chaque mois";
+  if (recurrence.freq === "monthly") return "Chaque mois";
+  return "Chaque année";
 }

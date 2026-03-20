@@ -13,7 +13,7 @@ type CreateEventInput = {
   workspaceId?: string | null;
   priority?: Priority | null;
   recurrence?: {
-    freq: "daily" | "weekly" | "monthly";
+    freq: "daily" | "weekly" | "monthly" | "yearly";
     interval?: number;
     until?: Date | null;
     exceptions?: string[];

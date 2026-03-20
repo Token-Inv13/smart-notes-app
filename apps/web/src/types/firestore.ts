@@ -1,7 +1,7 @@
 import type { FieldValue, Timestamp } from 'firebase/firestore';
 
 export type Priority = 'low' | 'medium' | 'high';
-export type TaskRecurrenceFreq = 'daily' | 'weekly' | 'monthly';
+export type TaskRecurrenceFreq = 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 export interface TaskRecurrenceRule {
   freq: TaskRecurrenceFreq;

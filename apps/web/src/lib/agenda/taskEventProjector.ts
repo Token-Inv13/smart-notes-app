@@ -1,4 +1,4 @@
-import type { TaskDoc } from "@/types/firestore";
+import type { TaskDoc, TaskRecurrenceFreq } from "@/types/firestore";
 
 export type TaskProjectionReason =
   | "missing_task_id"
@@ -34,11 +34,12 @@ function overlapsRange(start: Date, end: Date, rangeStart: Date, rangeEnd: Date)
   return end.getTime() > rangeStart.getTime() && start.getTime() < rangeEnd.getTime();
 }
 
-function addRecurrenceStep(base: Date, freq: "daily" | "weekly" | "monthly", interval: number) {
+function addRecurrenceStep(base: Date, freq: TaskRecurrenceFreq, interval: number) {
   const next = new Date(base);
   if (freq === "daily") next.setDate(next.getDate() + interval);
   else if (freq === "weekly") next.setDate(next.getDate() + interval * 7);
-  else next.setMonth(next.getMonth() + interval);
+  else if (freq === "monthly") next.setMonth(next.getMonth() + interval);
+  else next.setFullYear(next.getFullYear() + interval);
   return next;
 }
 
