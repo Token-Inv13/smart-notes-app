@@ -69,6 +69,16 @@ function formatReminderDate(iso: string | null | undefined): string {
   return formatDateTimeFr(date);
 }
 
+function getReminderRestrictionMessage(task: TaskDoc | null | undefined): string | null {
+  if (task?.recurrence?.freq) {
+    return "Les rappels ne sont pas pris en charge pour les tâches récurrentes.";
+  }
+  if (task?.allDay) {
+    return "Les rappels sont disponibles uniquement pour les tâches avec heure.";
+  }
+  return null;
+}
+
 function priorityLabel(p?: TaskDoc["priority"] | null) {
   if (p === "high") return "Haute";
   if (p === "medium") return "Moyenne";
@@ -217,7 +227,9 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       setTaskReminders(reminders);
 
       if (!opts?.keepDraft) {
-        if (reminders[0]?.reminderTime) {
+        if (!remindersSupported) {
+          setReminderDraft("");
+        } else if (reminders[0]?.reminderTime) {
           setReminderDraft(formatIsoForDateTimeInput(reminders[0].reminderTime));
         } else if (task.dueDate) {
           setReminderDraft(formatTimestampForInput(task.dueDate));
@@ -469,6 +481,10 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     };
   }, [task?.sourceTodoId, task?.sourceTodoItemId, task?.sourceType, task?.title, task?.userId]);
 
+  const dueLabel = useMemo(() => formatFrDateTime(task?.dueDate ?? null), [task?.dueDate]);
+  const startLabel = useMemo(() => formatFrDate(task?.startDate ?? null), [task?.startDate]);
+  const reminderRestrictionMessage = useMemo(() => getReminderRestrictionMessage(task), [task]);
+  const remindersSupported = !reminderRestrictionMessage;
   useEffect(() => {
     if (!isPro) {
       setTaskReminders([]);
@@ -477,10 +493,8 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     }
     void loadTaskReminders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPro, task?.id]);
+  }, [isPro, remindersSupported, task?.id]);
 
-  const dueLabel = useMemo(() => formatFrDateTime(task?.dueDate ?? null), [task?.dueDate]);
-  const startLabel = useMemo(() => formatFrDate(task?.startDate ?? null), [task?.startDate]);
   const checklistSourceHref = useMemo(() => {
     if (task?.sourceType !== "checklist_item" || !task.sourceTodoId) return null;
     const searchParams = new URLSearchParams();
@@ -532,6 +546,10 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
   const handleSnooze = async (preset: '10m' | '1h' | 'tomorrow') => {
     if (!task?.id) return;
     if (!isPro) return;
+    if (!remindersSupported) {
+      setEditError(reminderRestrictionMessage ?? "Les rappels ne sont pas disponibles pour cet élément d’agenda.");
+      return;
+    }
 
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) {
@@ -595,6 +613,10 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
   const handleAddReminder = async () => {
     if (!task?.id) return;
     if (!isPro) return;
+    if (!remindersSupported) {
+      setEditError(reminderRestrictionMessage ?? "Les rappels ne sont pas disponibles pour cet élément d’agenda.");
+      return;
+    }
 
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) {
@@ -780,7 +802,19 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
           const existingDocs = remindersSnap.docs;
 
-          if (validation.data.dueDate) {
+          const remindersAllowedForTask = !task.recurrence?.freq && !explicitAllDay;
+
+          if (!remindersAllowedForTask) {
+            if (existingDocs.length > 0) {
+              const batch = writeBatch(db);
+              existingDocs.forEach((reminderDoc) => {
+                batch.delete(reminderDoc.ref);
+              });
+              await batch.commit();
+              setReminderFeedback("Rappels supprimés: cette tâche ne prend pas en charge les rappels.");
+            }
+            setReminderDraft("");
+          } else if (validation.data.dueDate) {
             const reminderDate = new Date(validation.data.dueDate);
             if (!Number.isNaN(reminderDate.getTime())) {
               const primary = existingDocs.find((d) => {
@@ -1118,7 +1152,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                   </div>
                   <div>
                     <span className="font-medium">Date de fin / échéance:</span> {dueLabel || "—"}
-                    {isPro && dueLabel && (
+                    {isPro && dueLabel && remindersSupported && (
                       <details className="mt-2">
                         <summary className="cursor-pointer text-sm">Rappeler plus tard</summary>
                         <div className="mt-2 flex flex-wrap gap-2">
@@ -1163,40 +1197,44 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                 </div>
 
                 {isPro && (
-                  <div className="rounded-md border border-border/70 bg-background/40 p-3 space-y-2">
-                    <div className="text-sm font-medium">Rappels</div>
+                    <div className="rounded-md border border-border/70 bg-background/40 p-3 space-y-2">
+                      <div className="text-sm font-medium">Rappels</div>
 
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
-                      <div className="space-y-1 flex-1">
-                        <label className="text-xs text-muted-foreground" htmlFor="task-reminder-draft">
-                          Date et heure du rappel
-                        </label>
-                        <input
-                          id="task-reminder-draft"
-                          type="datetime-local"
-                          value={reminderDraft}
-                          onChange={(e) => setReminderDraft(e.target.value)}
-                          placeholder={DATETIME_PLACEHOLDER_FR}
-                          title={`Format: ${DATETIME_PLACEHOLDER_FR}`}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              void handleAddReminder();
-                            }
-                          }}
-                          className="w-full min-w-[16rem] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                          disabled={addingReminder || Boolean(busyReminderId) || saving}
-                        />
+                    {reminderRestrictionMessage ? (
+                      <div className="text-xs text-muted-foreground">{reminderRestrictionMessage}</div>
+                    ) : (
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
+                        <div className="space-y-1 flex-1">
+                          <label className="text-xs text-muted-foreground" htmlFor="task-reminder-draft">
+                            Date et heure du rappel
+                          </label>
+                          <input
+                            id="task-reminder-draft"
+                            type="datetime-local"
+                            value={reminderDraft}
+                            onChange={(e) => setReminderDraft(e.target.value)}
+                            placeholder={DATETIME_PLACEHOLDER_FR}
+                            title={`Format: ${DATETIME_PLACEHOLDER_FR}`}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                void handleAddReminder();
+                              }
+                            }}
+                            className="w-full min-w-[16rem] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+                            disabled={addingReminder || Boolean(busyReminderId) || saving}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void handleAddReminder()}
+                          disabled={addingReminder || !reminderDraft || Boolean(busyReminderId) || saving}
+                          className="h-10 px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
+                        >
+                          {addingReminder ? "Ajout…" : "Ajouter"}
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => void handleAddReminder()}
-                        disabled={addingReminder || !reminderDraft || Boolean(busyReminderId) || saving}
-                        className="h-10 px-3 py-2 rounded-md border border-input text-sm disabled:opacity-50"
-                      >
-                        {addingReminder ? "Ajout…" : "Ajouter"}
-                      </button>
-                    </div>
+                    )}
 
                     {remindersLoading ? (
                       <div className="text-xs text-muted-foreground">Chargement des rappels…</div>

@@ -115,7 +115,6 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
     } catch {
       // ignore
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -283,7 +282,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
         }
       }
 
-      if (isPro && validation.data.dueDate) {
+      if (isPro && validation.data.dueDate && !explicitAllDay) {
         const reminderDate = new Date(validation.data.dueDate);
         if (!Number.isNaN(reminderDate.getTime())) {
           try {
