@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
-import { deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { deleteDoc, doc, getDoc, serverTimestamp, updateDoc, writeBatch } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import {
   cleanupChecklistAgendaTasks,
@@ -313,6 +313,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
     setEditError(null);
 
     try {
+      const batch = writeBatch(db);
       const agendaPlan = await scheduleChecklistItem({
         db,
         userId: user.uid,
@@ -322,6 +323,7 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
         priority: todo.priority ?? null,
         item,
         schedule,
+        batch,
       });
 
       const nextItems = (todo.items ?? []).map((currentItem) =>
@@ -333,7 +335,20 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
           : currentItem,
       );
 
-      await persistTodo({ items: nextItems });
+      batch.update(doc(db, "todos", todo.id), {
+        userId: todo.userId,
+        workspaceId: typeof todo.workspaceId === "string" ? todo.workspaceId : null,
+        title: todo.title,
+        completed: todo.completed === true,
+        favorite: todo.favorite === true,
+        items: nextItems,
+        dueDate: todo.dueDate ?? null,
+        priority: todo.priority ?? null,
+        updatedAt: serverTimestamp(),
+      });
+
+      await batch.commit();
+      setTodo((prev) => (prev ? { ...prev, items: nextItems } : prev));
       closePlanning();
     } catch (e) {
       console.error("Error scheduling checklist item", e);
