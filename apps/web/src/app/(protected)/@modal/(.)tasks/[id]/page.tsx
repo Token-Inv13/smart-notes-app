@@ -11,6 +11,7 @@ import {
   query,
   serverTimestamp,
   updateDoc,
+  writeBatch,
   where,
 } from "firebase/firestore";
 import { useRouter } from "next/navigation";
@@ -909,7 +910,21 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     setEditError(null);
 
     try {
-      await deleteDoc(doc(db, "tasks", task.id));
+      const remindersRef = collection(db, "taskReminders");
+      const remindersSnap = await getDocs(
+        query(
+          remindersRef,
+          where("userId", "==", user.uid),
+          where("taskId", "==", task.id),
+        ),
+      );
+
+      const batch = writeBatch(db);
+      for (const reminderDoc of remindersSnap.docs) {
+        batch.delete(reminderDoc.ref);
+      }
+      batch.delete(doc(db, "tasks", task.id));
+      await batch.commit();
       router.back();
     } catch (e) {
       console.error("Error deleting task (modal)", e);
