@@ -1097,7 +1097,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
                       </select>
                     </div>
 
-                    <div className="space-y-1">
+                    <div className="min-h-0 space-y-1 overflow-hidden">
                       <label className="sr-only" htmlFor="note-modal-content">
                         Contenu
                       </label>
@@ -1113,7 +1113,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
                           setDirty(snap !== lastSavedSnapshotRef.current);
                         }}
                         placeholder="Écris ici…"
-                        minHeightClassName="min-h-[240px] max-h-[55svh] overflow-y-auto md:max-h-[58vh]"
+                        minHeightClassName="h-[45svh] min-h-[240px] max-h-[58vh] overflow-y-auto"
                         enableDictation
                       />
                     </div>
