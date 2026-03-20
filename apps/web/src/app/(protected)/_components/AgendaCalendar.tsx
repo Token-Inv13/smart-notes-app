@@ -35,6 +35,21 @@ import type { TaskCalendarKind, TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceF
 type CalendarViewMode = "dayGridMonth" | "timeGridWeek" | "timeGridDay";
 type AgendaDisplayMode = "calendar" | "planning";
 
+const MONTH_OPTIONS = [
+  { value: 0, label: "Janvier" },
+  { value: 1, label: "Fevrier" },
+  { value: 2, label: "Mars" },
+  { value: 3, label: "Avril" },
+  { value: 4, label: "Mai" },
+  { value: 5, label: "Juin" },
+  { value: 6, label: "Juillet" },
+  { value: 7, label: "Aout" },
+  { value: 8, label: "Septembre" },
+  { value: 9, label: "Octobre" },
+  { value: 10, label: "Novembre" },
+  { value: 11, label: "Decembre" },
+] as const;
+
 export type AgendaCalendarPreferences = {
   viewMode: CalendarViewMode;
   displayMode: AgendaDisplayMode;
@@ -121,6 +136,20 @@ function startOfWeekMonday(date: Date) {
   const offset = (day + 6) % 7;
   dayStart.setDate(dayStart.getDate() - offset);
   return dayStart;
+}
+
+function clampDateToMonth(year: number, month: number, referenceDate: Date) {
+  const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
+  const safeDay = Math.min(referenceDate.getDate(), lastDayOfMonth);
+  return new Date(
+    year,
+    month,
+    safeDay,
+    referenceDate.getHours(),
+    referenceDate.getMinutes(),
+    referenceDate.getSeconds(),
+    referenceDate.getMilliseconds(),
+  );
 }
 
 function computePlanningWindow(anchorDate: Date, mode: CalendarViewMode) {
@@ -268,6 +297,16 @@ export default function AgendaCalendar({
     const hour = Math.max(6, Math.min(22, now.getHours() - 1));
     return `${String(hour).padStart(2, "0")}:00:00`;
   }, []);
+
+  const navigationAnchorDate = useMemo(() => {
+    if (displayMode === "planning") return planningAnchorDate;
+    return visibleRange?.start ?? initialAnchorDate ?? new Date();
+  }, [displayMode, initialAnchorDate, planningAnchorDate, visibleRange]);
+
+  const navigationYearOptions = useMemo(() => {
+    const currentYear = navigationAnchorDate.getFullYear();
+    return Array.from({ length: 15 }, (_, index) => currentYear - 5 + index);
+  }, [navigationAnchorDate]);
 
   const planningWindow = useMemo(
     () => computePlanningWindow(planningAnchorDate, viewMode),
@@ -595,6 +634,33 @@ export default function AgendaCalendar({
     }
   };
 
+  const jumpToAnchorDate = useCallback(
+    (nextDate: Date) => {
+      triggerViewTransition();
+      if (displayMode === "planning") {
+        setPlanningAnchorDate(nextDate);
+        return;
+      }
+
+      calendarRef.current?.getApi().gotoDate(nextDate);
+    },
+    [displayMode, triggerViewTransition],
+  );
+
+  const updateNavigationMonth = useCallback(
+    (month: number) => {
+      jumpToAnchorDate(clampDateToMonth(navigationAnchorDate.getFullYear(), month, navigationAnchorDate));
+    },
+    [jumpToAnchorDate, navigationAnchorDate],
+  );
+
+  const updateNavigationYear = useCallback(
+    (year: number) => {
+      jumpToAnchorDate(clampDateToMonth(year, navigationAnchorDate.getMonth(), navigationAnchorDate));
+    },
+    [jumpToAnchorDate, navigationAnchorDate],
+  );
+
   const onDatesSet = (arg: DatesSetArg) => {
     const currentMode: CalendarViewMode =
       arg.view.type === "dayGridMonth" || arg.view.type === "timeGridWeek" || arg.view.type === "timeGridDay"
@@ -693,6 +759,32 @@ export default function AgendaCalendar({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            <div className="hidden sm:flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1">
+              <select
+                value={navigationAnchorDate.getMonth()}
+                onChange={(event) => updateNavigationMonth(Number(event.target.value))}
+                className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                aria-label="Choisir le mois de l’agenda"
+              >
+                {MONTH_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={navigationAnchorDate.getFullYear()}
+                onChange={(event) => updateNavigationYear(Number(event.target.value))}
+                className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                aria-label="Choisir l’annee de l’agenda"
+              >
+                {navigationYearOptions.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="inline-flex items-center rounded-md border border-border bg-background/90 shadow-sm overflow-hidden">
               {displayMode === "calendar" ? (
                 <>
@@ -758,6 +850,36 @@ export default function AgendaCalendar({
               <option value="dayGridMonth">Mois</option>
               <option value="timeGridWeek">Semaine</option>
               <option value="timeGridDay">Jour</option>
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className="text-[11px] text-muted-foreground">Mois</span>
+            <select
+              value={navigationAnchorDate.getMonth()}
+              onChange={(event) => updateNavigationMonth(Number(event.target.value))}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+              aria-label="Choisir le mois de l’agenda"
+            >
+              {MONTH_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className="text-[11px] text-muted-foreground">Annee</span>
+            <select
+              value={navigationAnchorDate.getFullYear()}
+              onChange={(event) => updateNavigationYear(Number(event.target.value))}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+              aria-label="Choisir l’annee de l’agenda"
+            >
+              {navigationYearOptions.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
             </select>
           </label>
         </div>
