@@ -87,7 +87,7 @@
 
         <nav class="nav" aria-label="Navigation principale">
           <a href="#features">Fonctionnalités</a>
-          <a href="#collaboration">Collaboration</a>
+          <a href="#assistant">Assistant</a>
           <a href="#pricing">Tarifs</a>
           <a href="#faq">FAQ</a>
         </nav>
@@ -119,15 +119,15 @@
       <section class="hero" aria-label="Hero TaskNote">
         <div class="container hero-layout">
           <div class="hero-copy">
-            <p class="eyebrow">Organisation premium, sans friction</p>
-            <h1>Le copilote d’organisation pour entrepreneurs solo.</h1>
+            <p class="eyebrow">Notes • tâches • agenda • checklists • rappels</p>
+            <h1>Tout ton quotidien organisé dans une seule app claire.</h1>
             <p class="hero-subtitle">
-              Tâches + agenda cohérents, saisie ultra-rapide, collaboration simple. Tout au même endroit.
+              TaskNote réunit tes notes, tes tâches, ton agenda, tes checklists et tes rappels pour que tu saches quoi faire, quand, sans t’éparpiller.
             </p>
             <ul class="hero-bullets">
-              <li>Agenda fiable (timezone &amp; all-day corrects)</li>
-              <li>Favoris agenda pour ce qui compte</li>
-              <li>Invitations workspace en 1 clic</li>
+              <li>Capture une idée, transforme-la en tâche ou checklist</li>
+              <li>Planifie dans l’agenda et ajoute des rappels si besoin</li>
+              <li>Retrouve l’essentiel sur desktop, mobile et en PWA</li>
             </ul>
             <div class="hero-cta">
               <a
@@ -147,23 +147,23 @@
 
           <div class="hero-visual" aria-label="Mock interface TaskNote">
             <article class="mock-card mock-card--main">
-              <p class="mock-title">Agenda semaine</p>
+              <p class="mock-title">Semaine claire</p>
               <div class="mock-grid">
-                <span class="mock-slot">Lun 09:00 — Revue pipeline</span>
-                <span class="mock-slot">Mar 14:00 — Livraison client</span>
+                <span class="mock-slot">Lun 09:00 — Appel client</span>
+                <span class="mock-slot">Mar 14:00 — Livraison devis</span>
                 <span class="mock-slot">Mer all-day — Admin</span>
                 <span class="mock-slot">Jeu 11:30 — Focus produit</span>
               </div>
             </article>
             <article class="mock-card mock-card--accent">
-              <p class="mock-title">Favoris agenda</p>
-              <p class="mock-line">3 priorités visibles immédiatement</p>
-              <p class="mock-line">Accès direct au bon jour</p>
+              <p class="mock-title">Notes → tâches</p>
+              <p class="mock-line">Préparer devis client</p>
+              <p class="mock-line">→ tâche planifiée mardi 14:00</p>
             </article>
             <article class="mock-card mock-card--light">
-              <p class="mock-title">Capture rapide</p>
-              <p class="mock-line">"Préparer devis + call mardi"</p>
-              <p class="mock-line">→ tâche planifiée en 1 action</p>
+              <p class="mock-title">Checklist + rappel</p>
+              <p class="mock-line">Lancer facture</p>
+              <p class="mock-line">Relancer vendredi 09:00</p>
             </article>
           </div>
         </div>
@@ -178,17 +178,17 @@
             <article class="tour-step">
               <p class="tour-index">01</p>
               <h3>Capture</h3>
-              <p>Note une idée, transforme-la en tâche/checklist, puis planifie sans friction.</p>
+              <p>Écris une note, une tâche ou une checklist dès que quelque chose arrive.</p>
             </article>
             <article class="tour-step">
               <p class="tour-index">02</p>
-              <h3>Priorise</h3>
-              <p>Marque les éléments clés en favoris agenda pour ne jamais perdre le fil.</p>
+              <h3>Planifie</h3>
+              <p>Ajoute une échéance, place l’élément dans l’agenda, puis active un rappel si nécessaire.</p>
             </article>
             <article class="tour-step">
               <p class="tour-index">03</p>
               <h3>Exécute</h3>
-              <p>Travaille en solo ou à plusieurs avec un cadre simple, stable et lisible.</p>
+              <p>Retrouve ce qui compte au bon moment, sur desktop, mobile ou en PWA.</p>
             </article>
           </div>
         </div>
@@ -196,48 +196,48 @@
 
       <section class="section section--soft" id="features" aria-label="Fonctionnalités">
         <div class="container feature-stack">
+          <article class="feature-panel" id="notes">
+            <h2>Des notes utiles, pas des brouillons oubliés</h2>
+            <ul>
+              <li>Prends une note courte ou longue sans casser ton flux</li>
+              <li>Retrouve tes contenus par dossier et favoris</li>
+              <li>Passe du texte brut à l’action en quelques clics</li>
+            </ul>
+          </article>
+
           <article class="feature-panel" id="agenda">
-            <h2>Un agenda cohérent et fiable</h2>
+            <h2>Tâches et agenda enfin cohérents</h2>
             <ul>
-              <li>Création par clic sur un créneau</li>
-              <li>All-day et heures sans décalage</li>
-              <li>Option Google Calendar (si connecté)</li>
+              <li>Crée une tâche et planifie-la directement dans ton agenda</li>
+              <li>All-day, horaires et navigation calendrier fiables</li>
+              <li>Option Google Calendar si tu veux garder ton workflow actuel</li>
             </ul>
           </article>
 
-          <article class="feature-panel" id="favorites">
-            <h2>Favoris agenda : tes priorités visibles immédiatement</h2>
+          <article class="feature-panel" id="checklists">
+            <h2>Des checklists qui restent vraiment utiles</h2>
             <ul>
-              <li>Marque une tâche planifiée en favori</li>
-              <li>Retrouve l’essentiel sur le dashboard</li>
-              <li>Accès direct au calendrier au bon jour</li>
+              <li>Découpe un projet en étapes simples et cochables</li>
+              <li>Planifie un item précis si tu dois lui donner une vraie place</li>
+              <li>Garde une vue claire de ce qui est fait et de ce qui reste</li>
             </ul>
           </article>
 
-          <article class="feature-panel" id="capture">
-            <h2>Saisie rapide et intelligente</h2>
+          <article class="feature-panel" id="reminders">
+            <h2>Des rappels quand c’est nécessaire, pas partout</h2>
             <ul>
-              <li>Transformer une note en tâches/checklists</li>
-              <li>Entrée rapide au clavier</li>
-              <li>Moins de clics, plus d’action</li>
+              <li>Ajoute un rappel sur les tâches qui en ont vraiment besoin</li>
+              <li>Retrouve tes échéances sans te noyer dans le bruit</li>
+              <li>Conçu pour un usage quotidien simple et lisible</li>
             </ul>
           </article>
 
-          <article class="feature-panel" id="collaboration">
-            <h2>Collaboration simple (workspace)</h2>
+          <article class="feature-panel" id="assistant">
+            <h2>Un assistant qui t’aide à aller plus vite</h2>
             <ul>
-              <li>Invite par email</li>
-              <li>Rôles viewer/editor</li>
-              <li>Onboarding d’activation guidé</li>
-            </ul>
-          </article>
-
-          <article class="feature-panel" id="stability">
-            <h2>Stabilité &amp; sécurité dès le départ</h2>
-            <ul>
-              <li>Monitoring jobs critiques</li>
-              <li>Alertes anti-spam</li>
-              <li>Sécurité rules Firestore</li>
+              <li>Analyse tes notes et suggère des actions utiles</li>
+              <li>Aide à créer tâches, rappels et bundles d’actions</li>
+              <li>Reste un bonus concret, pas une couche compliquée de plus</li>
             </ul>
           </article>
         </div>
@@ -246,8 +246,8 @@
       <section class="section" aria-label="Compatibilité mobile et Google Calendar">
         <div class="container compatibility-grid">
           <article class="compat-card">
-            <h2>Compatible mobile / PWA</h2>
-            <p>Conçu pour desktop et smartphone, avec CTA accessibles et navigation fluide.</p>
+            <h2>Desktop, mobile et PWA</h2>
+            <p>TaskNote reste utilisable au quotidien sur ordinateur et smartphone, avec une installation possible en PWA.</p>
           </article>
           <article class="compat-card">
             <h2>Google Calendar optionnel</h2>
@@ -266,10 +266,10 @@
               <h3>Gratuit</h3>
               <p class="price">0€</p>
               <ul>
-                <li>Notes, tâches, checklists</li>
-                <li>Agenda de base</li>
-                <li>Collaboration limitée</li>
-                <li>Copilote limité</li>
+                <li>Notes, tâches, agenda et checklists</li>
+                <li>Organisation quotidienne avec limites claires</li>
+                <li>Assistant disponible avec quotas Free</li>
+                <li>Idéal pour découvrir TaskNote sans friction</li>
               </ul>
               <a
                 class="btn btn--outline"
@@ -287,10 +287,10 @@
               <h3>Pro</h3>
               <p class="price">1,99€ / mois</p>
               <ul>
-                <li>Copilote illimité</li>
-                <li>Collaboration complète</li>
-                <li>Fonctionnalités avancées agenda</li>
-                <li>Limites augmentées</li>
+                <li>Rappels activés</li>
+                <li>Quotas assistant étendus</li>
+                <li>Limites notes, tâches et favoris relevées</li>
+                <li>Plus de liberté pour un usage quotidien intensif</li>
               </ul>
               <a
                 class="btn btn--primary"
@@ -303,7 +303,7 @@
               >
             </article>
           </div>
-          <p class="pricing-notes">Annulation à tout moment • Paiement sécurisé (Stripe)</p>
+          <p class="pricing-notes">Version gratuite disponible • Pro à 1,99€ / mois • Annulation à tout moment • Paiement sécurisé (Stripe)</p>
         </div>
       </section>
 
@@ -327,7 +327,7 @@
             </article>
             <article class="faq-item">
               <h3>Freemium : quelles limites ?</h3>
-              <p>Le plan gratuit couvre l’essentiel; le plan Pro étend le copilote, la collaboration et les capacités avancées.</p>
+              <p>Le plan gratuit couvre les usages essentiels. Le plan Pro active les rappels et étend les quotas notes, tâches, favoris, pièces jointes et assistant.</p>
             </article>
             <article class="faq-item">
               <h3>Mes données sont-elles sécurisées ?</h3>
@@ -335,11 +335,11 @@
             </article>
             <article class="faq-item">
               <h3>Ça fonctionne sur mobile ?</h3>
-              <p>Oui, l’interface est optimisée mobile et disponible en mode PWA.</p>
+              <p>Oui, TaskNote fonctionne sur mobile et peut s’installer en PWA pour un accès plus direct.</p>
             </article>
             <article class="faq-item">
               <h3>Puis-je collaborer avec un client ou un associé ?</h3>
-              <p>Oui, via workspaces, invitations email et rôles viewer/editor.</p>
+              <p>Oui, via workspaces, invitations email et rôles viewer/editor, sans compliquer le cœur de l’outil.</p>
             </article>
           </div>
         </div>
@@ -347,8 +347,8 @@
 
       <section class="section section--final" aria-label="Call to action final">
         <div class="container final-cta">
-          <h2>Passe de "je dois m’organiser" à "c’est déjà cadré".</h2>
-          <p>Crée ton espace gratuitement en moins de 2 minutes.</p>
+          <h2>Commence avec tes notes, garde tes tâches et ton agenda au même endroit.</h2>
+          <p>Crée ton espace gratuitement et organise ton quotidien avec une app simple, claire et crédible.</p>
           <a
             class="btn btn--primary btn--lg"
             href="https://app.tasknote.io/register"
