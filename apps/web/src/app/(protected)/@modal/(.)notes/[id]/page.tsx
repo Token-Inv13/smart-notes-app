@@ -8,7 +8,7 @@ import { z } from "zod";
 import { auth, db, storage } from "@/lib/firebase";
 import { exportNotePdf } from "@/lib/pdf/exportPdf";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
-import { sanitizeNoteHtml } from "@/lib/richText";
+import { htmlToMarkdown, sanitizeNoteHtml } from "@/lib/richText";
 import { toUserErrorMessage } from "@/lib/userError";
 import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import { useUserSettings } from "@/hooks/useUserSettings";
@@ -558,7 +558,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
     if (workspaceName) lines.push(`Workspace: ${workspaceName}`);
     if (note.updatedAt) lines.push(`Dernière mise à jour: ${formatFrDateTime(note.updatedAt)}`);
     lines.push("");
-    lines.push(note.content ?? "");
+    lines.push(htmlToMarkdown(note.content ?? ""));
 
     const md = `${lines.join("\n")}\n`;
     const filename = `smartnotes-note-${sanitize(note.title ?? "")}.md`;
