@@ -5,6 +5,46 @@ import { useUserSettings } from '@/hooks/useUserSettings';
 import { isAndroidNative } from '@/lib/runtimePlatform';
 import type { UserDoc } from '@/types/firestore';
 
+const FREE_FEATURES = [
+  'Jusqu’à 15 notes',
+  'Jusqu’à 10 notes favorites',
+  'Jusqu’à 5 pièces jointes par note',
+  'Images et PDF uniquement',
+  'Jusqu’à 20 Mo par fichier joint',
+  'Jusqu’à 15 tâches agenda actives',
+  'Jusqu’à 15 tâches favorites actives',
+  'Rappels désactivés',
+  'Assistant disponible avec quotas Free',
+];
+
+const PRO_FEATURES = [
+  'Notes et favoris sans limite',
+  'Jusqu’à 10 pièces jointes par note',
+  'Images, PDF et vidéos',
+  'Jusqu’à 350 Mo par fichier joint',
+  'Tâches agenda actives et favorites sans limite',
+  'Rappels activés',
+  'Quotas assistant étendus',
+  'Création de rappels et bundles assistant avancés',
+];
+
+const FEATURE_MATRIX = [
+  { label: 'Notes', free: '15 max', pro: 'Sans limite' },
+  { label: 'Notes favorites', free: '10 max', pro: 'Sans limite' },
+  { label: 'Pièces jointes par note', free: '5 max', pro: '10 max' },
+  { label: 'Types de fichiers', free: 'Images + PDF', pro: 'Images + PDF + vidéos' },
+  { label: 'Taille max par pièce jointe', free: '20 Mo', pro: '350 Mo' },
+  { label: 'Tâches agenda actives', free: '15 max', pro: 'Sans limite' },
+  { label: 'Tâches favorites actives', free: '15 max', pro: 'Sans limite' },
+  { label: 'Rappels agenda', free: 'Non', pro: 'Oui' },
+  { label: 'Checklist', free: 'Inclus', pro: 'Inclus' },
+  { label: 'Analyse IA de notes', free: '2 / jour', pro: '100 / jour' },
+  { label: 'Réanalyse assistant', free: '10 / jour', pro: '200 / jour' },
+  { label: 'Transcription vocale assistant', free: '10 / jour', pro: '200 / jour' },
+  { label: 'Assistant: créer un rappel', free: 'Non', pro: 'Oui' },
+  { label: 'Assistant: bundle multi-actions', free: 'Non', pro: 'Oui' },
+];
+
 export default function UpgradePage() {
   const { data: userSettings, loading: userLoading, refetch } = useUserSettings();
   const isPro = userSettings?.plan === 'pro';
@@ -185,7 +225,7 @@ export default function UpgradePage() {
           <p className="text-sm text-muted-foreground">Ton abonnement est géré via Google Play.</p>
         ) : (
           <p className="text-sm text-muted-foreground">
-            Choisis le plan qui te convient. Tu peux annuler à tout moment depuis le portail sécurisé Stripe.
+            Compare les limites réellement appliquées entre Free et Pro. Tu peux annuler à tout moment depuis le portail sécurisé Stripe.
           </p>
         )}
       </div>
@@ -220,12 +260,12 @@ export default function UpgradePage() {
               {!isPro && <div className="text-xs font-medium text-primary">Actuel</div>}
             </div>
             <p className="text-sm text-muted-foreground">
-              L’essentiel pour organiser tes notes au quotidien.
+              L’essentiel pour organiser tes notes, ton agenda et tes checklists avec des limites claires.
             </p>
             <ul className="text-sm text-muted-foreground space-y-1">
-              <li>Notes, agenda et checklist</li>
-              <li>Import images &amp; PDF (jusqu’à 20 Mo)</li>
-              <li>Rappels désactivés</li>
+              {FREE_FEATURES.map((feature) => (
+                <li key={feature}>{feature}</li>
+              ))}
             </ul>
           </div>
 
@@ -239,14 +279,46 @@ export default function UpgradePage() {
               {isPro && <div className="text-xs font-medium text-primary">Actuel</div>}
             </div>
             <p className="text-sm text-muted-foreground">
-              Plus de liberté et des fonctionnalités avancées.
+              Plus de liberté, des quotas élargis et les fonctionnalités avancées réellement disponibles aujourd’hui.
             </p>
             <ul className="text-sm text-muted-foreground space-y-1">
-              <li>Import vidéos (jusqu’à 350 Mo)</li>
-              <li>Rappels activés</li>
-              <li>Accès prioritaire aux futures fonctionnalités</li>
+              {PRO_FEATURES.map((feature) => (
+                <li key={feature}>{feature}</li>
+              ))}
             </ul>
             <div className="text-sm font-medium pt-1">1,99€ / mois</div>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border bg-background p-4 space-y-3">
+          <div className="space-y-1">
+            <div className="text-sm font-medium">Comparatif Free / Pro</div>
+            <div className="text-xs text-muted-foreground">
+              Cette grille reflète les limites et accès réellement appliqués dans SmartNotes aujourd’hui.
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left">
+                  <th className="py-2 pr-4 font-medium">Fonctionnalité</th>
+                  <th className="py-2 pr-4 font-medium">Free</th>
+                  <th className="py-2 font-medium">Pro</th>
+                </tr>
+              </thead>
+              <tbody>
+                {FEATURE_MATRIX.map((row) => (
+                  <tr key={row.label} className="border-b border-border/60 align-top">
+                    <td className="py-2 pr-4 font-medium text-foreground">{row.label}</td>
+                    <td className="py-2 pr-4 text-muted-foreground">{row.free}</td>
+                    <td className="py-2 text-muted-foreground">{row.pro}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="text-xs text-muted-foreground">
+            Les checklists restent disponibles sur les deux plans, sans quota dédié supplémentaire affiché aujourd’hui.
           </div>
         </div>
 
