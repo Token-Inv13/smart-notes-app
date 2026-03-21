@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { httpsCallable } from "firebase/functions";
-import { addDoc, collection, doc, getDoc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
 import { ref as storageRef, uploadBytes } from "firebase/storage";
 import { db, functions as fbFunctions, storage } from "@/lib/firebase";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import { useAuth } from "@/hooks/useAuth";
 import { toUserErrorMessage } from "@/lib/userError";
 import type { AssistantVoiceJobDoc, AssistantVoiceResultDoc, NoteDoc } from "@/types/firestore";
+import { createNoteWithPlanGuard, getPlanLimitMessage } from "@/lib/planGuardedMutations";
 import {
   buildVoiceCaptureError,
   classifyGetUserMediaError,
@@ -379,22 +380,15 @@ export default function VoiceRecorderButton({
     const title = t.length > 64 ? `${t.slice(0, 61)}…` : t;
 
     try {
-      const payload: Omit<NoteDoc, "id"> = {
-        userId: user.uid,
+      const result = await createNoteWithPlanGuard({
         workspaceId: null,
         title: title || "Transcription",
         content: plainTextToNoteHtml(t),
         favorite: false,
-        completed: false,
-        archived: false,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      };
-
-      const ref = await addDoc(collection(db, "notes"), payload);
-      window.location.href = `/notes/${encodeURIComponent(ref.id)}`;
+      });
+      window.location.href = `/notes/${encodeURIComponent(result.noteId)}`;
     } catch (e) {
-      setError(toUserErrorMessage(e, "Création de note impossible."));
+      setError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "Création de note impossible."));
       setStatus("error");
     }
   };

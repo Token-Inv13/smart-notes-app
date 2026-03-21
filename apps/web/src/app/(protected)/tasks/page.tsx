@@ -5,7 +5,7 @@
  * - Read data via useUserTasks/useUserWorkspaces (Firestore onSnapshot)
  * - Local filters: status + workspaceId (in-memory only)
  * - CRUD:
- *   - Create: addDoc("tasks") with userId == auth.currentUser.uid
+ *   - Create: callable plan guard + Firestore writes
  *   - Update: updateDoc("tasks/{id}") with updatedAt: serverTimestamp()
  *   - Delete: deleteDoc("tasks/{id}") after confirm()
  * All writes must respect Firestore rules: user can only modify their own tasks.
@@ -13,7 +13,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
-import { addDoc, arrayUnion, collection, doc, Timestamp, updateDoc, serverTimestamp } from "firebase/firestore";
+import { arrayUnion, doc, Timestamp, updateDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserNotes } from "@/hooks/useUserNotes";
@@ -50,6 +50,14 @@ import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
 import { CALENDAR_PREFERENCES_STORAGE_KEY } from "../_components/agendaCalendarUtils";
 import type { AgendaCalendarPreferences } from "../_components/AgendaCalendar";
 import AgendaActionBar from "../_components/AgendaActionBar";
+import {
+  createTaskWithPlanGuard,
+  FREE_TASK_LIMIT_MESSAGE,
+  getPlanLimitMessage,
+  serializeTaskRecurrence,
+  serializeTimestampMillis,
+  setTaskFavoriteWithPlanGuard,
+} from "@/lib/planGuardedMutations";
 
 const AgendaCalendar = dynamic(() => import("../_components/AgendaCalendar"), {
   loading: () => <div className="sn-empty">Chargement de l’Agenda…</div>,
@@ -181,7 +189,7 @@ export default function TasksPage() {
   const dueParam = searchParams.get("due");
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === "pro";
-  const freeLimitMessage = "Limite Free atteinte. Passe en Pro pour créer plus d’éléments d’agenda et utiliser les favoris sans limite.";
+  const freeLimitMessage = FREE_TASK_LIMIT_MESSAGE;
 
   const statusLabel = (s: TaskStatus) => {
     if (s === "todo") return "À faire";
@@ -224,61 +232,65 @@ export default function TasksPage() {
       return;
     }
 
-    const createdRef = await addDoc(collection(db, "tasks"), {
-      userId: user.uid,
-      title: input.title,
-      description: "",
-      status: "todo",
-      allDay: normalizedWindow.allDay,
-      startDate: normalizedWindow.startDate,
-      dueDate: normalizedWindow.dueDate,
-      workspaceId: input.workspaceId ?? null,
-      priority: input.priority ?? null,
-      calendarKind: input.calendarKind ?? "task",
-      recurrence: input.recurrence
-        ? {
-            freq: input.recurrence.freq,
-            interval: input.recurrence.interval ?? 1,
-            until: normalizeDateForFirestore(input.recurrence.until ?? null),
-            exceptions: input.recurrence.exceptions ?? [],
-          }
-        : null,
-      favorite: false,
-      archived: false,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+    try {
+      const createdResult = await createTaskWithPlanGuard({
+        title: input.title,
+        description: "",
+        status: "todo",
+        allDay: normalizedWindow.allDay,
+        startDateMs: serializeTimestampMillis(normalizedWindow.startDate),
+        dueDateMs: serializeTimestampMillis(normalizedWindow.dueDate),
+        workspaceId: input.workspaceId ?? null,
+        priority: input.priority ?? null,
+        calendarKind: input.calendarKind ?? "task",
+        recurrence: input.recurrence
+          ? {
+              freq: input.recurrence.freq,
+              interval: input.recurrence.interval ?? 1,
+              untilMs: input.recurrence.until ? input.recurrence.until.getTime() : null,
+              exceptions: input.recurrence.exceptions ?? [],
+            }
+          : serializeTaskRecurrence(null),
+        favorite: false,
+        archived: false,
+        sourceType: null,
+        sourceTodoId: null,
+        sourceTodoItemId: null,
+      });
 
-    const optimisticCreatedTask: TaskDoc = {
-      id: createdRef.id,
-      userId: user.uid,
-      title: input.title,
-      description: "",
-      status: "todo",
-      allDay: normalizedWindow.allDay,
-      startDate: normalizedWindow.startDate,
-      dueDate: normalizedWindow.dueDate,
-      workspaceId: input.workspaceId ?? null,
-      priority: input.priority ?? null,
-      calendarKind: input.calendarKind ?? "task",
-      recurrence: input.recurrence
-        ? {
-            freq: input.recurrence.freq,
-            interval: input.recurrence.interval ?? 1,
-            until: toTimestampOrNull(input.recurrence.until ?? null),
-            exceptions: input.recurrence.exceptions ?? [],
-          }
-        : null,
-      favorite: false,
-      archived: false,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    };
+      const optimisticCreatedTask: TaskDoc = {
+        id: createdResult.taskId,
+        userId: user.uid,
+        title: input.title,
+        description: "",
+        status: "todo",
+        allDay: normalizedWindow.allDay,
+        startDate: normalizedWindow.startDate,
+        dueDate: normalizedWindow.dueDate,
+        workspaceId: input.workspaceId ?? null,
+        priority: input.priority ?? null,
+        calendarKind: input.calendarKind ?? "task",
+        recurrence: input.recurrence
+          ? {
+              freq: input.recurrence.freq,
+              interval: input.recurrence.interval ?? 1,
+              until: toTimestampOrNull(input.recurrence.until ?? null),
+              exceptions: input.recurrence.exceptions ?? [],
+            }
+          : null,
+        favorite: false,
+        archived: false,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      };
 
-    setOptimisticCreatedAgendaTasks((prev) => [
-      ...prev.filter((task) => task.id !== createdRef.id),
-      optimisticCreatedTask,
-    ]);
+      setOptimisticCreatedAgendaTasks((prev) => [
+        ...prev.filter((task) => task.id !== createdResult.taskId),
+        optimisticCreatedTask,
+      ]);
+    } catch (error) {
+      setEditError(getPlanLimitMessage(error) ?? toErrorMessage(error, "Impossible de créer cet élément d’agenda."));
+    }
   };
 
   const handleSkipOccurrence = async (taskId: string, occurrenceDate: string) => {
@@ -1258,17 +1270,10 @@ export default function TasksPage() {
 
     setEditError(null);
     try {
-      await updateDoc(doc(db, "tasks", task.id), {
-        title: task.title,
-        status: (task.status ?? "todo") as TaskDoc["status"],
-        workspaceId: typeof task.workspaceId === "string" ? task.workspaceId : null,
-        dueDate: task.dueDate ?? null,
-        favorite: !(task.favorite === true),
-        updatedAt: serverTimestamp(),
-      });
+      await setTaskFavoriteWithPlanGuard(task.id, !(task.favorite === true));
     } catch (e) {
       console.error("Error toggling favorite", e);
-      setEditError(toErrorMessage(e, "Erreur lors de la mise à jour des favoris."));
+      setEditError(getPlanLimitMessage(e) ?? toErrorMessage(e, "Erreur lors de la mise à jour des favoris."));
     }
   };
 

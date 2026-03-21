@@ -2,14 +2,16 @@
 
 import { useMemo, useState } from "react";
 import { httpsCallable } from "firebase/functions";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
-import { db, functions as fbFunctions } from "@/lib/firebase";
+import { functions as fbFunctions } from "@/lib/firebase";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import { sanitizeNoteHtml } from "@/lib/richText";
 import { useAuth } from "@/hooks/useAuth";
 import { toUserErrorMessage } from "@/lib/userError";
-import type { NoteDoc, TodoDoc } from "@/types/firestore";
+import type { TodoDoc } from "@/types/firestore";
 import VoiceRecorderButton from "../_components/assistant/VoiceRecorderButton";
+import { createNoteWithPlanGuard, getPlanLimitMessage } from "@/lib/planGuardedMutations";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 function escapeHtml(text: string) {
   return String(text)
@@ -57,20 +59,13 @@ export default function QuickCapturePage() {
     const titleLine = text.split(/\r\n|\n|\r/).map((l) => l.trim()).find((l) => l) || "Quick capture";
     const title = titleLine.length > 64 ? `${titleLine.slice(0, 61)}…` : titleLine;
 
-    const payload: Omit<NoteDoc, "id"> = {
-      userId: user.uid,
+    const result = await createNoteWithPlanGuard({
       workspaceId: null,
       title,
       content: sanitizeNoteHtml(plainTextToNoteHtml(text)),
       favorite: false,
-      completed: false,
-      archived: false,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    };
-
-    const ref = await addDoc(collection(db, "notes"), payload);
-    return ref.id;
+    });
+    return result.noteId;
   };
 
   const createTodo = async (text: string) => {
@@ -109,7 +104,7 @@ export default function QuickCapturePage() {
       const id = await createNote(text);
       window.location.href = `/notes/${encodeURIComponent(id)}`;
     } catch (e) {
-      setError(toUserErrorMessage(e, "Création de note impossible.", { allowMessages: ["Tu dois être connecté."] }));
+      setError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "Création de note impossible.", { allowMessages: ["Tu dois être connecté."] }));
     } finally {
       setBusy(null);
     }
@@ -154,7 +149,7 @@ export default function QuickCapturePage() {
         void invalidateAuthSession();
         return;
       }
-      setError(toUserErrorMessage(e, "Impossible de lancer l’analyse IA.", { allowMessages: ["Tu dois être connecté."] }));
+      setError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "Impossible de lancer l’analyse IA.", { allowMessages: ["Tu dois être connecté."] }));
     } finally {
       setBusy(null);
     }

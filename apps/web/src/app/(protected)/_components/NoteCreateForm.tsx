@@ -4,18 +4,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { FirebaseError } from "firebase/app";
 import { httpsCallable } from "firebase/functions";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
-import { auth, db, functions as fbFunctions } from "@/lib/firebase";
+import { auth, functions as fbFunctions } from "@/lib/firebase";
 import { useUserNotes } from "@/hooks/useUserNotes";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import { toUserErrorMessage } from "@/lib/userError";
-import type { NoteDoc } from "@/types/firestore";
 import RichTextEditor from "./RichTextEditor";
 import { sanitizeNoteHtml } from "@/lib/richText";
 import DictationMicButton from "./DictationMicButton";
 import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
+import { createNoteWithPlanGuard, FREE_NOTE_LIMIT_MESSAGE, getPlanLimitMessage } from "@/lib/planGuardedMutations";
 
 const newNoteSchema = z.object({
   title: z.string().min(1, "Le titre est requis."),
@@ -129,8 +128,7 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
   const { data: userSettings } = useUserSettings();
   const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
   const isPro = userSettings?.plan === "pro";
-  const freeLimitMessage =
-    "Limite Free atteinte. Tu peux passer en Pro pour créer plus de notes et utiliser les favoris sans limite.";
+  const freeLimitMessage = FREE_NOTE_LIMIT_MESSAGE;
 
   const { data: allNotesForLimit } = useUserNotes({ limit: 16 });
   const { data: favoriteNotesForLimit } = useUserNotes({ favoriteOnly: true, limit: 11 });
@@ -172,7 +170,6 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
     } catch {
       // ignore
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -264,23 +261,15 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
     setCreateError(null);
     setCreating(true);
     try {
-      const canFavoriteNow =
-        initialFavorite === true ? isPro || favoriteNotesForLimit.length < 10 : false;
-
-      const payload: Omit<NoteDoc, "id"> = {
-        userId: user.uid,
+      const requestFavorite = initialFavorite === true ? isPro || favoriteNotesForLimit.length < 10 : false;
+      const result = await createNoteWithPlanGuard({
         workspaceId: validation.data.workspaceId ?? null,
         title: validation.data.title,
         content: sanitizeNoteHtml(validation.data.content ?? ""),
-        favorite: canFavoriteNow,
-        completed: false,
-        archived: false,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      };
-      await addDoc(collection(db, "notes"), payload);
+        favorite: requestFavorite,
+      });
 
-      if (initialFavorite === true && !canFavoriteNow) {
+      if (initialFavorite === true && !result.favoriteApplied) {
         try {
           if (typeof window !== "undefined") {
             window.sessionStorage.setItem(
@@ -305,7 +294,7 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
       onCreated?.();
     } catch (e) {
       console.error("Error creating note", e);
-      setCreateError(toUserErrorMessage(e, "Impossible de créer la note."));
+      setCreateError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "Impossible de créer la note."));
     } finally {
       setCreating(false);
     }

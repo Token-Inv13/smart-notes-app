@@ -6,13 +6,14 @@ import { httpsCallable } from "firebase/functions";
 import { collection, doc, serverTimestamp, writeBatch } from "firebase/firestore";
 import { auth, db, functions as fbFunctions } from "@/lib/firebase";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
-import { scheduleChecklistItem, type ChecklistItemScheduleData } from "@/lib/checklistAgenda";
+import type { ChecklistItemScheduleData } from "@/lib/checklistAgenda";
 import { DATE_PLACEHOLDER_FR, formatTimestampToDateFr, parseLocalDateToTimestamp } from "@/lib/datetime";
 import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import { toUserErrorMessage } from "@/lib/userError";
 import type { TodoDoc, TodoItemDoc } from "@/types/firestore";
 import DictationMicButton from "./DictationMicButton";
 import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
+import { createTodoWithScheduledItemsPlanGuard, getPlanLimitMessage } from "@/lib/planGuardedMutations";
 
 type AssistantActionId =
   | "summary"
@@ -282,38 +283,38 @@ export default function TodoCreateForm({
     try {
       const dueTimestamp = dueDateDraft ? parseLocalDateToTimestamp(dueDateDraft) : null;
       const normalizedWorkspaceId = workspaceId || null;
+      const hasScheduledItems = itemsDraft.some((draftItem) => !!draftItem.draftSchedule);
+
+      if (hasScheduledItems) {
+        const result = await createTodoWithScheduledItemsPlanGuard({
+          workspaceId: normalizedWorkspaceId,
+          title: trimmed,
+          dueDateMs: dueTimestamp?.toMillis?.() ?? null,
+          priority: priorityDraft || null,
+          favorite: initialFavorite === true,
+          items: itemsDraft.map((draftItem) => ({
+            id: draftItem.id,
+            text: draftItem.text.trim(),
+            done: draftItem.done === true,
+            createdAt: typeof draftItem.createdAt === "number" ? draftItem.createdAt : Date.now(),
+            draftSchedule: draftItem.draftSchedule ?? null,
+          })),
+        });
+
+        setTitle("");
+        setNewItemText("");
+        setItemsDraft([]);
+        setWorkspaceId(initialWorkspaceId ?? "");
+        setDueDateDraft("");
+        setPriorityDraft("");
+        onCreated?.(result.todoId);
+        return;
+      }
+
       const todoRef = doc(collection(db, "todos"));
       const batch = writeBatch(db);
 
-      let persistedItems = itemsDraft.map(toPersistedTodoItem);
-
-      for (const draftItem of itemsDraft) {
-        if (!draftItem.draftSchedule) continue;
-        const sourceItem = persistedItems.find((it) => it.id === draftItem.id);
-        if (!sourceItem) continue;
-
-        // If draftSchedule.allDay is false and no time is provided, scheduling defaults to 09:00 (local).
-        const agendaPlan = await scheduleChecklistItem({
-          db,
-          batch,
-          userId: user.uid,
-          todoId: todoRef.id,
-          todoTitle: trimmed,
-          workspaceId: normalizedWorkspaceId,
-          priority: priorityDraft || null,
-          item: sourceItem,
-          schedule: draftItem.draftSchedule,
-        });
-
-        persistedItems = persistedItems.map((it) =>
-          it.id === draftItem.id
-            ? {
-                ...it,
-                agendaPlan,
-              }
-            : it,
-        );
-      }
+      const persistedItems = itemsDraft.map(toPersistedTodoItem);
 
       const payload: Omit<TodoDoc, "id"> = {
         userId: user.uid,
@@ -339,7 +340,7 @@ export default function TodoCreateForm({
       onCreated?.(todoRef.id);
     } catch (e) {
       console.error("Error creating todo", e);
-      setCreateError(toUserErrorMessage(e, "Impossible de créer la checklist."));
+      setCreateError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "Impossible de créer la checklist."));
     } finally {
       setCreating(false);
     }

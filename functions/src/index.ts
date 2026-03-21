@@ -138,6 +138,247 @@ function readEnvNumber(name: string, fallback: number): number {
   return parsed;
 }
 
+const FREE_NOTE_LIMIT = 15;
+const FREE_ACTIVE_TASK_LIMIT = 15;
+const FREE_FAVORITE_NOTES_LIMIT = 10;
+const FREE_FAVORITE_TASKS_LIMIT = 15;
+
+const FREE_NOTE_LIMIT_MESSAGE =
+  'Limite Free atteinte. Tu peux passer en Pro pour créer plus de notes et utiliser les favoris sans limite.';
+const FREE_TASK_LIMIT_MESSAGE =
+  'Limite Free atteinte. Passe en Pro pour créer plus d’éléments d’agenda et utiliser les favoris sans limite.';
+
+type UserPlan = 'free' | 'pro';
+
+type ServerTaskRecurrenceInput = {
+  freq: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  interval?: number;
+  untilMs?: number | null;
+  exceptions?: string[];
+} | null;
+
+type ServerTaskCreateInput = {
+  userId: string;
+  title: string;
+  description?: string | null;
+  status: 'todo' | 'doing' | 'done';
+  workspaceId: string | null;
+  allDay: boolean;
+  startDateMs: number | null;
+  dueDateMs: number | null;
+  priority: 'low' | 'medium' | 'high' | null;
+  calendarKind?: 'task' | 'birthday' | null;
+  recurrence?: ServerTaskRecurrenceInput;
+  favorite: boolean;
+  archived: boolean;
+  sourceType?: 'checklist_item' | null;
+  sourceTodoId?: string | null;
+  sourceTodoItemId?: string | null;
+  source?: Record<string, unknown>;
+};
+
+type ChecklistScheduleInput = {
+  date: string;
+  time?: string;
+  allDay: boolean;
+  timezone: 'Europe/Paris';
+};
+
+function toFirestoreTimestamp(ms: number | null | undefined): admin.firestore.Timestamp | null {
+  if (typeof ms !== 'number' || !Number.isFinite(ms)) return null;
+  return admin.firestore.Timestamp.fromMillis(ms);
+}
+
+function readUserPlan(userSnap: FirebaseFirestore.DocumentSnapshot): UserPlan {
+  const plan = userSnap.exists && typeof userSnap.data()?.plan === 'string' ? String(userSnap.data()?.plan) : 'free';
+  return plan === 'pro' ? 'pro' : 'free';
+}
+
+async function getUserPlanInTransaction(
+  tx: FirebaseFirestore.Transaction,
+  db: FirebaseFirestore.Firestore,
+  userId: string,
+): Promise<UserPlan> {
+  const userSnap = await tx.get(db.collection('users').doc(userId));
+  return readUserPlan(userSnap);
+}
+
+async function assertCanCreateFreeNote(
+  tx: FirebaseFirestore.Transaction,
+  db: FirebaseFirestore.Firestore,
+  userId: string,
+) {
+  const userPlan = await getUserPlanInTransaction(tx, db, userId);
+  if (userPlan === 'pro') return;
+
+  const notesSnap = await tx.get(
+    db.collection('notes').where('userId', '==', userId).limit(FREE_NOTE_LIMIT),
+  );
+  if (notesSnap.size >= FREE_NOTE_LIMIT) {
+    throw new functions.https.HttpsError('resource-exhausted', FREE_NOTE_LIMIT_MESSAGE);
+  }
+}
+
+async function assertCanFavoriteFreeNote(
+  tx: FirebaseFirestore.Transaction,
+  db: FirebaseFirestore.Firestore,
+  userId: string,
+) {
+  const userPlan = await getUserPlanInTransaction(tx, db, userId);
+  if (userPlan === 'pro') return;
+
+  const favoritesSnap = await tx.get(
+    db.collection('notes').where('userId', '==', userId).where('favorite', '==', true).limit(FREE_FAVORITE_NOTES_LIMIT),
+  );
+  if (favoritesSnap.size >= FREE_FAVORITE_NOTES_LIMIT) {
+    throw new functions.https.HttpsError('resource-exhausted', FREE_NOTE_LIMIT_MESSAGE);
+  }
+}
+
+async function assertCanCreateFreeTask(
+  tx: FirebaseFirestore.Transaction,
+  db: FirebaseFirestore.Firestore,
+  userId: string,
+) {
+  const userPlan = await getUserPlanInTransaction(tx, db, userId);
+  if (userPlan === 'pro') return;
+
+  const tasksSnap = await tx.get(
+    db.collection('tasks').where('userId', '==', userId).where('archived', '==', false).limit(FREE_ACTIVE_TASK_LIMIT),
+  );
+  if (tasksSnap.size >= FREE_ACTIVE_TASK_LIMIT) {
+    throw new functions.https.HttpsError('resource-exhausted', FREE_TASK_LIMIT_MESSAGE);
+  }
+}
+
+async function assertCanCreateMultipleFreeTasks(
+  tx: FirebaseFirestore.Transaction,
+  db: FirebaseFirestore.Firestore,
+  userId: string,
+  countToCreate: number,
+) {
+  if (countToCreate <= 0) return;
+  const userPlan = await getUserPlanInTransaction(tx, db, userId);
+  if (userPlan === 'pro') return;
+
+  const tasksSnap = await tx.get(
+    db.collection('tasks').where('userId', '==', userId).where('archived', '==', false).limit(FREE_ACTIVE_TASK_LIMIT),
+  );
+  if (tasksSnap.size + countToCreate > FREE_ACTIVE_TASK_LIMIT) {
+    throw new functions.https.HttpsError('resource-exhausted', FREE_TASK_LIMIT_MESSAGE);
+  }
+}
+
+async function assertCanFavoriteFreeTask(
+  tx: FirebaseFirestore.Transaction,
+  db: FirebaseFirestore.Firestore,
+  userId: string,
+) {
+  const userPlan = await getUserPlanInTransaction(tx, db, userId);
+  if (userPlan === 'pro') return;
+
+  const favoritesSnap = await tx.get(
+    db
+      .collection('tasks')
+      .where('userId', '==', userId)
+      .where('favorite', '==', true)
+      .where('archived', '==', false)
+      .limit(FREE_FAVORITE_TASKS_LIMIT),
+  );
+  if (favoritesSnap.size >= FREE_FAVORITE_TASKS_LIMIT) {
+    throw new functions.https.HttpsError('resource-exhausted', FREE_TASK_LIMIT_MESSAGE);
+  }
+}
+
+function parseChecklistScheduleDate(dateRaw: string, timeRaw: string): Date | null {
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateRaw);
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(timeRaw);
+  if (!dateMatch || !timeMatch) return null;
+
+  const year = Number(dateMatch[1]);
+  const month = Number(dateMatch[2]);
+  const day = Number(dateMatch[3]);
+  const hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+
+  const parsed = new Date(year, month - 1, day, hour, minute, 0, 0);
+  if (Number.isNaN(parsed.getTime())) return null;
+  if (parsed.getFullYear() !== year || parsed.getMonth() !== month - 1 || parsed.getDate() !== day) return null;
+  if (parsed.getHours() !== hour || parsed.getMinutes() !== minute) return null;
+  return parsed;
+}
+
+function normalizeChecklistSchedule(schedule: ChecklistScheduleInput): {
+  allDay: boolean;
+  startDate: admin.firestore.Timestamp;
+  dueDate: admin.firestore.Timestamp;
+} {
+  if (schedule.timezone !== 'Europe/Paris') {
+    throw new functions.https.HttpsError('failed-precondition', 'Fuseau horaire non supporté.');
+  }
+
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(schedule.date);
+  if (!dateMatch) {
+    throw new functions.https.HttpsError('invalid-argument', 'Date invalide.');
+  }
+
+  const year = Number(dateMatch[1]);
+  const month = Number(dateMatch[2]);
+  const day = Number(dateMatch[3]);
+  let start = new Date(year, month - 1, day, 0, 0, 0, 0);
+  let end = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
+
+  if (!schedule.allDay) {
+    const timedStart = parseChecklistScheduleDate(schedule.date, schedule.time ?? '09:00');
+    if (!timedStart) {
+      throw new functions.https.HttpsError('invalid-argument', 'Heure invalide.');
+    }
+    start = timedStart;
+    end = new Date(timedStart.getTime() + 60 * 60 * 1000);
+  }
+
+  return {
+    allDay: schedule.allDay,
+    startDate: admin.firestore.Timestamp.fromDate(start),
+    dueDate: admin.firestore.Timestamp.fromDate(end),
+  };
+}
+
+function buildTaskWritePayload(input: ServerTaskCreateInput) {
+  return {
+    userId: input.userId,
+    title: String(input.title || '').trim(),
+    description: typeof input.description === 'string' ? input.description : '',
+    status: input.status,
+    workspaceId: typeof input.workspaceId === 'string' ? input.workspaceId : null,
+    allDay: input.allDay === true,
+    startDate: toFirestoreTimestamp(input.startDateMs),
+    dueDate: toFirestoreTimestamp(input.dueDateMs),
+    priority: input.priority ?? null,
+    calendarKind: input.calendarKind ?? 'task',
+    recurrence: input.recurrence?.freq
+      ? {
+          freq: input.recurrence.freq,
+          interval: typeof input.recurrence.interval === 'number' && Number.isFinite(input.recurrence.interval)
+            ? Math.max(1, Math.trunc(input.recurrence.interval))
+            : 1,
+          until: toFirestoreTimestamp(input.recurrence.untilMs ?? null),
+          exceptions: Array.isArray(input.recurrence.exceptions) ? input.recurrence.exceptions.filter((x) => typeof x === 'string') : [],
+        }
+      : null,
+    favorite: input.favorite === true,
+    archived: input.archived === true,
+    ...(typeof input.sourceType === 'string' ? { sourceType: input.sourceType } : {}),
+    ...(typeof input.sourceTodoId === 'string' ? { sourceTodoId: input.sourceTodoId } : {}),
+    ...(typeof input.sourceTodoItemId === 'string' ? { sourceTodoItemId: input.sourceTodoItemId } : {}),
+    ...(input.source && typeof input.source === 'object' ? { source: input.source } : {}),
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+}
+
 function readEnvString(name: string): string {
   const raw = process.env[name];
   return typeof raw === 'string' ? raw.trim() : '';
@@ -3877,6 +4118,399 @@ export const assistantRunJobQueue = functions.pubsub
     }
   });
 
+export const createNoteWithPlanGuard = functions.https.onCall(async (data, context) => {
+  const userId = context.auth?.uid;
+  if (!userId) {
+    throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+  }
+
+  const title = typeof (data as any)?.title === 'string' ? String((data as any).title).trim() : '';
+  const content = typeof (data as any)?.content === 'string' ? String((data as any).content) : '';
+  const workspaceIdRaw = (data as any)?.workspaceId;
+  const workspaceId = typeof workspaceIdRaw === 'string' && workspaceIdRaw.trim() ? String(workspaceIdRaw) : null;
+  const requestedFavorite = (data as any)?.favorite === true;
+
+  if (!title) {
+    throw new functions.https.HttpsError('invalid-argument', 'Le titre est requis.');
+  }
+
+  const db = admin.firestore();
+  const noteRef = db.collection('notes').doc();
+
+  const favoriteApplied = await db.runTransaction(async (tx) => {
+    await assertCanCreateFreeNote(tx, db, userId);
+
+    let canFavorite = requestedFavorite;
+    if (requestedFavorite) {
+      try {
+        await assertCanFavoriteFreeNote(tx, db, userId);
+      } catch (error) {
+        if (error instanceof functions.https.HttpsError && error.code === 'resource-exhausted') {
+          canFavorite = false;
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    tx.create(noteRef, {
+      userId,
+      workspaceId,
+      title,
+      content,
+      favorite: canFavorite,
+      completed: false,
+      archived: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return canFavorite;
+  });
+
+  return { noteId: noteRef.id, favoriteApplied };
+});
+
+export const createTaskWithPlanGuard = functions.https.onCall(async (data, context) => {
+  const userId = context.auth?.uid;
+  if (!userId) {
+    throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+  }
+
+  const title = typeof (data as any)?.title === 'string' ? String((data as any).title).trim() : '';
+  const status = (data as any)?.status;
+  if (!title) {
+    throw new functions.https.HttpsError('invalid-argument', 'Le titre est requis.');
+  }
+  if (status !== 'todo' && status !== 'doing' && status !== 'done') {
+    throw new functions.https.HttpsError('invalid-argument', 'Statut invalide.');
+  }
+
+  const db = admin.firestore();
+  const taskRef = db.collection('tasks').doc();
+  const input: ServerTaskCreateInput = {
+    userId,
+    title,
+    description: typeof (data as any)?.description === 'string' ? String((data as any).description) : '',
+    status,
+    workspaceId: typeof (data as any)?.workspaceId === 'string' && String((data as any).workspaceId).trim()
+      ? String((data as any).workspaceId)
+      : null,
+    allDay: (data as any)?.allDay === true,
+    startDateMs: typeof (data as any)?.startDateMs === 'number' ? Number((data as any).startDateMs) : null,
+    dueDateMs: typeof (data as any)?.dueDateMs === 'number' ? Number((data as any).dueDateMs) : null,
+    priority: (data as any)?.priority === 'low' || (data as any)?.priority === 'medium' || (data as any)?.priority === 'high'
+      ? (data as any).priority
+      : null,
+    calendarKind: (data as any)?.calendarKind === 'birthday' ? 'birthday' : 'task',
+    recurrence: (data as any)?.recurrence && typeof (data as any).recurrence === 'object'
+      ? {
+          freq: (data as any).recurrence.freq,
+          interval: typeof (data as any).recurrence.interval === 'number' ? Number((data as any).recurrence.interval) : 1,
+          untilMs: typeof (data as any).recurrence.untilMs === 'number' ? Number((data as any).recurrence.untilMs) : null,
+          exceptions: Array.isArray((data as any).recurrence.exceptions) ? (data as any).recurrence.exceptions : [],
+        }
+      : null,
+    favorite: (data as any)?.favorite === true,
+    archived: (data as any)?.archived === true,
+    sourceType: (data as any)?.sourceType === 'checklist_item' ? 'checklist_item' : null,
+    sourceTodoId: typeof (data as any)?.sourceTodoId === 'string' ? String((data as any).sourceTodoId) : null,
+    sourceTodoItemId: typeof (data as any)?.sourceTodoItemId === 'string' ? String((data as any).sourceTodoItemId) : null,
+  };
+
+  const favoriteApplied = await db.runTransaction(async (tx) => {
+    if (input.archived !== true) {
+      await assertCanCreateFreeTask(tx, db, userId);
+    }
+
+    let canFavorite = input.favorite;
+    if (input.favorite && input.archived !== true) {
+      try {
+        await assertCanFavoriteFreeTask(tx, db, userId);
+      } catch (error) {
+        if (error instanceof functions.https.HttpsError && error.code === 'resource-exhausted') {
+          canFavorite = false;
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    tx.create(taskRef, {
+      ...buildTaskWritePayload({ ...input, favorite: canFavorite }),
+    });
+    return canFavorite;
+  });
+
+  return { taskId: taskRef.id, favoriteApplied };
+});
+
+export const setNoteFavoriteWithPlanGuard = functions.https.onCall(async (data, context) => {
+  const userId = context.auth?.uid;
+  if (!userId) {
+    throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+  }
+
+  const noteId = typeof (data as any)?.noteId === 'string' ? String((data as any).noteId) : '';
+  const favorite = (data as any)?.favorite === true;
+  if (!noteId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Note invalide.');
+  }
+
+  const db = admin.firestore();
+  await db.runTransaction(async (tx) => {
+    const noteRef = db.collection('notes').doc(noteId);
+    const noteSnap = await tx.get(noteRef);
+    if (!noteSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Note introuvable.');
+    }
+    const noteData = noteSnap.data() as any;
+    if (noteData?.userId !== userId) {
+      throw new functions.https.HttpsError('permission-denied', 'Accès refusé.');
+    }
+
+    if (favorite && noteData.favorite !== true) {
+      await assertCanFavoriteFreeNote(tx, db, userId);
+    }
+
+    tx.update(noteRef, {
+      favorite,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+
+  return { favorite };
+});
+
+export const setTaskFavoriteWithPlanGuard = functions.https.onCall(async (data, context) => {
+  const userId = context.auth?.uid;
+  if (!userId) {
+    throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+  }
+
+  const taskId = typeof (data as any)?.taskId === 'string' ? String((data as any).taskId) : '';
+  const favorite = (data as any)?.favorite === true;
+  if (!taskId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Élément d’agenda invalide.');
+  }
+
+  const db = admin.firestore();
+  await db.runTransaction(async (tx) => {
+    const taskRef = db.collection('tasks').doc(taskId);
+    const taskSnap = await tx.get(taskRef);
+    if (!taskSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Élément d’agenda introuvable.');
+    }
+    const taskData = taskSnap.data() as any;
+    if (taskData?.userId !== userId) {
+      throw new functions.https.HttpsError('permission-denied', 'Accès refusé.');
+    }
+
+    if (favorite && taskData.favorite !== true && taskData.archived !== true) {
+      await assertCanFavoriteFreeTask(tx, db, userId);
+    }
+
+    tx.update(taskRef, {
+      favorite,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+
+  return { favorite };
+});
+
+export const scheduleChecklistItemWithPlanGuard = functions.https.onCall(async (data, context) => {
+  const userId = context.auth?.uid;
+  if (!userId) {
+    throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+  }
+
+  const todoId = typeof (data as any)?.todoId === 'string' ? String((data as any).todoId) : '';
+  const itemId = typeof (data as any)?.itemId === 'string' ? String((data as any).itemId) : '';
+  const schedule = ((data as any)?.schedule ?? null) as ChecklistScheduleInput | null;
+  if (!todoId || !itemId || !schedule) {
+    throw new functions.https.HttpsError('invalid-argument', 'Planification invalide.');
+  }
+
+  const db = admin.firestore();
+  const normalizedWindow = normalizeChecklistSchedule(schedule);
+  const taskRef = db.collection('tasks').doc();
+
+  const agendaPlan = await db.runTransaction(async (tx) => {
+    const todoRef = db.collection('todos').doc(todoId);
+    const todoSnap = await tx.get(todoRef);
+    if (!todoSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Checklist introuvable.');
+    }
+    const todoData = todoSnap.data() as any;
+    if (todoData?.userId !== userId) {
+      throw new functions.https.HttpsError('permission-denied', 'Accès refusé.');
+    }
+
+    const items = Array.isArray(todoData?.items) ? [...todoData.items] : [];
+    const itemIndex = items.findIndex((item) => item && typeof item === 'object' && item.id === itemId);
+    if (itemIndex < 0) {
+      throw new functions.https.HttpsError('not-found', 'Élément de checklist introuvable.');
+    }
+
+    await assertCanCreateFreeTask(tx, db, userId);
+
+    const item = items[itemIndex] as any;
+    tx.create(taskRef, buildTaskWritePayload({
+      userId,
+      title: typeof item?.text === 'string' && item.text.trim() ? item.text.trim() : 'Élément de checklist',
+      description: `Checklist: ${typeof todoData?.title === 'string' ? todoData.title : 'Checklist'}`,
+      status: item?.done === true ? 'done' : 'todo',
+      workspaceId: typeof todoData?.workspaceId === 'string' ? todoData.workspaceId : null,
+      allDay: normalizedWindow.allDay,
+      startDateMs: normalizedWindow.startDate.toMillis(),
+      dueDateMs: normalizedWindow.dueDate.toMillis(),
+      priority: todoData?.priority === 'low' || todoData?.priority === 'medium' || todoData?.priority === 'high'
+        ? todoData.priority
+        : null,
+      calendarKind: 'task',
+      recurrence: null,
+      favorite: false,
+      archived: false,
+      sourceType: 'checklist_item',
+      sourceTodoId: todoId,
+      sourceTodoItemId: itemId,
+    }));
+
+    items[itemIndex] = {
+      ...item,
+      agendaPlan: {
+        taskId: taskRef.id,
+        allDay: normalizedWindow.allDay,
+        startDate: normalizedWindow.startDate,
+        dueDate: normalizedWindow.dueDate,
+      },
+    };
+
+    tx.update(todoRef, {
+      items,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return {
+      taskId: taskRef.id,
+      allDay: normalizedWindow.allDay,
+      startDateMs: normalizedWindow.startDate.toMillis(),
+      dueDateMs: normalizedWindow.dueDate.toMillis(),
+    };
+  });
+
+  return { agendaPlan };
+});
+
+export const createTodoWithScheduledItemsPlanGuard = functions.https.onCall(async (data, context) => {
+  const userId = context.auth?.uid;
+  if (!userId) {
+    throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+  }
+
+  const title = typeof (data as any)?.title === 'string' ? String((data as any).title).trim() : '';
+  const itemsRaw = Array.isArray((data as any)?.items) ? ((data as any).items as any[]) : [];
+  if (!title) {
+    throw new functions.https.HttpsError('invalid-argument', 'Le titre est obligatoire.');
+  }
+
+  const workspaceId = typeof (data as any)?.workspaceId === 'string' && String((data as any).workspaceId).trim()
+    ? String((data as any).workspaceId)
+    : null;
+  const dueDateMs = typeof (data as any)?.dueDateMs === 'number' ? Number((data as any).dueDateMs) : null;
+  const dueDate = toFirestoreTimestamp(dueDateMs);
+  const priority = (data as any)?.priority === 'low' || (data as any)?.priority === 'medium' || (data as any)?.priority === 'high'
+    ? (data as any).priority
+    : null;
+  const favorite = (data as any)?.favorite === true;
+
+  const items = itemsRaw.map((item) => ({
+    id: typeof item?.id === 'string' ? String(item.id) : '',
+    text: typeof item?.text === 'string' ? String(item.text).trim() : '',
+    done: item?.done === true,
+    createdAt: typeof item?.createdAt === 'number' && Number.isFinite(item.createdAt) ? Number(item.createdAt) : Date.now(),
+    draftSchedule: item?.draftSchedule ?? null,
+  }));
+
+  const invalidItem = items.find((item) => !item.id || !item.text);
+  if (invalidItem) {
+    throw new functions.https.HttpsError('invalid-argument', 'Élément de checklist invalide.');
+  }
+
+  const scheduledItems = items.filter((item) => item.draftSchedule);
+  const db = admin.firestore();
+  const todoRef = db.collection('todos').doc();
+
+  await db.runTransaction(async (tx) => {
+    await assertCanCreateMultipleFreeTasks(tx, db, userId, scheduledItems.length);
+
+    const persistedItems = [] as any[];
+    for (const item of items) {
+      const draftSchedule = item.draftSchedule as ChecklistScheduleInput | null;
+      if (!draftSchedule) {
+        persistedItems.push({
+          id: item.id,
+          text: item.text,
+          done: item.done,
+          createdAt: item.createdAt,
+          agendaPlan: null,
+        });
+        continue;
+      }
+
+      const normalizedWindow = normalizeChecklistSchedule(draftSchedule);
+      const taskRef = db.collection('tasks').doc();
+      tx.create(taskRef, buildTaskWritePayload({
+        userId,
+        title: item.text,
+        description: `Checklist: ${title}`,
+        status: item.done ? 'done' : 'todo',
+        workspaceId,
+        allDay: normalizedWindow.allDay,
+        startDateMs: normalizedWindow.startDate.toMillis(),
+        dueDateMs: normalizedWindow.dueDate.toMillis(),
+        priority,
+        calendarKind: 'task',
+        recurrence: null,
+        favorite: false,
+        archived: false,
+        sourceType: 'checklist_item',
+        sourceTodoId: todoRef.id,
+        sourceTodoItemId: item.id,
+      }));
+
+      persistedItems.push({
+        id: item.id,
+        text: item.text,
+        done: item.done,
+        createdAt: item.createdAt,
+        agendaPlan: {
+          taskId: taskRef.id,
+          allDay: normalizedWindow.allDay,
+          startDate: normalizedWindow.startDate,
+          dueDate: normalizedWindow.dueDate,
+        },
+      });
+    }
+
+    tx.create(todoRef, {
+      userId,
+      workspaceId,
+      title,
+      items: persistedItems,
+      dueDate,
+      priority,
+      completed: false,
+      favorite,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+
+  return { todoId: todoRef.id };
+});
+
 export const assistantApplySuggestion = functions.https.onCall(async (data, context) => {
   const userId = context.auth?.uid;
   if (!userId) {
@@ -4499,6 +5133,7 @@ export const assistantApplySuggestion = functions.https.onCall(async (data, cont
       } else {
         const effectiveTaskDue = kind === 'create_reminder' ? finalRemindAt ?? finalDueDate : finalDueDate;
         const taskRef = db.collection('tasks').doc();
+        await assertCanCreateFreeTask(tx, db, userId);
         tx.create(taskRef, {
           userId,
           title: finalTitle,
@@ -5904,22 +6539,25 @@ export const assistantExecuteIntent = functions.https.onCall(async (data, contex
 
   if (parsed.kind === 'create_task') {
     const taskRef = db.collection('tasks').doc();
-    await taskRef.create({
-      userId,
-      title: parsed.title,
-      status: 'todo',
-      workspaceId: null,
-      startDate: null,
-      dueDate: null,
-      priority: null,
-      favorite: false,
-      archived: false,
-      source: {
-        assistant: true,
-        channel: 'voice_intent',
-      },
-      createdAt,
-      updatedAt,
+    await db.runTransaction(async (tx) => {
+      await assertCanCreateFreeTask(tx, db, userId);
+      tx.create(taskRef, {
+        userId,
+        title: parsed.title,
+        status: 'todo',
+        workspaceId: null,
+        startDate: null,
+        dueDate: null,
+        priority: null,
+        favorite: false,
+        archived: false,
+        source: {
+          assistant: true,
+          channel: 'voice_intent',
+        },
+        createdAt,
+        updatedAt,
+      });
     });
 
     return {
@@ -5935,22 +6573,25 @@ export const assistantExecuteIntent = functions.https.onCall(async (data, contex
 
     if (!isPro) {
       const taskRef = db.collection('tasks').doc();
-      await taskRef.create({
-        userId,
-        title: parsed.title,
-        status: 'todo',
-        workspaceId: null,
-        startDate: null,
-        dueDate: remindAt,
-        priority: null,
-        favorite: false,
-        archived: false,
-        source: {
-          assistant: true,
-          channel: 'voice_intent',
-        },
-        createdAt,
-        updatedAt,
+      await db.runTransaction(async (tx) => {
+        await assertCanCreateFreeTask(tx, db, userId);
+        tx.create(taskRef, {
+          userId,
+          title: parsed.title,
+          status: 'todo',
+          workspaceId: null,
+          startDate: null,
+          dueDate: remindAt,
+          priority: null,
+          favorite: false,
+          archived: false,
+          source: {
+            assistant: true,
+            channel: 'voice_intent',
+          },
+          createdAt,
+          updatedAt,
+        });
       });
 
       return {
@@ -6011,22 +6652,25 @@ export const assistantExecuteIntent = functions.https.onCall(async (data, contex
 
   if (parsed.kind === 'schedule_meeting') {
     const taskRef = db.collection('tasks').doc();
-    await taskRef.create({
-      userId,
-      title: `Réunion: ${parsed.title}`,
-      status: 'todo',
-      workspaceId: null,
-      startDate: parsedRemindAtTs ?? null,
-      dueDate: parsedRemindAtTs ?? null,
-      priority: null,
-      favorite: false,
-      archived: false,
-      source: {
-        assistant: true,
-        channel: 'voice_intent',
-      },
-      createdAt,
-      updatedAt,
+    await db.runTransaction(async (tx) => {
+      await assertCanCreateFreeTask(tx, db, userId);
+      tx.create(taskRef, {
+        userId,
+        title: `Réunion: ${parsed.title}`,
+        status: 'todo',
+        workspaceId: null,
+        startDate: parsedRemindAtTs ?? null,
+        dueDate: parsedRemindAtTs ?? null,
+        priority: null,
+        favorite: false,
+        archived: false,
+        source: {
+          assistant: true,
+          channel: 'voice_intent',
+        },
+        createdAt,
+        updatedAt,
+      });
     });
 
     return {

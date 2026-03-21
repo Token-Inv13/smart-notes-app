@@ -5,7 +5,6 @@ import { deleteDoc, doc, getDoc, serverTimestamp, updateDoc, writeBatch } from "
 import { auth, db } from "@/lib/firebase";
 import {
   cleanupChecklistAgendaTasks,
-  scheduleChecklistItem,
   type ChecklistItemScheduleData,
 } from "@/lib/checklistAgenda";
 import {
@@ -20,6 +19,7 @@ import type { TodoDoc } from "@/types/firestore";
 import { useRouter } from "next/navigation";
 import DictationMicButton from "@/app/(protected)/_components/DictationMicButton";
 import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
+import { getPlanLimitMessage, hydrateChecklistAgendaPlan, scheduleChecklistItemWithPlanGuard } from "@/lib/planGuardedMutations";
 import Modal from "../../../Modal";
 
 function safeItemId() {
@@ -313,18 +313,13 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
     setEditError(null);
 
     try {
-      const batch = writeBatch(db);
-      const agendaPlan = await scheduleChecklistItem({
-        db,
-        userId: user.uid,
-        todoId: todo.id,
-        todoTitle: todo.title,
-        workspaceId: todo.workspaceId ?? null,
-        priority: todo.priority ?? null,
-        item,
-        schedule,
-        batch,
-      });
+      const agendaPlan = hydrateChecklistAgendaPlan(
+        await scheduleChecklistItemWithPlanGuard({
+          todoId: todo.id,
+          itemId: item.id,
+          schedule,
+        }),
+      );
 
       const nextItems = (todo.items ?? []).map((currentItem) =>
         currentItem.id === item.id
@@ -335,24 +330,11 @@ export default function TodoDetailModal(props: { params: Promise<{ id: string }>
           : currentItem,
       );
 
-      batch.update(doc(db, "todos", todo.id), {
-        userId: todo.userId,
-        workspaceId: typeof todo.workspaceId === "string" ? todo.workspaceId : null,
-        title: todo.title,
-        completed: todo.completed === true,
-        favorite: todo.favorite === true,
-        items: nextItems,
-        dueDate: todo.dueDate ?? null,
-        priority: todo.priority ?? null,
-        updatedAt: serverTimestamp(),
-      });
-
-      await batch.commit();
       setTodo((prev) => (prev ? { ...prev, items: nextItems } : prev));
       closePlanning();
     } catch (e) {
       console.error("Error scheduling checklist item", e);
-      setPlanningError(toUserErrorMessage(e, "Impossible de planifier cet élément."));
+      setPlanningError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "Impossible de planifier cet élément."));
     } finally {
       setPlanningBusyId((current) => (current === item.id ? null : current));
     }

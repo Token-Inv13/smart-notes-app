@@ -21,6 +21,13 @@ import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import type { TaskDoc } from "@/types/firestore";
 import DictationMicButton from "./DictationMicButton";
 import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
+import {
+  createTaskWithPlanGuard,
+  FREE_TASK_LIMIT_MESSAGE,
+  getPlanLimitMessage,
+  serializeTaskRecurrence,
+  serializeTimestampMillis,
+} from "@/lib/planGuardedMutations";
 
 type TaskStatus = "todo" | "doing" | "done";
 
@@ -45,8 +52,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
   const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === "pro";
-  const freeLimitMessage =
-    "Limite Free atteinte. Passe en Pro pour créer plus d’éléments d’agenda et utiliser les favoris sans limite.";
+  const freeLimitMessage = FREE_TASK_LIMIT_MESSAGE;
 
   const { data: allTasksForLimit } = useUserTasks({ limit: 16 });
   const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
@@ -253,23 +259,25 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
           ? isExactAllDayWindow(startTimestamp.toDate(), dueTimestamp.toDate())
           : false;
 
-      const payload: Omit<TaskDoc, "id"> = {
-        userId: user.uid,
+      const taskResult = await createTaskWithPlanGuard({
         title: validation.data.title,
+        description: "",
         status: validation.data.status,
         workspaceId: validation.data.workspaceId ?? null,
         allDay: explicitAllDay,
-        startDate: startTimestamp,
-        dueDate: dueTimestamp,
+        startDateMs: serializeTimestampMillis(startTimestamp),
+        dueDateMs: serializeTimestampMillis(dueTimestamp),
         priority: validation.data.priority ?? null,
+        calendarKind: "task",
+        recurrence: serializeTaskRecurrence(null),
         favorite: canFavoriteNow,
         archived: false,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      };
-      const taskRef = await addDoc(collection(db, "tasks"), payload);
+        sourceType: null,
+        sourceTodoId: null,
+        sourceTodoItemId: null,
+      });
 
-      if (initialFavorite === true && !canFavoriteNow) {
+      if (initialFavorite === true && !taskResult.favoriteApplied) {
         try {
           if (typeof window !== "undefined") {
             window.sessionStorage.setItem(
@@ -288,7 +296,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
           try {
             await addDoc(collection(db, "taskReminders"), {
               userId: user.uid,
-              taskId: taskRef.id,
+              taskId: taskResult.taskId,
               dueDate: dueTimestamp ? dueTimestamp.toDate().toISOString() : "",
               reminderTime: reminderDate.toISOString(),
               sent: false,
@@ -321,7 +329,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
       onCreated?.();
     } catch (e) {
       console.error("Error creating task", e);
-      setCreateError(toUserErrorMessage(e, "Impossible de créer l’élément d’agenda."));
+      setCreateError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "Impossible de créer l’élément d’agenda."));
     } finally {
       setCreating(false);
     }

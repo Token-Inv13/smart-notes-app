@@ -34,6 +34,7 @@ import { htmlToPlainText } from "@/lib/richText";
 import { toUserErrorMessage } from "@/lib/userError";
 import Link from "next/link";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
+import { FREE_NOTE_LIMIT_MESSAGE, getPlanLimitMessage, setNoteFavoriteWithPlanGuard } from "@/lib/planGuardedMutations";
 
 export default function NotesPage() {
   const router = useRouter();
@@ -56,8 +57,7 @@ export default function NotesPage() {
 
   const { data: userSettings } = useUserSettings();
   const isPro = userSettings?.plan === "pro";
-  const freeLimitMessage =
-    "Limite Free atteinte. Tu peux passer en Pro pour créer plus de notes et utiliser les favoris sans limite.";
+  const freeLimitMessage = FREE_NOTE_LIMIT_MESSAGE;
 
   const { data: notes, loading, error } = useUserNotes();
   const { data: favoriteNotesForLimit } = useUserNotes({ favoriteOnly: true, limit: 11 });
@@ -398,13 +398,10 @@ export default function NotesPage() {
     }
 
     try {
-      await updateDoc(doc(db, "notes", note.id), {
-        favorite: !note.favorite,
-        updatedAt: serverTimestamp(),
-      });
+      await setNoteFavoriteWithPlanGuard(note.id, !note.favorite);
     } catch (e) {
       console.error("Error toggling favorite", e);
-      setEditError(toUserErrorMessage(e, "Erreur lors de la mise à jour des favoris."));
+      setEditError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "Erreur lors de la mise à jour des favoris."));
     }
   };
 

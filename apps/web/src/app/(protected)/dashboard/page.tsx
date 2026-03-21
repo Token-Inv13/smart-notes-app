@@ -11,6 +11,7 @@ import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { projectTaskToEvent } from "@/lib/agenda/taskEventProjector";
 import { auth, db } from "@/lib/firebase";
+import { FREE_TASK_LIMIT_MESSAGE, getPlanLimitMessage, setTaskFavoriteWithPlanGuard } from "@/lib/planGuardedMutations";
 import { toUserErrorMessage } from "@/lib/userError";
 import { buildWorkspacePathLabelMap, getWorkspaceSelfAndDescendantIds } from "@/lib/workspaces";
 import type { TaskDoc, TodoDoc } from "@/types/firestore";
@@ -176,7 +177,6 @@ export default function DashboardPage() {
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const [optimisticTaskById, setOptimisticTaskById] = useState<Record<string, TaskOptimisticPatch>>({});
   const isPro = userSettings?.plan === "pro";
-  const freeLimitMessage = "Limite Free atteinte. Passe en Pro pour créer plus d’éléments d’agenda et utiliser les favoris sans limite.";
 
   const workspaceLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
   const selectedWorkspaceIds = useMemo(
@@ -328,7 +328,7 @@ export default function DashboardPage() {
 
     const nextFavorite = !(task.favorite === true);
     if (!isPro && nextFavorite && favoriteActiveCount >= 15) {
-      setTaskActionError(freeLimitMessage);
+      setTaskActionError(FREE_TASK_LIMIT_MESSAGE);
       return;
     }
 
@@ -341,14 +341,7 @@ export default function DashboardPage() {
     }));
 
     try {
-      await updateDoc(doc(db, "tasks", task.id), {
-        title: task.title,
-        status: (task.status ?? "todo") as TaskDoc["status"],
-        workspaceId: typeof task.workspaceId === "string" ? task.workspaceId : null,
-        dueDate: task.dueDate ?? null,
-        favorite: nextFavorite,
-        updatedAt: serverTimestamp(),
-      });
+      await setTaskFavoriteWithPlanGuard(task.id, nextFavorite);
 
       setTaskActionFeedback(nextFavorite ? "Ajouté aux favoris." : "Retiré des favoris.");
       window.setTimeout(() => setTaskActionFeedback(null), 1800);
@@ -363,7 +356,7 @@ export default function DashboardPage() {
         else next[task.id!] = current;
         return next;
       });
-      setTaskActionError(toUserErrorMessage(e, "Erreur lors de la mise à jour des favoris."));
+      setTaskActionError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "Erreur lors de la mise à jour des favoris."));
     } finally {
       setPendingTaskId((current) => (current === task.id ? null : current));
     }

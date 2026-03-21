@@ -134,7 +134,10 @@ service cloud.firestore {
     match /notes/{noteId} {
       allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
 
+      // Free note creation is enforced server-side through a callable so quotas
+      // remain non-contournable. Pro users can still create directly.
       allow create: if isAuthenticated()
+        && isProUser()
         && request.auth.uid == request.resource.data.userId
         && ('workspaceId' in request.resource.data)
         && isNullOrString(request.resource.data.workspaceId)
@@ -145,9 +148,12 @@ service cloud.firestore {
         && isServerTimestamp(request.resource.data.createdAt)
         && isServerTimestamp(request.resource.data.updatedAt);
 
+      // Free users can keep editing notes directly, but favorite quota changes
+      // are routed through a callable so the server can enforce limits safely.
       allow update: if isAuthenticated()
         && request.auth.uid == resource.data.userId
         && request.resource.data.userId == resource.data.userId
+        && (isProUser() || request.resource.data.favorite == resource.data.favorite)
         && isNullOrString(request.resource.data.workspaceId)
         && isNonEmptyString(request.resource.data.title)
         && isNullOrString(request.resource.data.content)
@@ -193,7 +199,10 @@ service cloud.firestore {
     match /tasks/{taskId} {
       allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
 
+      // Free task creation is enforced server-side through callables/helpers so
+      // the active-task quota cannot be bypassed with direct SDK writes.
       allow create: if isAuthenticated()
+        && isProUser()
         && request.auth.uid == request.resource.data.userId
         && ('workspaceId' in request.resource.data)
         && isNullOrString(request.resource.data.workspaceId)
@@ -206,9 +215,12 @@ service cloud.firestore {
         && isServerTimestamp(request.resource.data.createdAt)
         && isServerTimestamp(request.resource.data.updatedAt);
 
+      // Free users can still edit existing tasks directly, but favorite quota
+      // changes go through a callable to keep the limit non-contournable.
       allow update: if isAuthenticated()
         && request.auth.uid == resource.data.userId
         && request.resource.data.userId == resource.data.userId
+        && (isProUser() || request.resource.data.favorite == resource.data.favorite)
         && isNullOrString(request.resource.data.workspaceId)
         && isNonEmptyString(request.resource.data.title)
         && (request.resource.data.status in ['todo', 'doing', 'done'])
