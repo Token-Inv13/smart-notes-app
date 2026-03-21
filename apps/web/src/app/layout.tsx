@@ -12,9 +12,12 @@ export const metadata = {
   },
   manifest: '/manifest.webmanifest',
   icons: {
-    icon: '/favicon.svg',
-    shortcut: '/favicon.svg',
-    apple: '/favicon.svg',
+    icon: [
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    shortcut: '/icons/icon-192.png',
+    apple: '/icons/icon-192.png',
   },
   openGraph: {
     title: SITE_NAME,
@@ -34,7 +37,10 @@ export const metadata = {
 };
 
 export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
   themeColor: '#111827',
+  viewportFit: 'cover',
 };
 
 interface RootLayoutProps {

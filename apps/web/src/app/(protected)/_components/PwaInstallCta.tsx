@@ -23,6 +23,13 @@ function isIosDevice() {
   return isIos;
 }
 
+function isSafariBrowser() {
+  if (typeof window === "undefined") return false;
+  const ua = window.navigator.userAgent.toLowerCase();
+  const isSafari = ua.includes("safari") && !ua.includes("crios") && !ua.includes("fxios") && !ua.includes("edgios");
+  return isSafari;
+}
+
 export default function PwaInstallCta() {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
   const [dismissed, setDismissed] = useState(false);
@@ -47,9 +54,10 @@ export default function PwaInstallCta() {
 
   const installed = useMemo(() => isStandaloneDisplayMode(), []);
   const ios = useMemo(() => isIosDevice(), []);
+  const iosSafari = useMemo(() => ios && isSafariBrowser(), [ios]);
 
   const canPromptInstall = !!deferred;
-  const shouldShow = !installed && !dismissed && canPromptInstall;
+  const shouldShow = !installed && !dismissed && (canPromptInstall || ios);
 
   const dismiss = () => {
     setDismissed(true);
@@ -84,7 +92,9 @@ export default function PwaInstallCta() {
           </div>
           {ios && (
             <div className="text-xs text-muted-foreground mt-1">
-              Safari → Partager → Sur l’écran d’accueil.
+              {iosSafari
+                ? "Safari → Partager → Sur l’écran d’accueil."
+                : "Ouvre Smart Notes dans Safari, puis Partager → Sur l’écran d’accueil."}
             </div>
           )}
         </div>
@@ -104,6 +114,11 @@ export default function PwaInstallCta() {
           <button type="button" onClick={onInstall} className="sn-text-btn">
             Installer
           </button>
+        )}
+        {ios && !canPromptInstall && (
+          <span className="text-xs text-muted-foreground">
+            Installation manuelle via Safari
+          </span>
         )}
         <button type="button" onClick={dismiss} className="sn-text-btn">
           Plus tard
