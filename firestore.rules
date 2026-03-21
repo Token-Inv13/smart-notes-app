@@ -42,6 +42,15 @@ service cloud.firestore {
     function isServerTimestamp(value) {
       return value == request.time;
     }
+
+    function maxNoteAttachmentsForPlan() {
+      return isProUser() ? 10 : 5;
+    }
+
+    function hasAllowedNoteAttachmentCount(data) {
+      return !('attachments' in data) ||
+        (data.attachments is list && data.attachments.size() <= maxNoteAttachmentsForPlan());
+    }
     
     // Users collection
     match /users/{userId} {
@@ -143,6 +152,8 @@ service cloud.firestore {
         && isNullOrString(request.resource.data.workspaceId)
         && isNonEmptyString(request.resource.data.title)
         && isNullOrString(request.resource.data.content)
+        // Keep note attachment limits non-contournable even with direct SDK writes.
+        && hasAllowedNoteAttachmentCount(request.resource.data)
         && isOptionalBool(request.resource.data.favorite)
         && isOptionalBool(request.resource.data.completed)
         && isServerTimestamp(request.resource.data.createdAt)
@@ -157,6 +168,8 @@ service cloud.firestore {
         && isNullOrString(request.resource.data.workspaceId)
         && isNonEmptyString(request.resource.data.title)
         && isNullOrString(request.resource.data.content)
+        // Enforce the attachment cap by plan on every note update.
+        && hasAllowedNoteAttachmentCount(request.resource.data)
         && isOptionalBool(request.resource.data.favorite)
         && isOptionalBool(request.resource.data.completed)
         && isServerTimestamp(request.resource.data.updatedAt);

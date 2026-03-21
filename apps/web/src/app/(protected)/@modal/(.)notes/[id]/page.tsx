@@ -291,6 +291,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
     setUploadingAttachment(true);
     setAttachmentError(null);
 
+    let uploadedStoragePath: string | null = null;
     try {
       const attachmentId = safeId();
       const safeName = sanitizeFilename(file.name ?? "fichier");
@@ -299,6 +300,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
       );
       const fileRef = ref(storage, storagePath);
       await uploadBytes(fileRef, file, { contentType: file.type });
+      uploadedStoragePath = storagePath;
 
       const newAttachment: NoteAttachment = {
         id: attachmentId,
@@ -335,10 +337,23 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
         name: err?.name,
       });
 
+      if (uploadedStoragePath) {
+        try {
+          await deleteNoteAttachmentFile(uploadedStoragePath);
+        } catch (cleanupError) {
+          console.error("Error cleaning up attachment after failed metadata write", cleanupError);
+        }
+      }
+
       if (code === "storage/unauthorized") {
         setAttachmentError(
           "Import refusé. Vérifie que ton plan et ton fichier respectent les limites (Free: 20 Mo, Pro: 350 Mo).",
         );
+        return;
+      }
+
+      if (code === "permission-denied") {
+        setAttachmentError(`Limite atteinte: ${attachments.length}/${maxFiles} fichiers max par note.`);
         return;
       }
 
