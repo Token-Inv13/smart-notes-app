@@ -2482,7 +2482,7 @@ export default function VoiceAgentButton({ mobileHidden, renderCustomTrigger }: 
     if (!error) return null;
     const raw = error.toLowerCase();
     if (raw.includes("permission micro") || raw.includes("accès au micro")) {
-      return "Autorise le micro pour Smart Notes dans le navigateur Android puis réessaie.";
+      return "Autorise le micro pour TaskNote dans le navigateur Android puis réessaie.";
     }
     if (raw.includes("audio vide") || raw.includes("capture")) {
       return "Parle plus près du micro pendant 1-2 secondes pour valider la captation.";

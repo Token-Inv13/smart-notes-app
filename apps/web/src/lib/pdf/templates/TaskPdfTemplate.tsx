@@ -167,10 +167,10 @@ export default function TaskPdfTemplate(props: Props) {
         <div className="header">
           <div className="brand">
             <div className="logo-wrap">
-              <img className="logo" src="/logo-icon.svg" alt="Smart Notes" />
+              <img className="logo" src="/logo-icon.svg" alt="TaskNote" />
             </div>
             <div className="brand-text">
-              <div className="brand-name">Smart Notes</div>
+              <div className="brand-name">TaskNote</div>
               <div className="brand-sub">app.tasknote.io</div>
             </div>
           </div>

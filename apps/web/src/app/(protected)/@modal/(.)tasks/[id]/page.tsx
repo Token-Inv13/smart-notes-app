@@ -346,7 +346,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     }
 
     const md = `${lines.join("\n")}\n`;
-    const filename = `smartnotes-task-${sanitize(task.title ?? "")}.md`;
+    const filename = `tasknote-task-${sanitize(task.title ?? "")}.md`;
 
     try {
       const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });

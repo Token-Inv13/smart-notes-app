@@ -4,7 +4,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.tachesnotes.smartnotes',
-  appName: 'Smart Notes',
+  appName: 'TaskNote',
   // Current Android shell strategy: load the hosted production web app.
   // We keep webDir for generated Capacitor assets, but native runtime points to server.url.
   webDir: 'public',

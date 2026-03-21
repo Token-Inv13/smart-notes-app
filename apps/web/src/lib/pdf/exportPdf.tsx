@@ -187,7 +187,7 @@ async function buildPdfFromElement(element: HTMLElement) {
     doc.setPage(i);
 
     const footerY = pageHeight - 6;
-    doc.text("Exporté depuis Smart Notes — app.tasknote.io", 20, footerY);
+    doc.text("Exporté depuis TaskNote — app.tasknote.io", 20, footerY);
     doc.text(`${i}/${pageCount}`, pageWidth - 20, footerY, { align: "right" });
   }
 
@@ -250,7 +250,7 @@ export async function exportTaskPdf(task: TaskDoc, workspaceName: string | null)
   try {
     const doc = await buildPdfFromElement(element);
     const blob = doc.output("blob");
-    downloadBlob(blob, `smartnotes-task-${sanitizeFilename(task.title ?? "")}.pdf`);
+    downloadBlob(blob, `tasknote-task-${sanitizeFilename(task.title ?? "")}.pdf`);
   } finally {
     cleanup();
   }

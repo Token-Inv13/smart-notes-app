@@ -576,7 +576,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
     lines.push(htmlToMarkdown(note.content ?? ""));
 
     const md = `${lines.join("\n")}\n`;
-    const filename = `smartnotes-note-${sanitize(note.title ?? "")}.md`;
+    const filename = `tasknote-note-${sanitize(note.title ?? "")}.md`;
 
     try {
       const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
@@ -940,7 +940,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
                     </button>
                   </div>
                   <div className="mt-2 text-xs text-muted-foreground">
-                    Ce lien ouvre la note dans SmartNotes et reste protégé par l’application.
+                    Ce lien ouvre la note dans TaskNote et reste protégé par l’application.
                   </div>
                 </div>
               )}

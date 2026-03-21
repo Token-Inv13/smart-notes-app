@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Smart Notes",
-  "short_name": "Smart Notes",
+  "name": "TaskNote",
+  "short_name": "TaskNote",
   "description": "Notes, tâches et rappels dans une app simple et rapide.",
   "start_url": "/",
   "scope": "/",

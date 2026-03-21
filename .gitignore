@@ -51,3 +51,4 @@ apps/web/e2e/test-results/
 .env*.local
 functions/.env
 functions/.env.*
+functions/lib/

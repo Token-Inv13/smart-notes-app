@@ -2800,7 +2800,7 @@ async function sendReminderEmail(params: {
     ? params.reminderTimeIso
     : reminderDate.toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
 
-  const subject = '⏰ Rappel de tâche — Smart Notes';
+  const subject = '⏰ Rappel de tâche — TaskNote';
   const html = `
     <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111;">
       <h2 style="margin: 0 0 12px;">⏰ Rappel de tâche</h2>
@@ -2809,7 +2809,7 @@ async function sendReminderEmail(params: {
       <p style="margin: 0 0 16px;">
         <a href="${taskUrl}" style="display: inline-block; padding: 10px 14px; background: #111; color: #fff; text-decoration: none; border-radius: 8px;">Ouvrir la tâche</a>
       </p>
-      <p style="margin: 0; color: #555; font-size: 12px;">Smart Notes — ${escapeHtml(env.appBaseUrl)}</p>
+      <p style="margin: 0; color: #555; font-size: 12px;">TaskNote — ${escapeHtml(env.appBaseUrl)}</p>
     </div>
   `;
 

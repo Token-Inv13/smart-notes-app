@@ -1,19 +1,19 @@
 export const metadata = {
-  title: "Privacy Policy – Smart Notes",
+  title: "Privacy Policy – TaskNote",
 };
 
 export default function PrivacyPolicyPage() {
   return (
     <div className="min-h-screen bg-background text-foreground px-4 py-10">
       <div className="mx-auto w-full max-w-3xl">
-        <h1 className="text-2xl font-semibold">Privacy Policy – Smart Notes</h1>
+        <h1 className="text-2xl font-semibold">Privacy Policy – TaskNote</h1>
         <p className="mt-2 text-sm text-muted-foreground">Last updated: January 13, 2026</p>
 
         <div className="mt-8 space-y-6 text-sm leading-6">
           <section className="space-y-2">
             <h2 className="text-base font-semibold">Overview</h2>
             <p>
-              Smart Notes is a productivity app that helps you manage notes, tasks, and folders/workspaces.
+              TaskNote is a productivity app that helps you manage notes, tasks, and folders/workspaces.
               This Privacy Policy explains what data we collect, why we collect it, and the choices you have.
             </p>
           </section>
@@ -59,7 +59,7 @@ export default function PrivacyPolicyPage() {
                 <span className="font-medium">Android</span>: payments are processed by Google Play Billing.
               </li>
               <li>
-                Smart Notes does not store your payment card details. Payment information is handled by Stripe or Google Play.
+                TaskNote does not store your payment card details. Payment information is handled by Stripe or Google Play.
               </li>
             </ul>
           </section>
@@ -67,7 +67,7 @@ export default function PrivacyPolicyPage() {
           <section className="space-y-2">
             <h2 className="text-base font-semibold">Where Your Data Is Stored</h2>
             <p>
-              Smart Notes stores data in Firebase (Google Cloud). This includes authentication data and the content you create
+              TaskNote stores data in Firebase (Google Cloud). This includes authentication data and the content you create
               in the app.
             </p>
           </section>

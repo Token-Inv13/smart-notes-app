@@ -85,7 +85,7 @@ export default function PwaInstallCta() {
     <div className="sn-card sn-card--muted p-3 mb-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-sm font-semibold">📲 Installer Smart Notes</div>
+          <div className="text-sm font-semibold">📲 Installer TaskNote</div>
           <div className="text-sm text-muted-foreground">
             Installe l’app pour recevoir les rappels même lorsque l’app est fermée.
             {ios ? " Sur iOS, les notifications fonctionnent uniquement si l’app est installée." : ""}
@@ -94,7 +94,7 @@ export default function PwaInstallCta() {
             <div className="text-xs text-muted-foreground mt-1">
               {iosSafari
                 ? "Safari → Partager → Sur l’écran d’accueil."
-                : "Ouvre Smart Notes dans Safari, puis Partager → Sur l’écran d’accueil."}
+                : "Ouvre TaskNote dans Safari, puis Partager → Sur l’écran d’accueil."}
             </div>
           )}
         </div>

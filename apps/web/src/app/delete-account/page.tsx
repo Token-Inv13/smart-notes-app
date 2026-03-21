@@ -1,16 +1,16 @@
 export const metadata = {
-  title: "Delete Account – Smart Notes",
+  title: "Delete Account – TaskNote",
 };
 
 export default function DeleteAccountPage() {
   return (
     <div className="min-h-screen bg-background text-foreground px-4 py-10">
       <div className="mx-auto w-full max-w-3xl">
-        <h1 className="text-2xl font-semibold">Delete Account – Smart Notes</h1>
+        <h1 className="text-2xl font-semibold">Delete Account – TaskNote</h1>
 
         <div className="mt-8 space-y-6 text-sm leading-6">
           <p>
-            You can request deletion of your Smart Notes account and associated data.
+            You can request deletion of your TaskNote account and associated data.
           </p>
 
           <div className="space-y-2">
@@ -23,7 +23,7 @@ export default function DeleteAccountPage() {
               </a>
             </p>
             <p>
-              Please include the email address linked to your Smart Notes account in your request.
+              Please include the email address linked to your TaskNote account in your request.
             </p>
           </div>
 
@@ -46,7 +46,7 @@ export default function DeleteAccountPage() {
           </div>
 
           <footer className="pt-6 text-xs text-muted-foreground">
-            Smart Notes
+            TaskNote
           </footer>
         </div>
       </div>

@@ -10,5 +10,5 @@ function normalizeSiteUrl(value: string | undefined): string {
 }
 
 export const SITE_URL = normalizeSiteUrl(process.env.NEXT_PUBLIC_APP_URL);
-export const SITE_NAME = 'Smart Notes';
+export const SITE_NAME = 'TaskNote';
 export const SITE_DESCRIPTION = 'Notes and tasks with reminders';

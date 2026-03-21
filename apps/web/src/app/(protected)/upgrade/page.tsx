@@ -298,7 +298,7 @@ export default function UpgradePage() {
           <div className="space-y-1">
             <div className="text-sm font-medium">Comparatif Free / Pro</div>
             <div className="text-xs text-muted-foreground">
-              Cette grille reflète les limites et accès réellement appliqués dans SmartNotes aujourd’hui.
+              Cette grille reflète les limites et accès réellement appliqués dans TaskNote aujourd’hui.
             </div>
           </div>
           <div className="overflow-x-auto">

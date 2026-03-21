@@ -602,8 +602,8 @@ export default function SettingsPage() {
     ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
     : "border-border bg-muted text-muted-foreground";
   const remindersStatusLabel = remindersEnabled
-    ? "Interrupteur Smart Notes: activé"
-    : "Interrupteur Smart Notes: désactivé";
+    ? "Interrupteur TaskNote: activé"
+    : "Interrupteur TaskNote: désactivé";
 
   const browserPermissionLabel =
     notificationPermission === "granted"
@@ -622,7 +622,7 @@ export default function SettingsPage() {
 
   const notificationsSummary =
     !remindersEnabled
-      ? "Les rappels sont désactivés dans Smart Notes."
+      ? "Les rappels sont désactivés dans TaskNote."
       : notificationPermission === "granted" && hasFcmTokens
         ? "Rappels prêts: ce navigateur recevra les notifications."
         : notificationPermission === "granted" && !hasFcmTokens
@@ -665,7 +665,7 @@ export default function SettingsPage() {
       ? "Gestion de l’abonnement via Google Play."
       : hasActiveStripeSubscription
         ? "Gestion, modification et annulation via le portail Stripe sécurisé."
-        : "Le plan Pro est actif dans Smart Notes, mais Stripe n’a pas encore confirmé un statut actif.";
+        : "Le plan Pro est actif dans TaskNote, mais Stripe n’a pas encore confirmé un statut actif.";
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
@@ -836,7 +836,7 @@ export default function SettingsPage() {
               <h2 className="text-base font-semibold">Notifications</h2>
               <div className="text-xs text-muted-foreground">Rappels</div>
             </div>
-            <p className="text-sm text-muted-foreground">Vérifie séparément l’état Smart Notes et l’autorisation du navigateur.</p>
+            <p className="text-sm text-muted-foreground">Vérifie séparément l’état TaskNote et l’autorisation du navigateur.</p>
 
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">

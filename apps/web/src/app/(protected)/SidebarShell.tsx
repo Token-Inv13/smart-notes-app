@@ -622,10 +622,10 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
             <div className={collapsed ? "flex flex-col items-center gap-2" : "min-w-0 flex items-center gap-2"}>
               <img
                 src="/favicon.svg"
-                alt="Smart Notes"
+                alt="TaskNote"
                 className="h-8 w-8 rounded-md border border-border bg-background"
               />
-              {!collapsed && <div className="text-sm font-semibold truncate">Smart Notes</div>}
+              {!collapsed && <div className="text-sm font-semibold truncate">TaskNote</div>}
             </div>
             <button
               type="button"
@@ -702,10 +702,10 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
           <div className="min-w-0 flex items-center gap-2">
             <img
               src="/favicon.svg"
-              alt="Smart Notes"
+              alt="TaskNote"
               className="h-7 w-7 rounded-md border border-border bg-background"
             />
-            <div className="text-sm font-medium truncate">Smart Notes</div>
+            <div className="text-sm font-medium truncate">TaskNote</div>
           </div>
           {currentWorkspaceName && (
             <div className="ml-auto text-xs text-muted-foreground truncate max-w-[45%]">
