@@ -120,9 +120,7 @@ function wrapSelectionWithSpanStyle(root: HTMLElement, style: Record<string, str
   const range = sel.getRangeAt(0);
 
   const span = document.createElement("span");
-  for (const [k, v] of Object.entries(style)) {
-    span.style.setProperty(k, v);
-  }
+  applyStyleToElement(span, style);
 
   if (range.collapsed) {
     span.appendChild(document.createTextNode("\u200B"));
