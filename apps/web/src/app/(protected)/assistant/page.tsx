@@ -54,13 +54,13 @@ export default function AssistantPage() {
   const [bundleCustomizeSuggestion, setBundleCustomizeSuggestion] = useState<AssistantSuggestionDoc | null>(null);
 
   const enabled = assistantSettings?.enabled === true;
-  const isPro = assistantSettings?.plan === "pro";
 
   const plan = useMemo(() => {
     const raw = userSettings?.plan;
     if (raw === "pro") return "pro";
     return "free";
   }, [userSettings?.plan]);
+  const isPro = plan === "pro";
 
   const handleEnable = async () => {
     const user = auth.currentUser;

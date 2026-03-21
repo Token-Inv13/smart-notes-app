@@ -8,6 +8,7 @@ import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidatio
 import { useAssistantSettings } from "@/hooks/useAssistantSettings";
 import { useNoteAssistantSuggestions } from "@/hooks/useNoteAssistantSuggestions";
 import { useAuth } from "@/hooks/useAuth";
+import { useUserSettings } from "@/hooks/useUserSettings";
 import { sanitizeAssistantText } from "@/lib/assistantText";
 import { formatTimestampForInput, parseLocalDateTimeToTimestamp } from "@/lib/datetime";
 import { htmlToReadableText, sanitizeNoteHtml } from "@/lib/richText";
@@ -87,6 +88,7 @@ function AssistantActionButton({
 
 export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteContentUpdated }: Props) {
   const { user } = useAuth();
+  const { data: userSettings } = useUserSettings();
   const {
     data: assistantSettings,
     loading: assistantLoading,
@@ -94,7 +96,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
     refetch: refetchAssistant,
   } = useAssistantSettings();
   const enabled = assistantSettings?.enabled === true;
-  const isPro = assistantSettings?.plan === "pro";
+  const isPro = userSettings?.plan === "pro";
 
   const {
     data: suggestions,
