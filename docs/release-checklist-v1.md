@@ -27,8 +27,8 @@ Expected: no failing command.
   - `NEXT_PUBLIC_FCM_VAPID_KEY`
   - `NEXT_PUBLIC_APP_URL` (recommended)
 - Domain split is explicit:
-  - **App/API host**: `app.tachesnotes.com`
-  - **Marketing host**: `tachesnotes.com` / `www.tachesnotes.com`
+  - **App/API host**: `app.tasknote.io`
+  - **Marketing host**: `tasknote.io`
 - Confirm app host serves `/api/*`; apex/www should not be used for API calls.
 
 ## 3) Firebase preflight
@@ -44,7 +44,7 @@ Expected: no failing command.
 
 ## 4) Stripe sanity
 
-On **app host** (`app.tachesnotes.com`):
+On **app host** (`app.tasknote.io`):
 
 - `/api/stripe/checkout` should not return 404/500 for basic method/auth checks.
 - `/api/stripe/portal` should not return 404/500 for basic method/auth checks.
@@ -55,7 +55,7 @@ On **app host** (`app.tachesnotes.com`):
 
 ## 5) Google Calendar sanity
 
-On **app host** (`app.tachesnotes.com`):
+On **app host** (`app.tasknote.io`):
 
 - `GET /api/google/calendar/status` returns 200/401/403, never 404.
 - OAuth flow endpoints are reachable:

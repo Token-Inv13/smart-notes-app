@@ -26,6 +26,6 @@ Option B : si tu utilises un mono-repo, configure le projet Vercel avec "Root Di
 
 Dans `index.html`, section `#cta`, remplace :
 
-- `https://app.tachesnotes.com`
+- `https://app.tasknote.io`
 
 par ton domaine de prod (si besoin).

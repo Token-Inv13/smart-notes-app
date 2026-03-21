@@ -215,7 +215,7 @@ export default function NotePdfTemplate(props: Props) {
             </div>
             <div className="brand-text">
               <div className="brand-name">Smart Notes</div>
-              <div className="brand-sub">app.tachesnotes.com</div>
+              <div className="brand-sub">app.tasknote.io</div>
             </div>
           </div>
           <div className="meta">Exporté le {exportDateLabel}</div>

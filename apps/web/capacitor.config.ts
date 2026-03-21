@@ -9,7 +9,7 @@ const config: CapacitorConfig = {
   // We keep webDir for generated Capacitor assets, but native runtime points to server.url.
   webDir: 'public',
   server: {
-    url: 'https://app.tachesnotes.com',
+    url: 'https://app.tasknote.io',
     cleartext: false,
     allowNavigation: [
       '*.google.com',

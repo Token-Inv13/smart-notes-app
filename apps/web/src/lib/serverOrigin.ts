@@ -1,6 +1,6 @@
 import { headers } from 'next/headers';
 
-const FALLBACK_APP_ORIGIN = 'https://app.tachesnotes.com';
+const FALLBACK_APP_ORIGIN = 'https://app.tasknote.io';
 
 function parseOrigin(value: string | undefined): string | null {
   if (!value) return null;

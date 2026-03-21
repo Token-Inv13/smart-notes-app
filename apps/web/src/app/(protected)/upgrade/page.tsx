@@ -194,8 +194,12 @@ export default function UpgradePage() {
       if (message === 'SESSION_EXPIRED') {
         setPortalError('Ta session a expiré. Rafraîchis la page et reconnecte-toi si besoin.');
       } else if (message === 'RETURN_URL_NOT_ALLOWED') {
+        const upgradeUrl =
+          typeof window !== 'undefined' && window.location?.origin
+            ? `${window.location.origin}/upgrade`
+            : 'https://app.tasknote.io/upgrade';
         setPortalError(
-          'Configuration Stripe requise: ajoute https://app.tachesnotes.com/upgrade dans les URLs de retour autorisées du portail client, puis réessaie.',
+          `Configuration Stripe requise: ajoute ${upgradeUrl} dans les URLs de retour autorisées du portail client, puis réessaie.`,
         );
       } else if (message === 'NO_SUCH_CUSTOMER') {
         setPortalError(

@@ -1,4 +1,4 @@
-const DEFAULT_SITE_URL = 'https://app.tachesnotes.com';
+const DEFAULT_SITE_URL = 'https://app.tasknote.io';
 
 function normalizeSiteUrl(value: string | undefined): string {
   if (!value) return DEFAULT_SITE_URL;

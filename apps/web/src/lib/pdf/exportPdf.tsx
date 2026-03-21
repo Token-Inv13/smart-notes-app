@@ -187,7 +187,7 @@ async function buildPdfFromElement(element: HTMLElement) {
     doc.setPage(i);
 
     const footerY = pageHeight - 6;
-    doc.text("Exporté depuis Smart Notes — app.tachesnotes.com", 20, footerY);
+    doc.text("Exporté depuis Smart Notes — app.tasknote.io", 20, footerY);
     doc.text(`${i}/${pageCount}`, pageWidth - 20, footerY, { align: "right" });
   }
 

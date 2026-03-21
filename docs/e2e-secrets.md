@@ -21,7 +21,7 @@ The workflow `.github/workflows/e2e.yml` reads these values and skips cleanly if
 ### PowerShell (Windows)
 
 ```powershell
-$env:E2E_BASE_URL="https://app.tachesnotes.com"
+$env:E2E_BASE_URL="https://app.tasknote.io"
 $env:E2E_OWNER_EMAIL="owner@your-domain.test"
 $env:E2E_OWNER_PASSWORD="..."
 $env:E2E_EDITOR_EMAIL="editor@your-domain.test"
@@ -35,7 +35,7 @@ pnpm e2e:agenda
 ### bash (macOS/Linux)
 
 ```bash
-export E2E_BASE_URL="https://app.tachesnotes.com"
+export E2E_BASE_URL="https://app.tasknote.io"
 export E2E_OWNER_EMAIL="owner@your-domain.test"
 export E2E_OWNER_PASSWORD="..."
 export E2E_EDITOR_EMAIL="editor@your-domain.test"

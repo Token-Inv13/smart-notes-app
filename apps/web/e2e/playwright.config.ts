@@ -4,7 +4,7 @@ const isCI = process.env.CI === "true";
 const baseURL = process.env.E2E_BASE_URL?.trim() || "http://127.0.0.1:3000";
 
 if (isCI && !process.env.E2E_BASE_URL?.trim()) {
-  throw new Error("Missing E2E_BASE_URL. Example: https://app.tachesnotes.com");
+  throw new Error("Missing E2E_BASE_URL. Example: https://app.tasknote.io");
 }
 
 export default defineConfig({

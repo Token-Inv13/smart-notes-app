@@ -1,6 +1,6 @@
 [
   {
-    "origin": ["https://app.tachesnotes.com"],
+    "origin": ["https://app.tasknote.io"],
     "method": ["GET", "POST", "PUT", "HEAD", "OPTIONS"],
     "responseHeader": [
       "Content-Type",

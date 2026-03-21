@@ -367,7 +367,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     const origin =
       typeof window !== "undefined" && window.location?.origin
         ? window.location.origin
-        : "https://app.tachesnotes.com";
+        : "https://app.tasknote.io";
     const url = `${origin}/tasks/${encodeURIComponent(task.id)}`;
     setSharedUrl(url);
 

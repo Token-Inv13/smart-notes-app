@@ -597,7 +597,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
     const origin =
       typeof window !== "undefined" && window.location?.origin
         ? window.location.origin
-        : "https://app.tachesnotes.com";
+        : "https://app.tasknote.io";
     const url = `${origin}/notes/${encodeURIComponent(note.id)}`;
     setSharedUrl(url);
 
