@@ -59,6 +59,41 @@ function unwrapElement(el: Element) {
   parent.removeChild(el);
 }
 
+function mergeSiblingSpans(container: Element) {
+  const spans = Array.from(container.querySelectorAll("span"));
+  for (const span of spans) {
+    let next = span.nextSibling;
+    while (
+      next &&
+      next.nodeType === Node.ELEMENT_NODE &&
+      (next as Element).tagName === "SPAN" &&
+      ((next as HTMLElement).getAttribute("style") || "") === ((span as HTMLElement).getAttribute("style") || "")
+    ) {
+      while (next.firstChild) {
+        span.appendChild(next.firstChild);
+      }
+      const current = next;
+      next = next.nextSibling;
+      current.parentNode?.removeChild(current);
+    }
+  }
+}
+
+function unwrapNestedSpans(container: Element) {
+  const spans = Array.from(container.querySelectorAll("span"));
+  for (const span of spans) {
+    const parent = span.parentElement;
+    if (!parent || parent.tagName !== "SPAN") continue;
+    const parentStyle = parent.getAttribute("style") || "";
+    const spanStyle = span.getAttribute("style") || "";
+    if (parentStyle !== spanStyle) continue;
+    while (span.firstChild) {
+      parent.insertBefore(span.firstChild, span);
+    }
+    parent.removeChild(span);
+  }
+}
+
 export function sanitizeNoteHtml(html: string, opts?: RichTextSanitizeOptions) {
   const allowHr = opts?.allowHr !== false;
 
@@ -110,6 +145,9 @@ export function sanitizeNoteHtml(html: string, opts?: RichTextSanitizeOptions) {
 
     el.removeAttribute("style");
   }
+
+  mergeSiblingSpans(container);
+  unwrapNestedSpans(container);
 
   return container.innerHTML;
 }

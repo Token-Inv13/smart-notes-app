@@ -37,6 +37,76 @@ function ensureSelectionInside(root: HTMLElement) {
   return !!el && root.contains(el);
 }
 
+const blockStyleTags = new Set(["DIV", "P", "LI"]);
+const structuralTags = new Set(["DIV", "P", "UL", "OL", "LI", "HR"]);
+
+function toCssPropertyName(name: string) {
+  return name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+}
+
+function applyStyleToElement(el: HTMLElement, style: Record<string, string>) {
+  for (const [k, v] of Object.entries(style)) {
+    el.style.setProperty(toCssPropertyName(k), v);
+  }
+}
+
+function fragmentHasStructuralNodes(fragment: DocumentFragment) {
+  const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_ELEMENT, null);
+  let node = walker.nextNode();
+  while (node) {
+    if (structuralTags.has((node as Element).tagName)) {
+      return true;
+    }
+    node = walker.nextNode();
+  }
+  return false;
+}
+
+function wrapTextNodeWithStyle(textNode: Text, style: Record<string, string>) {
+  const value = textNode.textContent ?? "";
+  if (!value.trim()) return;
+
+  const span = document.createElement("span");
+  applyStyleToElement(span, style);
+  textNode.parentNode?.insertBefore(span, textNode);
+  span.appendChild(textNode);
+}
+
+function normalizeStyledFragment(fragment: DocumentFragment, style: Record<string, string>) {
+  const styledBlocks = new Set<Element>();
+  const blockWalker = document.createTreeWalker(fragment, NodeFilter.SHOW_ELEMENT, null);
+  let blockNode = blockWalker.nextNode();
+  while (blockNode) {
+    const el = blockNode as HTMLElement;
+    if (blockStyleTags.has(el.tagName)) {
+      applyStyleToElement(el, style);
+      styledBlocks.add(el);
+    }
+    blockNode = blockWalker.nextNode();
+  }
+
+  const textNodes: Text[] = [];
+  const textWalker = document.createTreeWalker(fragment, NodeFilter.SHOW_TEXT, null);
+  let textNode = textWalker.nextNode();
+  while (textNode) {
+    textNodes.push(textNode as Text);
+    textNode = textWalker.nextNode();
+  }
+
+  for (const node of textNodes) {
+    const parent = node.parentElement;
+    if (!parent) continue;
+    if (Array.from(styledBlocks).some((block) => block.contains(node))) {
+      continue;
+    }
+    if (parent.tagName === "SPAN") {
+      applyStyleToElement(parent, style);
+      continue;
+    }
+    wrapTextNodeWithStyle(node, style);
+  }
+}
+
 function wrapSelectionWithSpanStyle(root: HTMLElement, style: Record<string, string>) {
   if (!isBrowser()) return;
   const sel = window.getSelection();
@@ -66,12 +136,20 @@ function wrapSelectionWithSpanStyle(root: HTMLElement, style: Record<string, str
   }
 
   const frag = range.extractContents();
-  span.appendChild(frag);
-  range.insertNode(span);
+  if (fragmentHasStructuralNodes(frag)) {
+    normalizeStyledFragment(frag, style);
+    range.insertNode(frag);
+  } else {
+    span.appendChild(frag);
+    range.insertNode(span);
+  }
   sel.removeAllRanges();
 
   const nextRange = document.createRange();
-  nextRange.selectNodeContents(span);
+  const target = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+    ? (range.commonAncestorContainer as Element)
+    : range.commonAncestorContainer.parentElement;
+  nextRange.selectNodeContents(target ?? root);
   nextRange.collapse(false);
   sel.addRange(nextRange);
 }
