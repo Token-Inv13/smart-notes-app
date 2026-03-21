@@ -8,6 +8,7 @@ interface ItemActionsMenuProps {
   onEdit: () => void;
   onToggleArchive: () => void;
   onShare: () => void;
+  shareLabel?: string;
   onExportPdf: () => void;
   onExportMarkdown: () => void;
   onToggleFullscreen?: () => void;
@@ -20,6 +21,7 @@ export default function ItemActionsMenu({
   onEdit,
   onToggleArchive,
   onShare,
+  shareLabel = "Partager",
   onExportPdf,
   onExportMarkdown,
   onToggleFullscreen,
@@ -110,7 +112,7 @@ export default function ItemActionsMenu({
             role="menuitem"
             onClick={() => run("share")}
           >
-            Partager
+            {shareLabel}
           </button>
 
           <button

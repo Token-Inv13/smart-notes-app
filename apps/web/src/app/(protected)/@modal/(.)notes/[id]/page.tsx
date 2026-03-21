@@ -590,19 +590,23 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
       const nav = typeof navigator !== "undefined" ? (navigator as NavigatorWithShare) : null;
       if (typeof nav?.share === "function") {
         await nav.share({ title: note.title ?? "Note", url });
-        setShareFeedback("Partage ouvert.");
+        setShareFeedback("Lien interne ouvert dans le menu de partage.");
         return;
       }
 
       if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(url);
-        setShareFeedback("Lien copié.");
+        setShareFeedback("Lien interne copié.");
         return;
       }
 
-      throw new Error("Partage non supporté sur cet appareil.");
+      throw new Error("Copie du lien interne non supportée sur cet appareil.");
     } catch (e) {
-      setEditError(toUserErrorMessage(e, "Erreur lors du partage.", { allowMessages: ["Partage non supporté sur cet appareil."] }));
+      setEditError(
+        toUserErrorMessage(e, "Erreur lors de la copie du lien interne.", {
+          allowMessages: ["Copie du lien interne non supportée sur cet appareil."],
+        }),
+      );
     }
   };
 
@@ -898,13 +902,13 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
               {shareFeedback && <div className="sn-alert shrink-0">{shareFeedback}</div>}
               {sharedUrl && (
                 <div className="sn-card shrink-0 p-3">
-                  <div className="text-xs text-muted-foreground mb-1">Lien de partage</div>
+                  <div className="text-xs text-muted-foreground mb-1">Lien interne de la note</div>
                   <div className="flex items-center gap-2">
                     <input
                       value={sharedUrl}
                       readOnly
                       className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                      aria-label="Lien de partage généré"
+                      aria-label="Lien interne de la note"
                     />
                     <button
                       type="button"
@@ -912,13 +916,16 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
                       onClick={() => {
                         if (!sharedUrl) return;
                         void navigator.clipboard.writeText(sharedUrl).then(
-                          () => setShareFeedback("Lien copié."),
-                          () => setEditError("Impossible de copier le lien."),
+                          () => setShareFeedback("Lien interne copié."),
+                          () => setEditError("Impossible de copier le lien interne."),
                         );
                       }}
                     >
-                      Copier
+                      Copier le lien
                     </button>
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    Ce lien ouvre la note dans SmartNotes et reste protégé par l’application.
                   </div>
                 </div>
               )}
@@ -1010,6 +1017,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
                         onEdit={startEdit}
                         onToggleArchive={handleToggleArchive}
                         onShare={handleShare}
+                        shareLabel="Copier le lien"
                         onExportPdf={handleExportPdf}
                         onExportMarkdown={handleExport}
                         onToggleFullscreen={handleOpenFullscreen}
