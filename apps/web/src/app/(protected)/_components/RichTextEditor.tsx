@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { sanitizeNoteHtml } from "@/lib/richText";
 import DictationMicButton from "./DictationMicButton";
 
@@ -14,6 +14,14 @@ type Props = {
   disabled?: boolean;
   allowHr?: boolean;
   enableDictation?: boolean;
+};
+
+type ToolbarState = {
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  unorderedList: boolean;
+  orderedList: boolean;
 };
 
 function isBrowser() {
@@ -78,6 +86,56 @@ function exec(root: HTMLElement, command: string, value?: string) {
   }
 }
 
+function getSelectionAnchorElement(root: HTMLElement) {
+  if (!isBrowser()) return null;
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const range = sel.getRangeAt(0);
+  const container = range.commonAncestorContainer;
+  const el = container.nodeType === Node.ELEMENT_NODE ? (container as Element) : container.parentElement;
+  if (!el || !root.contains(el)) return null;
+  return el;
+}
+
+function readToolbarState(root: HTMLElement): ToolbarState {
+  if (!isBrowser()) {
+    return {
+      bold: false,
+      italic: false,
+      underline: false,
+      unorderedList: false,
+      orderedList: false,
+    };
+  }
+
+  const anchor = getSelectionAnchorElement(root);
+  if (!anchor) {
+    return {
+      bold: false,
+      italic: false,
+      underline: false,
+      unorderedList: false,
+      orderedList: false,
+    };
+  }
+
+  const safeQueryState = (command: string) => {
+    try {
+      return document.queryCommandState(command);
+    } catch {
+      return false;
+    }
+  };
+
+  return {
+    bold: safeQueryState("bold"),
+    italic: safeQueryState("italic"),
+    underline: safeQueryState("underline"),
+    unorderedList: safeQueryState("insertUnorderedList") || Boolean(anchor.closest("ul")),
+    orderedList: safeQueryState("insertOrderedList") || Boolean(anchor.closest("ol")),
+  };
+}
+
 const textColors = [
   "#111827",
   "#2563EB",
@@ -103,6 +161,13 @@ export default function RichTextEditor({
   const editorRef = useRef<HTMLDivElement | null>(null);
   const lastValueRef = useRef<string>("");
   const [hasFocus, setHasFocus] = useState(false);
+  const [toolbarState, setToolbarState] = useState<ToolbarState>({
+    bold: false,
+    italic: false,
+    underline: false,
+    unorderedList: false,
+    orderedList: false,
+  });
 
   const [dictationStatus, setDictationStatus] = useState<"idle" | "listening" | "stopped" | "error">("idle");
   const [dictationError, setDictationError] = useState<string | null>(null);
@@ -122,6 +187,47 @@ export default function RichTextEditor({
     }
     lastValueRef.current = safeValue;
   }, [hasFocus, safeValue]);
+
+  const syncToolbarState = useCallback(() => {
+    const el = editorRef.current;
+    if (!el || !hasFocus) {
+      setToolbarState({
+        bold: false,
+        italic: false,
+        underline: false,
+        unorderedList: false,
+        orderedList: false,
+      });
+      return;
+    }
+
+    setToolbarState((prev) => {
+      const next = readToolbarState(el);
+      if (
+        prev.bold === next.bold &&
+        prev.italic === next.italic &&
+        prev.underline === next.underline &&
+        prev.unorderedList === next.unorderedList &&
+        prev.orderedList === next.orderedList
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, [hasFocus]);
+
+  useEffect(() => {
+    if (!isBrowser()) return;
+
+    const handleSelectionChange = () => {
+      syncToolbarState();
+    };
+
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => {
+      document.removeEventListener("selectionchange", handleSelectionChange);
+    };
+  }, [syncToolbarState]);
 
   const emitChange = () => {
     const el = editorRef.current;
@@ -159,6 +265,7 @@ export default function RichTextEditor({
     if (!el) return;
     exec(el, command);
     emitChange();
+    syncToolbarState();
   };
 
   const handleInsertHr = () => {
@@ -166,10 +273,12 @@ export default function RichTextEditor({
     if (!el) return;
     exec(el, "insertHorizontalRule");
     emitChange();
+    syncToolbarState();
   };
 
   const toolbarButtonClass =
     "px-2 py-1 rounded-md border border-input text-xs bg-background hover:bg-accent disabled:opacity-50";
+  const activeToolbarButtonClass = "bg-accent text-foreground border-primary/40 ring-1 ring-primary/20";
 
   const insertDictationText = (rawText: string) => {
     const text = String(rawText ?? "").trim();
@@ -228,9 +337,33 @@ export default function RichTextEditor({
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap">
-        <button type="button" disabled={disabled} className={toolbarButtonClass} onClick={() => handleCommand("bold")}>B</button>
-        <button type="button" disabled={disabled} className={toolbarButtonClass} onClick={() => handleCommand("italic")}>I</button>
-        <button type="button" disabled={disabled} className={toolbarButtonClass} onClick={() => handleCommand("underline")}>U</button>
+        <button
+          type="button"
+          disabled={disabled}
+          className={`${toolbarButtonClass} ${toolbarState.bold ? activeToolbarButtonClass : ""}`}
+          aria-pressed={toolbarState.bold}
+          onClick={() => handleCommand("bold")}
+        >
+          B
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          className={`${toolbarButtonClass} ${toolbarState.italic ? activeToolbarButtonClass : ""}`}
+          aria-pressed={toolbarState.italic}
+          onClick={() => handleCommand("italic")}
+        >
+          I
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          className={`${toolbarButtonClass} ${toolbarState.underline ? activeToolbarButtonClass : ""}`}
+          aria-pressed={toolbarState.underline}
+          onClick={() => handleCommand("underline")}
+        >
+          U
+        </button>
 
         <div className="h-6 w-px bg-border" />
 
@@ -274,8 +407,24 @@ export default function RichTextEditor({
 
         <div className="h-6 w-px bg-border" />
 
-        <button type="button" disabled={disabled} className={toolbarButtonClass} onClick={() => handleCommand("insertUnorderedList")}>• Liste</button>
-        <button type="button" disabled={disabled} className={toolbarButtonClass} onClick={() => handleCommand("insertOrderedList")}>1. Liste</button>
+        <button
+          type="button"
+          disabled={disabled}
+          className={`${toolbarButtonClass} ${toolbarState.unorderedList ? activeToolbarButtonClass : ""}`}
+          aria-pressed={toolbarState.unorderedList}
+          onClick={() => handleCommand("insertUnorderedList")}
+        >
+          • Liste
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          className={`${toolbarButtonClass} ${toolbarState.orderedList ? activeToolbarButtonClass : ""}`}
+          aria-pressed={toolbarState.orderedList}
+          onClick={() => handleCommand("insertOrderedList")}
+        >
+          1. Liste
+        </button>
 
         <div className="h-6 w-px bg-border" />
 
@@ -318,12 +467,21 @@ export default function RichTextEditor({
           contentEditable={!disabled}
           suppressContentEditableWarning
           className={`w-full ${minHeightClassName} px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary sn-richtext-content`}
-          onFocus={() => setHasFocus(true)}
+          onFocus={() => {
+            setHasFocus(true);
+            syncToolbarState();
+          }}
           onBlur={() => {
             setHasFocus(false);
             emitChange();
+            syncToolbarState();
           }}
-          onInput={() => emitChange()}
+          onInput={() => {
+            emitChange();
+            syncToolbarState();
+          }}
+          onMouseUp={() => syncToolbarState()}
+          onKeyUp={() => syncToolbarState()}
           onKeyDown={(e) => {
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
               e.preventDefault();
