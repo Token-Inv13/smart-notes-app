@@ -108,6 +108,18 @@ function normalizeStoragePath(path: string) {
   return String(path ?? "").replace(/^\/+/, "");
 }
 
+async function deleteNoteAttachmentFile(storagePath: string) {
+  try {
+    await deleteObject(ref(storage, normalizeStoragePath(storagePath)));
+  } catch (e) {
+    const err = e as FirebaseLikeError;
+    if (typeof err?.code === "string" && err.code === "storage/object-not-found") {
+      return;
+    }
+    throw e;
+  }
+}
+
 type MaybeTimestamp = {
   toDate?: () => Date;
 };
@@ -394,16 +406,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
     setBusyAttachmentId(att.id);
     setAttachmentError(null);
     try {
-      try {
-        await deleteObject(ref(storage, normalizeStoragePath(att.storagePath)));
-      } catch (e) {
-        const err = e as FirebaseLikeError;
-        if (typeof err?.code === "string" && err.code === "storage/object-not-found") {
-          // continue
-        } else {
-          throw e;
-        }
-      }
+      await deleteNoteAttachmentFile(att.storagePath);
       const next = attachments.filter((a) => a.id !== att.id);
       await updateDoc(doc(db, "notes", note.id), {
         attachments: next,
@@ -842,14 +845,20 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
 
     setDeleting(true);
     setEditError(null);
+    setAttachmentError(null);
+    setUploadingAttachment(true);
 
     try {
+      for (const att of attachments) {
+        await deleteNoteAttachmentFile(att.storagePath);
+      }
       await deleteDoc(doc(db, "notes", note.id));
       router.back();
     } catch (e) {
       console.error("Error deleting note (modal)", e);
       setEditError(toUserErrorMessage(e, "Erreur lors de la suppression de la note."));
     } finally {
+      setUploadingAttachment(false);
       setDeleting(false);
     }
   };
