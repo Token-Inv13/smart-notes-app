@@ -22,7 +22,6 @@ import { useAgendaDraftManager } from "./useAgendaDraftManager";
 import { useAgendaEventMutation } from "./useAgendaEventMutation";
 import { useAgendaCalendarNavigation } from "./useAgendaCalendarNavigation";
 import { useAgendaMergedEvents } from "./useAgendaMergedEvents";
-import { renderAgendaCalendarEventContent } from "./AgendaCalendarEventContent";
 import AgendaCalendarFiltersBar from "./AgendaCalendarFiltersBar";
 import AgendaCalendarDraftModal from "./AgendaCalendarDraftModal";
 import AgendaCalendarPlanningView from "./AgendaCalendarPlanningView";
@@ -152,6 +151,21 @@ function clampDateToMonth(year: number, month: number, referenceDate: Date) {
   );
 }
 
+function isSameDateValue(left: Date | null | undefined, right: Date | null | undefined) {
+  if (!left && !right) return true;
+  if (!left || !right) return false;
+  return left.getTime() === right.getTime();
+}
+
+function isSameRangeValue(
+  left: { start: Date; end: Date } | null | undefined,
+  right: { start: Date; end: Date } | null | undefined,
+) {
+  if (!left && !right) return true;
+  if (!left || !right) return false;
+  return isSameDateValue(left.start, right.start) && isSameDateValue(left.end, right.end);
+}
+
 function computePlanningWindow(anchorDate: Date, mode: CalendarViewMode) {
   if (mode === "timeGridDay") {
     const start = startOfDay(anchorDate);
@@ -261,6 +275,7 @@ export default function AgendaCalendar({
 }: AgendaCalendarProps) {
   const calendarRef = useRef<FullCalendar | null>(null);
   const calendarShellRef = useRef<HTMLElement | null>(null);
+  const datesSetRafRef = useRef<number | null>(null);
   const [viewMode, setViewMode] = useState<CalendarViewMode>("timeGridWeek");
   const [displayMode, setDisplayMode] = useState<AgendaDisplayMode>("calendar");
   const [prefsHydrated, setPrefsHydrated] = useState(false);
@@ -320,6 +335,14 @@ export default function AgendaCalendar({
 
   useEffect(() => {
     setUserTimezone(getUserTimezone());
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (datesSetRafRef.current !== null) {
+        window.cancelAnimationFrame(datesSetRafRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -666,21 +689,32 @@ export default function AgendaCalendar({
       arg.view.type === "dayGridMonth" || arg.view.type === "timeGridWeek" || arg.view.type === "timeGridDay"
         ? arg.view.type
         : viewMode;
-    setLabel(formatCalendarLabel({ start: arg.start, end: arg.end }, currentMode));
-    setVisibleRange({ start: arg.start, end: arg.end });
-    setPlanningAnchorDate(arg.start);
-    onVisibleRangeChange?.({ start: arg.start, end: arg.end });
-    window.setTimeout(() => setViewTransitioning(false), 80);
+    const nextLabel = formatCalendarLabel({ start: arg.start, end: arg.end }, currentMode);
+    const nextRange = { start: arg.start, end: arg.end };
+
+    if (datesSetRafRef.current !== null) {
+      window.cancelAnimationFrame(datesSetRafRef.current);
+    }
+
+    datesSetRafRef.current = window.requestAnimationFrame(() => {
+      setLabel((prev) => (prev === nextLabel ? prev : nextLabel));
+      setVisibleRange((prev) => (isSameRangeValue(prev, nextRange) ? prev : nextRange));
+      setPlanningAnchorDate((prev) => (isSameDateValue(prev, arg.start) ? prev : arg.start));
+      onVisibleRangeChange?.(nextRange);
+      window.setTimeout(() => setViewTransitioning(false), 80);
+      datesSetRafRef.current = null;
+    });
   };
 
   useEffect(() => {
     if (displayMode !== "planning") return;
-    setLabel(formatPlanningLabel(planningWindow, viewMode));
+    const nextLabel = formatPlanningLabel(planningWindow, viewMode);
+    setLabel((prev) => (prev === nextLabel ? prev : nextLabel));
   }, [displayMode, planningWindow, viewMode]);
 
   useEffect(() => {
     if (displayMode !== "planning") return;
-    setVisibleRange(planningWindow);
+    setVisibleRange((prev) => (isSameRangeValue(prev, planningWindow) ? prev : planningWindow));
     onVisibleRangeChange?.(planningWindow);
   }, [displayMode, onVisibleRangeChange, planningWindow]);
 
@@ -702,12 +736,6 @@ export default function AgendaCalendar({
     !showClassicTasks ||
     !showChecklistItems ||
     statusFilter !== "all";
-
-  const eventContent = useCallback(
-    (arg: Parameters<typeof renderAgendaCalendarEventContent>[0]) =>
-      renderAgendaCalendarEventContent(arg, isCompactDensity),
-    [isCompactDensity],
-  );
 
   const { planningSections, planningAvailabilityByDate } = useAgendaPlanningData({
     agendaEvents,
@@ -1026,7 +1054,6 @@ export default function AgendaCalendar({
               eventClick={openDraftFromEvent}
               eventDrop={handleMoveOrResize}
               eventResize={handleMoveOrResize}
-              eventContent={eventContent}
               timeZone={userTimezone}
               />
               <p className="mt-2 px-1 text-[11px] text-muted-foreground md:hidden">

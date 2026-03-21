@@ -43,6 +43,7 @@ export function useUserTasks(params?: UseUserTasksParams) {
   const dueDateFrom = params?.dueDateFrom;
   const dueDateTo = params?.dueDateTo;
   const recurrenceFreqs = params?.recurrenceFreqs;
+  const recurrenceFreqsKey = recurrenceFreqs?.join("|") ?? "";
 
   const tasksQuery: Query<TaskDoc> | null = useMemo(() => {
     if (enabled === false) return null;
@@ -79,12 +80,16 @@ export function useUserTasks(params?: UseUserTasksParams) {
       constraints.push(where('dueDate', '<=', dueDateTo));
     }
 
-    if (recurrenceFreqs?.length) {
-      constraints.push(where('recurrence.freq', 'in', recurrenceFreqs));
+    const normalizedRecurrenceFreqs = recurrenceFreqsKey
+      ? (recurrenceFreqsKey.split("|") as TaskRecurrenceFreq[])
+      : null;
+
+    if (normalizedRecurrenceFreqs?.length) {
+      constraints.push(where('recurrence.freq', 'in', normalizedRecurrenceFreqs));
     }
 
     const shouldOrderByStart = startDateFrom || startDateTo;
-    const shouldOrderByDue = dueDateFrom || dueDateTo || !recurrenceFreqs?.length;
+    const shouldOrderByDue = dueDateFrom || dueDateTo || !normalizedRecurrenceFreqs?.length;
     if (shouldOrderByStart) {
       constraints.push(orderBy('startDate', 'asc'));
     } else if (shouldOrderByDue) {
@@ -107,7 +112,7 @@ export function useUserTasks(params?: UseUserTasksParams) {
     startDateTo,
     dueDateFrom,
     dueDateTo,
-    recurrenceFreqs,
+    recurrenceFreqsKey,
   ]);
 
   return useCollection<TaskDoc>(tasksQuery);
