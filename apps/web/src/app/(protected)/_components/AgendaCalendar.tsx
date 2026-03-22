@@ -129,6 +129,10 @@ function startOfDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
 }
 
+function normalizeCalendarAnchorDate(date: Date) {
+  return startOfDay(date);
+}
+
 function startOfWeekMonday(date: Date) {
   const dayStart = startOfDay(date);
   const day = dayStart.getDay();
@@ -699,6 +703,10 @@ export default function AgendaCalendar({
     };
     const nextLabel = formatCalendarLabel(currentRange, currentMode);
     const nextRange = { start: arg.start, end: arg.end };
+    // FullCalendar week/day views can start in the previous month. Keep the navigation
+    // anchor aligned with the calendar's current date so the month/year selects reflect
+    // the month the user actually navigated to.
+    const nextCalendarAnchor = normalizeCalendarAnchorDate(arg.view.calendar.getDate());
 
     if (datesSetRafRef.current !== null) {
       window.cancelAnimationFrame(datesSetRafRef.current);
@@ -707,7 +715,7 @@ export default function AgendaCalendar({
     datesSetRafRef.current = window.requestAnimationFrame(() => {
       setLabel((prev) => (prev === nextLabel ? prev : nextLabel));
       setVisibleRange((prev) => (isSameRangeValue(prev, nextRange) ? prev : nextRange));
-      setCalendarAnchorDate((prev) => (isSameDateValue(prev, currentRange.start) ? prev : currentRange.start));
+      setCalendarAnchorDate((prev) => (isSameDateValue(prev, nextCalendarAnchor) ? prev : nextCalendarAnchor));
       setPlanningAnchorDate((prev) => (isSameDateValue(prev, currentRange.start) ? prev : currentRange.start));
       onVisibleRangeChange?.(nextRange);
       window.setTimeout(() => setViewTransitioning(false), 80);
