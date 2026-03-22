@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { sanitizeNoteHtml } from "@/lib/richText";
 import DictationMicButton from "./DictationMicButton";
 
@@ -344,6 +344,10 @@ export default function RichTextEditor({
     syncToolbarState();
   };
 
+  const preventToolbarFocusSteal = (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+  };
+
   const handleInsertHr = () => {
     const el = editorRef.current;
     if (!el) return;
@@ -411,13 +415,14 @@ export default function RichTextEditor({
   };
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap">
+    <div className="min-w-0 max-w-full space-y-2">
+      <div className="flex min-w-0 max-w-full items-center gap-2 overflow-x-auto whitespace-nowrap">
         <button
           type="button"
           disabled={disabled}
           className={`${toolbarButtonClass} ${toolbarState.bold ? activeToolbarButtonClass : ""}`}
           aria-pressed={toolbarState.bold}
+          onMouseDown={preventToolbarFocusSteal}
           onClick={() => handleCommand("bold")}
         >
           B
@@ -427,6 +432,7 @@ export default function RichTextEditor({
           disabled={disabled}
           className={`${toolbarButtonClass} ${toolbarState.italic ? activeToolbarButtonClass : ""}`}
           aria-pressed={toolbarState.italic}
+          onMouseDown={preventToolbarFocusSteal}
           onClick={() => handleCommand("italic")}
         >
           I
@@ -436,6 +442,7 @@ export default function RichTextEditor({
           disabled={disabled}
           className={`${toolbarButtonClass} ${toolbarState.underline ? activeToolbarButtonClass : ""}`}
           aria-pressed={toolbarState.underline}
+          onMouseDown={preventToolbarFocusSteal}
           onClick={() => handleCommand("underline")}
         >
           U
@@ -443,9 +450,9 @@ export default function RichTextEditor({
 
         <div className="h-6 w-px bg-border" />
 
-        <button type="button" disabled={disabled} className={toolbarButtonClass} onClick={() => applyTextSize("sm")}>Petit</button>
-        <button type="button" disabled={disabled} className={toolbarButtonClass} onClick={() => applyTextSize("md")}>Normal</button>
-        <button type="button" disabled={disabled} className={toolbarButtonClass} onClick={() => applyTextSize("lg")}>Grand</button>
+        <button type="button" disabled={disabled} className={toolbarButtonClass} onMouseDown={preventToolbarFocusSteal} onClick={() => applyTextSize("sm")}>Petit</button>
+        <button type="button" disabled={disabled} className={toolbarButtonClass} onMouseDown={preventToolbarFocusSteal} onClick={() => applyTextSize("md")}>Normal</button>
+        <button type="button" disabled={disabled} className={toolbarButtonClass} onMouseDown={preventToolbarFocusSteal} onClick={() => applyTextSize("lg")}>Grand</button>
 
         <div className="h-6 w-px bg-border" />
 
@@ -455,6 +462,7 @@ export default function RichTextEditor({
               key={c}
               type="button"
               disabled={disabled}
+              onMouseDown={preventToolbarFocusSteal}
               onClick={() => applyTextColor(c)}
               className="h-6 w-6 rounded-md border border-input"
               title="Couleur du texte"
@@ -472,6 +480,7 @@ export default function RichTextEditor({
               key={c}
               type="button"
               disabled={disabled}
+              onMouseDown={preventToolbarFocusSteal}
               onClick={() => applyHighlight(c)}
               className="h-6 w-6 rounded-md border border-input"
               title="Surlignage"
@@ -488,6 +497,7 @@ export default function RichTextEditor({
           disabled={disabled}
           className={`${toolbarButtonClass} ${toolbarState.unorderedList ? activeToolbarButtonClass : ""}`}
           aria-pressed={toolbarState.unorderedList}
+          onMouseDown={preventToolbarFocusSteal}
           onClick={() => handleCommand("insertUnorderedList")}
         >
           • Liste
@@ -497,6 +507,7 @@ export default function RichTextEditor({
           disabled={disabled}
           className={`${toolbarButtonClass} ${toolbarState.orderedList ? activeToolbarButtonClass : ""}`}
           aria-pressed={toolbarState.orderedList}
+          onMouseDown={preventToolbarFocusSteal}
           onClick={() => handleCommand("insertOrderedList")}
         >
           1. Liste
@@ -504,7 +515,7 @@ export default function RichTextEditor({
 
         <div className="h-6 w-px bg-border" />
 
-        <button type="button" disabled={disabled || !allowHr} className={toolbarButtonClass} onClick={handleInsertHr}>
+        <button type="button" disabled={disabled || !allowHr} className={toolbarButtonClass} onMouseDown={preventToolbarFocusSteal} onClick={handleInsertHr}>
           —
         </button>
 
@@ -531,7 +542,7 @@ export default function RichTextEditor({
         ) : null
       ) : null}
 
-      <div className="relative">
+      <div className="relative min-w-0 max-w-full">
         {!hasFocus && !safeValue?.trim() && placeholder ? (
           <div className="pointer-events-none absolute left-3 top-2 text-sm text-muted-foreground">
             {placeholder}
@@ -542,7 +553,7 @@ export default function RichTextEditor({
           ref={editorRef}
           contentEditable={!disabled}
           suppressContentEditableWarning
-          className={`w-full ${minHeightClassName} px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary sn-richtext-content`}
+          className={`min-w-0 max-w-full w-full ${minHeightClassName} px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary sn-richtext-content`}
           onFocus={() => {
             setHasFocus(true);
             syncToolbarState();
