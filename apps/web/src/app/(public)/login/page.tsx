@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { auth } from "@/lib/firebase";
 import { observeCaughtError } from "@/lib/clientObservability";
+import { getRuntimePlatformInfo } from "@/lib/runtimePlatform";
 import {
   signInWithEmailAndPassword,
   GoogleAuthProvider,
@@ -112,6 +113,10 @@ function isNativeGoogleSignInUnavailable(err: unknown): boolean {
   return rawMessage.includes("not implemented on this platform") || rawMessage.includes("unimplemented");
 }
 
+function getNativeGoogleSignInUnavailableMessage() {
+  return "Connexion Google indisponible dans cette version Android. Termine la configuration Google native Android, ou utilise email + mot de passe pour l’instant.";
+}
+
 export default function LoginPage() {
   return (
     <Suspense>
@@ -131,14 +136,7 @@ function LoginPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [resetStatus, setResetStatus] = useState<string | null>(null);
 
-  const isCapacitorNative = () => {
-    try {
-      const cap = (globalThis as unknown as { Capacitor?: { isNativePlatform?: () => boolean } })?.Capacitor;
-      return Boolean(cap && typeof cap.isNativePlatform === "function" && cap.isNativePlatform());
-    } catch {
-      return false;
-    }
-  };
+  const runtimeInfo = getRuntimePlatformInfo();
 
   const establishSession = async () => {
     const user = auth.currentUser;
@@ -251,7 +249,7 @@ function LoginPageInner() {
     setLoading(true);
     try {
       const provider = new GoogleAuthProvider();
-      if (isCapacitorNative()) {
+      if (runtimeInfo.isNative) {
         try {
           const { FirebaseAuthentication } = await import("@capacitor-firebase/authentication");
           const nativeResult = (await FirebaseAuthentication.signInWithGoogle()) as unknown as {
@@ -273,7 +271,9 @@ function LoginPageInner() {
           if (!isNativeGoogleSignInUnavailable(err)) {
             throw err;
           }
-          console.warn("[auth/login] native Google sign-in unavailable, falling back to web flow", err);
+          console.warn("[auth/login] native Google sign-in unavailable", err);
+          setError(getNativeGoogleSignInUnavailableMessage());
+          return;
         }
       }
 
