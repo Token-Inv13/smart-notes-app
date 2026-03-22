@@ -35,18 +35,18 @@ type CalendarViewMode = "dayGridMonth" | "timeGridWeek" | "timeGridDay";
 type AgendaDisplayMode = "calendar" | "planning";
 
 const MONTH_OPTIONS = [
-  { value: 0, label: "Janvier" },
-  { value: 1, label: "Fevrier" },
-  { value: 2, label: "Mars" },
-  { value: 3, label: "Avril" },
-  { value: 4, label: "Mai" },
-  { value: 5, label: "Juin" },
-  { value: 6, label: "Juillet" },
-  { value: 7, label: "Aout" },
-  { value: 8, label: "Septembre" },
-  { value: 9, label: "Octobre" },
-  { value: 10, label: "Novembre" },
-  { value: 11, label: "Decembre" },
+  { value: 1, label: "Janvier" },
+  { value: 2, label: "Fevrier" },
+  { value: 3, label: "Mars" },
+  { value: 4, label: "Avril" },
+  { value: 5, label: "Mai" },
+  { value: 6, label: "Juin" },
+  { value: 7, label: "Juillet" },
+  { value: 8, label: "Aout" },
+  { value: 9, label: "Septembre" },
+  { value: 10, label: "Octobre" },
+  { value: 11, label: "Novembre" },
+  { value: 12, label: "Decembre" },
 ] as const;
 
 export type AgendaCalendarPreferences = {
@@ -672,6 +672,7 @@ export default function AgendaCalendar({
 
   const updateNavigationMonth = useCallback(
     (month: number) => {
+      // months are 0-based internally (JS Date convention)
       jumpToAnchorDate(clampDateToMonth(navigationAnchorDate.getFullYear(), month, navigationAnchorDate));
     },
     [jumpToAnchorDate, navigationAnchorDate],
@@ -789,8 +790,8 @@ export default function AgendaCalendar({
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <div className="hidden sm:flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1">
               <select
-                value={navigationAnchorDate.getMonth()}
-                onChange={(event) => updateNavigationMonth(Number(event.target.value))}
+                value={navigationAnchorDate.getMonth() + 1}
+                onChange={(event) => updateNavigationMonth(Number(event.target.value) - 1)}
                 className="h-8 rounded-md border border-input bg-background px-2 text-sm"
                 aria-label="Choisir le mois de l’agenda"
               >
@@ -883,8 +884,8 @@ export default function AgendaCalendar({
           <label className="space-y-1">
             <span className="text-[11px] text-muted-foreground">Mois</span>
             <select
-              value={navigationAnchorDate.getMonth()}
-              onChange={(event) => updateNavigationMonth(Number(event.target.value))}
+              value={navigationAnchorDate.getMonth() + 1}
+              onChange={(event) => updateNavigationMonth(Number(event.target.value) - 1)}
               className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
               aria-label="Choisir le mois de l’agenda"
             >
