@@ -5,6 +5,7 @@ import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from '@/lib/siteConfig';
 
 export const metadata = {
   metadataBase: new URL(SITE_URL),
+  applicationName: SITE_NAME,
   title: SITE_NAME,
   description: SITE_DESCRIPTION,
   alternates: {
@@ -58,6 +59,10 @@ export default function RootLayout(props: RootLayoutProps) {
     <html lang="fr" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-title" content={SITE_NAME} />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       </head>
       <body className="min-h-screen bg-background text-foreground antialiased">
         <ThemeClientProvider>{children}</ThemeClientProvider>
