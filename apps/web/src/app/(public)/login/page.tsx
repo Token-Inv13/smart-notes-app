@@ -104,6 +104,14 @@ function getFirebaseAuthErrorMessage(err: unknown): string {
   }
 }
 
+function isNativeGoogleSignInUnavailable(err: unknown): boolean {
+  const code = getFirebaseAuthErrorCode(err)?.toLowerCase();
+  if (code === "unimplemented") return true;
+
+  const rawMessage = getFirebaseAuthErrorRawMessage(err).toLowerCase();
+  return rawMessage.includes("not implemented on this platform") || rawMessage.includes("unimplemented");
+}
+
 export default function LoginPage() {
   return (
     <Suspense>
@@ -244,22 +252,29 @@ function LoginPageInner() {
     try {
       const provider = new GoogleAuthProvider();
       if (isCapacitorNative()) {
-        const { FirebaseAuthentication } = await import("@capacitor-firebase/authentication");
-        const nativeResult = (await FirebaseAuthentication.signInWithGoogle()) as unknown as {
-          credential?: { idToken?: string; accessToken?: string };
-        };
+        try {
+          const { FirebaseAuthentication } = await import("@capacitor-firebase/authentication");
+          const nativeResult = (await FirebaseAuthentication.signInWithGoogle()) as unknown as {
+            credential?: { idToken?: string; accessToken?: string };
+          };
 
-        const idToken = nativeResult.credential?.idToken;
-        const accessToken = nativeResult.credential?.accessToken;
-        if (!idToken && !accessToken) {
-          throw new Error("Missing Google credential tokens");
+          const idToken = nativeResult.credential?.idToken;
+          const accessToken = nativeResult.credential?.accessToken;
+          if (!idToken && !accessToken) {
+            throw new Error("Missing Google credential tokens");
+          }
+
+          const credential = GoogleAuthProvider.credential(idToken ?? undefined, accessToken ?? undefined);
+          await signInWithCredential(auth, credential);
+          await establishSession();
+          router.replace(nextPath);
+          return;
+        } catch (err) {
+          if (!isNativeGoogleSignInUnavailable(err)) {
+            throw err;
+          }
+          console.warn("[auth/login] native Google sign-in unavailable, falling back to web flow", err);
         }
-
-        const credential = GoogleAuthProvider.credential(idToken ?? undefined, accessToken ?? undefined);
-        await signInWithCredential(auth, credential);
-        await establishSession();
-        router.replace(nextPath);
-        return;
       }
 
       try {
