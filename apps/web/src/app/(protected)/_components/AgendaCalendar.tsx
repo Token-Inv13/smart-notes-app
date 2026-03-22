@@ -26,7 +26,6 @@ import AgendaCalendarFiltersBar from "./AgendaCalendarFiltersBar";
 import AgendaCalendarDraftModal from "./AgendaCalendarDraftModal";
 import AgendaCalendarPlanningView from "./AgendaCalendarPlanningView";
 import CreateButton from "./CreateButton";
-import VoiceAgentButton from "./assistant/VoiceAgentButton";
 import { projectTasksToEvents } from "@/lib/agenda/taskEventProjector";
 import { getUserTimezone } from "@/lib/datetime";
 import type { TaskCalendarKind, TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq } from "@/types/firestore";
@@ -831,24 +830,6 @@ export default function AgendaCalendar({
               </select>
             </div>
             <div className="inline-flex items-center rounded-md border border-border bg-background/90 shadow-sm overflow-hidden">
-              {displayMode === "calendar" ? (
-                <>
-                  <VoiceAgentButton
-                    renderCustomTrigger={({ onClick, ariaLabel, title }) => (
-                      <button
-                        type="button"
-                        onClick={onClick}
-                        aria-label={ariaLabel}
-                        title={title}
-                        className="h-9 w-10 text-base text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
-                      >
-                        🎤
-                      </button>
-                    )}
-                  />
-                  <div className="h-6 w-px bg-border" aria-hidden="true" />
-                </>
-              ) : null}
               <CreateButton
                 renderCustomTrigger={({ onClick, ariaLabel, title }) => (
                   <button

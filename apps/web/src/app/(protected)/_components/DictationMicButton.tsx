@@ -11,6 +11,8 @@ type Props = {
   onStatusChange?: (status: SpeechDictationStatus, error: string | null) => void;
 };
 
+const HIDE_VOICE_UI = true;
+
 export default function DictationMicButton({ disabled, lang, onFinalText, onStatusChange }: Props) {
   const dictation = useSpeechDictation({
     onFinalText,
@@ -20,6 +22,8 @@ export default function DictationMicButton({ disabled, lang, onFinalText, onStat
   useEffect(() => {
     onStatusChange?.(dictation.status, dictation.error);
   }, [dictation.error, dictation.status, onStatusChange]);
+
+  if (HIDE_VOICE_UI) return null;
 
   const isDisabled = Boolean(disabled);
   const canUse = dictation.supported && !isDisabled;

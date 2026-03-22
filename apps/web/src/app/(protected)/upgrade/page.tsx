@@ -40,7 +40,6 @@ const FEATURE_MATRIX = [
   { label: 'Checklist', free: 'Inclus', pro: 'Inclus' },
   { label: 'Analyse IA de notes', free: '2 / jour', pro: '100 / jour' },
   { label: 'Réanalyse assistant', free: '10 / jour', pro: '200 / jour' },
-  { label: 'Transcription vocale assistant', free: '10 / jour', pro: '200 / jour' },
   { label: 'Assistant: créer un rappel', free: 'Non', pro: 'Oui' },
   { label: 'Assistant: bundle multi-actions', free: 'Non', pro: 'Oui' },
 ];

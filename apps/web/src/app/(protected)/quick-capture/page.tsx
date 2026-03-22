@@ -8,7 +8,6 @@ import { sanitizeNoteHtml } from "@/lib/richText";
 import { useAuth } from "@/hooks/useAuth";
 import { toUserErrorMessage } from "@/lib/userError";
 import type { TodoDoc } from "@/types/firestore";
-import VoiceRecorderButton from "../_components/assistant/VoiceRecorderButton";
 import { createNoteWithPlanGuard, getPlanLimitMessage } from "@/lib/planGuardedMutations";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -28,24 +27,16 @@ function plainTextToNoteHtml(text: string) {
   return `<div>${withBreaks}</div>`;
 }
 
-function buildFinalText(typed: string, transcript: string) {
-  const a = typed.trim();
-  const b = transcript.trim();
-  if (a && b) return `${a}\n\n${b}`;
-  return a || b;
-}
-
 export default function QuickCapturePage() {
   const { user } = useAuth();
 
   const [typedText, setTypedText] = useState("");
-  const [transcript, setTranscript] = useState("");
 
   const [busy, setBusy] = useState<"note" | "todo" | "ai" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const finalText = useMemo(() => buildFinalText(typedText, transcript), [typedText, transcript]);
+  const finalText = useMemo(() => typedText.trim(), [typedText]);
 
   const isCallableUnauthenticated = (err: unknown) => {
     if (isAuthInvalidError(err)) return true;
@@ -159,7 +150,7 @@ export default function QuickCapturePage() {
     <div className="space-y-4 max-w-xl mx-auto">
       <header className="space-y-1">
         <h1 className="text-xl font-semibold">Quick Capture</h1>
-        <div className="text-sm text-muted-foreground">Capture un texte ou une note vocale, puis choisis une action.</div>
+        <div className="text-sm text-muted-foreground">Capture un texte rapide, puis choisis une action.</div>
       </header>
 
       {message ? <div className="sn-alert">{message}</div> : null}
@@ -173,16 +164,6 @@ export default function QuickCapturePage() {
             placeholder="Écris ici…"
             value={typedText}
             onChange={(e) => setTypedText(e.target.value)}
-          />
-        </div>
-
-        <div className="space-y-1">
-          <div className="text-sm font-medium">Voix</div>
-          <VoiceRecorderButton
-            mode="standalone"
-            onTranscript={(t) => setTranscript(t)}
-            showInternalActions={false}
-            showTranscript
           />
         </div>
 

@@ -7,7 +7,6 @@ import SidebarWorkspaces from "./SidebarWorkspaces";
 import PwaInstallCta from "./_components/PwaInstallCta";
 import CreateButton from "./_components/CreateButton";
 import SmartActionDock from "./_components/SmartActionDock";
-import VoiceAgentButton from "./_components/assistant/VoiceAgentButton";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useAuth } from "@/hooks/useAuth";
 import { invalidateAuthSession } from "@/lib/authInvalidation";
@@ -138,7 +137,6 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   const [dockDesktopTopClass, setDockDesktopTopClass] = useState("md:top-32");
   const [isTasksCalendarView, setIsTasksCalendarView] = useState(false);
   const isAdminBackofficeRoute = pathname.startsWith("/admin");
-  const isSettingsRoute = pathname.startsWith("/settings");
   const isAgendaRoute = pathname.startsWith("/tasks");
   const shouldShowPwaInstallCta = pathname === "/dashboard";
   const shouldRenderDock = !isAgendaRoute || !isTasksCalendarView;
@@ -750,26 +748,6 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
               hiddenOnScroll={dockHiddenOnScroll}
               desktopTopClass={dockDesktopTopClass}
               subtleIdle={isAgendaRoute}
-              voiceAction={
-                isSettingsRoute
-                  ? undefined
-                  : (
-                      <VoiceAgentButton
-                        mobileHidden={mobileOpen}
-                        renderCustomTrigger={({ onClick, ariaLabel, title }) => (
-                          <button
-                            type="button"
-                            onClick={onClick}
-                            aria-label={ariaLabel}
-                            title={title}
-                            className="h-10 w-10 rounded-full border border-white/10 bg-white/5 text-white/85 text-lg transition-transform duration-150 hover:scale-[1.04] hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 active:scale-95"
-                          >
-                            🎤
-                          </button>
-                        )}
-                      />
-                    )
-              }
               createAction={(
                 <CreateButton
                   mobileHidden={mobileOpen}
