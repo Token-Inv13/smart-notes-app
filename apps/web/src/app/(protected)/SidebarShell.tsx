@@ -20,6 +20,11 @@ import type { BugReportDoc, WorkspaceDoc } from "@/types/firestore";
 
 const STORAGE_KEY = "sidebarCollapsed";
 const ASSISTANT_NOTIF_STORAGE_KEY = "assistantProactiveNotifications";
+const BUG_REPORT_TEMPLATE = `Ce que je faisais :
+
+Problème observé :
+
+Résultat attendu :`;
 function isActionableKind(kind: string): kind is "create_task" | "create_reminder" | "create_task_bundle" {
   return kind === "create_task" || kind === "create_reminder" || kind === "create_task_bundle";
 }
@@ -536,6 +541,8 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   const closeMobile = () => setMobileOpen(false);
   const openBugModal = () => {
     setBugError(null);
+    setBugFeedback(null);
+    setBugMessage((prev) => (prev.trim() ? prev : BUG_REPORT_TEMPLATE));
     setBugModalOpen(true);
   };
   const closeBugModal = () => {
@@ -547,8 +554,14 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
 
   const submitBugReport = async () => {
     const message = bugMessage.trim();
-    if (!message) {
-      setBugError("Décris le problème rencontré.");
+    const meaningfulMessage = message
+      .replace("Ce que je faisais :", "")
+      .replace("Problème observé :", "")
+      .replace("Résultat attendu :", "")
+      .trim();
+
+    if (!meaningfulMessage) {
+      setBugError("Ajoute quelques détails sur le problème rencontré.");
       return;
     }
     if (!user?.uid) {
@@ -569,9 +582,9 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
         createdAt: serverTimestamp(),
       };
       await addDoc(collection(db, "bugReports"), payload);
-      setBugFeedback("Merci, ton signalement a bien été envoyé.");
+      setBugFeedback("Merci, ton signalement a bien été envoyé. Nous allons le relire, et s’il est pertinent nous pourrons t’offrir 1 mois Pro.");
       setBugModalOpen(false);
-      setBugMessage("");
+      setBugMessage(BUG_REPORT_TEMPLATE);
     } catch (e) {
       console.error("bug_report_submit_failed", e);
       setBugError("Impossible d’envoyer le signalement pour le moment.");
@@ -897,7 +910,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
                   onChange={(e) => setBugMessage(e.target.value)}
                   disabled={bugSubmitting}
                   className="min-h-[180px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="Décris le problème rencontré, ce que tu faisais, et ce qui s’est passé."
+                  placeholder={BUG_REPORT_TEMPLATE}
                 />
               </div>
 
