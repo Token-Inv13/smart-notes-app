@@ -7,12 +7,27 @@
   "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
+  "prefer_related_applications": false,
   "orientation": "portrait",
   "lang": "fr",
   "dir": "ltr",
   "background_color": "#ffffff",
   "theme_color": "#111827",
   "categories": ["productivity", "utilities"],
+  "shortcuts": [
+    {
+      "name": "Notes",
+      "short_name": "Notes",
+      "url": "/notes",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Agenda",
+      "short_name": "Agenda",
+      "url": "/tasks",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ],
   "icons": [
     {
       "src": "/icons/icon-192.png",

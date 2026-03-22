@@ -8,6 +8,7 @@ type BeforeInstallPromptEvent = Event & {
 };
 
 const DISMISS_KEY = "pwaInstallCtaDismissed";
+const DISMISS_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
 
 function isStandaloneDisplayMode() {
   if (typeof window === "undefined") return false;
@@ -21,6 +22,11 @@ function isIosDevice() {
   const ua = window.navigator.userAgent.toLowerCase();
   const isIos = /iphone|ipad|ipod/.test(ua);
   return isIos;
+}
+
+function isAndroidDevice() {
+  if (typeof window === "undefined") return false;
+  return /android/i.test(window.navigator.userAgent);
 }
 
 function isSafariBrowser() {
@@ -38,7 +44,15 @@ export default function PwaInstallCta() {
     if (typeof window === "undefined") return;
 
     try {
-      setDismissed(window.localStorage.getItem(DISMISS_KEY) === "1");
+      const raw = window.localStorage.getItem(DISMISS_KEY);
+      if (!raw) {
+        setDismissed(false);
+      } else if (raw === "1") {
+        setDismissed(true);
+      } else {
+        const dismissedAt = Number(raw);
+        setDismissed(Number.isFinite(dismissedAt) && Date.now() - dismissedAt < DISMISS_DURATION_MS);
+      }
     } catch {
       setDismissed(false);
     }
@@ -49,20 +63,30 @@ export default function PwaInstallCta() {
     };
 
     window.addEventListener("beforeinstallprompt", handler);
-    return () => window.removeEventListener("beforeinstallprompt", handler);
+    const onAppInstalled = () => {
+      setDeferred(null);
+      setDismissed(true);
+    };
+
+    window.addEventListener("appinstalled", onAppInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handler);
+      window.removeEventListener("appinstalled", onAppInstalled);
+    };
   }, []);
 
   const installed = useMemo(() => isStandaloneDisplayMode(), []);
   const ios = useMemo(() => isIosDevice(), []);
+  const android = useMemo(() => isAndroidDevice(), []);
   const iosSafari = useMemo(() => ios && isSafariBrowser(), [ios]);
 
   const canPromptInstall = !!deferred;
-  const shouldShow = !installed && !dismissed && (canPromptInstall || ios);
+  const shouldShow = !installed && !dismissed && (canPromptInstall || ios || android);
 
   const dismiss = () => {
     setDismissed(true);
     try {
-      window.localStorage.setItem(DISMISS_KEY, "1");
+      window.localStorage.setItem(DISMISS_KEY, String(Date.now()));
     } catch {
       // ignore
     }
@@ -97,6 +121,11 @@ export default function PwaInstallCta() {
                 : "Ouvre TaskNote dans Safari, puis Partager → Sur l’écran d’accueil."}
             </div>
           )}
+          {android && !canPromptInstall && (
+            <div className="text-xs text-muted-foreground mt-1">
+              Sur Android, utilise le menu du navigateur puis “Installer l’application” ou “Ajouter à l’écran d’accueil”.
+            </div>
+          )}
         </div>
 
         <button
@@ -118,6 +147,11 @@ export default function PwaInstallCta() {
         {ios && !canPromptInstall && (
           <span className="text-xs text-muted-foreground">
             Installation manuelle via Safari
+          </span>
+        )}
+        {android && !canPromptInstall && (
+          <span className="text-xs text-muted-foreground">
+            Installation via le menu du navigateur
           </span>
         )}
         <button type="button" onClick={dismiss} className="sn-text-btn">

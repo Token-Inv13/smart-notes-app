@@ -34,6 +34,11 @@ export const metadata = {
     description: SITE_DESCRIPTION,
     images: ['/favicon.svg'],
   },
+  appleWebApp: {
+    capable: true,
+    title: SITE_NAME,
+    statusBarStyle: 'default',
+  },
 };
 
 export const viewport = {
