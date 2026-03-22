@@ -690,7 +690,11 @@ export default function AgendaCalendar({
       arg.view.type === "dayGridMonth" || arg.view.type === "timeGridWeek" || arg.view.type === "timeGridDay"
         ? arg.view.type
         : viewMode;
-    const nextLabel = formatCalendarLabel({ start: arg.start, end: arg.end }, currentMode);
+    const currentRange = {
+      start: arg.view.currentStart,
+      end: arg.view.currentEnd,
+    };
+    const nextLabel = formatCalendarLabel(currentRange, currentMode);
     const nextRange = { start: arg.start, end: arg.end };
 
     if (datesSetRafRef.current !== null) {
@@ -700,7 +704,7 @@ export default function AgendaCalendar({
     datesSetRafRef.current = window.requestAnimationFrame(() => {
       setLabel((prev) => (prev === nextLabel ? prev : nextLabel));
       setVisibleRange((prev) => (isSameRangeValue(prev, nextRange) ? prev : nextRange));
-      setPlanningAnchorDate((prev) => (isSameDateValue(prev, arg.start) ? prev : arg.start));
+      setPlanningAnchorDate((prev) => (isSameDateValue(prev, currentRange.start) ? prev : currentRange.start));
       onVisibleRangeChange?.(nextRange);
       window.setTimeout(() => setViewTransitioning(false), 80);
       datesSetRafRef.current = null;
