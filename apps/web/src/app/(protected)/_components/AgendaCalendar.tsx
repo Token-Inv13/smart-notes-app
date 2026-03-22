@@ -304,6 +304,7 @@ export default function AgendaCalendar({
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [googleCalendarEvents, setGoogleCalendarEvents] = useState<GoogleCalendarEvent[]>([]);
   const [planningAnchorDate, setPlanningAnchorDate] = useState<Date>(new Date());
+  const [calendarAnchorDate, setCalendarAnchorDate] = useState<Date>(initialAnchorDate ?? new Date());
   const [userTimezone, setUserTimezone] = useState<string>("UTC");
   const [focusPulseActive, setFocusPulseActive] = useState(false);
   const [viewTransitioning, setViewTransitioning] = useState(false);
@@ -315,8 +316,8 @@ export default function AgendaCalendar({
 
   const navigationAnchorDate = useMemo(() => {
     if (displayMode === "planning") return planningAnchorDate;
-    return visibleRange?.start ?? initialAnchorDate ?? new Date();
-  }, [displayMode, initialAnchorDate, planningAnchorDate, visibleRange]);
+    return calendarAnchorDate;
+  }, [calendarAnchorDate, displayMode, planningAnchorDate]);
 
   const navigationYearOptions = useMemo(() => {
     const currentYear = navigationAnchorDate.getFullYear();
@@ -466,6 +467,7 @@ export default function AgendaCalendar({
     if (!initialAnchorDate || Number.isNaN(initialAnchorDate.getTime())) return;
 
     setPlanningAnchorDate(initialAnchorDate);
+    setCalendarAnchorDate(initialAnchorDate);
     if (displayMode === "calendar") {
       calendarRef.current?.getApi().gotoDate(initialAnchorDate);
     }
@@ -665,6 +667,7 @@ export default function AgendaCalendar({
         return;
       }
 
+      setCalendarAnchorDate(nextDate);
       calendarRef.current?.getApi().gotoDate(nextDate);
     },
     [displayMode, triggerViewTransition],
@@ -704,6 +707,7 @@ export default function AgendaCalendar({
     datesSetRafRef.current = window.requestAnimationFrame(() => {
       setLabel((prev) => (prev === nextLabel ? prev : nextLabel));
       setVisibleRange((prev) => (isSameRangeValue(prev, nextRange) ? prev : nextRange));
+      setCalendarAnchorDate((prev) => (isSameDateValue(prev, currentRange.start) ? prev : currentRange.start));
       setPlanningAnchorDate((prev) => (isSameDateValue(prev, currentRange.start) ? prev : currentRange.start));
       onVisibleRangeChange?.(nextRange);
       window.setTimeout(() => setViewTransitioning(false), 80);
