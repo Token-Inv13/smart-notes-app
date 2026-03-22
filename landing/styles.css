@@ -219,6 +219,21 @@ a {
   gap: 12px;
 }
 
+.hero-shot {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: var(--shadow-strong);
+}
+
+.hero-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 .mock-card {
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -401,6 +416,23 @@ a {
   padding-left: 18px;
   display: grid;
   gap: 7px;
+}
+
+.feature-shot {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 16px;
+  border: 1px solid rgba(13, 27, 42, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--shadow-soft);
+}
+
+.feature-shot--notes {
+  max-width: 88%;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .feature-note {
