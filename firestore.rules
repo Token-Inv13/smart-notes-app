@@ -207,6 +207,23 @@ service cloud.firestore {
 
       allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
     }
+
+    // Bug reports: users can submit structured reports from the app UI.
+    match /bugReports/{reportId} {
+      allow create: if isAuthenticated()
+        && request.auth.uid == request.resource.data.userId
+        && isNonEmptyString(request.resource.data.message)
+        && isNullOrString(request.resource.data.email)
+        && isNullOrString(request.resource.data.currentPath)
+        && isNullOrString(request.resource.data.userAgent)
+        && request.resource.data.status == 'new'
+        && isServerTimestamp(request.resource.data.createdAt);
+
+      allow read: if isAuthenticated()
+        && (isAdmin() || request.auth.uid == resource.data.userId);
+
+      allow update, delete: if false;
+    }
     
     // Tasks collection
     match /tasks/{taskId} {

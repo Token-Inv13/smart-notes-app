@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { PanelLeft, Menu, X } from "lucide-react";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import SidebarWorkspaces from "./SidebarWorkspaces";
 import PwaInstallCta from "./_components/PwaInstallCta";
 import CreateButton from "./_components/CreateButton";
@@ -11,10 +12,11 @@ import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { useAuth } from "@/hooks/useAuth";
 import { invalidateAuthSession } from "@/lib/authInvalidation";
 import { sanitizeAssistantText } from "@/lib/assistantText";
+import { db } from "@/lib/firebase";
 import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import { useAssistantSettings } from "@/hooks/useAssistantSettings";
 import { useUserAssistantSuggestions } from "@/hooks/useUserAssistantSuggestions";
-import type { WorkspaceDoc } from "@/types/firestore";
+import type { BugReportDoc, WorkspaceDoc } from "@/types/firestore";
 
 const STORAGE_KEY = "sidebarCollapsed";
 const ASSISTANT_NOTIF_STORAGE_KEY = "assistantProactiveNotifications";
@@ -136,10 +138,19 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   const [dockHiddenOnScroll, setDockHiddenOnScroll] = useState(false);
   const [dockDesktopTopClass, setDockDesktopTopClass] = useState("md:top-32");
   const [isTasksCalendarView, setIsTasksCalendarView] = useState(false);
+  const [bugModalOpen, setBugModalOpen] = useState(false);
+  const [bugMessage, setBugMessage] = useState("");
+  const [bugSubmitting, setBugSubmitting] = useState(false);
+  const [bugError, setBugError] = useState<string | null>(null);
+  const [bugFeedback, setBugFeedback] = useState<string | null>(null);
   const isAdminBackofficeRoute = pathname.startsWith("/admin");
   const isAgendaRoute = pathname.startsWith("/tasks");
   const shouldShowPwaInstallCta = pathname === "/dashboard";
   const shouldRenderDock = !isAgendaRoute || !isTasksCalendarView;
+  const currentPath = useMemo(() => {
+    const qs = searchParams.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
+  }, [pathname, searchParams]);
 
   useEffect(() => {
     const isTypingTarget = (target: EventTarget | null) => {
@@ -504,6 +515,12 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
     }
   }, []);
 
+  useEffect(() => {
+    if (!bugFeedback) return;
+    const timer = window.setTimeout(() => setBugFeedback(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [bugFeedback]);
+
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
       const next = !prev;
@@ -517,6 +534,51 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   };
 
   const closeMobile = () => setMobileOpen(false);
+  const openBugModal = () => {
+    setBugError(null);
+    setBugModalOpen(true);
+  };
+  const closeBugModal = () => {
+    if (bugSubmitting) return;
+    setBugModalOpen(false);
+    setBugError(null);
+    setBugMessage("");
+  };
+
+  const submitBugReport = async () => {
+    const message = bugMessage.trim();
+    if (!message) {
+      setBugError("Décris le problème rencontré.");
+      return;
+    }
+    if (!user?.uid) {
+      setBugError("Tu dois être connecté pour envoyer un signalement.");
+      return;
+    }
+
+    setBugSubmitting(true);
+    setBugError(null);
+    try {
+      const payload: Omit<BugReportDoc, "id"> = {
+        userId: user.uid,
+        email: user.email ?? null,
+        message,
+        currentPath,
+        userAgent: typeof window !== "undefined" ? window.navigator.userAgent : "",
+        status: "new",
+        createdAt: serverTimestamp(),
+      };
+      await addDoc(collection(db, "bugReports"), payload);
+      setBugFeedback("Merci, ton signalement a bien été envoyé.");
+      setBugModalOpen(false);
+      setBugMessage("");
+    } catch (e) {
+      console.error("bug_report_submit_failed", e);
+      setBugError("Impossible d’envoyer le signalement pour le moment.");
+    } finally {
+      setBugSubmitting(false);
+    }
+  };
 
   const sidebarWidthClass = collapsed ? "w-16" : "w-64";
 
@@ -585,6 +647,24 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
     });
   }, [assistantSettings, topActionableSuggestion]);
 
+  const renderBugReportAction = (mobile = false) => (
+    <div className={mobile ? "mt-3 border-t border-border pt-3" : "shrink-0 border-t border-border p-3"}>
+      {bugFeedback ? <div className="sn-alert mb-2 text-xs">{bugFeedback}</div> : null}
+      <button
+        type="button"
+        onClick={() => {
+          if (mobile) closeMobile();
+          openBugModal();
+        }}
+        className={`w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${mobile ? "text-left" : collapsed ? "text-center" : "text-left"}`}
+        aria-label="Signaler un bug"
+        title="Signaler un bug"
+      >
+        {collapsed && !mobile ? "Bug" : "Signaler un bug"}
+      </button>
+    </div>
+  );
+
   if (authLoading || authInvalidating || !user) {
     return (
       <div className="min-h-[100dvh] flex items-center justify-center bg-background text-foreground">
@@ -645,6 +725,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
               error={workspacesError}
             />
           </div>
+          {renderBugReportAction()}
         </div>
       </aside>
 
@@ -682,6 +763,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
                 loading={workspacesLoading}
                 error={workspacesError}
               />
+              {renderBugReportAction(true)}
             </div>
           </div>
         </div>
@@ -768,6 +850,85 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
           ) : null}
         </main>
       </div>
+
+      {bugModalOpen ? (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 px-4 py-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Signaler un bug"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeBugModal();
+          }}
+        >
+          <div
+            className="mx-auto flex h-full max-h-[min(34rem,100%)] w-full max-w-lg flex-col rounded-lg border border-border bg-card shadow-lg outline-none"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">Signaler un bug</div>
+              </div>
+              <button
+                type="button"
+                onClick={closeBugModal}
+                disabled={bugSubmitting}
+                className="sn-icon-btn"
+                aria-label="Fermer"
+                title="Fermer"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+              <div className="space-y-1">
+                <div className="text-sm text-foreground">Tu as détecté un problème ? Aide-nous à améliorer TaskNote.</div>
+                <div className="text-sm text-muted-foreground">Si ton signalement est pertinent, nous pourrons t’offrir 1 mois Pro.</div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="sr-only" htmlFor="bug-report-message">
+                  Décrire le bug
+                </label>
+                <textarea
+                  id="bug-report-message"
+                  value={bugMessage}
+                  onChange={(e) => setBugMessage(e.target.value)}
+                  disabled={bugSubmitting}
+                  className="min-h-[180px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Décris le problème rencontré, ce que tu faisais, et ce qui s’est passé."
+                />
+              </div>
+
+              <div className="text-xs text-muted-foreground">
+                Page concernée: <span className="font-mono">{currentPath}</span>
+              </div>
+
+              {bugError ? <div className="sn-alert sn-alert--error">{bugError}</div> : null}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+              <button
+                type="button"
+                onClick={closeBugModal}
+                disabled={bugSubmitting}
+                className="rounded-md border border-input px-3 py-2 text-sm"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitBugReport()}
+                disabled={bugSubmitting}
+                className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+              >
+                {bugSubmitting ? "Envoi…" : "Envoyer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

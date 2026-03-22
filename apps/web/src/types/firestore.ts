@@ -173,6 +173,18 @@ export interface WorkspaceDoc {
   [key: string]: unknown;
 }
 
+export interface BugReportDoc {
+  id?: string;
+  userId: string;
+  email?: string | null;
+  message: string;
+  currentPath?: string | null;
+  userAgent?: string | null;
+  status: 'new' | 'reviewed' | 'closed';
+  createdAt?: Timestamp | FieldValue;
+  [key: string]: unknown;
+}
+
 export interface TaskReminderDoc {
   id?: string;
   userId: string;
