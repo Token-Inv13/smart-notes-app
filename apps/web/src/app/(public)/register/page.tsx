@@ -12,7 +12,6 @@ import {
   signInWithRedirect,
 } from "firebase/auth";
 import { Eye, EyeOff } from "lucide-react";
-import PwaInstallCta from "@/app/(protected)/_components/PwaInstallCta";
 
 function getFirebaseAuthErrorCode(err: unknown): string | undefined {
   if (typeof err !== "object" || err === null) return undefined;
@@ -196,7 +195,6 @@ function RegisterPageInner() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background text-foreground px-4">
       <div className="w-full max-w-md border border-border rounded-lg p-6 shadow-sm bg-card">
-        <PwaInstallCta />
         <h1 className="text-xl font-semibold mb-4 text-center">TaskNote</h1>
         <p className="text-sm text-muted-foreground mb-6 text-center">
           Crée un compte pour accéder à tes notes et tâches.

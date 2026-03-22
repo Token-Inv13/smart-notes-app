@@ -111,8 +111,8 @@ export default function PwaInstallCta() {
         <div className="min-w-0">
           <div className="text-sm font-semibold">📲 Installer TaskNote</div>
           <div className="text-sm text-muted-foreground">
-            Installe l’app pour recevoir les rappels même lorsque l’app est fermée.
-            {ios ? " Sur iOS, les notifications fonctionnent uniquement si l’app est installée." : ""}
+            Installe l’app pour l’ouvrir comme une vraie application et recevoir tes rappels.
+            {ios ? " Sur iPhone, l’installation est nécessaire pour les notifications." : ""}
           </div>
           {ios && (
             <div className="text-xs text-muted-foreground mt-1">
@@ -123,7 +123,7 @@ export default function PwaInstallCta() {
           )}
           {android && !canPromptInstall && (
             <div className="text-xs text-muted-foreground mt-1">
-              Sur Android, utilise le menu du navigateur puis “Installer l’application” ou “Ajouter à l’écran d’accueil”.
+              Android: menu du navigateur → Installer l’application.
             </div>
           )}
         </div>
@@ -151,7 +151,7 @@ export default function PwaInstallCta() {
         )}
         {android && !canPromptInstall && (
           <span className="text-xs text-muted-foreground">
-            Installation via le menu du navigateur
+            Installer via le menu
           </span>
         )}
         <button type="button" onClick={dismiss} className="sn-text-btn">

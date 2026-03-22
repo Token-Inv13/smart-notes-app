@@ -140,6 +140,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   const isAdminBackofficeRoute = pathname.startsWith("/admin");
   const isSettingsRoute = pathname.startsWith("/settings");
   const isAgendaRoute = pathname.startsWith("/tasks");
+  const shouldShowPwaInstallCta = pathname === "/dashboard";
   const shouldRenderDock = !isAgendaRoute || !isTasksCalendarView;
 
   useEffect(() => {
@@ -715,7 +716,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
         </div>
 
         <main className={`flex-1 p-4 min-w-0 ${shouldRenderDock ? "pb-[calc(6.5rem+env(safe-area-inset-bottom))] md:pb-20" : "pb-4 md:pb-8"}`}>
-          <PwaInstallCta />
+          {shouldShowPwaInstallCta ? <PwaInstallCta /> : null}
           {proactiveBanner ? (
             <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
