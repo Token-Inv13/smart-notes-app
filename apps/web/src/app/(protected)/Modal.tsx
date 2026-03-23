@@ -58,12 +58,12 @@ export default function Modal({
   }, []);
 
   const wrapperClassName = fullscreen
-    ? "fixed inset-0 z-50 bg-background px-4 py-6"
-    : "fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6";
+    ? "fixed inset-0 z-50 overflow-y-auto bg-background px-4 py-6"
+    : "fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-6 sm:items-center";
 
   const panelClassName = fullscreen
-    ? "w-full h-full rounded-lg border border-border bg-card shadow-lg outline-none"
-    : "w-full max-w-2xl rounded-lg border border-border bg-card shadow-lg outline-none";
+    ? "my-auto flex h-full max-h-[calc(100dvh-3rem)] w-full flex-col overflow-hidden rounded-lg border border-border bg-card shadow-lg outline-none"
+    : "my-auto flex w-full max-w-2xl max-h-[calc(100dvh-3rem)] flex-col overflow-hidden rounded-lg border border-border bg-card shadow-lg outline-none";
 
   return (
     <div
@@ -97,7 +97,7 @@ export default function Modal({
             </button>
           </div>
         )}
-        <div className="p-4">{content}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">{content}</div>
       </div>
     </div>
   );

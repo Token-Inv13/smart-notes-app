@@ -913,7 +913,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
 
         return (
           <>
-            <div className="flex max-h-[90svh] min-h-0 flex-col gap-4 md:max-h-[90vh]">
+            <div className="flex h-full min-h-0 flex-col gap-4">
               {shareFeedback && <div className="sn-alert shrink-0">{shareFeedback}</div>}
               {sharedUrl && (
                 <div className="sn-card shrink-0 p-3">
@@ -948,7 +948,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
               {editError && <div className="sn-alert sn-alert--error shrink-0">{editError}</div>}
               {attachmentError && <div className="sn-alert sn-alert--error shrink-0">{attachmentError}</div>}
 
-              <div className="relative min-h-0 flex-1">
+              <div className="relative min-h-0 flex-1 overflow-hidden">
                 <div className={`flex h-full min-h-0 flex-col ${assistantDrawerOpen ? "lg:pr-[34%]" : ""}`}>
                   <div className="sn-card flex h-full min-h-0 flex-col overflow-hidden p-4">
                 <div className="sn-modal-header-safe sticky top-0 z-10 shrink-0 border-b border-border bg-card pb-3">
@@ -1088,7 +1088,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
                   <div className="space-y-3">
                     <div
                       aria-label="Contenu de la note"
-                      className="max-h-[50svh] min-h-[200px] overflow-y-auto px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm sn-richtext-content select-text md:max-h-[58vh] md:min-h-[240px]"
+                      className="min-h-[200px] px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm sn-richtext-content select-text md:min-h-[240px]"
                       onClick={handleRichTextLinkClick}
                       onDoubleClick={() => startEdit()}
                       onTouchStart={scheduleLongPressToEdit}
@@ -1145,7 +1145,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
                           setDirty(snap !== lastSavedSnapshotRef.current);
                         }}
                         placeholder="Écris ici…"
-                        minHeightClassName="h-[38svh] min-h-[200px] max-h-[50svh] overflow-y-auto md:h-[45svh] md:min-h-[240px] md:max-h-[58vh]"
+                        minHeightClassName="min-h-[200px] md:min-h-[240px]"
                         enableDictation
                       />
                     </div>
