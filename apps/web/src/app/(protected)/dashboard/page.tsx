@@ -505,33 +505,33 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <section className="grid gap-3 sm:grid-cols-3">
+      <section className="grid gap-2.5 sm:gap-3 sm:grid-cols-3">
         <Link
           href={todayAgendaHref}
           aria-label="Ouvrir l’agenda sur aujourd’hui"
-          className="sn-card block p-4 transition hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+          className="sn-card block p-3 sm:p-4 transition hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
         >
-          <div className="text-sm text-muted-foreground">Aujourd’hui</div>
-          <div className="mt-1 text-2xl font-semibold">{dashboardData.tasksToday}</div>
-          <div className="mt-1 text-xs text-muted-foreground">tâche(s) prévues</div>
+          <div className="text-[13px] sm:text-sm font-medium text-muted-foreground">Aujourd’hui</div>
+          <div className="mt-0.5 sm:mt-1 text-xl sm:text-2xl font-semibold leading-none">{dashboardData.tasksToday}</div>
+          <div className="mt-0.5 text-[11px] sm:text-xs text-muted-foreground">tâche(s) prévues</div>
         </Link>
         <Link
           href={overdueAgendaHref}
           aria-label="Ouvrir l’agenda pour traiter les tâches en retard"
-          className="sn-card block p-4 transition hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+          className="sn-card block p-3 sm:p-4 transition hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
         >
-          <div className="text-sm text-muted-foreground">À rattraper</div>
-          <div className="mt-1 text-2xl font-semibold">{dashboardData.overdueTasks}</div>
-          <div className="mt-1 text-xs text-muted-foreground">tâche(s) en retard</div>
+          <div className="text-[13px] sm:text-sm font-medium text-muted-foreground">À rattraper</div>
+          <div className="mt-0.5 sm:mt-1 text-xl sm:text-2xl font-semibold leading-none">{dashboardData.overdueTasks}</div>
+          <div className="mt-0.5 text-[11px] sm:text-xs text-muted-foreground">tâche(s) en retard</div>
         </Link>
         <Link
           href={activeChecklistHref}
           aria-label="Ouvrir la checklist active"
-          className="sn-card block p-4 transition hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+          className="sn-card block p-3 sm:p-4 transition hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
         >
-          <div className="text-sm text-muted-foreground">Checklist active</div>
-          <div className="mt-1 text-2xl font-semibold">{visibleActiveTodos.length}</div>
-          <div className="mt-1 text-xs text-muted-foreground">élément(s) en cours</div>
+          <div className="text-[13px] sm:text-sm font-medium text-muted-foreground">Checklist active</div>
+          <div className="mt-0.5 sm:mt-1 text-xl sm:text-2xl font-semibold leading-none">{visibleActiveTodos.length}</div>
+          <div className="mt-0.5 text-[11px] sm:text-xs text-muted-foreground">élément(s) en cours</div>
         </Link>
       </section>
 
