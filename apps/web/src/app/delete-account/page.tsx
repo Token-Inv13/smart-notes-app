@@ -18,8 +18,8 @@ export default function DeleteAccountPage() {
             <p>
               Send an email to:
               <br />
-              <a className="underline" href="mailto:contact@tachesnotes.com">
-                contact@tachesnotes.com
+              <a className="underline" href="mailto:demande-service@tasknote.io">
+                demande-service@tasknote.io
               </a>
             </p>
             <p>

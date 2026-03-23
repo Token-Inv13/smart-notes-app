@@ -93,8 +93,8 @@ export default function PrivacyPolicyPage() {
             <p>
               If you have questions or want to request data deletion, contact us at:
               <br />
-              <a className="underline" href="mailto:contact@tachesnotes.com">
-                contact@tachesnotes.com
+              <a className="underline" href="mailto:demande-service@tasknote.io">
+                demande-service@tasknote.io
               </a>
             </p>
           </section>
