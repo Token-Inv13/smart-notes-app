@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   LayoutDashboard,
@@ -216,12 +216,27 @@ export default function SidebarWorkspaces({
         : isChild
           ? "Sous-dossier"
           : null;
+    const canNavigate = !!ws.id;
+    const handleRowNavigate = () => {
+      if (!canNavigate) return;
+      navigateWithWorkspace(ws.id ?? null);
+    };
+    const handleRowKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+      if (!canNavigate) return;
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      handleRowNavigate();
+    };
 
     return (
       <div
         data-ws-row="true"
         data-ws-id={ws.id ?? ""}
-        className={`group relative rounded-xl border px-2 py-1.5 transition-colors ${rowClass}`}
+        className={`group relative rounded-xl border px-2 py-1.5 transition-colors ${rowClass} ${canNavigate ? "cursor-pointer" : ""}`}
+        role={canNavigate ? "button" : undefined}
+        tabIndex={canNavigate ? 0 : undefined}
+        onClick={handleRowNavigate}
+        onKeyDown={handleRowKeyDown}
       >
         {selected ? <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r bg-primary" aria-hidden="true" /> : null}
         {!renamingId || ws.id !== renamingId ? (
@@ -231,26 +246,29 @@ export default function SidebarWorkspaces({
                 {isChild ? (
                   <span
                     aria-hidden="true"
-                    className="absolute top-[-0.6rem] bottom-[-0.6rem] w-px bg-border/50"
+                    className="pointer-events-none absolute top-[-0.6rem] bottom-[-0.6rem] w-px bg-border/50"
                     style={{ left: `${lineLeft}px` }}
                   />
                 ) : null}
                 {isChild ? (
                   <span
                     aria-hidden="true"
-                    className="absolute top-1/2 h-px w-2.5 -translate-y-1/2 bg-border/50"
+                    className="pointer-events-none absolute top-1/2 h-px w-2.5 -translate-y-1/2 bg-border/50"
                     style={{ left: `${lineLeft}px` }}
                   />
                 ) : null}
                 <span
-                  className="absolute top-1/2 flex -translate-y-1/2 items-center gap-0.5"
+                  className="pointer-events-none absolute top-1/2 flex -translate-y-1/2 items-center gap-0.5"
                   style={{ left: `${indentPx}px` }}
                 >
                   {hasChildren ? (
                     <button
                       type="button"
-                      onClick={() => ws.id && toggleWorkspaceCollapse(ws.id)}
-                      className="inline-flex h-4.5 w-4.5 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (ws.id) toggleWorkspaceCollapse(ws.id);
+                      }}
+                      className="pointer-events-auto inline-flex h-4.5 w-4.5 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                       aria-label={rowCollapsed ? `Déplier ${pathLabel}` : `Replier ${pathLabel}`}
                     >
                       {rowCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -264,14 +282,11 @@ export default function SidebarWorkspaces({
                 </span>
               </span>
 
-              <button
-                type="button"
-                onClick={() => navigateWithWorkspace(ws.id ?? null)}
+              <div
                 className={`min-w-0 flex-1 overflow-hidden rounded-lg px-1 py-1 text-left transition-colors ${
                   selected ? "text-foreground" : "text-foreground/95"
                 }`}
                 aria-label={`Ouvrir le dossier ${pathLabel}`}
-                disabled={!ws.id}
               >
                 <span className="block min-w-0 overflow-hidden">
                   <span className="block truncate text-sm leading-5 text-left">
@@ -285,12 +300,15 @@ export default function SidebarWorkspaces({
                     </span>
                   ) : null}
                 </span>
-              </button>
+              </div>
             </div>
             <div className="hidden shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 md:flex">
               <button
                 type="button"
-                onClick={() => startRename(ws)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  startRename(ws);
+                }}
                 className="h-8 w-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
                 aria-label={`Renommer le dossier ${pathLabel}`}
                 title="Renommer"
@@ -300,7 +318,10 @@ export default function SidebarWorkspaces({
               </button>
               <button
                 type="button"
-                onClick={() => handleDelete(ws)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleDelete(ws);
+                }}
                 className="h-8 w-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
                 aria-label={`Supprimer le dossier ${pathLabel}`}
                 title="Supprimer"
