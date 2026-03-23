@@ -14,7 +14,7 @@ import {
   writeBatch,
   where,
 } from "firebase/firestore";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { z } from "zod";
 import { auth, db } from "@/lib/firebase";
 import type { TaskDoc, TaskReminderDoc, TodoDoc } from "@/types/firestore";
@@ -135,8 +135,16 @@ const editTaskSchema = z.object({
 
 export default function TaskDetailModal(props: { params: Promise<{ id: string }> }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const params = use(props.params);
   const taskId: string | undefined = params?.id;
+  const workspaceId = searchParams.get("workspaceId");
+  const returnToParam = searchParams.get("returnTo");
+  const fallbackHref = returnToParam && returnToParam.startsWith("/") && !returnToParam.startsWith("//")
+    ? returnToParam
+    : workspaceId
+      ? `/tasks?workspaceId=${encodeURIComponent(workspaceId)}`
+      : "/tasks";
 
   const { data: workspaces } = useUserWorkspaces();
   const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
@@ -977,6 +985,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
   return (
     <Modal
       hideHeader
+      fallbackHref={fallbackHref}
       onBeforeClose={async () => {
         if (mode !== "edit") return true;
 

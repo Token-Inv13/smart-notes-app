@@ -182,7 +182,12 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
   const noteId = typeof params?.id === "string" ? params.id : undefined;
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId");
-  const fallbackHref = workspaceId ? `/notes?workspaceId=${encodeURIComponent(workspaceId)}` : "/notes";
+  const returnToParam = searchParams.get("returnTo");
+  const fallbackHref = returnToParam && returnToParam.startsWith("/") && !returnToParam.startsWith("//")
+    ? returnToParam
+    : workspaceId
+      ? `/notes?workspaceId=${encodeURIComponent(workspaceId)}`
+      : "/notes";
   const fullscreen = searchParams.get("fullscreen") === "1";
 
   const { data: workspaces } = useUserWorkspaces();

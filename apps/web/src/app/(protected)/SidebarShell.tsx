@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { PanelLeft, Menu, X } from "lucide-react";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
@@ -148,6 +148,8 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   const [bugSubmitting, setBugSubmitting] = useState(false);
   const [bugError, setBugError] = useState<string | null>(null);
   const [bugFeedback, setBugFeedback] = useState<string | null>(null);
+  const mobileHistoryGuardActiveRef = useRef(false);
+  const ignoreNextMobilePopRef = useRef(false);
   const isAdminBackofficeRoute = pathname.startsWith("/admin");
   const isAgendaRoute = pathname.startsWith("/tasks");
   const shouldShowPwaInstallCta = pathname === "/dashboard";
@@ -297,24 +299,57 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [pathname, router, searchParams]);
 
+  const closeMobile = useCallback(() => {
+    if (!mobileOpen) return;
+
+    if (mobileHistoryGuardActiveRef.current && typeof window !== "undefined") {
+      mobileHistoryGuardActiveRef.current = false;
+      ignoreNextMobilePopRef.current = true;
+      window.history.back();
+    }
+
+    setMobileOpen(false);
+  }, [mobileOpen]);
+
   useEffect(() => {
     if (!mobileOpen) return;
     // Close the drawer on navigation to avoid stale overlay states.
     setMobileOpen(false);
+    mobileHistoryGuardActiveRef.current = false;
+    ignoreNextMobilePopRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, workspaceId]);
 
   useEffect(() => {
     if (!mobileOpen) return;
 
+    const state = typeof window.history.state === "object" && window.history.state !== null ? window.history.state : {};
+    window.history.pushState({ ...state, __snMobileMenuGuard: true }, "", window.location.href);
+    mobileHistoryGuardActiveRef.current = true;
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setMobileOpen(false);
+        closeMobile();
       }
     };
+
+    const onPopState = () => {
+      if (ignoreNextMobilePopRef.current) {
+        ignoreNextMobilePopRef.current = false;
+        return;
+      }
+
+      mobileHistoryGuardActiveRef.current = false;
+      setMobileOpen(false);
+    };
+
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [mobileOpen]);
+    window.addEventListener("popstate", onPopState);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("popstate", onPopState);
+    };
+  }, [closeMobile, mobileOpen]);
 
   useEffect(() => {
     if (mobileOpen) {
@@ -538,7 +573,6 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
     });
   };
 
-  const closeMobile = () => setMobileOpen(false);
   const openBugModal = () => {
     setBugError(null);
     setBugFeedback(null);
