@@ -573,17 +573,7 @@ async function sendOpsAlertEmail(params: {
   }
 
   const { env } = resolved;
-  const transporter = nodemailer.createTransport({
-    host: env.host,
-    port: env.port,
-    secure: env.port === 465,
-    requireTLS: env.port === 587,
-    tls: { minVersion: 'TLSv1.2' },
-    auth: {
-      user: env.user,
-      pass: env.pass,
-    },
-  });
+  const transporter = createSmtpTransport(env);
 
   const html = `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111;">${params.lines
     .map((line) => `<p style="margin:0 0 10px;">${escapeHtml(line)}</p>`)
@@ -2703,6 +2693,16 @@ type SmtpEnvResolved = {
   };
 };
 
+type BugReportEmailPayload = {
+  bugReportId: string;
+  userId: string | null;
+  email: string | null;
+  message: string;
+  currentPath: string | null;
+  userAgent: string | null;
+  createdAtIso: string | null;
+};
+
 function getSmtpEnv(): SmtpEnvResolved | null {
   const hostEnv = process.env.SMTP_HOST;
   const portEnv = process.env.SMTP_PORT;
@@ -2754,6 +2754,22 @@ function getEmailTestSecret(): string | null {
   return secret ?? null;
 }
 
+function createSmtpTransport(env: SmtpEnv) {
+  return nodemailer.createTransport({
+    host: env.host,
+    port: env.port,
+    secure: env.port === 465,
+    requireTLS: env.port === 587,
+    tls: {
+      minVersion: 'TLSv1.2',
+    },
+    auth: {
+      user: env.user,
+      pass: env.pass,
+    },
+  });
+}
+
 async function sendReminderEmail(params: {
   to: string;
   taskTitle: string;
@@ -2777,22 +2793,7 @@ async function sendReminderEmail(params: {
     source,
   });
 
-  const transporter = nodemailer.createTransport({
-    host: env.host,
-    port: env.port,
-    // Hostinger commonly uses:
-    // - 465 with implicit TLS (secure=true)
-    // - 587 with STARTTLS (secure=false)
-    secure: env.port === 465,
-    requireTLS: env.port === 587,
-    tls: {
-      minVersion: 'TLSv1.2',
-    },
-    auth: {
-      user: env.user,
-      pass: env.pass,
-    },
-  });
+  const transporter = createSmtpTransport(env);
 
   const taskUrl = `${env.appBaseUrl.replace(/\/$/, '')}/tasks/${encodeURIComponent(params.taskId)}`;
   const reminderDate = new Date(params.reminderTimeIso);
@@ -2858,6 +2859,40 @@ async function sendReminderEmail(params: {
   }
 }
 
+async function sendBugReportEmail(params: BugReportEmailPayload): Promise<void> {
+  const resolved = getSmtpEnv();
+  if (!resolved) {
+    throw new Error('SMTP env is not configured');
+  }
+
+  const { env } = resolved;
+  const transporter = createSmtpTransport(env);
+  const to = 'demande-service@tasknote.io';
+  const subject = '[TaskNote] Bug report';
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111;">
+      <h2 style="margin: 0 0 12px;">[TaskNote] Bug report</h2>
+      <p style="margin: 0 0 12px;"><strong>Message utilisateur</strong></p>
+      <div style="margin: 0 0 16px; padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; white-space: pre-wrap;">${escapeHtml(params.message)}</div>
+      <p style="margin: 0 0 6px;"><strong>Bug report ID:</strong> ${escapeHtml(params.bugReportId)}</p>
+      <p style="margin: 0 0 6px;"><strong>User ID:</strong> ${escapeHtml(params.userId ?? 'anonymous')}</p>
+      <p style="margin: 0 0 6px;"><strong>Email user:</strong> ${escapeHtml(params.email ?? 'n/a')}</p>
+      <p style="margin: 0 0 6px;"><strong>Page:</strong> ${escapeHtml(params.currentPath ?? 'n/a')}</p>
+      <p style="margin: 0 0 6px;"><strong>Date:</strong> ${escapeHtml(params.createdAtIso ?? 'n/a')}</p>
+      <p style="margin: 0 0 16px;"><strong>User agent:</strong> ${escapeHtml(params.userAgent ?? 'n/a')}</p>
+      <p style="margin: 0; color: #555; font-size: 12px;">TaskNote — ${escapeHtml(env.appBaseUrl)}</p>
+    </div>
+  `;
+
+  await transporter.sendMail({
+    from: env.from,
+    to,
+    replyTo: env.from,
+    subject,
+    html,
+  });
+}
+
 function escapeHtml(input: string): string {
   return input
     .replace(/&/g, '&amp;')
@@ -2866,6 +2901,65 @@ function escapeHtml(input: string): string {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+
+export const bugReportOnCreate = functions.firestore.document('bugReports/{bugReportId}').onCreate(async (snapshot, context) => {
+  const requestId = typeof context.eventId === 'string' && context.eventId ? context.eventId : crypto.randomUUID();
+  const obs = beginFunctionObserve({
+    functionName: 'bugReportOnCreate',
+    requestId,
+    meta: { bugReportId: context.params.bugReportId ?? snapshot.id },
+  });
+
+  try {
+    const data = snapshot.data() as {
+      userId?: unknown;
+      email?: unknown;
+      message?: unknown;
+      currentPath?: unknown;
+      userAgent?: unknown;
+      createdAt?: { toDate?: () => Date } | null;
+    };
+
+    const message = typeof data?.message === 'string' ? data.message.trim() : '';
+    if (!message) {
+      console.warn('bugReportOnCreate.missing_message', {
+        bugReportId: snapshot.id,
+        requestId,
+      });
+      await endFunctionObserve(obs, 'success', { skipped: true, reason: 'missing_message' });
+      return;
+    }
+
+    try {
+      await sendBugReportEmail({
+        bugReportId: snapshot.id,
+        userId: typeof data?.userId === 'string' ? data.userId : null,
+        email: typeof data?.email === 'string' ? data.email : null,
+        message,
+        currentPath: typeof data?.currentPath === 'string' ? data.currentPath : null,
+        userAgent: typeof data?.userAgent === 'string' ? data.userAgent : null,
+        createdAtIso:
+          typeof data?.createdAt?.toDate === 'function' ? data.createdAt.toDate().toISOString() : null,
+      });
+      console.log('bugReportEmail sent', {
+        bugReportId: snapshot.id,
+        requestId,
+        to: 'demande-service@tasknote.io',
+      });
+    } catch (error) {
+      console.error('bugReportEmail failed', {
+        bugReportId: snapshot.id,
+        requestId,
+        error: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error,
+      });
+    }
+
+    await endFunctionObserve(obs, 'success', { emailAttempted: true });
+  } catch (error) {
+    await endFunctionObserve(obs, 'error', { bugReportId: snapshot.id });
+    throw error;
+  }
+});
 
 async function claimReminder(params: {
   db: FirebaseFirestore.Firestore;
