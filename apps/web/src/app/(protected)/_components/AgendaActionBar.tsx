@@ -5,7 +5,6 @@ import {
   Archive,
   ArchiveRestore,
   CalendarDays,
-  Kanban,
   List,
   Search,
   SlidersHorizontal,
@@ -13,7 +12,7 @@ import {
 } from "lucide-react";
 
 type ArchiveView = "active" | "archived";
-type TaskViewMode = "list" | "grid" | "kanban" | "calendar";
+type TaskViewMode = "list" | "grid" | "calendar";
 
 interface AgendaActionBarProps {
   archiveView: ArchiveView;
@@ -31,7 +30,6 @@ const VIEW_OPTIONS: Array<{
   icon: typeof List;
 }> = [
   { key: "list", label: "Liste", icon: List },
-  { key: "kanban", label: "Kanban", icon: Kanban },
   { key: "calendar", label: "Agenda", icon: CalendarDays },
 ];
 
