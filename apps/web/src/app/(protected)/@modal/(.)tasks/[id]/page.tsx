@@ -57,8 +57,8 @@ function formatFrDateTime(ts?: TaskDoc["dueDate"] | null) {
   return formatTimestampToDateTimeFr(ts ?? null);
 }
 
-function formatFrDate(ts?: TaskDoc["startDate"] | null) {
-  return formatTimestampToDateFr(ts ?? null);
+function formatTaskBoundary(ts: TaskDoc["startDate"] | TaskDoc["dueDate"] | null | undefined, allDay: boolean) {
+  return allDay ? formatTimestampToDateFr(ts ?? null) : formatTimestampToDateTimeFr(ts ?? null);
 }
 
 function formatIsoForDateTimeInput(iso: string | null | undefined): string {
@@ -203,6 +203,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
   const [, setIsDirty] = useState(false);
   const isDirtyRef = useRef(false);
   const lastSavedSnapshotRef = useRef<string>("");
+  const isTimedTask = task?.allDay !== true;
 
   const setDirty = (next: boolean) => {
     isDirtyRef.current = next;
@@ -416,7 +417,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     setEditTitle(task.title ?? "");
     setEditStatus(((task.status as TaskStatus | undefined) ?? "todo") as TaskStatus);
     setEditWorkspaceId(typeof task.workspaceId === "string" ? task.workspaceId : "");
-    setEditStartDate(formatTimestampForDateInput(task.startDate ?? null));
+    setEditStartDate(task.allDay === true ? formatTimestampForDateInput(task.startDate ?? null) : formatTimestampForInput(task.startDate ?? null));
     setEditDueDate(formatTimestampForInput(task.dueDate ?? null));
     setEditPriority(task.priority ?? "");
     setEditError(null);
@@ -430,7 +431,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       title: task.title ?? "",
       status: ((task.status as TaskStatus | undefined) ?? "todo") as TaskStatus,
       workspaceId: typeof task.workspaceId === "string" ? task.workspaceId : "",
-      startDate: formatTimestampForDateInput(task.startDate ?? null),
+      startDate: task.allDay === true ? formatTimestampForDateInput(task.startDate ?? null) : formatTimestampForInput(task.startDate ?? null),
       dueDate: formatTimestampForInput(task.dueDate ?? null),
       priority: task.priority ?? "",
     });
@@ -501,8 +502,14 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     };
   }, [task?.sourceTodoId, task?.sourceTodoItemId, task?.sourceType, task?.title, task?.userId]);
 
-  const dueLabel = useMemo(() => formatFrDateTime(task?.dueDate ?? null), [task?.dueDate]);
-  const startLabel = useMemo(() => formatFrDate(task?.startDate ?? null), [task?.startDate]);
+  const dueLabel = useMemo(
+    () => formatTaskBoundary(task?.dueDate ?? null, task?.allDay === true),
+    [task?.allDay, task?.dueDate],
+  );
+  const startLabel = useMemo(
+    () => formatTaskBoundary(task?.startDate ?? null, task?.allDay === true),
+    [task?.allDay, task?.startDate],
+  );
   const reminderRestrictionMessage = useMemo(() => getReminderRestrictionMessage(task), [task]);
   const remindersSupported = !reminderRestrictionMessage;
   useEffect(() => {
@@ -526,12 +533,13 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
   }, [task?.sourceTodoId, task?.sourceType, task?.workspaceId]);
   const editDateWarning = useMemo(() => {
     if (!editStartDate || !editDueDate) return null;
-    const startTs = parseLocalDateToTimestamp(editStartDate);
+    const startTs = isTimedTask ? parseLocalDateTimeToTimestamp(editStartDate) : parseLocalDateToTimestamp(editStartDate);
     const dueTs = parseLocalDateTimeToTimestamp(editDueDate);
     if (!startTs || !dueTs) return null;
-    if (startTs.toMillis() > dueTs.toMillis()) return "La date de début est après la date de fin.";
+    if (isTimedTask && dueTs.toMillis() <= startTs.toMillis()) return "La fin doit être après le début.";
+    if (!isTimedTask && startTs.toMillis() > dueTs.toMillis()) return "La date de début est après la date de fin.";
     return null;
-  }, [editDueDate, editStartDate]);
+  }, [editDueDate, editStartDate, isTimedTask]);
 
   const editDueDateFeedback = useMemo(() => {
     if (!editDueDate) return null;
@@ -550,18 +558,18 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
   const editStartDateFeedback = useMemo(() => {
     if (!editStartDate) return null;
-    const ts = parseLocalDateToTimestamp(editStartDate);
+    const ts = isTimedTask ? parseLocalDateTimeToTimestamp(editStartDate) : parseLocalDateToTimestamp(editStartDate);
     if (!ts) {
       return {
         tone: "error" as const,
-        text: `Format attendu: ${DATE_PLACEHOLDER_FR}.`,
+        text: `Format attendu: ${isTimedTask ? DATETIME_PLACEHOLDER_FR : DATE_PLACEHOLDER_FR}.`,
       };
     }
     return {
       tone: "muted" as const,
-      text: `Début: ${formatTimestampToDateFr(ts)}`,
+      text: `Début: ${isTimedTask ? formatTimestampToDateTimeFr(ts) : formatTimestampToDateFr(ts)}`,
     };
-  }, [editStartDate]);
+  }, [editStartDate, isTimedTask]);
 
   const handleSnooze = async (preset: '10m' | '1h' | 'tomorrow') => {
     if (!task?.id) return;
@@ -719,7 +727,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     setEditTitle(task.title ?? "");
     setEditStatus(((task.status as TaskStatus | undefined) ?? "todo") as TaskStatus);
     setEditWorkspaceId(typeof task.workspaceId === "string" ? task.workspaceId : "");
-    setEditStartDate(formatTimestampForDateInput(task.startDate ?? null));
+    setEditStartDate(task.allDay === true ? formatTimestampForDateInput(task.startDate ?? null) : formatTimestampForInput(task.startDate ?? null));
     setEditDueDate(formatTimestampForInput(task.dueDate ?? null));
     setEditPriority(task.priority ?? "");
     setEditError(null);
@@ -776,19 +784,24 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     }
 
     const startTimestamp = validation.data.startDate
-      ? parseLocalDateToTimestamp(validation.data.startDate)
+      ? (isTimedTask ? parseLocalDateTimeToTimestamp(validation.data.startDate) : parseLocalDateToTimestamp(validation.data.startDate))
       : null;
     const dueTimestamp = validation.data.dueDate
       ? parseLocalDateTimeToTimestamp(validation.data.dueDate)
       : null;
 
     if (validation.data.startDate && !startTimestamp) {
-      setEditError(`Date de début invalide (format attendu: ${DATE_PLACEHOLDER_FR}).`);
+      setEditError(`Date de début invalide (format attendu: ${isTimedTask ? DATETIME_PLACEHOLDER_FR : DATE_PLACEHOLDER_FR}).`);
       return false;
     }
 
     if (validation.data.dueDate && !dueTimestamp) {
       setEditError(`Date d'échéance invalide (format attendu: ${DATETIME_PLACEHOLDER_FR}).`);
+      return false;
+    }
+
+    if (isTimedTask && startTimestamp && dueTimestamp && dueTimestamp.toMillis() <= startTimestamp.toMillis()) {
+      setEditError("La fin doit être après le début.");
       return false;
     }
 
@@ -1459,7 +1472,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                     </label>
                     <input
                       id="task-modal-start"
-                      type="date"
+                      type={isTimedTask ? "datetime-local" : "date"}
                       value={editStartDate}
                       onChange={(e) => {
                         const nextStartDate = e.target.value;
@@ -1474,8 +1487,8 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                         });
                         setDirty(snap !== lastSavedSnapshotRef.current);
                       }}
-                      placeholder={DATE_PLACEHOLDER_FR}
-                      title={`Format: ${DATE_PLACEHOLDER_FR}`}
+                      placeholder={isTimedTask ? DATETIME_PLACEHOLDER_FR : DATE_PLACEHOLDER_FR}
+                      title={`Format: ${isTimedTask ? DATETIME_PLACEHOLDER_FR : DATE_PLACEHOLDER_FR}`}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();

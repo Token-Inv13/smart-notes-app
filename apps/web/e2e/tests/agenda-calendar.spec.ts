@@ -34,6 +34,38 @@ async function createTaskFromCalendar(page: Page, title: string) {
   await expect(dialog).toBeHidden();
 }
 
+async function convertCalendarTaskToTimed(page: Page, title: string, startTime: string, endTime: string) {
+  await page.getByText(title).first().click();
+  const editDialog = page.getByRole("dialog", { name: "Modifier l’élément d’agenda" });
+  await expect(editDialog).toBeVisible();
+  await expect(editDialog.getByLabel("Toute la journée")).toBeChecked();
+
+  await editDialog.getByLabel("Toute la journée").uncheck();
+  const startInput = editDialog.getByLabel("Date de début");
+  const endInput = editDialog.getByLabel("Date de fin / échéance");
+
+  const startValue = await startInput.inputValue();
+  const [startDate] = startValue.split("T");
+  await startInput.fill(`${startDate}T${startTime}`);
+  await endInput.fill(`${startDate}T${endTime}`);
+
+  await editDialog.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(editDialog).toBeHidden();
+}
+
+async function openTaskDetailFromList(page: Page, title: string) {
+  await page.goto("/tasks?view=list");
+  await page.locator("li", { hasText: title }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Détail de l’élément d’agenda" });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+async function enterTaskDetailEditMode(dialog: ReturnType<Page["getByRole"]>) {
+  await dialog.getByRole("button", { name: "Actions" }).click();
+  await dialog.getByRole("menuitem", { name: "Modifier" }).click();
+}
+
 test("agenda_create_via_plus_uses_modal_start_date_and_creates_task", async ({ page }) => {
   const users = getE2EUsers();
   await loginViaUi(page, users.owner, "/tasks?view=calendar");
@@ -138,6 +170,76 @@ test("agenda_can_convert_all_day_to_timed", async ({ page }) => {
   await page.getByText(title).first().click();
   await expect(editDialog).toBeVisible();
   await expect(editDialog.getByLabel("Toute la journée")).not.toBeChecked();
+});
+
+test("agenda_detail_timed_task_preserves_start_time_after_save", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  const title = uniqueAgendaTitle("detailTimed");
+  await createTaskFromCalendar(page, title);
+  await convertCalendarTaskToTimed(page, title, "08:00", "09:00");
+
+  const detailDialog = await openTaskDetailFromList(page, title);
+  await expect(detailDialog.getByText("Date de début:").first()).toContainText("08:00");
+  await expect(detailDialog.getByText("Date de fin / échéance:").first()).toContainText("09:00");
+
+  await enterTaskDetailEditMode(detailDialog);
+  const editDialog = page.getByRole("dialog", { name: "Modifier l’élément d’agenda" });
+  const startInput = editDialog.getByLabel("Date de début");
+  const endInput = editDialog.getByLabel("Date de fin / échéance");
+  await expect(startInput).toHaveAttribute("type", "datetime-local");
+  await expect(startInput).toHaveValue(/T08:00$/);
+  await expect(endInput).toHaveValue(/T09:00$/);
+
+  await editDialog.locator("#task-modal-title").fill(`${title} edited`);
+  await editDialog.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(page.getByRole("dialog", { name: "Détail de l’élément d’agenda" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Fermer" }).click();
+
+  const reopenedDetailDialog = await openTaskDetailFromList(page, `${title} edited`);
+  await enterTaskDetailEditMode(reopenedDetailDialog);
+  const reopenedEditDialog = page.getByRole("dialog", { name: "Modifier l’élément d’agenda" });
+  await expect(reopenedEditDialog.getByLabel("Date de début")).toHaveValue(/T08:00$/);
+});
+
+test("agenda_detail_timed_task_blocks_when_end_is_not_after_start", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  const title = uniqueAgendaTitle("detailBlock");
+  await createTaskFromCalendar(page, title);
+  await convertCalendarTaskToTimed(page, title, "10:00", "11:00");
+
+  const detailDialog = await openTaskDetailFromList(page, title);
+  await enterTaskDetailEditMode(detailDialog);
+
+  const editDialog = page.getByRole("dialog", { name: "Modifier l’élément d’agenda" });
+  const startInput = editDialog.getByLabel("Date de début");
+  const endInput = editDialog.getByLabel("Date de fin / échéance");
+  const startValue = await startInput.inputValue();
+  await endInput.fill(startValue);
+  await editDialog.getByRole("button", { name: "Enregistrer" }).click();
+
+  await expect(editDialog.getByText("La fin doit être après le début.")).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Modifier l’élément d’agenda" })).toBeVisible();
+});
+
+test("agenda_detail_all_day_task_keeps_date_only_start_field", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  const title = uniqueAgendaTitle("detailAllDay");
+  await createTaskFromCalendar(page, title);
+
+  const detailDialog = await openTaskDetailFromList(page, title);
+  await expect(detailDialog.getByText("Date de début:").first()).not.toContainText(":");
+  await expect(detailDialog.getByText("Date de fin / échéance:").first()).not.toContainText(":");
+
+  await enterTaskDetailEditMode(detailDialog);
+  const editDialog = page.getByRole("dialog", { name: "Modifier l’élément d’agenda" });
+  await expect(editDialog.getByLabel("Date de début")).toHaveAttribute("type", "date");
 });
 
 test("agenda_detail_modal_has_consistent_accessible_name", async ({ page }) => {
