@@ -164,7 +164,7 @@ export default function NoteDetailPage() {
             </a>
           </div>
 
-          <AssistantNotePanel noteId={note.id} />
+          <AssistantNotePanel noteId={note.id} currentNoteContent={note.content ?? ""} />
         </>
       )}
     </div>

@@ -779,6 +779,18 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
   const handleAssistantNoteContentUpdated = (nextContent: string) => {
     if (!note) return;
 
+    const savedSnapshot = JSON.stringify({
+      title: note.title ?? "",
+      content: nextContent,
+      workspaceId: typeof note.workspaceId === "string" ? note.workspaceId : "",
+    });
+
+    const draftSnapshot = JSON.stringify({
+      title: mode === "edit" ? editTitle : note.title ?? "",
+      content: nextContent,
+      workspaceId: mode === "edit" ? editWorkspaceId : typeof note.workspaceId === "string" ? note.workspaceId : "",
+    });
+
     setNote((prev) =>
       prev
         ? {
@@ -789,12 +801,8 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
     );
 
     setEditContent(nextContent);
-    lastSavedSnapshotRef.current = JSON.stringify({
-      title: note.title ?? "",
-      content: nextContent,
-      workspaceId: typeof note.workspaceId === "string" ? note.workspaceId : "",
-    });
-    setDirty(false);
+    lastSavedSnapshotRef.current = savedSnapshot;
+    setDirty(draftSnapshot !== savedSnapshot);
   };
 
   useEffect(() => {

@@ -476,8 +476,12 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
 
+    if (typeof currentNoteContent !== "string") {
+      throw new Error("Contenu actuel de la note indisponible.");
+    }
+
     const htmlBody = plain.split("\n").map((line) => escapeHtml(line)).join("<br>");
-    const safeCurrent = sanitizeNoteHtml(currentNoteContent ?? "").trim();
+    const safeCurrent = sanitizeNoteHtml(currentNoteContent).trim();
     const block = `<p><strong>${escapeHtml(baseTitle)}</strong></p><p>${htmlBody}</p>`;
     const next = safeCurrent ? `${safeCurrent}<p><br></p>${block}` : block;
 
