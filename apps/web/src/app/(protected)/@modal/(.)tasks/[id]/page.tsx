@@ -40,6 +40,18 @@ import DictationMicButton from "@/app/(protected)/_components/DictationMicButton
 import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
 import Modal from "../../../Modal";
 import ItemActionsMenu from "../../../ItemActionsMenu";
+import {
+  TASK_EMPTY_PRIORITY_LABEL,
+  TASK_EMPTY_WORKSPACE_LABEL,
+  TASK_FIELD_DUE_LABEL,
+  TASK_FIELD_PRIORITY_LABEL,
+  TASK_FIELD_START_LABEL,
+  TASK_FIELD_TITLE_LABEL,
+  TASK_FIELD_WORKSPACE_LABEL,
+  TASK_MODAL_DETAIL_TITLE,
+  TASK_MODAL_EDIT_TITLE,
+  TASK_PRIORITY_OPTIONS,
+} from "../../../_components/taskModalLabels";
 
 function formatFrDateTime(ts?: TaskDoc["dueDate"] | null) {
   return formatTimestampToDateTimeFr(ts ?? null);
@@ -769,6 +781,17 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
     const dueTimestamp = validation.data.dueDate
       ? parseLocalDateTimeToTimestamp(validation.data.dueDate)
       : null;
+
+    if (validation.data.startDate && !startTimestamp) {
+      setEditError(`Date de début invalide (format attendu: ${DATE_PLACEHOLDER_FR}).`);
+      return false;
+    }
+
+    if (validation.data.dueDate && !dueTimestamp) {
+      setEditError(`Date d'échéance invalide (format attendu: ${DATETIME_PLACEHOLDER_FR}).`);
+      return false;
+    }
+
     const explicitAllDay =
       startTimestamp && dueTimestamp
         ? isExactAllDayWindow(startTimestamp.toDate(), dueTimestamp.toDate())
@@ -984,6 +1007,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
   return (
     <Modal
+      ariaLabel={mode === "edit" ? TASK_MODAL_EDIT_TITLE : TASK_MODAL_DETAIL_TITLE}
       hideHeader
       fallbackHref={fallbackHref}
       onBeforeClose={async () => {
@@ -1069,15 +1093,18 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
               </div>
             </div>
           )}
-          <div className="sn-card p-4 space-y-3">
-            <div className="sn-modal-header-safe">
-              <div className="min-w-0 flex-1">
-                {mode === "view" ? (
-                  <div className="text-sm font-semibold truncate">{task.title}</div>
-                ) : (
-                  <div className="text-sm font-semibold">Modifier l’élément d’agenda</div>
-                )}
-              </div>
+            <div className="sn-card p-4 space-y-3">
+              <div className="sn-modal-header-safe">
+                <div className="min-w-0 flex-1">
+                  {mode === "view" ? (
+                    <div className="space-y-1 min-w-0">
+                      <div className="text-sm font-semibold">{TASK_MODAL_DETAIL_TITLE}</div>
+                      <div className="text-sm text-muted-foreground truncate">{task.title}</div>
+                    </div>
+                  ) : (
+                    <div className="text-sm font-semibold">{TASK_MODAL_EDIT_TITLE}</div>
+                  )}
+                </div>
 
               <div className="sn-modal-header-actions">
                 {mode === "view" ? (
@@ -1285,7 +1312,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 items-end">
                   <div className="space-y-1 lg:col-span-2">
                     <label className="text-sm font-medium" htmlFor="task-modal-title">
-                      Titre
+                      {TASK_FIELD_TITLE_LABEL}
                     </label>
                     <div className="flex items-center gap-2">
                       <input
@@ -1388,7 +1415,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
                   <div className="space-y-1">
                     <label className="text-sm font-medium" htmlFor="task-modal-due">
-                      Date de fin / échéance
+                      {TASK_FIELD_DUE_LABEL}
                     </label>
                     <input
                       id="task-modal-due"
@@ -1428,7 +1455,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 items-end">
                   <div className="space-y-1">
                     <label className="text-sm font-medium" htmlFor="task-modal-start">
-                      Date de début
+                      {TASK_FIELD_START_LABEL}
                     </label>
                     <input
                       id="task-modal-start"
@@ -1466,7 +1493,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
                   <div className="space-y-1">
                     <label className="text-sm font-medium" htmlFor="task-modal-priority">
-                      Priorité
+                      {TASK_FIELD_PRIORITY_LABEL}
                     </label>
                     <select
                       id="task-modal-priority"
@@ -1487,10 +1514,12 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                       }}
                       className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                     >
-                      <option value="">—</option>
-                      <option value="low">Basse</option>
-                      <option value="medium">Moyenne</option>
-                      <option value="high">Haute</option>
+                      <option value="">{TASK_EMPTY_PRIORITY_LABEL}</option>
+                      {TASK_PRIORITY_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -1504,7 +1533,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                 <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 items-end">
                   <div className="space-y-1">
                     <label className="text-sm font-medium" htmlFor="task-modal-workspace">
-                      Dossier
+                      {TASK_FIELD_WORKSPACE_LABEL}
                     </label>
                     <select
                       id="task-modal-workspace"
@@ -1524,7 +1553,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                       }}
                       className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
                     >
-                      <option value="">—</option>
+                      <option value="">{TASK_EMPTY_WORKSPACE_LABEL}</option>
                       {workspaces.map((ws) => (
                         <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
                           {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}

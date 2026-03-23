@@ -28,6 +28,16 @@ import {
   serializeTaskRecurrence,
   serializeTimestampMillis,
 } from "@/lib/planGuardedMutations";
+import {
+  TASK_EMPTY_PRIORITY_LABEL,
+  TASK_EMPTY_WORKSPACE_LABEL,
+  TASK_FIELD_DUE_LABEL,
+  TASK_FIELD_PRIORITY_LABEL,
+  TASK_FIELD_START_LABEL,
+  TASK_FIELD_TITLE_LABEL,
+  TASK_FIELD_WORKSPACE_LABEL,
+  TASK_PRIORITY_OPTIONS,
+} from "./taskModalLabels";
 
 type TaskStatus = "todo" | "doing" | "done";
 
@@ -340,7 +350,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
       <div className="grid grid-cols-1 lg:grid-cols-6 gap-3 items-end">
         <div className="space-y-1 lg:col-span-3">
           <label className="text-sm font-medium" htmlFor="task-new-title">
-            Titre
+            {TASK_FIELD_TITLE_LABEL}
           </label>
           <div className="flex items-center gap-2">
             <input
@@ -412,7 +422,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
 
         <div className="space-y-1 lg:col-span-2">
           <label className="text-sm font-medium" htmlFor="task-new-due">
-            Date de fin / échéance
+            {TASK_FIELD_DUE_LABEL}
           </label>
           <input
             id="task-new-due"
@@ -440,7 +450,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 items-end">
         <div className="space-y-1">
           <label className="text-sm font-medium" htmlFor="task-new-start">
-            Date de début
+            {TASK_FIELD_START_LABEL}
           </label>
           <input
             id="task-new-start"
@@ -466,7 +476,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
 
         <div className="space-y-1">
           <label className="text-sm font-medium" htmlFor="task-new-priority">
-            Priorité
+            {TASK_FIELD_PRIORITY_LABEL}
           </label>
           <select
             id="task-new-priority"
@@ -478,10 +488,12 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
             }}
             className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
           >
-            <option value="">—</option>
-            <option value="low">Basse</option>
-            <option value="medium">Moyenne</option>
-            <option value="high">Haute</option>
+            <option value="">{TASK_EMPTY_PRIORITY_LABEL}</option>
+            {TASK_PRIORITY_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
         </div>
       </div>
@@ -495,7 +507,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 items-end">
         <div className="space-y-1">
           <label className="text-sm font-medium" htmlFor="task-new-workspace">
-            Dossier
+            {TASK_FIELD_WORKSPACE_LABEL}
           </label>
           <select
             id="task-new-workspace"
@@ -503,7 +515,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
             onChange={(e) => setNewWorkspaceId(e.target.value)}
             className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
           >
-            <option value="">—</option>
+            <option value="">{TASK_EMPTY_WORKSPACE_LABEL}</option>
             {workspaces.map((ws) => (
               <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
                 {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}

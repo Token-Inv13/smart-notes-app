@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 interface ModalProps {
   title?: string;
+  ariaLabel?: string;
   children: React.ReactNode | ((ctx: { close: () => void }) => React.ReactNode);
   onBeforeClose?: () => void | boolean | Promise<void | boolean>;
   hideHeader?: boolean;
@@ -14,6 +15,7 @@ interface ModalProps {
 
 export default function Modal({
   title,
+  ariaLabel,
   children,
   onBeforeClose,
   hideHeader = false,
@@ -73,7 +75,7 @@ export default function Modal({
       }}
       role="dialog"
       aria-modal="true"
-      aria-label={title ?? "Dialog"}
+      aria-label={ariaLabel ?? title ?? "Dialog"}
     >
       <div
         ref={panelRef}
