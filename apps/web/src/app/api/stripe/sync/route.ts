@@ -159,10 +159,12 @@ export async function POST() {
         typeof userData.stripeCustomerId === 'string' ||
         typeof userData.stripeSubscriptionStatus === 'string';
 
-      if ((userData.plan ?? 'free') === 'pro' && hasStripeContext) {
+      if (hasStripeContext) {
         await userRef.set(
           {
             plan: 'free',
+            stripeCustomerId: null,
+            stripeSubscriptionId: null,
             stripeSubscriptionStatus: null,
             stripeSubscriptionCancelAtPeriodEnd: null,
             stripeSubscriptionCurrentPeriodEnd: null,
