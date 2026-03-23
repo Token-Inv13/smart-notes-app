@@ -140,6 +140,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
 
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [dockHiddenOnScroll, setDockHiddenOnScroll] = useState(false);
   const [dockDesktopTopClass, setDockDesktopTopClass] = useState("md:top-32");
   const [isTasksCalendarView, setIsTasksCalendarView] = useState(false);
@@ -158,6 +159,35 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
     const qs = searchParams.toString();
     return qs ? `${pathname}?${qs}` : pathname;
   }, [pathname, searchParams]);
+
+  const resetMobileBodyStyles = useCallback(() => {
+    if (typeof document === "undefined") return;
+    document.body.style.overflow = "";
+    document.body.style.position = "";
+    document.body.style.top = "";
+    document.body.style.width = "";
+  }, []);
+
+  const resetMobileDrawerState = useCallback(() => {
+    mobileHistoryGuardActiveRef.current = false;
+    ignoreNextMobilePopRef.current = false;
+    setMobileOpen(false);
+    resetMobileBodyStyles();
+  }, [resetMobileBodyStyles]);
+
+  useEffect(() => {
+    const syncViewport = () => {
+      setIsMobileViewport(window.innerWidth < 768);
+    };
+
+    syncViewport();
+    window.addEventListener("resize", syncViewport, { passive: true });
+
+    return () => {
+      window.removeEventListener("resize", syncViewport);
+      resetMobileDrawerState();
+    };
+  }, [resetMobileDrawerState]);
 
   useEffect(() => {
     const isTypingTarget = (target: EventTarget | null) => {
@@ -312,13 +342,20 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   }, [mobileOpen]);
 
   useEffect(() => {
-    if (!mobileOpen) return;
+    if (!mobileOpen) {
+      resetMobileBodyStyles();
+      return;
+    }
+
     // Close the drawer on navigation to avoid stale overlay states.
-    setMobileOpen(false);
-    mobileHistoryGuardActiveRef.current = false;
-    ignoreNextMobilePopRef.current = false;
+    resetMobileDrawerState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, workspaceId]);
+
+  useEffect(() => {
+    if (isMobileViewport) return;
+    resetMobileDrawerState();
+  }, [isMobileViewport, resetMobileDrawerState]);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -777,7 +814,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
       </aside>
 
       {/* Mobile drawer */}
-      {mobileOpen && (
+      {mobileOpen && isMobileViewport ? (
         <div className="md:hidden fixed inset-0 z-50">
           <button
             type="button"
