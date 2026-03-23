@@ -146,6 +146,13 @@ Sentry n’est pas encore branché dans ce repo. Si vous activez Sentry:
 
 Variables Functions (server-only) pour l’alerting:
 
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USER`
+- `SMTP_PASS`
+- `SMTP_FROM` (`demande-service@tasknote.io`)
+- `APP_BASE_URL`
+- `EMAIL_TEST_SECRET` (pour les routes/tests email dédiés)
 - `OPS_ALERT_EMAIL_TO`
 - `OPS_ALERT_COOLDOWN_MS`
 - `OPS_ALERT_BACKLOG_THRESHOLD_REMINDERS`

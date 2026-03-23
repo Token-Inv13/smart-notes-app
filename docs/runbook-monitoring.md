@@ -119,6 +119,7 @@ Chercher:
 
 1. Vérifier `OPS_ALERT_EMAIL_TO`
 2. Vérifier variables SMTP (`SMTP_*`, `APP_BASE_URL`)
+   `SMTP_FROM` doit être aligné sur `demande-service@tasknote.io`
 3. Vérifier `SLACK_WEBHOOK_URL` (optionnel)
 4. Vérifier `opsAlerts/*` (cooldown peut bloquer un renvoi)
 
