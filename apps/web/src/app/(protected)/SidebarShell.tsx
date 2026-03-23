@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { PanelLeft, Menu, X } from "lucide-react";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import SidebarWorkspaces from "./SidebarWorkspaces";
-import PwaInstallCta from "./_components/PwaInstallCta";
+import PwaInstallCta, { PwaInstallSidebarEntry } from "./_components/PwaInstallCta";
 import CreateButton from "./_components/CreateButton";
 import SmartActionDock from "./_components/SmartActionDock";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
@@ -720,6 +720,14 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
     </div>
   );
 
+  const renderPwaInstallEntry = (mobile = false) => (
+    <PwaInstallSidebarEntry
+      mobile={mobile}
+      collapsed={collapsed}
+      onNavigate={mobile ? closeMobile : undefined}
+    />
+  );
+
   if (authLoading || authInvalidating || !user) {
     return (
       <div className="min-h-[100dvh] flex items-center justify-center bg-background text-foreground">
@@ -780,6 +788,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
               error={workspacesError}
             />
           </div>
+          {renderPwaInstallEntry()}
           {renderBugReportAction()}
         </div>
       </aside>
@@ -818,6 +827,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
                 loading={workspacesLoading}
                 error={workspacesError}
               />
+              {renderPwaInstallEntry(true)}
               {renderBugReportAction(true)}
             </div>
           </div>

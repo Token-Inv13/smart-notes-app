@@ -36,12 +36,15 @@ function isSafariBrowser() {
   return isSafari;
 }
 
-export default function PwaInstallCta() {
+export function usePwaInstallState() {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [installed, setInstalled] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
+    setInstalled(isStandaloneDisplayMode());
 
     try {
       const raw = window.localStorage.getItem(DISMISS_KEY);
@@ -64,6 +67,7 @@ export default function PwaInstallCta() {
 
     window.addEventListener("beforeinstallprompt", handler);
     const onAppInstalled = () => {
+      setInstalled(true);
       setDeferred(null);
       setDismissed(true);
     };
@@ -75,13 +79,11 @@ export default function PwaInstallCta() {
     };
   }, []);
 
-  const installed = useMemo(() => isStandaloneDisplayMode(), []);
   const ios = useMemo(() => isIosDevice(), []);
   const android = useMemo(() => isAndroidDevice(), []);
   const iosSafari = useMemo(() => ios && isSafariBrowser(), [ios]);
 
   const canPromptInstall = !!deferred;
-  const shouldShow = !installed && !dismissed && (canPromptInstall || ios || android);
 
   const dismiss = () => {
     setDismissed(true);
@@ -103,7 +105,76 @@ export default function PwaInstallCta() {
     }
   };
 
-  if (!shouldShow) return null;
+  return {
+    installed,
+    dismissed,
+    ios,
+    android,
+    iosSafari,
+    canPromptInstall,
+    shouldShowBanner: !installed && !dismissed && (canPromptInstall || ios || android),
+    shouldShowEntry: !installed && (canPromptInstall || ios || android),
+    dismiss,
+    onInstall,
+  };
+}
+
+export function PwaInstallSidebarEntry({
+  mobile = false,
+  collapsed = false,
+  onNavigate,
+}: {
+  mobile?: boolean;
+  collapsed?: boolean;
+  onNavigate?: () => void;
+}) {
+  const { shouldShowEntry, canPromptInstall, ios, android, onInstall } = usePwaInstallState();
+
+  if (!shouldShowEntry) return null;
+
+  const label = canPromptInstall
+    ? "Installer l’app"
+    : ios
+      ? "Installer sur iPhone"
+      : android
+        ? "Installer sur Android"
+        : "Installer l’app";
+
+  return (
+    <div className={mobile ? "mt-3 border-t border-border pt-3" : "shrink-0 border-t border-border px-3 pt-3"}>
+      <button
+        type="button"
+        onClick={() => {
+          onNavigate?.();
+          void onInstall();
+        }}
+        className={`w-full rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary transition-colors hover:bg-primary/10 ${mobile ? "text-left" : collapsed ? "text-center" : "text-left"}`}
+        aria-label={label}
+        title={label}
+      >
+        {collapsed && !mobile ? "App" : label}
+      </button>
+      {!canPromptInstall ? (
+        <div className={`mt-1 text-xs text-muted-foreground ${mobile ? "text-left" : collapsed ? "hidden" : "text-left"}`}>
+          {ios ? "Via Safari → Partager → Sur l’écran d’accueil." : "Via le menu du navigateur."}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export default function PwaInstallCta() {
+  const {
+    shouldShowBanner,
+    ios,
+    android,
+    iosSafari,
+    canPromptInstall,
+    dismiss,
+    onInstall,
+  } = usePwaInstallState();
+
+  if (!shouldShowBanner) return null;
 
   return (
     <div className="sn-card sn-card--muted p-3 mb-4">
