@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 interface ModalProps {
@@ -22,83 +22,27 @@ export default function Modal({
 }: ModalProps) {
   const router = useRouter();
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const hasPriorHistoryRef = useRef(false);
-  const historyGuardIdRef = useRef(`sn-modal-${Math.random().toString(36).slice(2)}-${Date.now()}`);
-  const ignoreNextPopRef = useRef(false);
-  const closeInFlightRef = useRef(false);
 
-  const runBeforeClose = useCallback(async () => {
+  const close = async () => {
     if (onBeforeClose) {
       try {
         const result = await onBeforeClose();
-        return result !== false;
+        if (result === false) return;
       } catch {
-        return false;
+        return;
       }
     }
-    return true;
-  }, [onBeforeClose]);
 
-  const navigateAfterClose = useCallback((source: "direct" | "popstate") => {
-    if (typeof window === "undefined") {
+    if (typeof window !== "undefined" && window.history.length <= 1) {
       router.push(fallbackHref);
       return;
     }
-
-    if (source === "popstate") {
-      if (hasPriorHistoryRef.current) {
-        ignoreNextPopRef.current = true;
-        router.back();
-        return;
-      }
-      router.push(fallbackHref);
-      return;
-    }
-
-    if (hasPriorHistoryRef.current) {
-      ignoreNextPopRef.current = true;
-      window.history.go(-2);
-      return;
-    }
-
-    router.push(fallbackHref);
-  }, [fallbackHref, router]);
-
-  const restoreHistoryGuard = useCallback(() => {
-    if (typeof window === "undefined") return;
-    const state = typeof window.history.state === "object" && window.history.state !== null ? window.history.state : {};
-    window.history.pushState(
-      { ...state, __snModalGuard: historyGuardIdRef.current },
-      "",
-      window.location.href,
-    );
-  }, []);
-
-  const close = useCallback(async (source: "direct" | "popstate" = "direct") => {
-    if (closeInFlightRef.current) return;
-    closeInFlightRef.current = true;
-
-    try {
-      const canClose = await runBeforeClose();
-      if (!canClose) {
-        if (source === "popstate") {
-          restoreHistoryGuard();
-        }
-        return;
-      }
-
-      navigateAfterClose(source);
-    } finally {
-      closeInFlightRef.current = false;
-    }
-  }, [navigateAfterClose, restoreHistoryGuard, runBeforeClose]);
+    router.back();
+  };
 
   const content = typeof children === "function" ? children({ close: () => void close() }) : children;
 
   useEffect(() => {
-    hasPriorHistoryRef.current = window.history.length > 1;
-    restoreHistoryGuard();
-
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -106,24 +50,12 @@ export default function Modal({
       }
     };
 
-    const onPopState = () => {
-      if (ignoreNextPopRef.current) {
-        ignoreNextPopRef.current = false;
-        return;
-      }
-
-      void close("popstate");
-    };
-
     window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("popstate", onPopState);
     panelRef.current?.focus();
 
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("popstate", onPopState);
-    };
-  }, [close, restoreHistoryGuard]);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const wrapperClassName = fullscreen
     ? "fixed inset-0 z-50 overflow-y-auto bg-background px-4 py-6"
