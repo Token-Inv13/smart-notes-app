@@ -30,6 +30,7 @@ import {
   formatTimestampToDateTimeFr,
   formatTimestampForDateInput,
   formatTimestampForInput,
+  getUserTimezone,
   isExactAllDayWindow,
   parseLocalDateTimeToTimestamp,
   parseLocalDateToTimestamp,
@@ -79,6 +80,13 @@ function formatReminderDate(iso: string | null | undefined): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "Date invalide";
   return formatDateTimeFr(date);
+}
+
+function toLocalDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function getReminderRestrictionMessage(task: TaskDoc | null | undefined): string | null {
@@ -832,6 +840,52 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       });
 
       console.info("[task modal] saveEdits success", { taskId: task.id });
+
+      if (
+        typeof task.googleEventId === "string" &&
+        task.googleEventId.trim() &&
+        startTimestamp &&
+        dueTimestamp
+      ) {
+        const googleStart = startTimestamp.toDate();
+        const googleEnd = dueTimestamp.toDate();
+        const googlePayload = explicitAllDay
+          ? {
+              googleEventId: task.googleEventId,
+              title: validation.data.title,
+              start: toLocalDateInputValue(googleStart),
+              end: toLocalDateInputValue(googleEnd),
+              allDay: true,
+            }
+          : {
+              googleEventId: task.googleEventId,
+              title: validation.data.title,
+              start: googleStart.toISOString(),
+              end: googleEnd.toISOString(),
+              allDay: false,
+              timeZone: getUserTimezone(),
+            };
+
+        void fetch("/api/google/calendar/events", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(googlePayload),
+        }).then((response) => {
+          if (!response.ok) {
+            console.warn("agenda.google.update_failed", {
+              taskId: task.id,
+              status: response.status,
+            });
+          }
+        }).catch((error) => {
+          console.warn("agenda.google.update_failed", {
+            taskId: task.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
 
       if (isPro) {
         try {

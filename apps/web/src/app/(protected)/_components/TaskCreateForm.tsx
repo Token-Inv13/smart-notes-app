@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { addDoc, collection, doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserSettings } from "@/hooks/useUserSettings";
@@ -12,6 +12,7 @@ import {
   DATE_PLACEHOLDER_FR,
   formatTimestampToDateFr,
   formatTimestampToDateTimeFr,
+  getUserTimezone,
   isExactAllDayWindow,
   parseLocalDateTimeToTimestamp,
   parseLocalDateToTimestamp,
@@ -56,6 +57,13 @@ const newTaskSchema = z.object({
   dueDate: z.string().optional(),
   priority: z.union([z.literal("low"), z.literal("medium"), z.literal("high")]).optional(),
 });
+
+function toLocalDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, initialStartDate, onCreated }: Props) {
   const { data: workspaces } = useUserWorkspaces();
@@ -316,6 +324,66 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
             console.error("Error creating task reminder", e);
           }
         }
+      }
+
+      if (startTimestamp && dueTimestamp) {
+        const googleStart = startTimestamp.toDate();
+        const googleEnd = dueTimestamp.toDate();
+        const googlePayload = explicitAllDay
+          ? {
+              title: validation.data.title,
+              start: toLocalDateInputValue(googleStart),
+              end: toLocalDateInputValue(googleEnd),
+              allDay: true,
+            }
+          : {
+              title: validation.data.title,
+              start: googleStart.toISOString(),
+              end: googleEnd.toISOString(),
+              allDay: false,
+              timeZone: getUserTimezone(),
+            };
+
+        void fetch("/api/google/calendar/events", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(googlePayload),
+        }).then(async (response) => {
+          if (!response.ok) {
+            console.warn("agenda.google.create_failed", {
+              status: response.status,
+              taskId: taskResult.taskId,
+            });
+            return;
+          }
+
+          const data = (await response.json().catch(() => null)) as { created?: unknown; eventId?: unknown } | null;
+          const googleEventId =
+            data?.created === true && typeof data.eventId === "string" && data.eventId.trim()
+              ? data.eventId.trim()
+              : null;
+
+          if (!googleEventId) return;
+
+          try {
+            await updateDoc(doc(db, "tasks", taskResult.taskId), {
+              googleEventId,
+              updatedAt: serverTimestamp(),
+            });
+          } catch (error) {
+            console.warn("agenda.google.link_write_failed", {
+              taskId: taskResult.taskId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }).catch((error) => {
+          console.warn("agenda.google.create_failed", {
+            taskId: taskResult.taskId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
       }
 
       try {

@@ -114,6 +114,18 @@ async function createTaskViaPlus(page: Page, title: string) {
   await expect(dialog).toBeHidden();
 }
 
+async function createTaskViaStandaloneForm(page: Page, options: {
+  title: string;
+  startDate: string;
+  dueDate: string;
+}) {
+  await page.goto("/tasks/new");
+  await page.locator("#task-new-title").fill(options.title);
+  await page.locator("#task-new-start").fill(options.startDate);
+  await page.locator("#task-new-due").fill(options.dueDate);
+  await page.getByRole("button", { name: "Créer dans l’agenda" }).click();
+}
+
 async function openTaskCreateDialogFromPicker(page: Page, path: string) {
   await page.goto(path);
   await page.getByRole("button", { name: "Créer" }).click();
@@ -625,6 +637,127 @@ test("agenda_update_keeps_local_change_when_google_patch_fails", async ({ page }
   await expect(editDialog).toBeHidden();
 
   await expect(page.getByText(`${title} kept`).first()).toBeVisible({ timeout: 15000 });
+});
+
+test("agenda_detail_update_attempts_google_patch_for_linked_task", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  await mockGoogleCalendarCreate(page, {
+    body: { created: true, eventId: "gcal-detail-1" },
+  });
+
+  let googleUpdatePayload: unknown = null;
+  await mockGoogleCalendarUpdate(page, {
+    onRequest: (body) => {
+      googleUpdatePayload = body;
+    },
+  });
+
+  const title = uniqueAgendaTitle("detailGooglePatch");
+  await createTaskFromCalendar(page, title);
+
+  const detailDialog = await openTaskDetailFromList(page, title);
+  await enterTaskDetailEditMode(detailDialog);
+  const editDialog = page.getByRole("dialog", { name: "Modifier l’élément d’agenda" });
+  await editDialog.locator("#task-modal-title").fill(`${title} modal`);
+  await editDialog.getByRole("button", { name: "Enregistrer" }).click();
+
+  await expect
+    .poll(() => (googleUpdatePayload as { googleEventId?: string } | null)?.googleEventId ?? null)
+    .toBe("gcal-detail-1");
+  await expect
+    .poll(() => (googleUpdatePayload as { title?: string } | null)?.title ?? null)
+    .toContain("modal");
+});
+
+test("agenda_detail_update_keeps_local_change_when_google_patch_fails", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  await mockGoogleCalendarCreate(page, {
+    body: { created: true, eventId: "gcal-detail-2" },
+  });
+  await mockGoogleCalendarUpdate(page, {
+    status: 500,
+    body: { updated: false },
+  });
+
+  const title = uniqueAgendaTitle("detailGoogleFail");
+  await createTaskFromCalendar(page, title);
+
+  const detailDialog = await openTaskDetailFromList(page, title);
+  await enterTaskDetailEditMode(detailDialog);
+  const editDialog = page.getByRole("dialog", { name: "Modifier l’élément d’agenda" });
+  await editDialog.locator("#task-modal-title").fill(`${title} kept`);
+  await editDialog.getByRole("button", { name: "Enregistrer" }).click();
+
+  await expect(page.getByRole("dialog", { name: "Détail de l’élément d’agenda" })).toBeVisible();
+  await page.getByRole("button", { name: "Fermer" }).click();
+  await expect(page.getByText(`${title} kept`).first()).toBeVisible({ timeout: 15000 });
+});
+
+test("agenda_task_create_form_attempts_google_create_and_persists_link", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks/new");
+
+  let googleCreatePayload: unknown = null;
+  await mockGoogleCalendarCreate(page, {
+    body: { created: true, eventId: "gcal-form-1" },
+    onRequest: (body) => {
+      googleCreatePayload = body;
+    },
+  });
+
+  let googleUpdatePayload: unknown = null;
+  await mockGoogleCalendarUpdate(page, {
+    onRequest: (body) => {
+      googleUpdatePayload = body;
+    },
+  });
+
+  const title = uniqueAgendaTitle("formGoogleCreate");
+  await createTaskViaStandaloneForm(page, {
+    title,
+    startDate: "2026-03-24",
+    dueDate: "2026-03-25T00:00",
+  });
+
+  await expect(page.getByText("Élément ajouté à l’agenda.")).toBeVisible();
+  await expect
+    .poll(() => (googleCreatePayload as { title?: string } | null)?.title ?? null)
+    .toBe(title);
+
+  const detailDialog = await openTaskDetailFromList(page, title);
+  await enterTaskDetailEditMode(detailDialog);
+  const editDialog = page.getByRole("dialog", { name: "Modifier l’élément d’agenda" });
+  await editDialog.locator("#task-modal-title").fill(`${title} linked`);
+  await editDialog.getByRole("button", { name: "Enregistrer" }).click();
+
+  await expect
+    .poll(() => (googleUpdatePayload as { googleEventId?: string } | null)?.googleEventId ?? null)
+    .toBe("gcal-form-1");
+});
+
+test("agenda_task_create_form_keeps_local_task_when_google_create_fails", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks/new");
+
+  await mockGoogleCalendarCreate(page, {
+    status: 500,
+    body: { created: false },
+  });
+
+  const title = uniqueAgendaTitle("formGoogleFail");
+  await createTaskViaStandaloneForm(page, {
+    title,
+    startDate: "2026-03-24",
+    dueDate: "2026-03-25T00:00",
+  });
+
+  await expect(page.getByText("Élément ajouté à l’agenda.")).toBeVisible();
+  await page.goto("/tasks?view=list");
+  await expect(page.getByText(title).first()).toBeVisible({ timeout: 15000 });
 });
 
 test("agenda_delete_attempts_google_delete_for_linked_task", async ({ page }) => {
