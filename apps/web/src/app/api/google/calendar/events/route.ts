@@ -24,6 +24,14 @@ type GoogleEventsResponse = {
   items?: GoogleEventItem[];
 };
 
+type GoogleCreateEventInput = {
+  title?: unknown;
+  start?: unknown;
+  end?: unknown;
+  allDay?: unknown;
+  timeZone?: unknown;
+};
+
 type TokenRefreshResponse = {
   access_token?: string;
   expires_in?: number;
@@ -43,6 +51,18 @@ function sanitizeIso(value: string | null): string | null {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   return date.toISOString();
+}
+
+function sanitizeDateOnly(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : null;
+}
+
+function sanitizeOptionalTimeZone(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
 }
 
 async function refreshAccessTokenIfNeeded(input: {
@@ -146,40 +166,69 @@ async function refreshAccessTokenIfNeeded(input: {
   return refreshedAccessToken;
 }
 
-export async function GET(request: NextRequest) {
-  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+async function getAuthenticatedIntegration(request: NextRequest, requestId: string, eventName: string) {
   const obs = beginApiObserve({
-    eventName: "google.calendar.events.get",
+    eventName,
     route: "/api/google/calendar/events",
     requestId,
     uid: "anonymous",
   });
 
-  try {
-    if (!hasGoogleTokenEncryptionKey()) {
-      console.error("google.calendar.events.service_unavailable", {
-        reason: "missing_token_encryption_key",
-        requestId,
-      });
-      return observedJson(obs, { error: "Configuration du service indisponible." }, { status: 503 });
-    }
-
-    const sessionCookie = request.cookies.get("session")?.value;
-    if (!sessionCookie) {
-      return observedJson(obs, { error: "Not authenticated" }, { status: 401 });
-    }
-
-    const decoded = await verifySessionCookie(sessionCookie);
-    if (!decoded?.uid) {
-      return observedJson(obs, { error: "Not authenticated" }, { status: 401 });
-    }
-
-    const obsUser = beginApiObserve({
-      eventName: "google.calendar.events.get",
-      route: "/api/google/calendar/events",
+  if (!hasGoogleTokenEncryptionKey()) {
+    console.error("google.calendar.events.service_unavailable", {
+      reason: "missing_token_encryption_key",
       requestId,
-      uid: decoded.uid,
     });
+    return {
+      kind: "response" as const,
+      response: observedJson(obs, { error: "Configuration du service indisponible." }, { status: 503 }),
+    };
+  }
+
+  const sessionCookie = request.cookies.get("session")?.value;
+  if (!sessionCookie) {
+    return {
+      kind: "response" as const,
+      response: observedJson(obs, { error: "Not authenticated" }, { status: 401 }),
+    };
+  }
+
+  const decoded = await verifySessionCookie(sessionCookie);
+  if (!decoded?.uid) {
+    return {
+      kind: "response" as const,
+      response: observedJson(obs, { error: "Not authenticated" }, { status: 401 }),
+    };
+  }
+
+  const obsUser = beginApiObserve({
+    eventName,
+    route: "/api/google/calendar/events",
+    requestId,
+    uid: decoded.uid,
+  });
+
+  const db = getAdminDb();
+  const ref = db.collection("users").doc(decoded.uid).collection("assistantIntegrations").doc("googleCalendar");
+  const snap = await ref.get();
+
+  return {
+    kind: "ok" as const,
+    uid: decoded.uid,
+    ref,
+    snap,
+    obs: obsUser,
+  };
+}
+
+export async function GET(request: NextRequest) {
+  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+
+  try {
+    const auth = await getAuthenticatedIntegration(request, requestId, "google.calendar.events.get");
+    if (auth.kind === "response") return auth.response;
+
+    const { uid, snap, obs: obsUser } = auth;
 
     const timeMin = sanitizeIso(request.nextUrl.searchParams.get("timeMin"));
     const timeMax = sanitizeIso(request.nextUrl.searchParams.get("timeMax"));
@@ -187,9 +236,6 @@ export async function GET(request: NextRequest) {
       return observedJson(obsUser, { error: "Invalid time range" }, { status: 400 });
     }
 
-    const db = getAdminDb();
-    const ref = db.collection("users").doc(decoded.uid).collection("assistantIntegrations").doc("googleCalendar");
-    const snap = await ref.get();
     if (!snap.exists) {
       return observedJson(obsUser, { events: [] });
     }
@@ -199,7 +245,7 @@ export async function GET(request: NextRequest) {
       return observedJson(obsUser, { events: [] });
     }
 
-    const accessToken = await refreshAccessTokenIfNeeded({ integration, userId: decoded.uid });
+    const accessToken = await refreshAccessTokenIfNeeded({ integration, userId: uid });
     if (!accessToken) {
       return observedJson(obsUser, { events: [] });
     }
@@ -230,7 +276,7 @@ export async function GET(request: NextRequest) {
       if (eventsRes.status === 429) {
         console.warn("ops.metric.google_quota_error", {
           requestId,
-          uid: decoded.uid,
+          uid,
           route: "/api/google/calendar/events",
           status: 429,
           count: 1,
@@ -259,8 +305,115 @@ export async function GET(request: NextRequest) {
 
     return observedJson(obsUser, { events });
   } catch (e) {
+    const obs = beginApiObserve({
+      eventName: "google.calendar.events.get",
+      route: "/api/google/calendar/events",
+      requestId,
+      uid: "anonymous",
+    });
     observedError(obs, e);
     console.error("Google Calendar events route failed", e);
     return observedJson(obs, { error: "Internal server error" }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+
+  try {
+    const auth = await getAuthenticatedIntegration(request, requestId, "google.calendar.events.create");
+    if (auth.kind === "response") return auth.response;
+
+    const { uid, snap, obs: obsUser } = auth;
+    if (!snap.exists) {
+      return observedJson(obsUser, { created: false });
+    }
+
+    const integration = snap.data() as IntegrationDoc;
+    if (integration.connected !== true) {
+      return observedJson(obsUser, { created: false });
+    }
+
+    const accessToken = await refreshAccessTokenIfNeeded({ integration, userId: uid });
+    if (!accessToken) {
+      return observedJson(obsUser, { created: false });
+    }
+
+    const body = (await request.json()) as GoogleCreateEventInput;
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    const allDay = body.allDay === true;
+    const timeZone = sanitizeOptionalTimeZone(body.timeZone);
+
+    if (!title) {
+      return observedJson(obsUser, { error: "Invalid title" }, { status: 400 });
+    }
+
+    const googlePayload = allDay
+      ? (() => {
+          const start = sanitizeDateOnly(body.start);
+          const end = sanitizeDateOnly(body.end);
+          if (!start || !end) return null;
+          return {
+            summary: title,
+            start: { date: start },
+            end: { date: end },
+          };
+        })()
+      : (() => {
+          const start = sanitizeIso(typeof body.start === "string" ? body.start : null);
+          const end = sanitizeIso(typeof body.end === "string" ? body.end : null);
+          if (!start || !end) return null;
+          return {
+            summary: title,
+            start: timeZone ? { dateTime: start, timeZone } : { dateTime: start },
+            end: timeZone ? { dateTime: end, timeZone } : { dateTime: end },
+          };
+        })();
+
+    if (!googlePayload) {
+      return observedJson(obsUser, { error: "Invalid event payload" }, { status: 400 });
+    }
+
+    const calendarId = typeof integration.primaryCalendarId === "string" && integration.primaryCalendarId
+      ? integration.primaryCalendarId
+      : "primary";
+
+    const createRes = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(googlePayload),
+        cache: "no-store",
+      },
+    );
+
+    if (!createRes.ok) {
+      console.warn("google.calendar.events.create_failed", {
+        requestId,
+        uid,
+        status: createRes.status,
+      });
+      return observedJson(obsUser, { created: false }, { status: 502 });
+    }
+
+    const createdJson = (await createRes.json()) as { id?: unknown };
+    return observedJson(obsUser, {
+      created: true,
+      eventId: typeof createdJson.id === "string" ? createdJson.id : null,
+    });
+  } catch (e) {
+    const obs = beginApiObserve({
+      eventName: "google.calendar.events.create",
+      route: "/api/google/calendar/events",
+      requestId,
+      uid: "anonymous",
+    });
+    observedError(obs, e);
+    console.error("Google Calendar event create failed", e);
+    return observedJson(obs, { created: false }, { status: 500 });
   }
 }

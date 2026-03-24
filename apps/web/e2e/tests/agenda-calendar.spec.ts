@@ -38,6 +38,26 @@ async function mockGoogleCalendar(page: Page, options?: {
   });
 }
 
+async function mockGoogleCalendarCreate(page: Page, options?: { status?: number; body?: Record<string, unknown>; onRequest?: (body: unknown) => void | Promise<void> }) {
+  await page.route("**/api/google/calendar/events", async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST") {
+      await route.fallback();
+      return;
+    }
+
+    const rawBody = request.postData() ?? "{}";
+    const parsedBody = JSON.parse(rawBody) as unknown;
+    await options?.onRequest?.(parsedBody);
+
+    await route.fulfill({
+      status: options?.status ?? 200,
+      contentType: "application/json",
+      body: JSON.stringify(options?.body ?? { created: true, eventId: "gcal_test_id" }),
+    });
+  });
+}
+
 async function createTaskViaPlus(page: Page, title: string) {
   await page.goto("/tasks?view=calendar");
   await page.getByRole("button", { name: "Créer" }).click();
@@ -443,4 +463,40 @@ test("agenda_existing_task_filter_still_hides_local_tasks_with_google_toggle_pre
 
   await page.getByRole("button", { name: "Tâches" }).click();
   await expect(page.getByText(localTitle).first()).toBeHidden();
+});
+
+test("agenda_creation_attempts_google_event_creation_after_local_create", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  let googleCreatePayload: unknown = null;
+  await mockGoogleCalendarCreate(page, {
+    onRequest: (body) => {
+      googleCreatePayload = body;
+    },
+  });
+
+  const title = uniqueAgendaTitle("googleCreate");
+  await createTaskFromCalendar(page, title);
+
+  await expect(page.getByText(title).first()).toBeVisible({ timeout: 15000 });
+  await expect.poll(() => googleCreatePayload).not.toBeNull();
+  await expect
+    .poll(() => (googleCreatePayload as { title?: string } | null)?.title ?? null)
+    .toBe(title);
+});
+
+test("agenda_creation_keeps_tasknote_task_when_google_create_fails", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  await mockGoogleCalendarCreate(page, {
+    status: 500,
+    body: { created: false },
+  });
+
+  const title = uniqueAgendaTitle("googleFail");
+  await createTaskFromCalendar(page, title);
+
+  await expect(page.getByText(title).first()).toBeVisible({ timeout: 15000 });
 });

@@ -24,6 +24,7 @@ import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import {
   formatTimestampToDateFr,
   formatTimestampToDateTimeFr,
+  getUserTimezone,
   normalizeAgendaWindowForFirestore,
   normalizeDateForFirestore,
 } from "@/lib/datetime";
@@ -297,6 +298,42 @@ export default function TasksPage() {
         ...prev.filter((task) => task.id !== createdResult.taskId),
         optimisticCreatedTask,
       ]);
+
+      const googleStart = normalizedWindow.startDate.toDate();
+      const googleEnd = normalizedWindow.dueDate.toDate();
+      const googlePayload = normalizedWindow.allDay
+        ? {
+            title: input.title,
+            start: toLocalDateInputValue(googleStart),
+            end: toLocalDateInputValue(googleEnd),
+            allDay: true,
+          }
+        : {
+            title: input.title,
+            start: googleStart.toISOString(),
+            end: googleEnd.toISOString(),
+            allDay: false,
+            timeZone: getUserTimezone(),
+          };
+
+      void fetch("/api/google/calendar/events", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(googlePayload),
+      }).then((response) => {
+        if (!response.ok) {
+          console.warn("agenda.google.create_failed", {
+            status: response.status,
+            taskId: createdResult.taskId,
+          });
+        }
+      }).catch(() => {
+        console.warn("agenda.google.create_failed", {
+          taskId: createdResult.taskId,
+        });
+      });
     } catch (error) {
       setEditError(getPlanLimitMessage(error) ?? toErrorMessage(error, "Impossible de créer cet élément d’agenda."));
     }
