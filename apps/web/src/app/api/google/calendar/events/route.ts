@@ -32,6 +32,10 @@ type GoogleCreateEventInput = {
   timeZone?: unknown;
 };
 
+type GoogleUpdateEventInput = GoogleCreateEventInput & {
+  googleEventId?: unknown;
+};
+
 type TokenRefreshResponse = {
   access_token?: string;
   expires_in?: number;
@@ -63,6 +67,37 @@ function sanitizeOptionalTimeZone(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+function buildGoogleEventPayload(input: {
+  title: string;
+  start: unknown;
+  end: unknown;
+  allDay: boolean;
+  timeZone: string | null;
+}) {
+  const { title, start, end, allDay, timeZone } = input;
+
+  if (allDay) {
+    const startDate = sanitizeDateOnly(start);
+    const endDate = sanitizeDateOnly(end);
+    if (!startDate || !endDate) return null;
+    return {
+      summary: title,
+      start: { date: startDate },
+      end: { date: endDate },
+    };
+  }
+
+  const startDateTime = sanitizeIso(typeof start === "string" ? start : null);
+  const endDateTime = sanitizeIso(typeof end === "string" ? end : null);
+  if (!startDateTime || !endDateTime) return null;
+
+  return {
+    summary: title,
+    start: timeZone ? { dateTime: startDateTime, timeZone } : { dateTime: startDateTime },
+    end: timeZone ? { dateTime: endDateTime, timeZone } : { dateTime: endDateTime },
+  };
 }
 
 async function refreshAccessTokenIfNeeded(input: {
@@ -348,27 +383,13 @@ export async function POST(request: NextRequest) {
       return observedJson(obsUser, { error: "Invalid title" }, { status: 400 });
     }
 
-    const googlePayload = allDay
-      ? (() => {
-          const start = sanitizeDateOnly(body.start);
-          const end = sanitizeDateOnly(body.end);
-          if (!start || !end) return null;
-          return {
-            summary: title,
-            start: { date: start },
-            end: { date: end },
-          };
-        })()
-      : (() => {
-          const start = sanitizeIso(typeof body.start === "string" ? body.start : null);
-          const end = sanitizeIso(typeof body.end === "string" ? body.end : null);
-          if (!start || !end) return null;
-          return {
-            summary: title,
-            start: timeZone ? { dateTime: start, timeZone } : { dateTime: start },
-            end: timeZone ? { dateTime: end, timeZone } : { dateTime: end },
-          };
-        })();
+    const googlePayload = buildGoogleEventPayload({
+      title,
+      start: body.start,
+      end: body.end,
+      allDay,
+      timeZone,
+    });
 
     if (!googlePayload) {
       return observedJson(obsUser, { error: "Invalid event payload" }, { status: 400 });
@@ -415,5 +436,97 @@ export async function POST(request: NextRequest) {
     observedError(obs, e);
     console.error("Google Calendar event create failed", e);
     return observedJson(obs, { created: false }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+
+  try {
+    const auth = await getAuthenticatedIntegration(request, requestId, "google.calendar.events.update");
+    if (auth.kind === "response") return auth.response;
+
+    const { uid, snap, obs: obsUser } = auth;
+    if (!snap.exists) {
+      return observedJson(obsUser, { updated: false });
+    }
+
+    const integration = snap.data() as IntegrationDoc;
+    if (integration.connected !== true) {
+      return observedJson(obsUser, { updated: false });
+    }
+
+    const accessToken = await refreshAccessTokenIfNeeded({ integration, userId: uid });
+    if (!accessToken) {
+      return observedJson(obsUser, { updated: false });
+    }
+
+    const body = (await request.json()) as GoogleUpdateEventInput;
+    const googleEventId = typeof body.googleEventId === "string" ? body.googleEventId.trim() : "";
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    const allDay = body.allDay === true;
+    const timeZone = sanitizeOptionalTimeZone(body.timeZone);
+
+    if (!googleEventId) {
+      return observedJson(obsUser, { error: "Invalid google event id" }, { status: 400 });
+    }
+
+    if (!title) {
+      return observedJson(obsUser, { error: "Invalid title" }, { status: 400 });
+    }
+
+    const googlePayload = buildGoogleEventPayload({
+      title,
+      start: body.start,
+      end: body.end,
+      allDay,
+      timeZone,
+    });
+
+    if (!googlePayload) {
+      return observedJson(obsUser, { error: "Invalid event payload" }, { status: 400 });
+    }
+
+    const calendarId = typeof integration.primaryCalendarId === "string" && integration.primaryCalendarId
+      ? integration.primaryCalendarId
+      : "primary";
+
+    const updateRes = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(googleEventId)}`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(googlePayload),
+        cache: "no-store",
+      },
+    );
+
+    if (!updateRes.ok) {
+      console.warn("google.calendar.events.update_failed", {
+        requestId,
+        uid,
+        status: updateRes.status,
+      });
+      return observedJson(obsUser, { updated: false }, { status: 502 });
+    }
+
+    const updatedJson = (await updateRes.json()) as { id?: unknown };
+    return observedJson(obsUser, {
+      updated: true,
+      eventId: typeof updatedJson.id === "string" ? updatedJson.id : googleEventId,
+    });
+  } catch (e) {
+    const obs = beginApiObserve({
+      eventName: "google.calendar.events.update",
+      route: "/api/google/calendar/events",
+      requestId,
+      uid: "anonymous",
+    });
+    observedError(obs, e);
+    console.error("Google Calendar event update failed", e);
+    return observedJson(obs, { updated: false }, { status: 500 });
   }
 }

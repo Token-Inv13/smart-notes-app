@@ -58,6 +58,26 @@ async function mockGoogleCalendarCreate(page: Page, options?: { status?: number;
   });
 }
 
+async function mockGoogleCalendarUpdate(page: Page, options?: { status?: number; body?: Record<string, unknown>; onRequest?: (body: unknown) => void | Promise<void> }) {
+  await page.route("**/api/google/calendar/events", async (route) => {
+    const request = route.request();
+    if (request.method() !== "PATCH") {
+      await route.fallback();
+      return;
+    }
+
+    const rawBody = request.postData() ?? "{}";
+    const parsedBody = JSON.parse(rawBody) as unknown;
+    await options?.onRequest?.(parsedBody);
+
+    await route.fulfill({
+      status: options?.status ?? 200,
+      contentType: "application/json",
+      body: JSON.stringify(options?.body ?? { updated: true, eventId: "gcal_test_id" }),
+    });
+  });
+}
+
 async function createTaskViaPlus(page: Page, title: string) {
   await page.goto("/tasks?view=calendar");
   await page.getByRole("button", { name: "Créer" }).click();
@@ -502,4 +522,87 @@ test("agenda_creation_keeps_tasknote_task_when_google_create_fails", async ({ pa
   await createTaskFromCalendar(page, title);
 
   await expect(page.getByText(title).first()).toBeVisible({ timeout: 15000 });
+});
+
+test("agenda_update_attempts_google_patch_for_linked_task", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  await mockGoogleCalendarCreate(page, {
+    body: { created: true, eventId: "gcal-linked-1" },
+  });
+
+  let googleUpdatePayload: unknown = null;
+  await mockGoogleCalendarUpdate(page, {
+    onRequest: (body) => {
+      googleUpdatePayload = body;
+    },
+  });
+
+  const title = uniqueAgendaTitle("googlePatch");
+  await createTaskFromCalendar(page, title);
+
+  await page.getByText(title).first().click();
+  const editDialog = page.getByRole("dialog", { name: "Modifier l’élément d’agenda" });
+  await expect(editDialog).toBeVisible();
+  await editDialog.getByLabel("Titre").fill(`${title} updated`);
+  await editDialog.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(editDialog).toBeHidden();
+
+  await expect.poll(() => googleUpdatePayload).not.toBeNull();
+  await expect
+    .poll(() => (googleUpdatePayload as { googleEventId?: string } | null)?.googleEventId ?? null)
+    .toBe("gcal-linked-1");
+  await expect
+    .poll(() => (googleUpdatePayload as { title?: string } | null)?.title ?? null)
+    .toContain("updated");
+});
+
+test("agenda_update_skips_google_patch_when_task_has_no_google_event_id", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  let patchCalls = 0;
+  await mockGoogleCalendarUpdate(page, {
+    onRequest: () => {
+      patchCalls += 1;
+    },
+  });
+
+  const title = uniqueAgendaTitle("noGoogleId");
+  await createTaskFromCalendar(page, title);
+
+  await page.getByText(title).first().click();
+  const editDialog = page.getByRole("dialog", { name: "Modifier l’élément d’agenda" });
+  await expect(editDialog).toBeVisible();
+  await editDialog.getByLabel("Titre").fill(`${title} local only`);
+  await editDialog.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(editDialog).toBeHidden();
+
+  await expect.poll(() => patchCalls).toBe(0);
+});
+
+test("agenda_update_keeps_local_change_when_google_patch_fails", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  await mockGoogleCalendarCreate(page, {
+    body: { created: true, eventId: "gcal-linked-2" },
+  });
+  await mockGoogleCalendarUpdate(page, {
+    status: 500,
+    body: { updated: false },
+  });
+
+  const title = uniqueAgendaTitle("googlePatchFail");
+  await createTaskFromCalendar(page, title);
+
+  await page.getByText(title).first().click();
+  const editDialog = page.getByRole("dialog", { name: "Modifier l’élément d’agenda" });
+  await expect(editDialog).toBeVisible();
+  await editDialog.getByLabel("Titre").fill(`${title} kept`);
+  await editDialog.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(editDialog).toBeHidden();
+
+  await expect(page.getByText(`${title} kept`).first()).toBeVisible({ timeout: 15000 });
 });

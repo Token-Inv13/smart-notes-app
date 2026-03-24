@@ -494,6 +494,46 @@ export default function TasksPage() {
         recurrence: optimisticTask.recurrence ?? null,
         updatedAt: serverTimestamp(),
       });
+
+      if (current.googleEventId) {
+        const googleStart = normalizedWindow.startDate.toDate();
+        const googleEnd = normalizedWindow.dueDate.toDate();
+        const googlePayload = normalizedWindow.allDay
+          ? {
+              googleEventId: current.googleEventId,
+              title: optimisticTask.title,
+              start: toLocalDateInputValue(googleStart),
+              end: toLocalDateInputValue(googleEnd),
+              allDay: true,
+            }
+          : {
+              googleEventId: current.googleEventId,
+              title: optimisticTask.title,
+              start: googleStart.toISOString(),
+              end: googleEnd.toISOString(),
+              allDay: false,
+              timeZone: getUserTimezone(),
+            };
+
+        void fetch("/api/google/calendar/events", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(googlePayload),
+        }).then((response) => {
+          if (!response.ok) {
+            console.warn("agenda.google.update_failed", {
+              status: response.status,
+              taskId: input.taskId,
+            });
+          }
+        }).catch(() => {
+          console.warn("agenda.google.update_failed", {
+            taskId: input.taskId,
+          });
+        });
+      }
     } catch (e) {
       setOptimisticAgendaTaskById((prev) => {
         if (!prev[input.taskId]) return prev;
