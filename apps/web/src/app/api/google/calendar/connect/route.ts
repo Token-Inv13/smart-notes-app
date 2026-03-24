@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createHash, randomBytes } from "node:crypto";
-import { verifySessionCookie } from "@/lib/firebaseAdmin";
+import { getAdminAuth } from "@/lib/firebaseAdmin";
 import { hasGoogleTokenEncryptionKey } from "@/lib/googleCalendarCrypto";
 import { beginApiObserve, observedError, observedJson } from "@/lib/apiObservability";
 import { getServerAppOrigin } from "@/lib/serverOrigin";
@@ -24,6 +24,26 @@ function base64url(input: Buffer): string {
     .replace(/=+$/g, "");
 }
 
+function isFirebaseAdminServiceError(error: unknown): boolean {
+  const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: unknown }).code : null;
+  if (typeof code === "string") {
+    if (code.startsWith("app/")) return true;
+    if (code === "auth/invalid-credential" || code === "auth/internal-error") return true;
+    if (code === "auth/session-cookie-expired" || code === "auth/invalid-session-cookie" || code === "auth/argument-error") {
+      return false;
+    }
+  }
+
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("firebase admin") ||
+    message.includes("service account") ||
+    message.includes("credential") ||
+    message.includes("failed to parse firebase admin json")
+  );
+}
+
 export async function GET(request: NextRequest) {
   const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
   const obs = beginApiObserve({
@@ -36,12 +56,31 @@ export async function GET(request: NextRequest) {
   try {
     const sessionCookie = request.cookies.get("session")?.value;
     if (!sessionCookie) {
-      return observedJson(obs, { error: "Not authenticated" }, { status: 401 });
+      return observedJson(obs, { code: "auth_required", error: "Not authenticated" }, { status: 401 });
     }
 
-    const decoded = await verifySessionCookie(sessionCookie);
+    let decoded: Awaited<ReturnType<ReturnType<typeof getAdminAuth>["verifySessionCookie"]>> | null = null;
+    try {
+      decoded = await getAdminAuth().verifySessionCookie(sessionCookie, true);
+    } catch (error) {
+      if (isFirebaseAdminServiceError(error)) {
+        console.error("google.calendar.connect.service_unavailable", {
+          reason: "firebase_admin_unavailable",
+          error,
+        });
+        return observedJson(
+          obs,
+          {
+            code: "service_unavailable",
+            error: "Configuration du service indisponible.",
+          },
+          { status: 503 },
+        );
+      }
+    }
+
     if (!decoded?.uid) {
-      return observedJson(obs, { error: "Not authenticated" }, { status: 401 });
+      return observedJson(obs, { code: "auth_required", error: "Not authenticated" }, { status: 401 });
     }
 
     const obsUser = beginApiObserve({

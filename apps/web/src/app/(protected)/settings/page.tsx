@@ -247,7 +247,9 @@ export default function SettingsPage() {
       });
       const data = (await res.json()) as { url?: unknown; code?: unknown };
       if (!res.ok || typeof data?.url !== "string") {
-        if (data?.code === "missing_env" || data?.code === "service_unavailable") {
+        if (data?.code === "auth_required") {
+          setCalendarMessage("Connexion requise pour Google Calendar.");
+        } else if (data?.code === "missing_env" || data?.code === "service_unavailable") {
           setCalendarMessage("La connexion Google Calendar n’est pas encore configurée.");
         } else {
           setCalendarMessage("Impossible de lancer la connexion Google Calendar.");

@@ -45,6 +45,15 @@ test("e2e_google_status_non404_on_app_host", async ({ request }) => {
   expect(response.status()).not.toBe(500);
 });
 
+test("e2e_google_connect_requires_auth_when_session_missing", async ({ request }) => {
+  const response = await request.get("/api/google/calendar/connect");
+  expect(response.status()).toBe(401);
+
+  const data = (await response.json()) as { code?: unknown; error?: unknown };
+  expect(data.code).toBe("auth_required");
+  expect(data.error).toBe("Not authenticated");
+});
+
 test("e2e_google_connect_service_unavailable_shows_configuration_message", async ({ page }) => {
   const users = getE2EUsers();
   await loginViaUi(page, users.owner, "/settings");
