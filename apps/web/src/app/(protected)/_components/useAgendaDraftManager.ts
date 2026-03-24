@@ -24,6 +24,7 @@ export interface CalendarDraft {
   allDay: boolean;
   workspaceId: string;
   priority: "" | Priority;
+  favorite?: boolean;
   calendarKind: TaskCalendarKind;
   recurrenceFreq: "" | TaskRecurrenceFreq;
   recurrenceUntil: string;
@@ -39,6 +40,7 @@ type UseAgendaDraftManagerParams = {
     allDay: boolean;
     workspaceId?: string | null;
     priority?: Priority | null;
+    favorite?: boolean;
     calendarKind?: TaskCalendarKind | null;
     recurrence?: CalendarRecurrenceInput;
   }) => Promise<void>;
@@ -174,6 +176,7 @@ export function useAgendaDraftManager({
           allDay: effectiveAllDay,
           workspaceId: draft.workspaceId || null,
           priority: draft.priority || null,
+          favorite: draft.favorite === true,
           calendarKind: draft.calendarKind,
           recurrence: null,
         });
@@ -190,6 +193,7 @@ export function useAgendaDraftManager({
           allDay: effectiveAllDay,
           workspaceId: draft.workspaceId || null,
           priority: draft.priority || null,
+          favorite: draft.favorite === true,
           calendarKind: draft.calendarKind,
           recurrence,
         });
@@ -201,6 +205,7 @@ export function useAgendaDraftManager({
           allDay: effectiveAllDay,
           workspaceId: draft.workspaceId || null,
           priority: draft.priority || null,
+          favorite: draft.favorite === true,
           calendarKind: draft.calendarKind,
           recurrence,
         });
@@ -213,17 +218,20 @@ export function useAgendaDraftManager({
     }
   }, [draft, editScope, onCreateEvent, onSkipOccurrence, onUpdateEvent, setError]);
 
-  const openQuickDraft = useCallback(() => {
+  const openQuickDraft = useCallback((input?: { startDate?: string | null; workspaceId?: string | null; favorite?: boolean }) => {
     setEditScope("series");
-    const start = new Date();
-    const end = new Date(start.getTime() + 60 * 60 * 1000);
+    const draftDate = input?.startDate ? parseDateFromDraft(input.startDate, true) : null;
+    const isPrefilledAllDay = Boolean(draftDate);
+    const start = draftDate ?? new Date();
+    const end = isPrefilledAllDay ? new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1) : new Date(start.getTime() + 60 * 60 * 1000);
     setDraft({
       title: "",
-      startLocal: toLocalInputValue(start),
-      endLocal: toLocalInputValue(end),
-      allDay: false,
-      workspaceId: "",
+      startLocal: isPrefilledAllDay ? toLocalDateInputValue(start) : toLocalInputValue(start),
+      endLocal: isPrefilledAllDay ? toLocalDateInputValue(new Date(end.getTime() - 1)) : toLocalInputValue(end),
+      allDay: isPrefilledAllDay,
+      workspaceId: input?.workspaceId ?? "",
       priority: "",
+      favorite: input?.favorite === true,
       calendarKind: "task",
       recurrenceFreq: "",
       recurrenceUntil: "",

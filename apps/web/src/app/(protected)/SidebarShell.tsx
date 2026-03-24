@@ -238,12 +238,13 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
       const workspaceId = searchParams.get("workspaceId");
       if (workspaceId) qs.set("workspaceId", workspaceId);
       if (pathname === "/dashboard") qs.set("favorite", "1");
-      if (kind === "task" && pathname.startsWith("/tasks")) {
+      if (kind === "task") {
+        qs.set("create", "1");
         qs.set("startDate", toLocalDateInputValue(new Date()));
       }
 
       const base =
-        kind === "note" ? "/notes/new" : kind === "task" ? "/tasks/new" : "/todo/new";
+        kind === "note" ? "/notes/new" : kind === "task" ? "/tasks" : "/todo/new";
       const suffix = qs.toString();
       return suffix ? `${base}?${suffix}` : base;
     };

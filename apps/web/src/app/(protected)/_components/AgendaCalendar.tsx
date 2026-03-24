@@ -80,6 +80,7 @@ interface AgendaCalendarProps {
     allDay: boolean;
     workspaceId?: string | null;
     priority?: Priority | null;
+    favorite?: boolean;
     calendarKind?: TaskCalendarKind | null;
     recurrence?: CalendarRecurrenceInput;
   }) => Promise<void>;
@@ -100,6 +101,13 @@ interface AgendaCalendarProps {
   initialPreferences?: Partial<AgendaCalendarPreferences> | null;
   onPreferencesChange?: (prefs: AgendaCalendarPreferences) => void;
   initialAnchorDate?: Date | null;
+  createRequest?: {
+    requestKey: string;
+    startDate?: string | null;
+    workspaceId?: string | null;
+    favorite?: boolean;
+  } | null;
+  onCreateRequestHandled?: () => void;
 }
 
 function normalizePreferences(raw: Partial<AgendaCalendarPreferences> | null | undefined): AgendaCalendarPreferences | null {
@@ -275,10 +283,13 @@ export default function AgendaCalendar({
   initialPreferences,
   onPreferencesChange,
   initialAnchorDate,
+  createRequest,
+  onCreateRequestHandled,
 }: AgendaCalendarProps) {
   const calendarRef = useRef<FullCalendar | null>(null);
   const calendarShellRef = useRef<HTMLElement | null>(null);
   const datesSetRafRef = useRef<number | null>(null);
+  const handledCreateRequestRef = useRef<string | null>(null);
   const [viewMode, setViewMode] = useState<CalendarViewMode>("timeGridWeek");
   const [displayMode, setDisplayMode] = useState<AgendaDisplayMode>("calendar");
   const [prefsHydrated, setPrefsHydrated] = useState(false);
@@ -621,6 +632,7 @@ export default function AgendaCalendar({
     openDraftFromSelect,
     openDraftFromEvent,
     saveDraft,
+    openQuickDraft,
     skipOccurrence,
   } = useAgendaDraftManager({
     onCreateEvent,
@@ -628,6 +640,21 @@ export default function AgendaCalendar({
     onSkipOccurrence,
     setError,
   });
+
+  useEffect(() => {
+    if (!createRequest) {
+      handledCreateRequestRef.current = null;
+      return;
+    }
+    if (handledCreateRequestRef.current === createRequest.requestKey) return;
+    handledCreateRequestRef.current = createRequest.requestKey;
+    openQuickDraft({
+      startDate: createRequest.startDate ?? null,
+      workspaceId: createRequest.workspaceId ?? null,
+      favorite: createRequest.favorite === true,
+    });
+    onCreateRequestHandled?.();
+  }, [createRequest, onCreateRequestHandled, openQuickDraft]);
 
   const {
     jump,

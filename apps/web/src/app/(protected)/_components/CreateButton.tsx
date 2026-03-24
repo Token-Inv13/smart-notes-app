@@ -67,6 +67,17 @@ export default function CreateButton({ mobileHidden, renderCustomTrigger }: Prop
     router.push(href ? `/notes/new?${href}` : "/notes/new");
   };
 
+  const buildTaskAgendaCreateHref = () => {
+    const workspaceId = searchParams.get("workspaceId");
+    const qs = new URLSearchParams();
+    if (workspaceId) qs.set("workspaceId", workspaceId);
+    if (pathname === "/dashboard") qs.set("favorite", "1");
+    qs.set("create", "1");
+    qs.set("startDate", toLocalDateInputValue(new Date()));
+    const href = qs.toString();
+    return href ? `/tasks?${href}` : "/tasks";
+  };
+
   useEffect(() => {
     const onSuspendQuickCreate = (event: Event) => {
       const detail =
@@ -134,16 +145,8 @@ export default function CreateButton({ mobileHidden, renderCustomTrigger }: Prop
             type="button"
             className="w-full px-3 py-2 rounded-md border border-input text-sm text-left"
             onClick={() => {
-              const workspaceId = searchParams.get("workspaceId");
               setFavoritesPickerOpen(false);
-              const qs = new URLSearchParams();
-              if (workspaceId) qs.set("workspaceId", workspaceId);
-              if (pathname === "/dashboard") qs.set("favorite", "1");
-              if (pathname.startsWith("/tasks")) {
-                qs.set("startDate", toLocalDateInputValue(new Date()));
-              }
-              const href = qs.toString();
-              router.push(href ? `/tasks/new?${href}` : "/tasks/new");
+              router.push(buildTaskAgendaCreateHref());
             }}
           >
             Nouvelle tâche

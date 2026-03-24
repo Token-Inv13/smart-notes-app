@@ -83,6 +83,13 @@ function toTimestampOrNull(date: Date | null) {
   return date ? Timestamp.fromDate(date) : null;
 }
 
+function toLocalDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function taskMatchesSnapshot(current: TaskDoc, optimistic: TaskDoc) {
   const currentStart = current.startDate?.toMillis?.() ?? null;
   const optimisticStart = optimistic.startDate?.toMillis?.() ?? null;
@@ -185,6 +192,7 @@ export default function TasksPage() {
   const focusDateParam = searchParams.get("focusDate");
   const workspaceIdParam = searchParams.get("workspaceId");
   const createParam = searchParams.get("create");
+  const favoriteParam = searchParams.get("favorite");
   const viewParam = searchParams.get("view");
   const dueParam = searchParams.get("due");
   const { data: userSettings } = useUserSettings();
@@ -213,6 +221,7 @@ export default function TasksPage() {
     allDay: boolean;
     workspaceId?: string | null;
     priority?: Priority | null;
+    favorite?: boolean;
     calendarKind?: TaskCalendarKind | null;
     recurrence?: CalendarRecurrenceInput;
   }) => {
@@ -251,7 +260,7 @@ export default function TasksPage() {
               exceptions: input.recurrence.exceptions ?? [],
             }
           : serializeTaskRecurrence(null),
-        favorite: false,
+        favorite: input.favorite === true,
         archived: false,
         sourceType: null,
         sourceTodoId: null,
@@ -278,7 +287,7 @@ export default function TasksPage() {
               exceptions: input.recurrence.exceptions ?? [],
             }
           : null,
-        favorite: false,
+        favorite: input.favorite === true,
         archived: false,
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
@@ -712,13 +721,27 @@ export default function TasksPage() {
   const userId = auth.currentUser?.uid;
   const showMicroGuide = !!userId && !getOnboardingFlag(userId, "tasks_microguide_v1");
 
-  useEffect(() => {
-    if (createParam !== "1") return;
-    const href = workspaceIdParam
-      ? `/tasks/new?workspaceId=${encodeURIComponent(workspaceIdParam)}`
-      : "/tasks/new";
-    router.replace(href);
-  }, [createParam, router, workspaceIdParam]);
+  const agendaCreateRequest = useMemo(
+    () =>
+      createParam === "1"
+        ? {
+            requestKey: `${createParam}|${searchParams.get("startDate") ?? ""}|${workspaceIdParam ?? ""}|${favoriteParam ?? ""}`,
+            startDate: searchParams.get("startDate"),
+            workspaceId: workspaceIdParam,
+            favorite: favoriteParam === "1",
+          }
+        : null,
+    [createParam, favoriteParam, searchParams, workspaceIdParam],
+  );
+
+  const handleAgendaCreateRequestHandled = useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("create");
+    params.delete("startDate");
+    params.delete("favorite");
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname);
+  }, [pathname, router, searchParams]);
 
   useEffect(() => {
     if (!highlightedTaskId) return;
@@ -761,6 +784,12 @@ export default function TasksPage() {
       // ignore localStorage errors
     }
   }, []);
+
+  useEffect(() => {
+    if (createParam !== "1") return;
+    setArchiveView("active");
+    applyViewMode("calendar");
+  }, [applyViewMode, createParam]);
 
   useEffect(() => {
     try {
@@ -1608,8 +1637,12 @@ export default function TasksPage() {
               <button
                 type="button"
                 onClick={() => {
-                  const qs = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
-                  router.push(`/tasks/new${qs}`);
+                  const params = new URLSearchParams();
+                  if (workspaceIdParam) params.set("workspaceId", workspaceIdParam);
+                  params.set("create", "1");
+                  params.set("startDate", toLocalDateInputValue(new Date()));
+                  const qs = params.toString();
+                  router.push(qs ? `/tasks?${qs}` : "/tasks");
                 }}
                 className="inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 transition-opacity"
               >
@@ -1700,6 +1733,8 @@ export default function TasksPage() {
           initialAnchorDate={initialCalendarAnchorDate}
           initialPreferences={calendarInitialPreferences}
           onPreferencesChange={handleAgendaCalendarPreferencesChange}
+          createRequest={agendaCreateRequest}
+          onCreateRequestHandled={handleAgendaCreateRequestHandled}
           onCreateEvent={handleCalendarCreate}
           onUpdateEvent={handleCalendarUpdate}
           onSkipOccurrence={handleSkipOccurrence}

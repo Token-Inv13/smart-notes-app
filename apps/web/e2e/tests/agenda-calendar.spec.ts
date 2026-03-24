@@ -21,6 +21,16 @@ async function createTaskViaPlus(page: Page, title: string) {
   await expect(dialog).toBeHidden();
 }
 
+async function openTaskCreateDialogFromPicker(page: Page, path: string) {
+  await page.goto(path);
+  await page.getByRole("button", { name: "Créer" }).click();
+  await page.getByRole("button", { name: "Nouvelle tâche" }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Nouvel élément d’agenda" });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
 async function createTaskFromCalendar(page: Page, title: string) {
   await page.goto("/tasks?view=calendar");
   await expect(page.getByText("Raccourcis: N (nouvel élément)")).toBeVisible();
@@ -74,6 +84,51 @@ test("agenda_create_via_plus_uses_modal_start_date_and_creates_task", async ({ p
   await createTaskViaPlus(page, title);
 
   await expect(page.getByText(title).first()).toBeVisible({ timeout: 15000 });
+});
+
+test("agenda_create_via_plus_outside_tasks_redirects_to_tasks_modal", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/dashboard");
+
+  const dialog = await openTaskCreateDialogFromPicker(page, "/dashboard");
+  await expect(page).toHaveURL(/\/tasks\?/);
+  await expect(dialog.locator("#task-new-start")).toHaveValue(/\d{4}-\d{2}-\d{2}/);
+});
+
+test("agenda_shortcut_t_opens_unified_task_creation_flow", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/dashboard");
+
+  await page.goto("/dashboard");
+  await page.keyboard.press("t");
+
+  const dialog = page.getByRole("dialog", { name: "Nouvel élément d’agenda" });
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(/\/tasks\?/);
+  await expect(dialog.locator("#task-new-start")).toHaveValue(/\d{4}-\d{2}-\d{2}/);
+});
+
+test("agenda_query_create_opens_unified_modal_with_start_date_prefill", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=list");
+
+  await page.goto("/tasks?view=list&create=1&startDate=2026-03-24");
+
+  const dialog = page.getByRole("dialog", { name: "Nouvel élément d’agenda" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#task-new-start")).toHaveValue("2026-03-24");
+});
+
+test("agenda_list_empty_state_opens_unified_task_creation_flow", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=list&workspaceId=__e2e_missing_workspace__");
+
+  await page.goto("/tasks?view=list&workspaceId=__e2e_missing_workspace__");
+  await page.getByRole("button", { name: "Créer une tâche" }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Nouvel élément d’agenda" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#task-new-start")).toHaveValue(/\d{4}-\d{2}-\d{2}/);
 });
 
 test("agenda_create_from_calendar_renders_event", async ({ page }) => {
