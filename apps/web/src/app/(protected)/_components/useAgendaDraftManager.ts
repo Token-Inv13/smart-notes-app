@@ -193,7 +193,6 @@ export function useAgendaDraftManager({
           allDay: effectiveAllDay,
           workspaceId: draft.workspaceId || null,
           priority: draft.priority || null,
-          favorite: draft.favorite === true,
           calendarKind: draft.calendarKind,
           recurrence,
         });
