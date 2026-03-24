@@ -78,6 +78,26 @@ async function mockGoogleCalendarUpdate(page: Page, options?: { status?: number;
   });
 }
 
+async function mockGoogleCalendarDelete(page: Page, options?: { status?: number; body?: Record<string, unknown>; onRequest?: (body: unknown) => void | Promise<void> }) {
+  await page.route("**/api/google/calendar/events", async (route) => {
+    const request = route.request();
+    if (request.method() !== "DELETE") {
+      await route.fallback();
+      return;
+    }
+
+    const rawBody = request.postData() ?? "{}";
+    const parsedBody = JSON.parse(rawBody) as unknown;
+    await options?.onRequest?.(parsedBody);
+
+    await route.fulfill({
+      status: options?.status ?? 200,
+      contentType: "application/json",
+      body: JSON.stringify(options?.body ?? { deleted: true }),
+    });
+  });
+}
+
 async function createTaskViaPlus(page: Page, title: string) {
   await page.goto("/tasks?view=calendar");
   await page.getByRole("button", { name: "Créer" }).click();
@@ -605,4 +625,82 @@ test("agenda_update_keeps_local_change_when_google_patch_fails", async ({ page }
   await expect(editDialog).toBeHidden();
 
   await expect(page.getByText(`${title} kept`).first()).toBeVisible({ timeout: 15000 });
+});
+
+test("agenda_delete_attempts_google_delete_for_linked_task", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  await mockGoogleCalendarCreate(page, {
+    body: { created: true, eventId: "gcal-delete-1" },
+  });
+
+  let googleDeletePayload: unknown = null;
+  await mockGoogleCalendarDelete(page, {
+    onRequest: (body) => {
+      googleDeletePayload = body;
+    },
+  });
+
+  const title = uniqueAgendaTitle("googleDelete");
+  await createTaskFromCalendar(page, title);
+
+  const detailDialog = await openTaskDetailFromList(page, title);
+  await detailDialog.getByRole("button", { name: "Actions" }).click();
+  await detailDialog.getByRole("menuitem", { name: "Supprimer" }).click();
+  await detailDialog.getByRole("button", { name: "Supprimer définitivement" }).click();
+
+  await expect(detailDialog).toBeHidden();
+  await expect.poll(() => googleDeletePayload).not.toBeNull();
+  await expect
+    .poll(() => (googleDeletePayload as { googleEventId?: string } | null)?.googleEventId ?? null)
+    .toBe("gcal-delete-1");
+});
+
+test("agenda_delete_skips_google_delete_when_task_has_no_google_event_id", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  let deleteCalls = 0;
+  await mockGoogleCalendarDelete(page, {
+    onRequest: () => {
+      deleteCalls += 1;
+    },
+  });
+
+  const title = uniqueAgendaTitle("noGoogleDeleteId");
+  await createTaskFromCalendar(page, title);
+
+  const detailDialog = await openTaskDetailFromList(page, title);
+  await detailDialog.getByRole("button", { name: "Actions" }).click();
+  await detailDialog.getByRole("menuitem", { name: "Supprimer" }).click();
+  await detailDialog.getByRole("button", { name: "Supprimer définitivement" }).click();
+
+  await expect(detailDialog).toBeHidden();
+  await expect.poll(() => deleteCalls).toBe(0);
+});
+
+test("agenda_delete_keeps_local_delete_when_google_delete_fails", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  await mockGoogleCalendarCreate(page, {
+    body: { created: true, eventId: "gcal-delete-2" },
+  });
+  await mockGoogleCalendarDelete(page, {
+    status: 500,
+    body: { deleted: false },
+  });
+
+  const title = uniqueAgendaTitle("googleDeleteFail");
+  await createTaskFromCalendar(page, title);
+
+  const detailDialog = await openTaskDetailFromList(page, title);
+  await detailDialog.getByRole("button", { name: "Actions" }).click();
+  await detailDialog.getByRole("menuitem", { name: "Supprimer" }).click();
+  await detailDialog.getByRole("button", { name: "Supprimer définitivement" }).click();
+
+  await expect(detailDialog).toBeHidden();
+  await page.goto("/tasks?view=list");
+  await expect(page.getByText(title)).toHaveCount(0);
 });

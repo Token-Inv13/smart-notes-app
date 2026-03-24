@@ -36,6 +36,10 @@ type GoogleUpdateEventInput = GoogleCreateEventInput & {
   googleEventId?: unknown;
 };
 
+type GoogleDeleteEventInput = {
+  googleEventId?: unknown;
+};
+
 type TokenRefreshResponse = {
   access_token?: string;
   expires_in?: number;
@@ -528,5 +532,80 @@ export async function PATCH(request: NextRequest) {
     observedError(obs, e);
     console.error("Google Calendar event update failed", e);
     return observedJson(obs, { updated: false }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+
+  try {
+    const auth = await getAuthenticatedIntegration(request, requestId, "google.calendar.events.delete");
+    if (auth.kind === "response") return auth.response;
+
+    const { uid, snap, obs: obsUser } = auth;
+    if (!snap.exists) {
+      return observedJson(obsUser, { deleted: false });
+    }
+
+    const integration = snap.data() as IntegrationDoc;
+    if (integration.connected !== true) {
+      return observedJson(obsUser, { deleted: false });
+    }
+
+    const accessToken = await refreshAccessTokenIfNeeded({ integration, userId: uid });
+    if (!accessToken) {
+      return observedJson(obsUser, { deleted: false });
+    }
+
+    const body = (await request.json()) as GoogleDeleteEventInput;
+    const googleEventId = typeof body.googleEventId === "string" ? body.googleEventId.trim() : "";
+    if (!googleEventId) {
+      return observedJson(obsUser, { error: "Invalid google event id" }, { status: 400 });
+    }
+
+    const calendarId = typeof integration.primaryCalendarId === "string" && integration.primaryCalendarId
+      ? integration.primaryCalendarId
+      : "primary";
+
+    const deleteRes = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(googleEventId)}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        cache: "no-store",
+      },
+    );
+
+    if (deleteRes.status === 404 || deleteRes.status === 410) {
+      console.warn("google.calendar.events.delete_missing", {
+        requestId,
+        uid,
+        status: deleteRes.status,
+      });
+      return observedJson(obsUser, { deleted: true, alreadyMissing: true });
+    }
+
+    if (!deleteRes.ok) {
+      console.warn("google.calendar.events.delete_failed", {
+        requestId,
+        uid,
+        status: deleteRes.status,
+      });
+      return observedJson(obsUser, { deleted: false }, { status: 502 });
+    }
+
+    return observedJson(obsUser, { deleted: true });
+  } catch (e) {
+    const obs = beginApiObserve({
+      eventName: "google.calendar.events.delete",
+      route: "/api/google/calendar/events",
+      requestId,
+      uid: "anonymous",
+    });
+    observedError(obs, e);
+    console.error("Google Calendar event delete failed", e);
+    return observedJson(obs, { deleted: false }, { status: 500 });
   }
 }

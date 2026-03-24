@@ -1003,6 +1003,29 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       }
       batch.delete(doc(db, "tasks", task.id));
       await batch.commit();
+      if (typeof task.googleEventId === "string" && task.googleEventId.trim()) {
+        void fetch("/api/google/calendar/events", {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            googleEventId: task.googleEventId,
+          }),
+        }).then(async (response) => {
+          if (!response.ok) {
+            console.warn("agenda.google.delete_failed", {
+              taskId: task.id,
+              status: response.status,
+            });
+          }
+        }).catch((error) => {
+          console.warn("agenda.google.delete_failed", {
+            taskId: task.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
       router.back();
     } catch (e) {
       console.error("Error deleting task (modal)", e);
