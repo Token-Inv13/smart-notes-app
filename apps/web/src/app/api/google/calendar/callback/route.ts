@@ -142,7 +142,8 @@ export async function GET(request: NextRequest) {
     });
     if (clientSecret) {
       tokenBody.set("client_secret", clientSecret);
-    } else if (typeof verifier === "string" && verifier.length > 0) {
+    }
+    if (typeof verifier === "string" && verifier.length > 0) {
       tokenBody.set("code_verifier", verifier);
     }
 
