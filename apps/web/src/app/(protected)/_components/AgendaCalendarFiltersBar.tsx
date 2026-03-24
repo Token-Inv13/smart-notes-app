@@ -11,11 +11,13 @@ type AgendaCalendarFiltersBarProps = {
   timeWindowFilter: CalendarTimeWindowFilter;
   showClassicTasks: boolean;
   showChecklistItems: boolean;
+  showGoogleCalendar: boolean;
   statusFilter: CalendarStatusFilter;
   onToggleRecurringOnly: () => void;
   onToggleConflictsOnly: () => void;
   onToggleClassicTasks: () => void;
   onToggleChecklistItems: () => void;
+  onToggleGoogleCalendar: () => void;
   onStatusFilterChange: (value: CalendarStatusFilter) => void;
   onPriorityFilterChange: (value: "" | Priority) => void;
   onTimeWindowFilterChange: (value: CalendarTimeWindowFilter) => void;
@@ -29,11 +31,13 @@ export default function AgendaCalendarFiltersBar({
   timeWindowFilter,
   showClassicTasks,
   showChecklistItems,
+  showGoogleCalendar,
   statusFilter,
   onToggleRecurringOnly,
   onToggleConflictsOnly,
   onToggleClassicTasks,
   onToggleChecklistItems,
+  onToggleGoogleCalendar,
   onStatusFilterChange,
   onPriorityFilterChange,
   onTimeWindowFilterChange,
@@ -43,13 +47,14 @@ export default function AgendaCalendarFiltersBar({
     let count = 0;
     if (!showClassicTasks) count += 1;
     if (!showChecklistItems) count += 1;
+    if (!showGoogleCalendar) count += 1;
     if (statusFilter !== "all") count += 1;
     if (showRecurringOnly) count += 1;
     if (showConflictsOnly) count += 1;
     if (priorityFilter) count += 1;
     if (timeWindowFilter) count += 1;
     return count;
-  }, [priorityFilter, showChecklistItems, showClassicTasks, showConflictsOnly, showRecurringOnly, statusFilter, timeWindowFilter]);
+  }, [priorityFilter, showChecklistItems, showClassicTasks, showConflictsOnly, showGoogleCalendar, showRecurringOnly, statusFilter, timeWindowFilter]);
 
   const [secondaryFiltersOpen, setSecondaryFiltersOpen] = useState(activeFiltersCount > 0);
 
@@ -71,6 +76,14 @@ export default function AgendaCalendarFiltersBar({
           aria-pressed={showChecklistItems}
         >
           Checklist
+        </button>
+        <button
+          type="button"
+          onClick={onToggleGoogleCalendar}
+          className={`h-8 px-3 rounded-md border text-xs ${showGoogleCalendar ? "border-primary bg-accent" : "border-border bg-background"}`}
+          aria-pressed={showGoogleCalendar}
+        >
+          Google Calendar
         </button>
         <button
           type="button"

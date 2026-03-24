@@ -13,6 +13,7 @@ type CalendarFilterStorage = {
   timeWindowFilter: CalendarTimeWindowFilter;
   showClassicTasks: boolean;
   showChecklistItems: boolean;
+  showGoogleCalendar: boolean;
   statusFilter: CalendarStatusFilter;
 };
 
@@ -23,6 +24,7 @@ export function useAgendaCalendarFilters() {
   const [timeWindowFilter, setTimeWindowFilter] = useState<CalendarTimeWindowFilter>("");
   const [showClassicTasks, setShowClassicTasks] = useState(true);
   const [showChecklistItems, setShowChecklistItems] = useState(true);
+  const [showGoogleCalendar, setShowGoogleCalendar] = useState(true);
   const [statusFilter, setStatusFilter] = useState<CalendarStatusFilter>("all");
   const [filtersHydrated, setFiltersHydrated] = useState(false);
 
@@ -63,6 +65,10 @@ export function useAgendaCalendarFilters() {
         setShowChecklistItems(parsed.showChecklistItems);
       }
 
+      if (typeof parsed.showGoogleCalendar === "boolean") {
+        setShowGoogleCalendar(parsed.showGoogleCalendar);
+      }
+
       if (parsed.statusFilter === "all" || parsed.statusFilter === "open" || parsed.statusFilter === "done") {
         setStatusFilter(parsed.statusFilter);
       }
@@ -83,6 +89,7 @@ export function useAgendaCalendarFilters() {
       timeWindowFilter,
       showClassicTasks,
       showChecklistItems,
+      showGoogleCalendar,
       statusFilter,
     };
 
@@ -94,6 +101,7 @@ export function useAgendaCalendarFilters() {
   }, [
     filtersHydrated,
     priorityFilter,
+    showGoogleCalendar,
     showChecklistItems,
     showClassicTasks,
     showConflictsOnly,
@@ -109,6 +117,7 @@ export function useAgendaCalendarFilters() {
     setTimeWindowFilter("");
     setShowClassicTasks(true);
     setShowChecklistItems(true);
+    setShowGoogleCalendar(true);
     setStatusFilter("all");
   }, []);
 
@@ -125,6 +134,8 @@ export function useAgendaCalendarFilters() {
     setShowClassicTasks,
     showChecklistItems,
     setShowChecklistItems,
+    showGoogleCalendar,
+    setShowGoogleCalendar,
     statusFilter,
     setStatusFilter,
     clearFilters,

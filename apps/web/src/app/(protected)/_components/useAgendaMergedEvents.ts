@@ -24,11 +24,13 @@ type CalendarData = {
 export function useAgendaMergedEvents(params: {
   calendarData: CalendarData;
   googleCalendarEvents: GoogleCalendarEvent[];
+  showGoogleCalendar: boolean;
   visibleRange: { start: Date; end: Date } | null;
 }) {
-  const { calendarData, googleCalendarEvents, visibleRange } = params;
+  const { calendarData, googleCalendarEvents, showGoogleCalendar, visibleRange } = params;
 
   const googleCalendarEventInputs = useMemo(() => {
+    if (!showGoogleCalendar) return [];
     return googleCalendarEvents
       .map((event) => {
         const start = new Date(event.start);
@@ -53,7 +55,7 @@ export function useAgendaMergedEvents(params: {
         } as EventInput;
       })
       .filter((event): event is EventInput => Boolean(event));
-  }, [googleCalendarEvents]);
+  }, [googleCalendarEvents, showGoogleCalendar]);
 
   const holidayEventInputs = useMemo(() => {
     if (!visibleRange) return [];

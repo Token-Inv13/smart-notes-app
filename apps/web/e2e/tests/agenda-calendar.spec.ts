@@ -5,6 +5,39 @@ function uniqueAgendaTitle(suffix: string) {
   return `E2E Agenda ${suffix} ${Date.now()}`;
 }
 
+async function mockGoogleCalendar(page: Page, options?: {
+  connected?: boolean;
+  events?: Array<{
+    id: string;
+    title: string;
+    start: string;
+    end: string;
+    allDay: boolean;
+  }>;
+}) {
+  const connected = options?.connected ?? true;
+  const events = options?.events ?? [];
+
+  await page.route("**/api/google/calendar/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        connected,
+        primaryCalendarId: connected ? "primary" : null,
+      }),
+    });
+  });
+
+  await page.route("**/api/google/calendar/events?*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ events }),
+    });
+  });
+}
+
 async function createTaskViaPlus(page: Page, title: string) {
   await page.goto("/tasks?view=calendar");
   await page.getByRole("button", { name: "Créer" }).click();
@@ -337,4 +370,77 @@ test("agenda_detail_modal_has_consistent_accessible_name", async ({ page }) => {
   const dialog = page.getByRole("dialog", { name: "Détail de l’élément d’agenda" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText(title).first()).toBeVisible();
+});
+
+test("agenda_google_calendar_toggle_hides_and_shows_google_events", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/dashboard");
+
+  const googleTitle = uniqueAgendaTitle("googleOnly");
+  await mockGoogleCalendar(page, {
+    connected: true,
+    events: [
+      {
+        id: "google-e2e-1",
+        title: googleTitle,
+        start: "2026-03-24T09:00:00.000Z",
+        end: "2026-03-24T10:00:00.000Z",
+        allDay: false,
+      },
+    ],
+  });
+
+  await page.goto("/tasks?view=calendar");
+  await expect(page.getByRole("button", { name: "Google Calendar" })).toBeVisible();
+  await expect(page.getByText(googleTitle).first()).toBeVisible({ timeout: 15000 });
+
+  await page.getByRole("button", { name: "Google Calendar" }).click();
+  await expect(page.getByText(googleTitle).first()).toBeHidden();
+
+  await page.getByRole("button", { name: "Google Calendar" }).click();
+  await expect(page.getByText(googleTitle).first()).toBeVisible({ timeout: 15000 });
+});
+
+test("agenda_google_calendar_empty_message_only_shows_after_successful_empty_fetch", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/dashboard");
+
+  await mockGoogleCalendar(page, {
+    connected: true,
+    events: [],
+  });
+
+  await page.goto("/tasks?view=calendar");
+  const emptyGoogleMessage = page.getByText("Google Calendar est connecté, mais aucun événement n’existe sur la plage affichée.");
+  await expect(emptyGoogleMessage).toBeVisible({ timeout: 15000 });
+
+  await page.getByRole("button", { name: "Google Calendar" }).click();
+  await expect(emptyGoogleMessage).toBeHidden();
+});
+
+test("agenda_existing_task_filter_still_hides_local_tasks_with_google_toggle_present", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  const localTitle = uniqueAgendaTitle("filterLocal");
+  await createTaskFromCalendar(page, localTitle);
+
+  await mockGoogleCalendar(page, {
+    connected: true,
+    events: [
+      {
+        id: "google-e2e-2",
+        title: uniqueAgendaTitle("googleFilter"),
+        start: "2026-03-24T11:00:00.000Z",
+        end: "2026-03-24T12:00:00.000Z",
+        allDay: false,
+      },
+    ],
+  });
+
+  await page.goto("/tasks?view=calendar");
+  await expect(page.getByText(localTitle).first()).toBeVisible({ timeout: 15000 });
+
+  await page.getByRole("button", { name: "Tâches" }).click();
+  await expect(page.getByText(localTitle).first()).toBeHidden();
 });

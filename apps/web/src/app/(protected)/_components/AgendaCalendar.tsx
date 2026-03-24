@@ -63,6 +63,8 @@ type GoogleCalendarEvent = {
   allDay: boolean;
 };
 
+type GoogleCalendarFetchState = "idle" | "loading" | "success" | "error";
+
 type CalendarRecurrenceInput = {
   freq: TaskRecurrenceFreq;
   interval?: number;
@@ -306,6 +308,8 @@ export default function AgendaCalendar({
     setShowClassicTasks,
     showChecklistItems,
     setShowChecklistItems,
+    showGoogleCalendar,
+    setShowGoogleCalendar,
     statusFilter,
     setStatusFilter,
     clearFilters,
@@ -317,6 +321,7 @@ export default function AgendaCalendar({
   const [planningAvailabilityTargetMinutes, setPlanningAvailabilityTargetMinutes] = useState(45);
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [googleCalendarEvents, setGoogleCalendarEvents] = useState<GoogleCalendarEvent[]>([]);
+  const [googleCalendarFetchState, setGoogleCalendarFetchState] = useState<GoogleCalendarFetchState>("idle");
   const [planningAnchorDate, setPlanningAnchorDate] = useState<Date>(new Date());
   const [calendarAnchorDate, setCalendarAnchorDate] = useState<Date>(initialAnchorDate ?? new Date());
   const [userTimezone, setUserTimezone] = useState<string>("UTC");
@@ -448,10 +453,12 @@ export default function AgendaCalendar({
   const loadGoogleCalendarEvents = useCallback(async () => {
     if (!calendarConnected || !effectiveVisibleRange) {
       setGoogleCalendarEvents([]);
+      setGoogleCalendarFetchState("idle");
       return;
     }
 
     try {
+      setGoogleCalendarFetchState("loading");
       const params = new URLSearchParams({
         timeMin: effectiveVisibleRange.start.toISOString(),
         timeMax: effectiveVisibleRange.end.toISOString(),
@@ -463,13 +470,16 @@ export default function AgendaCalendar({
 
       if (!res.ok) {
         setGoogleCalendarEvents([]);
+        setGoogleCalendarFetchState("error");
         return;
       }
 
       const data = (await res.json()) as { events?: GoogleCalendarEvent[] };
       setGoogleCalendarEvents(Array.isArray(data.events) ? data.events : []);
+      setGoogleCalendarFetchState("success");
     } catch {
       setGoogleCalendarEvents([]);
+      setGoogleCalendarFetchState("error");
     }
   }, [calendarConnected, effectiveVisibleRange]);
 
@@ -769,6 +779,7 @@ export default function AgendaCalendar({
   const { agendaEvents, isCompactDensity } = useAgendaMergedEvents({
     calendarData,
     googleCalendarEvents,
+    showGoogleCalendar,
     visibleRange: effectiveVisibleRange,
   });
   const hasActiveAgendaFilters =
@@ -778,7 +789,16 @@ export default function AgendaCalendar({
     timeWindowFilter !== "" ||
     !showClassicTasks ||
     !showChecklistItems ||
+    !showGoogleCalendar ||
     statusFilter !== "all";
+
+  const showNoGoogleEventsMessage =
+    calendarConnected &&
+    displayMode === "calendar" &&
+    showGoogleCalendar &&
+    effectiveVisibleRange !== null &&
+    googleCalendarFetchState === "success" &&
+    googleCalendarEvents.length === 0;
 
   const { planningSections, planningAvailabilityByDate } = useAgendaPlanningData({
     agendaEvents,
@@ -994,11 +1014,13 @@ export default function AgendaCalendar({
         timeWindowFilter={timeWindowFilter}
         showClassicTasks={showClassicTasks}
         showChecklistItems={showChecklistItems}
+        showGoogleCalendar={showGoogleCalendar}
         statusFilter={statusFilter}
         onToggleRecurringOnly={() => setShowRecurringOnly((prev) => !prev)}
         onToggleConflictsOnly={() => setShowConflictsOnly((prev) => !prev)}
         onToggleClassicTasks={() => setShowClassicTasks((prev) => !prev)}
         onToggleChecklistItems={() => setShowChecklistItems((prev) => !prev)}
+        onToggleGoogleCalendar={() => setShowGoogleCalendar((prev) => !prev)}
         onStatusFilterChange={setStatusFilter}
         onPriorityFilterChange={setPriorityFilter}
         onTimeWindowFilterChange={setTimeWindowFilter}
@@ -1006,6 +1028,12 @@ export default function AgendaCalendar({
       />
 
       {error && <div className="sn-alert sn-alert--error">{error}</div>}
+
+      {!error && showNoGoogleEventsMessage ? (
+        <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          Google Calendar est connecté, mais aucun événement n’existe sur la plage affichée.
+        </div>
+      ) : null}
 
       {!error && displayMode === "calendar" && agendaEvents.length === 0 && (
         <div className="sn-empty sn-empty--premium sn-animate-in">
