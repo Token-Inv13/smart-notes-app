@@ -719,7 +719,21 @@ export default function TasksPage() {
   );
 
   const userId = auth.currentUser?.uid;
-  const showMicroGuide = !!userId && !getOnboardingFlag(userId, "tasks_microguide_v1");
+  const [showMicroGuide, setShowMicroGuide] = useState(false);
+
+  useEffect(() => {
+    if (!userId) {
+      setShowMicroGuide(false);
+      return;
+    }
+    setShowMicroGuide(!getOnboardingFlag(userId, "tasks_microguide_v1"));
+  }, [userId]);
+
+  const handleDismissMicroGuide = useCallback(() => {
+    if (!userId) return;
+    setOnboardingFlag(userId, "tasks_microguide_v1", true);
+    setShowMicroGuide(false);
+  }, [userId]);
 
   const agendaCreateRequest = useMemo(
     () =>
@@ -1575,7 +1589,7 @@ export default function TasksPage() {
               </div>
               <button
                 type="button"
-                onClick={() => userId && setOnboardingFlag(userId, "tasks_microguide_v1", true)}
+                onClick={handleDismissMicroGuide}
                 className="sn-text-btn shrink-0"
               >
                 Compris

@@ -76,6 +76,16 @@ async function enterTaskDetailEditMode(dialog: ReturnType<Page["getByRole"]>) {
   await dialog.getByRole("menuitem", { name: "Modifier" }).click();
 }
 
+async function clearAgendaMicroGuideFlag(page: Page) {
+  await page.evaluate(() => {
+    for (const key of Object.keys(window.localStorage)) {
+      if (key.startsWith("sn:onboarding:") && key.endsWith(":tasks_microguide_v1")) {
+        window.localStorage.removeItem(key);
+      }
+    }
+  });
+}
+
 test("agenda_create_via_plus_uses_modal_start_date_and_creates_task", async ({ page }) => {
   const users = getE2EUsers();
   await loginViaUi(page, users.owner, "/tasks?view=calendar");
@@ -117,6 +127,23 @@ test("agenda_query_create_opens_unified_modal_with_start_date_prefill", async ({
   const dialog = page.getByRole("dialog", { name: "Nouvel élément d’agenda" });
   await expect(dialog).toBeVisible();
   await expect(dialog.locator("#task-new-start")).toHaveValue("2026-03-24");
+});
+
+test("agenda_microguide_hides_immediately_and_stays_hidden_after_revisit", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=list");
+
+  await clearAgendaMicroGuideFlag(page);
+  await page.goto("/tasks?view=list");
+
+  const guide = page.getByText("Ajoute un titre simple, puis un rappel si besoin. Tu peux épingler l’essentiel en favori ⭐.");
+  await expect(guide).toBeVisible();
+
+  await page.getByRole("button", { name: "Compris" }).click();
+  await expect(guide).toBeHidden();
+
+  await page.goto("/tasks?view=list");
+  await expect(guide).toBeHidden();
 });
 
 test("agenda_list_empty_state_opens_unified_task_creation_flow", async ({ page }) => {
