@@ -133,7 +133,7 @@ export default function SettingsPage() {
       setCalendarMessage("La connexion Google Calendar a expiré. Merci de réessayer.");
       return;
     }
-    if (calendarState === "missing_env") {
+    if (calendarState === "missing_env" || calendarState === "service_unavailable") {
       setCalendarMessage("La connexion Google Calendar n’est pas encore configurée.");
       return;
     }
@@ -247,7 +247,7 @@ export default function SettingsPage() {
       });
       const data = (await res.json()) as { url?: unknown; code?: unknown };
       if (!res.ok || typeof data?.url !== "string") {
-        if (data?.code === "missing_env") {
+        if (data?.code === "missing_env" || data?.code === "service_unavailable") {
           setCalendarMessage("La connexion Google Calendar n’est pas encore configurée.");
         } else {
           setCalendarMessage("Impossible de lancer la connexion Google Calendar.");

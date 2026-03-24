@@ -45,6 +45,33 @@ test("e2e_google_status_non404_on_app_host", async ({ request }) => {
   expect(response.status()).not.toBe(500);
 });
 
+test("e2e_google_connect_service_unavailable_shows_configuration_message", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/settings");
+
+  await page.route("**/api/google/calendar/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ connected: false, primaryCalendarId: null }),
+    });
+  });
+
+  await page.route("**/api/google/calendar/connect?*", async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ code: "service_unavailable", error: "Configuration du service indisponible." }),
+    });
+  });
+
+  await page.goto("/settings");
+  await page.getByRole("button", { name: "Connecter Google Calendar" }).click();
+
+  await expect(page.getByText("La connexion Google Calendar n’est pas encore configurée.")).toBeVisible();
+  await expect(page.getByText("Impossible de lancer la connexion Google Calendar.")).toHaveCount(0);
+});
+
 test("e2e_weekly_summary_renders", async ({ page }) => {
   const users = getE2EUsers();
   await loginViaUi(page, users.owner, "/dashboard");
