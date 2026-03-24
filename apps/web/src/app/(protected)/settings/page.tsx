@@ -138,11 +138,15 @@ export default function SettingsPage() {
       return;
     }
     if (calendarState === "token_exchange_failed") {
-      setCalendarMessage("Impossible de finaliser la connexion Google Calendar. Réessaie.");
+      setCalendarMessage("Impossible de finaliser la connexion Google Calendar. Vérifie la configuration OAuth Google.");
       return;
     }
     if (calendarState === "token_missing") {
       setCalendarMessage("Impossible de finaliser la connexion Google Calendar. Réessaie.");
+      return;
+    }
+    if (calendarState === "firestore_write_failed" || calendarState === "google_calendar_list_failed") {
+      setCalendarMessage("Impossible de finaliser la connexion Google Calendar pour le moment. Réessaie.");
       return;
     }
     if (calendarState === "error") {

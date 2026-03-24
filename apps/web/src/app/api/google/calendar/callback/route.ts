@@ -33,6 +33,11 @@ type CalendarListResponse = {
   }>;
 };
 
+type GoogleTokenErrorResponse = {
+  error?: string;
+  error_description?: string;
+};
+
 function redirectWithCalendarState(base: URL, state: string) {
   base.searchParams.set("calendar", state);
   const res = NextResponse.redirect(base);
@@ -40,6 +45,30 @@ function redirectWithCalendarState(base: URL, state: string) {
   res.cookies.set(OAUTH_VERIFIER_COOKIE, "", { path: "/", maxAge: 0 });
   res.cookies.set(OAUTH_RETURN_TO_COOKIE, "", { path: "/", maxAge: 0 });
   return res;
+}
+
+async function readSafeTokenError(response: Response) {
+  try {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      const json = (await response.json()) as GoogleTokenErrorResponse;
+      return {
+        error: typeof json.error === "string" ? json.error : null,
+        errorDescription: typeof json.error_description === "string" ? json.error_description : null,
+      };
+    }
+
+    const text = await response.text();
+    return {
+      error: null,
+      errorDescription: text.slice(0, 500) || null,
+    };
+  } catch {
+    return {
+      error: null,
+      errorDescription: null,
+    };
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -125,6 +154,13 @@ export async function GET(request: NextRequest) {
     });
 
     if (!tokenResp.ok) {
+      const tokenError = await readSafeTokenError(tokenResp);
+      console.error("google.calendar.callback.token_exchange_failed", {
+        uid: decoded.uid,
+        status: tokenResp.status,
+        error: tokenError.error,
+        errorDescription: tokenError.errorDescription,
+      });
       return redirectWithStateObserved("token_exchange_failed", 302, decoded.uid);
     }
 
@@ -137,22 +173,32 @@ export async function GET(request: NextRequest) {
       return redirectWithStateObserved("token_missing", 302, decoded.uid);
     }
 
-    const calendarResp = await fetch("https://www.googleapis.com/calendar/v3/users/me/calendarList", {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-      cache: "no-store",
-    });
-
     let primaryCalendarId: string | null = null;
-    if (calendarResp.ok) {
-      const json = (await calendarResp.json()) as CalendarListResponse;
-      const primary = Array.isArray(json.items) ? json.items.find((c) => c?.primary) : null;
-      primaryCalendarId = typeof primary?.id === "string" ? primary.id : null;
-    }
+    try {
+      const calendarResp = await fetch("https://www.googleapis.com/calendar/v3/users/me/calendarList", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        cache: "no-store",
+      });
 
-    const db = getAdminDb();
-    const ref = db.collection("users").doc(decoded.uid).collection("assistantIntegrations").doc("googleCalendar");
+      if (calendarResp.ok) {
+        const json = (await calendarResp.json()) as CalendarListResponse;
+        const primary = Array.isArray(json.items) ? json.items.find((c) => c?.primary) : null;
+        primaryCalendarId = typeof primary?.id === "string" ? primary.id : null;
+      }
+    } catch (error) {
+      observedError(obs, error, {
+        requestId,
+        uid: decoded.uid,
+        stage: "google_calendar_list",
+      });
+      console.error("google.calendar.callback.google_calendar_list_failed", {
+        uid: decoded.uid,
+        error,
+      });
+      return redirectWithStateObserved("google_calendar_list_failed", 302, decoded.uid);
+    }
 
     const nowMs = Date.now();
     const expiresAtMs = nowMs + Math.max(60, expiresIn) * 1000;
@@ -174,19 +220,35 @@ export async function GET(request: NextRequest) {
       refreshToken: FieldValue.delete(),
     };
 
-    await ref.set(
-      {
-        provider: "google_calendar",
-        connected: true,
-        primaryCalendarId,
-        ...tokenPayload,
-        accessTokenExpiresAtMs: expiresAtMs,
-        scope: typeof tokenJson.scope === "string" ? tokenJson.scope : "",
-        lastConnectedAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true },
-    );
+    try {
+      const db = getAdminDb();
+      const ref = db.collection("users").doc(decoded.uid).collection("assistantIntegrations").doc("googleCalendar");
+
+      await ref.set(
+        {
+          provider: "google_calendar",
+          connected: true,
+          primaryCalendarId,
+          ...tokenPayload,
+          accessTokenExpiresAtMs: expiresAtMs,
+          scope: typeof tokenJson.scope === "string" ? tokenJson.scope : "",
+          lastConnectedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+    } catch (error) {
+      observedError(obs, error, {
+        requestId,
+        uid: decoded.uid,
+        stage: "firestore_write",
+      });
+      console.error("google.calendar.callback.firestore_write_failed", {
+        uid: decoded.uid,
+        error,
+      });
+      return redirectWithStateObserved("firestore_write_failed", 302, decoded.uid);
+    }
 
     return redirectWithStateObserved("connected", 302, decoded.uid);
   } catch (error) {

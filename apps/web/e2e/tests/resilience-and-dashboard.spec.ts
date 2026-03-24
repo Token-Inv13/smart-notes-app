@@ -81,6 +81,14 @@ test("e2e_google_connect_service_unavailable_shows_configuration_message", async
   await expect(page.getByText("Impossible de lancer la connexion Google Calendar.")).toHaveCount(0);
 });
 
+test("e2e_google_callback_firestore_write_failed_shows_server_message", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/settings?calendar=firestore_write_failed");
+
+  await page.goto("/settings?calendar=firestore_write_failed");
+  await expect(page.getByText("Impossible de finaliser la connexion Google Calendar pour le moment. Réessaie.")).toBeVisible();
+});
+
 test("e2e_weekly_summary_renders", async ({ page }) => {
   const users = getE2EUsers();
   await loginViaUi(page, users.owner, "/dashboard");
