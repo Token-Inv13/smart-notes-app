@@ -120,6 +120,7 @@ export interface TaskDoc {
   calendarKind?: TaskCalendarKind | null;
   recurrence?: TaskRecurrenceRule | null;
   favorite?: boolean;
+  googleEventId?: string | null;
   completed?: boolean;
   archived?: boolean;
   archivedAt?: Timestamp | FieldValue | null;

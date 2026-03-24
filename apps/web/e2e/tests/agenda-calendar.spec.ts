@@ -484,6 +484,9 @@ test("agenda_creation_attempts_google_event_creation_after_local_create", async 
   await expect
     .poll(() => (googleCreatePayload as { title?: string } | null)?.title ?? null)
     .toBe(title);
+  await expect
+    .poll(() => (googleCreatePayload as { allDay?: boolean } | null)?.allDay ?? null)
+    .toBe(true);
 });
 
 test("agenda_creation_keeps_tasknote_task_when_google_create_fails", async ({ page }) => {

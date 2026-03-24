@@ -100,6 +100,8 @@ function taskMatchesSnapshot(current: TaskDoc, optimistic: TaskDoc) {
   const optimisticUntil = optimistic.recurrence?.until?.toMillis?.() ?? null;
   const currentExceptions = Array.isArray(current.recurrence?.exceptions) ? current.recurrence.exceptions : [];
   const optimisticExceptions = Array.isArray(optimistic.recurrence?.exceptions) ? optimistic.recurrence.exceptions : [];
+  const currentGoogleEventId = current.googleEventId ?? null;
+  const optimisticGoogleEventId = optimistic.googleEventId ?? null;
 
   return (
     current.title === optimistic.title &&
@@ -107,6 +109,7 @@ function taskMatchesSnapshot(current: TaskDoc, optimistic: TaskDoc) {
     (current.workspaceId ?? null) === (optimistic.workspaceId ?? null) &&
     (current.priority ?? null) === (optimistic.priority ?? null) &&
     (current.calendarKind ?? "task") === (optimistic.calendarKind ?? "task") &&
+    currentGoogleEventId === optimisticGoogleEventId &&
     currentStart === optimisticStart &&
     currentDue === optimisticDue &&
     (current.recurrence?.freq ?? null) === (optimistic.recurrence?.freq ?? null) &&
@@ -289,6 +292,7 @@ export default function TasksPage() {
             }
           : null,
         favorite: input.favorite === true,
+        googleEventId: null,
         archived: false,
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
@@ -322,10 +326,42 @@ export default function TasksPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(googlePayload),
-      }).then((response) => {
+      }).then(async (response) => {
         if (!response.ok) {
           console.warn("agenda.google.create_failed", {
             status: response.status,
+            taskId: createdResult.taskId,
+          });
+          return;
+        }
+
+        const data = (await response.json().catch(() => null)) as { created?: unknown; eventId?: unknown } | null;
+        const googleEventId =
+          data?.created === true && typeof data.eventId === "string" && data.eventId.trim()
+            ? data.eventId.trim()
+            : null;
+
+        if (!googleEventId) return;
+
+        try {
+          await updateDoc(doc(db, "tasks", createdResult.taskId), {
+            googleEventId,
+            updatedAt: serverTimestamp(),
+          });
+
+          setOptimisticCreatedAgendaTasks((prev) =>
+            prev.map((task) =>
+              task.id === createdResult.taskId
+                ? {
+                    ...task,
+                    googleEventId,
+                    updatedAt: Timestamp.now(),
+                  }
+                : task,
+            ),
+          );
+        } catch {
+          console.warn("agenda.google.link_write_failed", {
             taskId: createdResult.taskId,
           });
         }
