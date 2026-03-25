@@ -234,6 +234,14 @@ test("agenda_query_create_opens_unified_modal_with_start_date_prefill", async ({
   await expect(dialog.locator("#task-new-start")).toHaveValue("2026-03-24");
 });
 
+test("agenda_calendar_hides_planning_mode_label", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  await page.goto("/tasks?view=calendar");
+  await expect(page.getByText("Liste du jour")).toHaveCount(0);
+});
+
 test("agenda_microguide_hides_immediately_and_stays_hidden_after_revisit", async ({ page }) => {
   const users = getE2EUsers();
   await loginViaUi(page, users.owner, "/tasks?view=list");

@@ -113,7 +113,7 @@ export default function AgendaCalendarDraftModal({
 
   return (
     <div
-      className="fixed inset-0 z-50"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-label={draft.taskId ? TASK_MODAL_EDIT_TITLE : TASK_MODAL_CREATE_TITLE}
@@ -124,7 +124,7 @@ export default function AgendaCalendarDraftModal({
         onClick={requestClose}
         aria-label="Fermer"
       />
-      <div className={`absolute bottom-0 left-0 right-0 sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:right-auto sm:w-[min(92vw,560px)] sm:-translate-x-1/2 sm:-translate-y-1/2 rounded-t-lg sm:rounded-lg border border-border bg-card shadow-lg p-4 space-y-3 sn-modal-panel transition-opacity ${closing ? "opacity-0" : "opacity-100"}`}>
+      <div className={`relative z-10 w-full max-w-[560px] max-h-[calc(100dvh-1.5rem)] overflow-y-auto rounded-2xl border border-border bg-card shadow-lg p-4 space-y-3 sn-modal-panel transition-opacity sm:max-h-[calc(100dvh-3rem)] ${closing ? "opacity-0" : "opacity-100"}`}>
         <div className="text-sm font-semibold">{draft.taskId ? TASK_MODAL_EDIT_TITLE : TASK_MODAL_CREATE_TITLE}</div>
 
         {draft.taskId && draft.instanceDate && draft.recurrenceFreq && (

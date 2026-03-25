@@ -16,22 +16,19 @@ import {
   toLocalDateInputValue,
 } from "./agendaCalendarUtils";
 import { useAgendaCalendarFilters } from "./useAgendaCalendarFilters";
-import { useAgendaPlanningData } from "./useAgendaPlanningData";
-import { useAgendaPlanningSelection } from "./useAgendaPlanningSelection";
 import { useAgendaDraftManager } from "./useAgendaDraftManager";
 import { useAgendaEventMutation } from "./useAgendaEventMutation";
 import { useAgendaCalendarNavigation } from "./useAgendaCalendarNavigation";
 import { useAgendaMergedEvents } from "./useAgendaMergedEvents";
 import AgendaCalendarFiltersBar from "./AgendaCalendarFiltersBar";
 import AgendaCalendarDraftModal from "./AgendaCalendarDraftModal";
-import AgendaCalendarPlanningView from "./AgendaCalendarPlanningView";
 import CreateButton from "./CreateButton";
 import { projectTasksToEvents } from "@/lib/agenda/taskEventProjector";
 import { getUserTimezone } from "@/lib/datetime";
 import type { TaskCalendarKind, TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq } from "@/types/firestore";
 
 type CalendarViewMode = "dayGridMonth" | "timeGridWeek" | "timeGridDay";
-type AgendaDisplayMode = "calendar" | "planning";
+type AgendaDisplayMode = "calendar";
 
 const MONTH_OPTIONS = [
   { value: 1, label: "Janvier" },
@@ -51,8 +48,6 @@ const MONTH_OPTIONS = [
 export type AgendaCalendarPreferences = {
   viewMode: CalendarViewMode;
   displayMode: AgendaDisplayMode;
-  showPlanningAvailability: boolean;
-  planningAvailabilityTargetMinutes: number;
 };
 
 type GoogleCalendarEvent = {
@@ -114,23 +109,16 @@ interface AgendaCalendarProps {
 
 function normalizePreferences(raw: Partial<AgendaCalendarPreferences> | null | undefined): AgendaCalendarPreferences | null {
   if (!raw || typeof raw !== "object") return null;
-  const mode = raw.viewMode;
-  const displayMode = raw.displayMode;
-  const targetMinutesRaw = raw.planningAvailabilityTargetMinutes;
+  const candidate = raw as Partial<AgendaCalendarPreferences> & { displayMode?: unknown };
+  const mode = candidate.viewMode;
+  const displayMode = candidate.displayMode;
 
   if (mode !== "dayGridMonth" && mode !== "timeGridWeek" && mode !== "timeGridDay") return null;
   if (displayMode !== "calendar" && displayMode !== "planning") return null;
 
-  const planningAvailabilityTargetMinutes =
-    typeof targetMinutesRaw === "number" && Number.isFinite(targetMinutesRaw)
-      ? Math.max(15, Math.min(240, Math.round(targetMinutesRaw)))
-      : 45;
-
   return {
     viewMode: mode,
-    displayMode,
-    showPlanningAvailability: raw.showPlanningAvailability !== false,
-    planningAvailabilityTargetMinutes,
+    displayMode: "calendar",
   };
 }
 
@@ -140,14 +128,6 @@ function startOfDay(date: Date) {
 
 function normalizeCalendarAnchorDate(date: Date) {
   return startOfDay(date);
-}
-
-function startOfWeekMonday(date: Date) {
-  const dayStart = startOfDay(date);
-  const day = dayStart.getDay();
-  const offset = (day + 6) % 7;
-  dayStart.setDate(dayStart.getDate() - offset);
-  return dayStart;
 }
 
 function clampDateToMonth(year: number, month: number, referenceDate: Date) {
@@ -177,49 +157,6 @@ function isSameRangeValue(
   if (!left && !right) return true;
   if (!left || !right) return false;
   return isSameDateValue(left.start, right.start) && isSameDateValue(left.end, right.end);
-}
-
-function computePlanningWindow(anchorDate: Date, mode: CalendarViewMode) {
-  if (mode === "timeGridDay") {
-    const start = startOfDay(anchorDate);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 1);
-    return { start, end };
-  }
-
-  if (mode === "timeGridWeek") {
-    const start = startOfWeekMonday(anchorDate);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 7);
-    return { start, end };
-  }
-
-  const start = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1, 0, 0, 0, 0);
-  const end = new Date(start.getFullYear(), start.getMonth() + 1, 1, 0, 0, 0, 0);
-  return { start, end };
-}
-
-function formatPlanningLabel(windowRange: { start: Date; end: Date }, mode: CalendarViewMode) {
-  if (mode === "timeGridDay") {
-    return windowRange.start.toLocaleDateString("fr-FR", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
-  }
-
-  if (mode === "timeGridWeek") {
-    const endInclusive = new Date(windowRange.end.getTime() - 1);
-    const startLabel = windowRange.start.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
-    const endLabel = endInclusive.toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
-    return `Semaine ${startLabel} → ${endLabel}`;
-  }
-
-  return windowRange.start.toLocaleDateString("fr-FR", {
-    month: "long",
-    year: "numeric",
-  });
 }
 
 function formatCalendarLabel(windowRange: { start: Date; end: Date }, mode: CalendarViewMode) {
@@ -289,40 +226,24 @@ export default function AgendaCalendar({
   onCreateRequestHandled,
 }: AgendaCalendarProps) {
   const calendarRef = useRef<FullCalendar | null>(null);
-  const calendarShellRef = useRef<HTMLElement | null>(null);
   const datesSetRafRef = useRef<number | null>(null);
   const handledCreateRequestRef = useRef<string | null>(null);
   const [viewMode, setViewMode] = useState<CalendarViewMode>("timeGridWeek");
-  const [displayMode, setDisplayMode] = useState<AgendaDisplayMode>("calendar");
+  const displayMode: AgendaDisplayMode = "calendar";
   const [prefsHydrated, setPrefsHydrated] = useState(false);
   const {
-    showRecurringOnly,
-    setShowRecurringOnly,
-    showConflictsOnly,
-    setShowConflictsOnly,
     priorityFilter,
     setPriorityFilter,
     timeWindowFilter,
     setTimeWindowFilter,
-    showClassicTasks,
-    setShowClassicTasks,
-    showChecklistItems,
-    setShowChecklistItems,
-    showGoogleCalendar,
-    setShowGoogleCalendar,
-    statusFilter,
-    setStatusFilter,
     clearFilters,
   } = useAgendaCalendarFilters();
   const [visibleRange, setVisibleRange] = useState<{ start: Date; end: Date } | null>(null);
   const [label, setLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [showPlanningAvailability, setShowPlanningAvailability] = useState(true);
-  const [planningAvailabilityTargetMinutes, setPlanningAvailabilityTargetMinutes] = useState(45);
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [googleCalendarEvents, setGoogleCalendarEvents] = useState<GoogleCalendarEvent[]>([]);
   const [googleCalendarFetchState, setGoogleCalendarFetchState] = useState<GoogleCalendarFetchState>("idle");
-  const [planningAnchorDate, setPlanningAnchorDate] = useState<Date>(new Date());
   const [calendarAnchorDate, setCalendarAnchorDate] = useState<Date>(initialAnchorDate ?? new Date());
   const [userTimezone, setUserTimezone] = useState<string>("UTC");
   const [focusPulseActive, setFocusPulseActive] = useState(false);
@@ -333,25 +254,14 @@ export default function AgendaCalendar({
     return `${String(hour).padStart(2, "0")}:00:00`;
   }, []);
 
-  const navigationAnchorDate = useMemo(() => {
-    if (displayMode === "planning") return planningAnchorDate;
-    return calendarAnchorDate;
-  }, [calendarAnchorDate, displayMode, planningAnchorDate]);
+  const navigationAnchorDate = calendarAnchorDate;
 
   const navigationYearOptions = useMemo(() => {
     const currentYear = navigationAnchorDate.getFullYear();
     return Array.from({ length: 15 }, (_, index) => currentYear - 5 + index);
   }, [navigationAnchorDate]);
 
-  const planningWindow = useMemo(
-    () => computePlanningWindow(planningAnchorDate, viewMode),
-    [planningAnchorDate, viewMode],
-  );
-
-  const effectiveVisibleRange = useMemo<{ start: Date; end: Date } | null>(
-    () => (displayMode === "planning" ? planningWindow : visibleRange),
-    [displayMode, planningWindow, visibleRange],
-  );
+  const effectiveVisibleRange = visibleRange;
 
   useEffect(() => {
     setUserTimezone(getUserTimezone());
@@ -373,9 +283,6 @@ export default function AgendaCalendar({
       if (!parsed) return;
 
       setViewMode(parsed.viewMode);
-      setDisplayMode(parsed.displayMode);
-      setShowPlanningAvailability(parsed.showPlanningAvailability);
-      setPlanningAvailabilityTargetMinutes(parsed.planningAvailabilityTargetMinutes);
     } catch {
       // ignore invalid payload
     } finally {
@@ -387,9 +294,6 @@ export default function AgendaCalendar({
     const parsed = normalizePreferences(initialPreferences);
     if (!parsed) return;
     setViewMode(parsed.viewMode);
-    setDisplayMode(parsed.displayMode);
-    setShowPlanningAvailability(parsed.showPlanningAvailability);
-    setPlanningAvailabilityTargetMinutes(parsed.planningAvailabilityTargetMinutes);
     setPrefsHydrated(true);
   }, [initialPreferences]);
 
@@ -397,10 +301,8 @@ export default function AgendaCalendar({
     () => ({
       viewMode,
       displayMode,
-      showPlanningAvailability,
-      planningAvailabilityTargetMinutes,
     }),
-    [displayMode, planningAvailabilityTargetMinutes, showPlanningAvailability, viewMode],
+    [displayMode, viewMode],
   );
 
   useEffect(() => {
@@ -490,23 +392,17 @@ export default function AgendaCalendar({
   useEffect(() => {
     if (!initialAnchorDate || Number.isNaN(initialAnchorDate.getTime())) return;
 
-    setPlanningAnchorDate(initialAnchorDate);
     setCalendarAnchorDate(initialAnchorDate);
-    if (displayMode === "calendar") {
-      calendarRef.current?.getApi().gotoDate(initialAnchorDate);
-    }
-
-    calendarShellRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [displayMode, initialAnchorDate]);
+    calendarRef.current?.getApi().gotoDate(initialAnchorDate);
+  }, [initialAnchorDate]);
 
   useEffect(() => {
     if (!initialAnchorDate || Number.isNaN(initialAnchorDate.getTime())) return;
-    if (displayMode !== "calendar") return;
 
     setFocusPulseActive(true);
     const timer = window.setTimeout(() => setFocusPulseActive(false), 2100);
     return () => window.clearTimeout(timer);
-  }, [displayMode, initialAnchorDate]);
+  }, [initialAnchorDate]);
 
   const triggerViewTransition = useCallback(() => {
     setViewTransitioning(true);
@@ -544,9 +440,6 @@ export default function AgendaCalendar({
       const itemPriority = (task.priority ?? "") as Priority | "";
       const itemCalendarKind = (task.calendarKind ?? "task") as TaskCalendarKind;
       const itemHasConflict = conflictIds.has(eventId);
-      const itemIsRecurring = Boolean(recurrence?.freq);
-      const itemIsChecklist = task.sourceType === "checklist_item";
-      const itemIsDone = task.completed === true || task.status === "done";
       const startHour = start.getHours();
 
       const matchesTimeWindow = (() => {
@@ -559,14 +452,8 @@ export default function AgendaCalendar({
         return true;
       })();
 
-      if (showRecurringOnly && !itemIsRecurring) continue;
-      if (showConflictsOnly && !itemHasConflict) continue;
       if (priorityFilter && itemPriority !== priorityFilter) continue;
       if (!matchesTimeWindow) continue;
-      if (!showClassicTasks && !itemIsChecklist) continue;
-      if (!showChecklistItems && itemIsChecklist) continue;
-      if (statusFilter === "open" && itemIsDone) continue;
-      if (statusFilter === "done" && !itemIsDone) continue;
 
       const fcStart = allDay ? toLocalDateInputValue(start) : start;
       const fcEnd = allDay ? toLocalDateInputValue(end) : end;
@@ -616,11 +503,6 @@ export default function AgendaCalendar({
   }, [
     effectiveVisibleRange,
     priorityFilter,
-    showChecklistItems,
-    showClassicTasks,
-    showConflictsOnly,
-    showRecurringOnly,
-    statusFilter,
     tasks,
     timeWindowFilter,
     workspaceNameById,
@@ -673,44 +555,21 @@ export default function AgendaCalendar({
   } = useAgendaCalendarNavigation({
     calendarRef,
     displayMode,
-    onPlanningJump: (action) => {
-      setPlanningAnchorDate((prev) => {
-        if (action === "today") return new Date();
-        const next = new Date(prev);
-        if (viewMode === "dayGridMonth") {
-          next.setMonth(next.getMonth() + (action === "next" ? 1 : -1));
-          return next;
-        }
-        if (viewMode === "timeGridWeek") {
-          next.setDate(next.getDate() + (action === "next" ? 7 : -7));
-          return next;
-        }
-        next.setDate(next.getDate() + (action === "next" ? 1 : -1));
-        return next;
-      });
-    },
   });
 
   const changeView = (next: CalendarViewMode) => {
     triggerViewTransition();
     setViewMode(next);
-    if (displayMode === "calendar") {
-      calendarRef.current?.getApi().changeView(next);
-    }
+    calendarRef.current?.getApi().changeView(next);
   };
 
   const jumpToAnchorDate = useCallback(
     (nextDate: Date) => {
       triggerViewTransition();
-      if (displayMode === "planning") {
-        setPlanningAnchorDate(nextDate);
-        return;
-      }
-
       setCalendarAnchorDate(nextDate);
       calendarRef.current?.getApi().gotoDate(nextDate);
     },
-    [displayMode, triggerViewTransition],
+    [triggerViewTransition],
   );
 
   const updateNavigationMonth = useCallback(
@@ -752,7 +611,6 @@ export default function AgendaCalendar({
       setLabel((prev) => (prev === nextLabel ? prev : nextLabel));
       setVisibleRange((prev) => (isSameRangeValue(prev, nextRange) ? prev : nextRange));
       setCalendarAnchorDate((prev) => (isSameDateValue(prev, nextCalendarAnchor) ? prev : nextCalendarAnchor));
-      setPlanningAnchorDate((prev) => (isSameDateValue(prev, currentRange.start) ? prev : currentRange.start));
       onVisibleRangeChange?.(nextRange);
       window.setTimeout(() => setViewTransitioning(false), 80);
       datesSetRafRef.current = null;
@@ -760,78 +618,27 @@ export default function AgendaCalendar({
   };
 
   useEffect(() => {
-    if (displayMode !== "planning") return;
-    const nextLabel = formatPlanningLabel(planningWindow, viewMode);
-    setLabel((prev) => (prev === nextLabel ? prev : nextLabel));
-  }, [displayMode, planningWindow, viewMode]);
-
-  useEffect(() => {
-    if (displayMode !== "planning") return;
-    setVisibleRange((prev) => (isSameRangeValue(prev, planningWindow) ? prev : planningWindow));
-    onVisibleRangeChange?.(planningWindow);
-  }, [displayMode, onVisibleRangeChange, planningWindow]);
-
-  useEffect(() => {
-    if (displayMode !== "calendar") return;
     calendarRef.current?.getApi().changeView(viewMode);
-  }, [displayMode, viewMode]);
+  }, [viewMode]);
 
   const { agendaEvents, isCompactDensity } = useAgendaMergedEvents({
     calendarData,
     googleCalendarEvents,
-    showGoogleCalendar,
+    showGoogleCalendar: true,
     visibleRange: effectiveVisibleRange,
   });
   const hasActiveAgendaFilters =
-    showRecurringOnly ||
-    showConflictsOnly ||
     Boolean(priorityFilter) ||
-    timeWindowFilter !== "" ||
-    !showClassicTasks ||
-    !showChecklistItems ||
-    !showGoogleCalendar ||
-    statusFilter !== "all";
+    timeWindowFilter !== "";
 
   const showNoGoogleEventsMessage =
     calendarConnected &&
-    displayMode === "calendar" &&
-    showGoogleCalendar &&
     effectiveVisibleRange !== null &&
     googleCalendarFetchState === "success" &&
     googleCalendarEvents.length === 0;
 
-  const { planningSections, planningAvailabilityByDate } = useAgendaPlanningData({
-    agendaEvents,
-    planningAvailabilityTargetMinutes,
-    planningWindow: displayMode === "planning" ? planningWindow : null,
-  });
-
-  const planningEventMap = useMemo(() => {
-    const map = new Map<string, EventInput>();
-    for (const event of calendarData.events) {
-      map.set(String(event.id), event);
-    }
-    return map;
-  }, [calendarData.events]);
-
-  const {
-    selectedPlanningIds,
-    setSelectedPlanningIds,
-    duplicatingPlanning,
-    planningDuplicateDate,
-    setPlanningDuplicateDate,
-    togglePlanningSelection,
-    duplicatePlanningSelectionByDays,
-    duplicatePlanningSelectionToDate,
-  } = useAgendaPlanningSelection({
-    displayMode,
-    planningEventMap,
-    onCreateEvent,
-    setError,
-  });
-
   return (
-    <section ref={calendarShellRef} className="space-y-3 overflow-x-hidden">
+    <section className="space-y-3 overflow-x-hidden">
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
           <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit max-w-full">
@@ -850,32 +657,6 @@ export default function AgendaCalendar({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap justify-end">
-            <div className="hidden sm:flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1">
-              <select
-                value={navigationAnchorDate.getMonth() + 1}
-                onChange={(event) => updateNavigationMonth(Number(event.target.value) - 1)}
-                className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                aria-label="Choisir le mois de l’agenda"
-              >
-                {MONTH_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={navigationAnchorDate.getFullYear()}
-                onChange={(event) => updateNavigationYear(Number(event.target.value))}
-                className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                aria-label="Choisir l’annee de l’agenda"
-              >
-                {navigationYearOptions.map((year) => (
-                  <option key={year} value={year}>
-                    {year}
-                  </option>
-                ))}
-              </select>
-            </div>
             <div className="inline-flex items-center rounded-md border border-border bg-background/90 shadow-sm overflow-hidden">
               <CreateButton
                 renderCustomTrigger={({ onClick, ariaLabel, title }) => (
@@ -894,134 +675,60 @@ export default function AgendaCalendar({
           </div>
         </div>
 
-        <div className="text-sm font-semibold">{label}</div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm font-semibold">{label}</div>
 
-        <div className="sm:hidden grid grid-cols-2 gap-2">
-          <label className="space-y-1">
-            <span className="text-[11px] text-muted-foreground">Affichage</span>
-            <select
-              value={displayMode}
-              onChange={(event) => {
-                triggerViewTransition();
-                setDisplayMode(event.target.value as AgendaDisplayMode);
-              }}
-              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-              aria-label="Choisir le mode d’affichage agenda"
-            >
-              <option value="calendar">Agenda</option>
-              <option value="planning">Liste du jour</option>
-            </select>
-          </label>
-          <label className="space-y-1">
-            <span className="text-[11px] text-muted-foreground">Période</span>
-            <select
-              value={viewMode}
-              onChange={(event) => changeView(event.target.value as CalendarViewMode)}
-              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-              aria-label="Choisir la période de l’agenda"
-            >
-              <option value="dayGridMonth">Mois</option>
-              <option value="timeGridWeek">Semaine</option>
-              <option value="timeGridDay">Jour</option>
-            </select>
-          </label>
-          <label className="space-y-1">
-            <span className="text-[11px] text-muted-foreground">Mois</span>
-            <select
-              value={navigationAnchorDate.getMonth() + 1}
-              onChange={(event) => updateNavigationMonth(Number(event.target.value) - 1)}
-              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-              aria-label="Choisir le mois de l’agenda"
-            >
-              {MONTH_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1">
-            <span className="text-[11px] text-muted-foreground">Annee</span>
-            <select
-              value={navigationAnchorDate.getFullYear()}
-              onChange={(event) => updateNavigationYear(Number(event.target.value))}
-              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-              aria-label="Choisir l’annee de l’agenda"
-            >
-              {navigationYearOptions.map((year) => (
-                <option key={year} value={year}>
-                  {year}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="hidden sm:flex items-center gap-2 flex-wrap justify-end">
-          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit max-w-full">
-          <button
-            type="button"
-            className={`px-3 py-1.5 text-sm transition-colors ${displayMode === "calendar" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
-            onClick={() => {
-              triggerViewTransition();
-              setDisplayMode("calendar");
-            }}
-          >
-            Agenda
-          </button>
-          <button
-            type="button"
-            className={`px-3 py-1.5 text-sm border-l border-border transition-colors ${displayMode === "planning" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
-            onClick={() => {
-              triggerViewTransition();
-              setDisplayMode("planning");
-            }}
-          >
-            Liste du jour (lecture)
-          </button>
-          </div>
-
-          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit max-w-full">
-          <button
-            type="button"
-            className={`px-3 py-1.5 text-sm transition-colors ${viewMode === "dayGridMonth" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
-            onClick={() => changeView("dayGridMonth")}
-          >
-            Mois
-          </button>
-          <button
-            type="button"
-            className={`px-3 py-1.5 text-sm border-l border-border transition-colors ${viewMode === "timeGridWeek" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
-            onClick={() => changeView("timeGridWeek")}
-          >
-            Semaine
-          </button>
-          <button
-            type="button"
-            className={`px-3 py-1.5 text-sm border-l border-border transition-colors ${viewMode === "timeGridDay" ? "bg-accent font-semibold" : "hover:bg-accent/60"}`}
-            onClick={() => changeView("timeGridDay")}
-          >
-            Jour
-          </button>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,11rem)_minmax(0,10rem)_minmax(0,7rem)]">
+            <label className="space-y-1">
+              <span className="text-[11px] text-muted-foreground">Période</span>
+              <select
+                value={viewMode}
+                onChange={(event) => changeView(event.target.value as CalendarViewMode)}
+                className="h-9 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                aria-label="Choisir la période de l’agenda"
+              >
+                <option value="dayGridMonth">Mois</option>
+                <option value="timeGridWeek">Semaine</option>
+                <option value="timeGridDay">Jour</option>
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] text-muted-foreground">Mois</span>
+              <select
+                value={navigationAnchorDate.getMonth() + 1}
+                onChange={(event) => updateNavigationMonth(Number(event.target.value) - 1)}
+                className="h-9 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                aria-label="Choisir le mois de l’agenda"
+              >
+                {MONTH_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] text-muted-foreground">Année</span>
+              <select
+                value={navigationAnchorDate.getFullYear()}
+                onChange={(event) => updateNavigationYear(Number(event.target.value))}
+                className="h-9 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                aria-label="Choisir l’année de l’agenda"
+              >
+                {navigationYearOptions.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         </div>
       </div>
 
       <AgendaCalendarFiltersBar
-        showRecurringOnly={showRecurringOnly}
-        showConflictsOnly={showConflictsOnly}
         priorityFilter={priorityFilter}
         timeWindowFilter={timeWindowFilter}
-        showClassicTasks={showClassicTasks}
-        showChecklistItems={showChecklistItems}
-        showGoogleCalendar={showGoogleCalendar}
-        statusFilter={statusFilter}
-        onToggleRecurringOnly={() => setShowRecurringOnly((prev) => !prev)}
-        onToggleConflictsOnly={() => setShowConflictsOnly((prev) => !prev)}
-        onToggleClassicTasks={() => setShowClassicTasks((prev) => !prev)}
-        onToggleChecklistItems={() => setShowChecklistItems((prev) => !prev)}
-        onToggleGoogleCalendar={() => setShowGoogleCalendar((prev) => !prev)}
-        onStatusFilterChange={setStatusFilter}
         onPriorityFilterChange={setPriorityFilter}
         onTimeWindowFilterChange={setTimeWindowFilter}
         onReset={clearFilters}
@@ -1061,14 +768,13 @@ export default function AgendaCalendar({
 
       <div className="space-y-0">
         <div className="sn-card p-2 bg-[radial-gradient(900px_circle_at_100%_-10%,rgba(59,130,246,0.08),transparent_50%),linear-gradient(180deg,rgba(15,23,42,0.14),transparent_42%)]">
-          {displayMode === "calendar" ? (
-            <div
-              className={`agenda-premium-calendar ${isCompactDensity ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"} ${viewTransitioning ? "agenda-transitioning" : ""} ${focusPulseActive ? "sn-highlight-soft" : ""}`}
-              data-user-timezone={userTimezone}
-              onTouchStart={handleCalendarTouchStart}
-              onTouchEnd={handleCalendarTouchEnd}
-            >
-              <FullCalendar
+          <div
+            className={`agenda-premium-calendar ${isCompactDensity ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"} ${viewTransitioning ? "agenda-transitioning" : ""} ${focusPulseActive ? "sn-highlight-soft" : ""}`}
+            data-user-timezone={userTimezone}
+            onTouchStart={handleCalendarTouchStart}
+            onTouchEnd={handleCalendarTouchEnd}
+          >
+            <FullCalendar
               ref={calendarRef}
               plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
               initialView={viewMode}
@@ -1108,34 +814,11 @@ export default function AgendaCalendar({
               eventDrop={handleMoveOrResize}
               eventResize={handleMoveOrResize}
               timeZone={userTimezone}
-              />
-              <p className="mt-2 px-1 text-[11px] text-muted-foreground md:hidden">
-                Astuce: glissez gauche/droite pour changer de période.
-              </p>
-            </div>
-          ) : (
-            <AgendaCalendarPlanningView
-              planningSections={planningSections}
-              planningAvailabilityByDate={planningAvailabilityByDate}
-              onSwitchToCalendar={() => {
-                triggerViewTransition();
-                setDisplayMode("calendar");
-              }}
-              showPlanningAvailability={showPlanningAvailability}
-              planningAvailabilityTargetMinutes={planningAvailabilityTargetMinutes}
-              onTogglePlanningAvailability={() => setShowPlanningAvailability((prev) => !prev)}
-              planningDuplicateDate={planningDuplicateDate}
-              onPlanningDuplicateDateChange={setPlanningDuplicateDate}
-              selectedPlanningIds={selectedPlanningIds}
-              onClearSelection={() => setSelectedPlanningIds([])}
-              onTogglePlanningSelection={togglePlanningSelection}
-              onDuplicateByDays={duplicatePlanningSelectionByDays}
-              onDuplicateToDate={duplicatePlanningSelectionToDate}
-              duplicatingPlanning={duplicatingPlanning}
-              onPlanningAvailabilityTargetMinutesChange={setPlanningAvailabilityTargetMinutes}
-              onOpenTask={onOpenTask}
             />
-          )}
+            <p className="mt-2 px-1 text-[11px] text-muted-foreground md:hidden">
+              Astuce: glissez gauche/droite pour changer de période.
+            </p>
+          </div>
         </div>
       </div>
 

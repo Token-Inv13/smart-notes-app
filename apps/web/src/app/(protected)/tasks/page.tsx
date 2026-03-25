@@ -144,7 +144,7 @@ function mergeTaskCollections(baseTasks: TaskDoc[], optimisticTaskById: Record<s
 
 function normalizeAgendaCalendarPreferences(raw: unknown): AgendaCalendarPreferences | null {
   if (!raw || typeof raw !== "object") return null;
-  const candidate = raw as Partial<AgendaCalendarPreferences>;
+  const candidate = raw as Partial<AgendaCalendarPreferences> & { displayMode?: unknown };
   if (
     candidate.viewMode !== "dayGridMonth" &&
     candidate.viewMode !== "timeGridWeek" &&
@@ -154,16 +154,9 @@ function normalizeAgendaCalendarPreferences(raw: unknown): AgendaCalendarPrefere
   }
   if (candidate.displayMode !== "calendar" && candidate.displayMode !== "planning") return null;
 
-  const target =
-    typeof candidate.planningAvailabilityTargetMinutes === "number" && Number.isFinite(candidate.planningAvailabilityTargetMinutes)
-      ? Math.max(15, Math.min(240, Math.round(candidate.planningAvailabilityTargetMinutes)))
-      : 45;
-
   return {
     viewMode: candidate.viewMode,
-    displayMode: candidate.displayMode,
-    showPlanningAvailability: candidate.showPlanningAvailability !== false,
-    planningAvailabilityTargetMinutes: target,
+    displayMode: "calendar",
   };
 }
 
