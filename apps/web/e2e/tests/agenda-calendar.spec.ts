@@ -248,6 +248,16 @@ test("agenda_calendar_hides_planning_mode_label", async ({ page }) => {
   await expect(page.getByText("Liste du jour")).toHaveCount(0);
 });
 
+test("agenda_calendar_hides_header_filter_but_keeps_search", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  await page.goto("/tasks?view=calendar");
+  await expect(page.getByRole("button", { name: "Ouvrir la recherche" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ouvrir les filtres" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Filtres(?: \(\d+\))?$/ }).first()).toBeVisible();
+});
+
 test("agenda_microguide_hides_immediately_and_stays_hidden_after_revisit", async ({ page }) => {
   const users = getE2EUsers();
   await loginViaUi(page, users.owner, "/tasks?view=list");
@@ -838,6 +848,22 @@ test("agenda_task_create_form_without_complete_window_shows_google_skip_message_
   await expect(page.getByText("Élément enregistré dans TaskNote, mais non synchronisé avec Google Calendar faute de plage horaire complète.")).toBeVisible();
   await expect.poll(() => googleCreateCalls).toBe(0);
   await page.goto("/tasks?view=list");
+  await expect(page.getByText(title).first()).toBeVisible({ timeout: 15000 });
+});
+
+test("note_create_modal_creates_note_and_closes", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/notes?create=1");
+
+  await page.goto("/notes?create=1");
+  const dialog = page.getByRole("dialog", { name: "Nouvelle note" });
+  await expect(dialog).toBeVisible();
+
+  const title = `E2E Note ${Date.now()}`;
+  await dialog.locator("#note-title").fill(title);
+  await dialog.getByRole("button", { name: "Créer la note" }).click();
+
+  await expect(dialog).toBeHidden();
   await expect(page.getByText(title).first()).toBeVisible({ timeout: 15000 });
 });
 

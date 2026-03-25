@@ -301,7 +301,7 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" aria-busy={creating}>
       <div className="grid grid-cols-1 md:grid-cols-2 md:items-end gap-3">
         <div className="space-y-1">
           <label className="text-sm font-medium" htmlFor="note-title">
@@ -383,10 +383,16 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
             onClick={handleCreateNote}
             className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {creating ? "Création…" : "Créer la note"}
+            {creating ? "Création de la note…" : "Créer la note"}
           </button>
         </div>
       </div>
+
+      {creating ? (
+        <div className="text-xs text-muted-foreground" role="status" aria-live="polite">
+          Enregistrement de la note…
+        </div>
+      ) : null}
 
       <div className="space-y-1">
         <label className="sr-only" htmlFor="note-content">

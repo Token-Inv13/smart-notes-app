@@ -92,12 +92,20 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
   const [googleCalendarConnected, setGoogleCalendarConnected] = useState(false);
 
   const titleInputRef = useRef<HTMLInputElement | null>(null);
+  const isMountedRef = useRef(true);
   const [dictationStatus, setDictationStatus] = useState<"idle" | "listening" | "stopped" | "error">("idle");
   const [dictationError, setDictationError] = useState<string | null>(null);
 
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedDraftRef = useRef<string>("");
   const DRAFT_KEY = "smartnotes:draft:new-task";
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     setNewWorkspaceId(initialWorkspaceId ?? "");
@@ -343,18 +351,16 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
       if (isPro && validation.data.dueDate && !explicitAllDay) {
         const reminderDate = new Date(validation.data.dueDate);
         if (!Number.isNaN(reminderDate.getTime())) {
-          try {
-            await addDoc(collection(db, "taskReminders"), {
-              userId: user.uid,
-              taskId: taskResult.taskId,
-              dueDate: dueTimestamp ? dueTimestamp.toDate().toISOString() : "",
-              reminderTime: reminderDate.toISOString(),
-              sent: false,
-              createdAt: serverTimestamp(),
-            });
-          } catch (e) {
+          void addDoc(collection(db, "taskReminders"), {
+            userId: user.uid,
+            taskId: taskResult.taskId,
+            dueDate: dueTimestamp ? dueTimestamp.toDate().toISOString() : "",
+            reminderTime: reminderDate.toISOString(),
+            sent: false,
+            createdAt: serverTimestamp(),
+          }).catch((e) => {
             console.error("Error creating task reminder", e);
-          }
+          });
         }
       }
 
@@ -388,7 +394,9 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
               status: response.status,
               taskId: taskResult.taskId,
             });
-            setCreateFeedback(GOOGLE_SYNC_FAILED_MESSAGE);
+            if (isMountedRef.current) {
+              setCreateFeedback(GOOGLE_SYNC_FAILED_MESSAGE);
+            }
             return;
           }
 
@@ -399,7 +407,9 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
               : null;
 
           if (!googleEventId) {
-            setCreateFeedback(GOOGLE_SYNC_FAILED_MESSAGE);
+            if (isMountedRef.current) {
+              setCreateFeedback(GOOGLE_SYNC_FAILED_MESSAGE);
+            }
             return;
           }
 
@@ -419,7 +429,9 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
             taskId: taskResult.taskId,
             error: error instanceof Error ? error.message : String(error),
           });
-          setCreateFeedback(GOOGLE_SYNC_FAILED_MESSAGE);
+          if (isMountedRef.current) {
+            setCreateFeedback(GOOGLE_SYNC_FAILED_MESSAGE);
+          }
         });
       } else if (googleCalendarConnected) {
         setCreateFeedback(GOOGLE_SYNC_INCOMPLETE_WINDOW_MESSAGE);
@@ -637,10 +649,15 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
           disabled={creating || !canCreate}
           className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
         >
-          {creating ? "Création…" : "Créer dans l’agenda"}
+          {creating ? "Création de l’agenda…" : "Créer dans l’agenda"}
         </button>
       </div>
 
+      {creating ? (
+        <div className="text-xs text-muted-foreground" role="status" aria-live="polite">
+          Enregistrement de l’élément d’agenda…
+        </div>
+      ) : null}
       {createFeedback && <div className="sn-alert sn-alert--success sn-animate-in" role="status" aria-live="polite">{createFeedback}</div>}
       {createError && <div className="sn-alert sn-alert--error">{createError}</div>}
     </div>

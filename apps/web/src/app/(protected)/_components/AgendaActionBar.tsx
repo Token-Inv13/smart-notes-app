@@ -175,15 +175,17 @@ export default function AgendaActionBar({
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={onFilterToggle}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-accent"
-            aria-label="Ouvrir les filtres"
-            title="Filtres"
-          >
-            <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
-          </button>
+          {viewMode !== "calendar" ? (
+            <button
+              type="button"
+              onClick={onFilterToggle}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-accent"
+              aria-label="Ouvrir les filtres"
+              title="Filtres"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          ) : null}
         </div>
       </div>
     </div>
