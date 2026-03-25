@@ -760,6 +760,61 @@ test("agenda_task_create_form_keeps_local_task_when_google_create_fails", async 
   await expect(page.getByText(title).first()).toBeVisible({ timeout: 15000 });
 });
 
+test("agenda_task_create_form_without_complete_window_shows_google_skip_message_and_skips_create", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks/new");
+
+  await mockGoogleCalendar(page, { connected: true, events: [] });
+
+  let googleCreateCalls = 0;
+  await mockGoogleCalendarCreate(page, {
+    onRequest: () => {
+      googleCreateCalls += 1;
+    },
+  });
+
+  const title = uniqueAgendaTitle("formNoWindow");
+  await page.goto("/tasks/new");
+  await page.locator("#task-new-title").fill(title);
+  await page.locator("#task-new-start").fill("2026-03-24");
+  await page.getByRole("button", { name: "Créer dans l’agenda" }).click();
+
+  await expect(page.getByText("Élément enregistré dans TaskNote, mais non synchronisé avec Google Calendar faute de plage horaire complète.")).toBeVisible();
+  await expect.poll(() => googleCreateCalls).toBe(0);
+  await page.goto("/tasks?view=list");
+  await expect(page.getByText(title).first()).toBeVisible({ timeout: 15000 });
+});
+
+test("agenda_detail_update_without_complete_window_shows_google_skip_message_and_skips_patch", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  await mockGoogleCalendar(page, { connected: true, events: [] });
+  await mockGoogleCalendarCreate(page, {
+    body: { created: true, eventId: "gcal-detail-no-window" },
+  });
+
+  let googleUpdateCalls = 0;
+  await mockGoogleCalendarUpdate(page, {
+    onRequest: () => {
+      googleUpdateCalls += 1;
+    },
+  });
+
+  const title = uniqueAgendaTitle("detailNoWindow");
+  await createTaskFromCalendar(page, title);
+  await convertCalendarTaskToTimed(page, title, "10:00", "11:00");
+
+  const detailDialog = await openTaskDetailFromList(page, title);
+  await enterTaskDetailEditMode(detailDialog);
+  const editDialog = page.getByRole("dialog", { name: "Modifier l’élément d’agenda" });
+  await editDialog.getByLabel("Date de fin / échéance").fill("");
+  await editDialog.getByRole("button", { name: "Enregistrer" }).click();
+
+  await expect(page.getByText("Élément enregistré dans TaskNote, mais non synchronisé avec Google Calendar faute de plage horaire complète.")).toBeVisible();
+  await expect.poll(() => googleUpdateCalls).toBe(0);
+});
+
 test("agenda_delete_attempts_google_delete_for_linked_task", async ({ page }) => {
   const users = getE2EUsers();
   await loginViaUi(page, users.owner, "/tasks?view=calendar");

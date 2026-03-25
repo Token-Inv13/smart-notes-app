@@ -58,6 +58,9 @@ const newTaskSchema = z.object({
   priority: z.union([z.literal("low"), z.literal("medium"), z.literal("high")]).optional(),
 });
 
+const GOOGLE_SYNC_INCOMPLETE_WINDOW_MESSAGE =
+  "Élément enregistré dans TaskNote, mais non synchronisé avec Google Calendar faute de plage horaire complète.";
+
 function toLocalDateInputValue(date: Date) {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
@@ -84,6 +87,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createFeedback, setCreateFeedback] = useState<string | null>(null);
+  const [googleCalendarConnected, setGoogleCalendarConnected] = useState(false);
 
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const [dictationStatus, setDictationStatus] = useState<"idle" | "listening" | "stopped" | "error">("idle");
@@ -113,6 +117,32 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
     const timer = window.setTimeout(() => setCreateFeedback(null), 1800);
     return () => window.clearTimeout(timer);
   }, [createFeedback]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadGoogleCalendarStatus = async () => {
+      try {
+        const res = await fetch("/api/google/calendar/status", { method: "GET", cache: "no-store" });
+        if (!res.ok) {
+          if (!cancelled) setGoogleCalendarConnected(false);
+          return;
+        }
+
+        const data = (await res.json()) as { connected?: unknown };
+        if (!cancelled) {
+          setGoogleCalendarConnected(data.connected === true);
+        }
+      } catch {
+        if (!cancelled) setGoogleCalendarConnected(false);
+      }
+    };
+
+    void loadGoogleCalendarStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -384,6 +414,8 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
             error: error instanceof Error ? error.message : String(error),
           });
         });
+      } else if (googleCalendarConnected) {
+        setCreateFeedback(GOOGLE_SYNC_INCOMPLETE_WINDOW_MESSAGE);
       }
 
       try {
@@ -398,7 +430,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
       setNewStartDate("");
       setNewDueDate("");
       setNewPriority("");
-      setCreateFeedback("Élément ajouté à l’agenda.");
+      setCreateFeedback((prev) => prev ?? "Élément ajouté à l’agenda.");
 
       window.requestAnimationFrame(() => {
         titleInputRef.current?.focus();

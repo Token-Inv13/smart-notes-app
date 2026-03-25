@@ -99,6 +99,9 @@ function getReminderRestrictionMessage(task: TaskDoc | null | undefined): string
   return null;
 }
 
+const GOOGLE_SYNC_INCOMPLETE_WINDOW_MESSAGE =
+  "Élément enregistré dans TaskNote, mais non synchronisé avec Google Calendar faute de plage horaire complète.";
+
 function priorityLabel(p?: TaskDoc["priority"] | null) {
   if (p === "high") return "Haute";
   if (p === "medium") return "Moyenne";
@@ -187,6 +190,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
   const [sharedUrl, setSharedUrl] = useState<string | null>(null);
   const [exportFeedback, setExportFeedback] = useState<string | null>(null);
   const [snoozing, setSnoozing] = useState(false);
@@ -203,6 +207,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
   const [busyReminderId, setBusyReminderId] = useState<string | null>(null);
   const [reminderDraft, setReminderDraft] = useState("");
   const [reminderFeedback, setReminderFeedback] = useState<string | null>(null);
+  const [googleCalendarConnected, setGoogleCalendarConnected] = useState(false);
 
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const [dictationStatus, setDictationStatus] = useState<"idle" | "listening" | "stopped" | "error">("idle");
@@ -212,6 +217,38 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
   const isDirtyRef = useRef(false);
   const lastSavedSnapshotRef = useRef<string>("");
   const isTimedTask = task?.allDay !== true;
+
+  useEffect(() => {
+    if (!syncFeedback) return;
+    const timer = window.setTimeout(() => setSyncFeedback(null), 2400);
+    return () => window.clearTimeout(timer);
+  }, [syncFeedback]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadGoogleCalendarStatus = async () => {
+      try {
+        const res = await fetch("/api/google/calendar/status", { method: "GET", cache: "no-store" });
+        if (!res.ok) {
+          if (!cancelled) setGoogleCalendarConnected(false);
+          return;
+        }
+
+        const data = (await res.json()) as { connected?: unknown };
+        if (!cancelled) {
+          setGoogleCalendarConnected(data.connected === true);
+        }
+      } catch {
+        if (!cancelled) setGoogleCalendarConnected(false);
+      }
+    };
+
+    void loadGoogleCalendarStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const setDirty = (next: boolean) => {
     isDirtyRef.current = next;
@@ -821,6 +858,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
     setSaving(true);
     setEditError(null);
+    setSyncFeedback(null);
     console.info("[task modal] saveEdits start", {
       taskId: task.id,
       workspaceId: validation.data.workspaceId,
@@ -885,6 +923,13 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
             error: error instanceof Error ? error.message : String(error),
           });
         });
+      } else if (
+        typeof task.googleEventId === "string" &&
+        task.googleEventId.trim() &&
+        googleCalendarConnected &&
+        (!startTimestamp || !dueTimestamp)
+      ) {
+        setSyncFeedback(GOOGLE_SYNC_INCOMPLETE_WINDOW_MESSAGE);
       }
 
       if (isPro) {
@@ -1128,6 +1173,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
         return (
         <div className="space-y-4">
           {shareFeedback && <div className="sn-alert">{shareFeedback}</div>}
+          {syncFeedback && <div className="sn-alert" role="status" aria-live="polite">{syncFeedback}</div>}
           {sharedUrl && (
             <div className="sn-card p-3">
               <div className="text-xs text-muted-foreground mb-1">Lien de partage</div>
