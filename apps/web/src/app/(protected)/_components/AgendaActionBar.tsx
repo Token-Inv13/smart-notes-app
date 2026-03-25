@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -22,6 +22,7 @@ interface AgendaActionBarProps {
   searchValue: string;
   onSearchChange: (next: string) => void;
   onFilterToggle: () => void;
+  trailingSlot?: ReactNode;
 }
 
 const VIEW_OPTIONS: Array<{
@@ -41,6 +42,7 @@ export default function AgendaActionBar({
   searchValue,
   onSearchChange,
   onFilterToggle,
+  trailingSlot,
 }: AgendaActionBarProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -186,6 +188,8 @@ export default function AgendaActionBar({
               <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
             </button>
           ) : null}
+
+          {trailingSlot ? <div className="shrink-0">{trailingSlot}</div> : null}
         </div>
       </div>
     </div>

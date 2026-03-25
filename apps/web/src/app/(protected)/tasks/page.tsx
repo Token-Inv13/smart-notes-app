@@ -1486,7 +1486,6 @@ export default function TasksPage() {
       <header className="flex flex-col gap-2 mb-4">
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-xl font-semibold">Agenda</h1>
-          <div id="sn-create-slot" data-task-view-mode={viewMode} />
         </div>
 
         <div className="w-full" {...archiveTabsSwipeHandlers}>
@@ -1498,6 +1497,7 @@ export default function TasksPage() {
             searchValue={searchInput}
             onSearchChange={setSearchInput}
             onFilterToggle={() => setFiltersOpen(true)}
+            trailingSlot={<div id="sn-create-slot" data-task-view-mode={viewMode} />}
           />
         </div>
 

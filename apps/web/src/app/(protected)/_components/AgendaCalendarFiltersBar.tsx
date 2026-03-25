@@ -29,12 +29,12 @@ export default function AgendaCalendarFiltersBar({
   const [secondaryFiltersOpen, setSecondaryFiltersOpen] = useState(activeFiltersCount > 0);
 
   return (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={() => setSecondaryFiltersOpen((prev) => !prev)}
-          className="h-8 px-3 rounded-md border border-border bg-background text-xs"
+          className="h-9 px-3 rounded-xl border border-input bg-background text-sm"
           aria-expanded={secondaryFiltersOpen}
           aria-label="Afficher les filtres agenda"
         >
@@ -44,7 +44,7 @@ export default function AgendaCalendarFiltersBar({
           <button
             type="button"
             onClick={onReset}
-            className="h-8 px-3 rounded-md border border-border bg-background text-xs"
+            className="h-9 px-3 rounded-xl border border-input bg-background text-sm"
           >
             Réinitialiser
           </button>
@@ -56,7 +56,7 @@ export default function AgendaCalendarFiltersBar({
           <select
             value={priorityFilter}
             onChange={(e) => onPriorityFilterChange(e.target.value as "" | Priority)}
-            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+            className="h-9 min-w-[11rem] rounded-xl border border-input bg-background px-3 text-sm"
             aria-label="Filtrer par priorité"
           >
             <option value="">Toutes priorités</option>
@@ -68,7 +68,7 @@ export default function AgendaCalendarFiltersBar({
           <select
             value={timeWindowFilter}
             onChange={(e) => onTimeWindowFilterChange(e.target.value as CalendarTimeWindowFilter)}
-            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+            className="h-9 min-w-[12rem] rounded-xl border border-input bg-background px-3 text-sm"
             aria-label="Filtrer par plage horaire"
           >
             <option value="">Toutes plages</option>

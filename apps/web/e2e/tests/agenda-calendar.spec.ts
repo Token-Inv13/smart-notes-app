@@ -256,6 +256,8 @@ test("agenda_calendar_hides_header_filter_but_keeps_search", async ({ page }) =>
   await expect(page.getByRole("button", { name: "Ouvrir la recherche" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Ouvrir les filtres" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /^Filtres(?: \(\d+\))?$/ }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Créer" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Aujourd’hui" })).toBeVisible();
 });
 
 test("agenda_microguide_hides_immediately_and_stays_hidden_after_revisit", async ({ page }) => {

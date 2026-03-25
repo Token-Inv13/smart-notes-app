@@ -22,7 +22,6 @@ import { useAgendaCalendarNavigation } from "./useAgendaCalendarNavigation";
 import { useAgendaMergedEvents } from "./useAgendaMergedEvents";
 import AgendaCalendarFiltersBar from "./AgendaCalendarFiltersBar";
 import AgendaCalendarDraftModal from "./AgendaCalendarDraftModal";
-import CreateButton from "./CreateButton";
 import { projectTasksToEvents } from "@/lib/agenda/taskEventProjector";
 import { getUserTimezone } from "@/lib/datetime";
 import type { TaskCalendarKind, TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq } from "@/types/firestore";
@@ -639,46 +638,48 @@ export default function AgendaCalendar({
 
   return (
     <section className="space-y-3 overflow-x-hidden">
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="inline-flex rounded-md border border-border bg-background overflow-hidden w-fit max-w-full">
-            <button type="button" className="px-3 py-1.5 text-sm hover:bg-accent/60 transition-colors" onClick={() => {
-              triggerViewTransition();
-              jump("prev");
-            }}>←</button>
-            <button type="button" className="px-3 py-1.5 text-sm border-l border-border hover:bg-accent/60 transition-colors" onClick={() => {
-              triggerViewTransition();
-              jump("today");
-            }}>Aujourd’hui</button>
-            <button type="button" className="px-3 py-1.5 text-sm border-l border-border hover:bg-accent/60 transition-colors" onClick={() => {
-              triggerViewTransition();
-              jump("next");
-            }}>→</button>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            <div className="inline-flex items-center rounded-md border border-border bg-background/90 shadow-sm overflow-hidden">
-              <CreateButton
-                renderCustomTrigger={({ onClick, ariaLabel, title }) => (
-                  <button
-                    type="button"
-                    onClick={onClick}
-                    aria-label={ariaLabel}
-                    title={title}
-                    className="h-9 w-10 text-lg font-semibold leading-none text-primary hover:bg-primary/10 transition-colors"
-                  >
-                    +
-                  </button>
-                )}
-              />
+      <div className="rounded-xl border border-border bg-card/60 p-2.5 sm:p-3">
+        <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="inline-flex rounded-xl border border-input bg-background overflow-hidden w-fit max-w-full">
+              <button
+                type="button"
+                className="px-3 py-2 text-sm hover:bg-accent/60 transition-colors"
+                onClick={() => {
+                  triggerViewTransition();
+                  jump("prev");
+                }}
+              >
+                ←
+              </button>
+              <button
+                type="button"
+                className="px-3 py-2 text-sm border-l border-input hover:bg-accent/60 transition-colors"
+                onClick={() => {
+                  triggerViewTransition();
+                  jump("today");
+                }}
+              >
+                Aujourd’hui
+              </button>
+              <button
+                type="button"
+                className="px-3 py-2 text-sm border-l border-input hover:bg-accent/60 transition-colors"
+                onClick={() => {
+                  triggerViewTransition();
+                  jump("next");
+                }}
+              >
+                →
+              </button>
             </div>
+
+            <div className="hidden min-w-0 text-sm font-semibold sm:block">{label}</div>
           </div>
-        </div>
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm font-semibold">{label}</div>
+          <div className="text-sm font-semibold sm:hidden">{label}</div>
 
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,11rem)_minmax(0,10rem)_minmax(0,7rem)]">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,11rem)_minmax(0,10rem)_minmax(0,7rem)_minmax(0,1fr)] md:items-end">
             <label className="space-y-1">
               <span className="text-[11px] text-muted-foreground">Période</span>
               <select
@@ -722,17 +723,19 @@ export default function AgendaCalendar({
                 ))}
               </select>
             </label>
+            <div className="space-y-1">
+              <span className="block text-[11px] text-muted-foreground md:invisible">Filtres</span>
+              <AgendaCalendarFiltersBar
+                priorityFilter={priorityFilter}
+                timeWindowFilter={timeWindowFilter}
+                onPriorityFilterChange={setPriorityFilter}
+                onTimeWindowFilterChange={setTimeWindowFilter}
+                onReset={clearFilters}
+              />
+            </div>
           </div>
         </div>
       </div>
-
-      <AgendaCalendarFiltersBar
-        priorityFilter={priorityFilter}
-        timeWindowFilter={timeWindowFilter}
-        onPriorityFilterChange={setPriorityFilter}
-        onTimeWindowFilterChange={setTimeWindowFilter}
-        onReset={clearFilters}
-      />
 
       {error && <div className="sn-alert sn-alert--error">{error}</div>}
 
