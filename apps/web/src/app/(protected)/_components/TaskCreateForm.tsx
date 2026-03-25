@@ -465,7 +465,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" aria-busy={creating}>
       <div className="grid grid-cols-1 lg:grid-cols-6 gap-3 items-end">
         <div className="space-y-1 lg:col-span-3">
           <label className="text-sm font-medium" htmlFor="task-new-title">
@@ -532,6 +532,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
             value={newStatus}
             onChange={(e) => setNewStatus(e.target.value as TaskStatus)}
             className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+            disabled={creating}
           >
             <option value="todo">À faire</option>
             <option value="doing">En cours</option>
@@ -557,6 +558,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
               }
             }}
             className={`w-full min-w-[16rem] px-3 py-2 border rounded-md bg-background text-foreground text-sm ${dateWarning ? "border-destructive" : "border-input"}`}
+            disabled={creating}
           />
           {dueDateFeedback ? (
             <div className={`text-xs ${dueDateFeedback.tone === "error" ? "text-destructive" : "text-muted-foreground"}`}>
@@ -585,6 +587,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
               }
             }}
             className={`w-full min-w-[11rem] px-3 py-2 border rounded-md bg-background text-foreground text-sm ${dateWarning ? "border-destructive" : "border-input"}`}
+            disabled={creating}
           />
           {startDateFeedback ? (
             <div className={`text-xs ${startDateFeedback.tone === "error" ? "text-destructive" : "text-muted-foreground"}`}>
@@ -606,6 +609,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
               else setNewPriority("");
             }}
             className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+            disabled={creating}
           >
             <option value="">{TASK_EMPTY_PRIORITY_LABEL}</option>
             {TASK_PRIORITY_OPTIONS.map((option) => (
@@ -633,6 +637,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
             value={newWorkspaceId}
             onChange={(e) => setNewWorkspaceId(e.target.value)}
             className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
+            disabled={creating}
           >
             <option value="">{TASK_EMPTY_WORKSPACE_LABEL}</option>
             {workspaces.map((ws) => (
@@ -659,7 +664,11 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
         </div>
       ) : null}
       {createFeedback && <div className="sn-alert sn-alert--success sn-animate-in" role="status" aria-live="polite">{createFeedback}</div>}
-      {createError && <div className="sn-alert sn-alert--error">{createError}</div>}
+      {createError && (
+        <div className="sn-alert sn-alert--error" role="status" aria-live="polite">
+          {createError}
+        </div>
+      )}
     </div>
   );
 }

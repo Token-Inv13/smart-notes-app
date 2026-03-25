@@ -98,6 +98,19 @@ async function mockGoogleCalendarDelete(page: Page, options?: { status?: number;
   });
 }
 
+async function delayCallable(page: Page, callableName: string, delayMs = 1200) {
+  await page.route(`**/${callableName}`, async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST") {
+      await route.fallback();
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    await route.continue();
+  });
+}
+
 async function createTaskViaPlus(page: Page, title: string) {
   await page.goto("/tasks?view=calendar");
   await page.getByRole("button", { name: "Créer" }).click();
@@ -853,6 +866,24 @@ test("agenda_task_create_form_without_complete_window_shows_google_skip_message_
   await expect(page.getByText(title).first()).toBeVisible({ timeout: 15000 });
 });
 
+test("agenda_create_modal_shows_pending_feedback_before_close", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+  await delayCallable(page, "createTaskWithPlanGuard");
+
+  const dialog = await openTaskCreateDialogFromPicker(page, "/tasks?view=calendar");
+  const title = uniqueAgendaTitle("pending");
+  await dialog.locator("#task-new-title").fill(title);
+  await dialog.getByRole("button", { name: "Créer dans l’agenda" }).click();
+
+  await expect(dialog).toHaveAttribute("aria-busy", "true");
+  await expect(dialog.getByRole("button", { name: "Création de l’agenda…" })).toBeDisabled();
+  await expect(dialog.getByText("Enregistrement de l’élément d’agenda…")).toBeVisible();
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toBeHidden({ timeout: 15000 });
+  await expect(page.getByText(title).first()).toBeVisible({ timeout: 15000 });
+});
+
 test("note_create_modal_creates_note_and_closes", async ({ page }) => {
   const users = getE2EUsers();
   await loginViaUi(page, users.owner, "/notes?create=1");
@@ -866,6 +897,27 @@ test("note_create_modal_creates_note_and_closes", async ({ page }) => {
   await dialog.getByRole("button", { name: "Créer la note" }).click();
 
   await expect(dialog).toBeHidden();
+  await expect(page.getByText(title).first()).toBeVisible({ timeout: 15000 });
+});
+
+test("note_create_modal_shows_pending_feedback_before_close", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/notes?create=1");
+  await delayCallable(page, "createNoteWithPlanGuard");
+
+  await page.goto("/notes?create=1");
+  const dialog = page.getByRole("dialog", { name: "Nouvelle note" });
+  await expect(dialog).toBeVisible();
+
+  const title = `E2E Note Pending ${Date.now()}`;
+  await dialog.locator("#note-title").fill(title);
+  await dialog.getByRole("button", { name: "Créer la note" }).click();
+
+  await expect(dialog.locator("[aria-busy='true']")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Création de la note…" })).toBeDisabled();
+  await expect(dialog.getByText("Enregistrement de la note…")).toBeVisible();
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toBeHidden({ timeout: 15000 });
   await expect(page.getByText(title).first()).toBeVisible({ timeout: 15000 });
 });
 
