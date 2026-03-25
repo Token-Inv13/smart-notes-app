@@ -181,6 +181,12 @@ async function enterTaskDetailEditMode(dialog: ReturnType<Page["getByRole"]>) {
   await dialog.getByRole("menuitem", { name: "Modifier" }).click();
 }
 
+async function addTaskReminderFromDetail(dialog: ReturnType<Page["getByRole"]>, reminderAt: string) {
+  await dialog.getByLabel("Date et heure du rappel").fill(reminderAt);
+  await dialog.getByRole("button", { name: "Ajouter" }).click();
+  await expect(dialog.getByText("Statut: en attente").first()).toBeVisible({ timeout: 15000 });
+}
+
 async function clearAgendaMicroGuideFlag(page: Page) {
   await page.evaluate(() => {
     for (const key of Object.keys(window.localStorage)) {
@@ -704,6 +710,26 @@ test("agenda_detail_update_keeps_local_change_when_google_patch_fails", async ({
   await expect(page.getByRole("dialog", { name: "Détail de l’élément d’agenda" })).toBeVisible();
   await page.getByRole("button", { name: "Fermer" }).click();
   await expect(page.getByText(`${title} kept`).first()).toBeVisible({ timeout: 15000 });
+});
+
+test("agenda_detail_update_returns_to_view_without_waiting_for_reminder_resync", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  const title = uniqueAgendaTitle("detailReminderResync");
+  await createTaskFromCalendar(page, title);
+  await convertCalendarTaskToTimed(page, title, "08:00", "09:00");
+
+  const detailDialog = await openTaskDetailFromList(page, title);
+  await addTaskReminderFromDetail(detailDialog, "2026-03-24T08:30");
+
+  await enterTaskDetailEditMode(detailDialog);
+  const editDialog = page.getByRole("dialog", { name: "Modifier l’élément d’agenda" });
+  await editDialog.locator("#task-modal-title").fill(`${title} fast`);
+  await editDialog.getByRole("button", { name: "Enregistrer" }).click();
+
+  await expect(page.getByRole("dialog", { name: "Détail de l’élément d’agenda" })).toBeVisible();
+  await expect(page.getByText(`${title} fast`).first()).toBeVisible({ timeout: 15000 });
 });
 
 test("agenda_task_create_form_attempts_google_create_and_persists_link", async ({ page }) => {

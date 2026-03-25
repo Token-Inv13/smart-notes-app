@@ -216,7 +216,16 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
   const [, setIsDirty] = useState(false);
   const isDirtyRef = useRef(false);
   const lastSavedSnapshotRef = useRef<string>("");
+  const isMountedRef = useRef(true);
+  const reminderSyncTokenRef = useRef(0);
   const isTimedTask = task?.allDay !== true;
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!syncFeedback) return;
@@ -309,6 +318,86 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       setTaskReminders([]);
     } finally {
       setRemindersLoading(false);
+    }
+  };
+
+  const syncTaskRemindersAfterSave = async (input: {
+    taskId: string;
+    userId: string;
+    dueTimestamp: ReturnType<typeof parseLocalDateTimeToTimestamp>;
+    dueDateRaw: string | undefined;
+    remindersAllowedForTask: boolean;
+  }) => {
+    const { taskId, userId, dueTimestamp, dueDateRaw, remindersAllowedForTask } = input;
+    const syncToken = ++reminderSyncTokenRef.current;
+
+    try {
+      const remindersRef = collection(db, "taskReminders");
+      const remindersSnap = await getDocs(
+        query(
+          remindersRef,
+          where("userId", "==", userId),
+          where("taskId", "==", taskId),
+        ),
+      );
+
+      const existingDocs = remindersSnap.docs;
+
+      if (!remindersAllowedForTask) {
+        if (existingDocs.length > 0) {
+          const batch = writeBatch(db);
+          existingDocs.forEach((reminderDoc) => {
+            batch.delete(reminderDoc.ref);
+          });
+          await batch.commit();
+          if (isMountedRef.current && reminderSyncTokenRef.current === syncToken) {
+            setReminderFeedback("Rappels supprimés: cette tâche ne prend pas en charge les rappels.");
+            setReminderDraft("");
+          }
+        }
+      } else if (dueDateRaw) {
+        const reminderDate = new Date(dueDateRaw);
+        if (!Number.isNaN(reminderDate.getTime())) {
+          const primary = existingDocs.find((d) => {
+            const data = d.data() as TaskReminderDoc;
+            return data.dueDate === data.reminderTime;
+          }) ?? existingDocs[0] ?? null;
+          if (primary) {
+            await updateDoc(primary.ref, {
+              dueDate: dueTimestamp ? dueTimestamp.toDate().toISOString() : "",
+              reminderTime: reminderDate.toISOString(),
+              sent: false,
+            });
+          } else {
+            await addDoc(remindersRef, {
+              userId,
+              taskId,
+              dueDate: dueTimestamp ? dueTimestamp.toDate().toISOString() : "",
+              reminderTime: reminderDate.toISOString(),
+              sent: false,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("task.modal.reminder_sync_failed", {
+        taskId,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return;
+    }
+
+    if (!isMountedRef.current || reminderSyncTokenRef.current !== syncToken) return;
+
+    try {
+      await loadTaskReminders({ keepDraft: true });
+    } catch (e) {
+      console.warn("task.modal.reminder_reload_failed", {
+        taskId,
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   };
 
@@ -932,67 +1021,6 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
         setSyncFeedback(GOOGLE_SYNC_INCOMPLETE_WINDOW_MESSAGE);
       }
 
-      if (isPro) {
-        try {
-          const remindersRef = collection(db, "taskReminders");
-          const remindersSnap = await getDocs(
-            query(
-              remindersRef,
-              where("userId", "==", user.uid),
-              where("taskId", "==", task.id),
-            ),
-          );
-
-          const existingDocs = remindersSnap.docs;
-
-          const remindersAllowedForTask = !task.recurrence?.freq && !explicitAllDay;
-
-          if (!remindersAllowedForTask) {
-            if (existingDocs.length > 0) {
-              const batch = writeBatch(db);
-              existingDocs.forEach((reminderDoc) => {
-                batch.delete(reminderDoc.ref);
-              });
-              await batch.commit();
-              setReminderFeedback("Rappels supprimés: cette tâche ne prend pas en charge les rappels.");
-            }
-            setReminderDraft("");
-          } else if (validation.data.dueDate) {
-            const reminderDate = new Date(validation.data.dueDate);
-            if (!Number.isNaN(reminderDate.getTime())) {
-              const primary = existingDocs.find((d) => {
-                const data = d.data() as TaskReminderDoc;
-                return data.dueDate === data.reminderTime;
-              }) ?? existingDocs[0] ?? null;
-              if (primary) {
-                await updateDoc(primary.ref, {
-                  dueDate: dueTimestamp ? dueTimestamp.toDate().toISOString() : "",
-                  reminderTime: reminderDate.toISOString(),
-                  sent: false,
-                });
-              } else {
-                await addDoc(remindersRef, {
-                  userId: user.uid,
-                  taskId: task.id,
-                  dueDate: dueTimestamp ? dueTimestamp.toDate().toISOString() : "",
-                  reminderTime: reminderDate.toISOString(),
-                  sent: false,
-                  createdAt: serverTimestamp(),
-                  updatedAt: serverTimestamp(),
-                });
-              }
-            }
-          }
-        } catch (e) {
-          console.error("Error syncing task reminder (modal)", e);
-          setEditError(toUserErrorMessage(e, "Erreur lors de la resynchronisation du rappel."));
-        }
-      }
-
-      if (isPro) {
-        await loadTaskReminders({ keepDraft: true });
-      }
-
       setTask((prev) =>
         prev
           ? {
@@ -1011,6 +1039,18 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       lastSavedSnapshotRef.current = nextSnapshot;
       setDirty(false);
       if (opts?.setView) setMode("view");
+
+      if (isPro) {
+        const remindersAllowedForTask = !task.recurrence?.freq && !explicitAllDay;
+        void syncTaskRemindersAfterSave({
+          taskId: task.id,
+          userId: user.uid,
+          dueTimestamp,
+          dueDateRaw: validation.data.dueDate,
+          remindersAllowedForTask,
+        });
+      }
+
       return true;
     } catch (e) {
       console.error("Error updating task (modal)", e);
