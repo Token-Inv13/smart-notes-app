@@ -79,6 +79,8 @@ type CalendarRecurrenceInput = {
 type TaskPriorityFilter = "all" | NonNullable<TaskDoc["priority"]>;
 type DueFilter = "all" | "today" | "overdue";
 type TaskSortBy = "dueDate" | "updatedAt" | "createdAt";
+const GOOGLE_SYNC_FAILED_MESSAGE =
+  "Élément enregistré dans TaskNote, mais non synchronisé avec Google Calendar.";
 
 function toTimestampOrNull(date: Date | null) {
   return date ? Timestamp.fromDate(date) : null;
@@ -332,6 +334,7 @@ export default function TasksPage() {
             status: response.status,
             taskId: createdResult.taskId,
           });
+          showActionFeedback(GOOGLE_SYNC_FAILED_MESSAGE);
           return;
         }
 
@@ -341,7 +344,10 @@ export default function TasksPage() {
             ? data.eventId.trim()
             : null;
 
-        if (!googleEventId) return;
+        if (!googleEventId) {
+          showActionFeedback(GOOGLE_SYNC_FAILED_MESSAGE);
+          return;
+        }
 
         try {
           await updateDoc(doc(db, "tasks", createdResult.taskId), {
@@ -369,6 +375,7 @@ export default function TasksPage() {
         console.warn("agenda.google.create_failed", {
           taskId: createdResult.taskId,
         });
+        showActionFeedback(GOOGLE_SYNC_FAILED_MESSAGE);
       });
     } catch (error) {
       setEditError(getPlanLimitMessage(error) ?? toErrorMessage(error, "Impossible de créer cet élément d’agenda."));
@@ -693,6 +700,11 @@ export default function TasksPage() {
     if (e instanceof Error && e.message) return e.message;
     return fallback;
   };
+
+  const showActionFeedback = useCallback((message: string) => {
+    setActionFeedback(message);
+    window.setTimeout(() => setActionFeedback(null), 1800);
+  }, []);
 
   const toMillisSafe = (ts: unknown) => {
     const maybeTs = ts as { toMillis?: () => number };

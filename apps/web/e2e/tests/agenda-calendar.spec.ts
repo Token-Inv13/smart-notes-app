@@ -554,6 +554,7 @@ test("agenda_creation_keeps_tasknote_task_when_google_create_fails", async ({ pa
   await createTaskFromCalendar(page, title);
 
   await expect(page.getByText(title).first()).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText("Élément enregistré dans TaskNote, mais non synchronisé avec Google Calendar.")).toBeVisible();
 });
 
 test("agenda_update_attempts_google_patch_for_linked_task", async ({ page }) => {
@@ -755,7 +756,28 @@ test("agenda_task_create_form_keeps_local_task_when_google_create_fails", async 
     dueDate: "2026-03-25T00:00",
   });
 
-  await expect(page.getByText("Élément ajouté à l’agenda.")).toBeVisible();
+  await expect(page.getByText("Élément enregistré dans TaskNote, mais non synchronisé avec Google Calendar.")).toBeVisible();
+  await page.goto("/tasks?view=list");
+  await expect(page.getByText(title).first()).toBeVisible({ timeout: 15000 });
+});
+
+test("agenda_task_create_form_shows_explicit_message_when_google_create_returns_created_false", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks/new");
+
+  await mockGoogleCalendarCreate(page, {
+    status: 200,
+    body: { created: false, eventId: null },
+  });
+
+  const title = uniqueAgendaTitle("formGoogleCreatedFalse");
+  await createTaskViaStandaloneForm(page, {
+    title,
+    startDate: "2026-03-24",
+    dueDate: "2026-03-25T00:00",
+  });
+
+  await expect(page.getByText("Élément enregistré dans TaskNote, mais non synchronisé avec Google Calendar.")).toBeVisible();
   await page.goto("/tasks?view=list");
   await expect(page.getByText(title).first()).toBeVisible({ timeout: 15000 });
 });

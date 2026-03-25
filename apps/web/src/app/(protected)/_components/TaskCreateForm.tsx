@@ -60,6 +60,8 @@ const newTaskSchema = z.object({
 
 const GOOGLE_SYNC_INCOMPLETE_WINDOW_MESSAGE =
   "Élément enregistré dans TaskNote, mais non synchronisé avec Google Calendar faute de plage horaire complète.";
+const GOOGLE_SYNC_FAILED_MESSAGE =
+  "Élément enregistré dans TaskNote, mais non synchronisé avec Google Calendar.";
 
 function toLocalDateInputValue(date: Date) {
   const year = date.getFullYear();
@@ -386,6 +388,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
               status: response.status,
               taskId: taskResult.taskId,
             });
+            setCreateFeedback(GOOGLE_SYNC_FAILED_MESSAGE);
             return;
           }
 
@@ -395,7 +398,10 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
               ? data.eventId.trim()
               : null;
 
-          if (!googleEventId) return;
+          if (!googleEventId) {
+            setCreateFeedback(GOOGLE_SYNC_FAILED_MESSAGE);
+            return;
+          }
 
           try {
             await updateDoc(doc(db, "tasks", taskResult.taskId), {
@@ -413,6 +419,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
             taskId: taskResult.taskId,
             error: error instanceof Error ? error.message : String(error),
           });
+          setCreateFeedback(GOOGLE_SYNC_FAILED_MESSAGE);
         });
       } else if (googleCalendarConnected) {
         setCreateFeedback(GOOGLE_SYNC_INCOMPLETE_WINDOW_MESSAGE);
