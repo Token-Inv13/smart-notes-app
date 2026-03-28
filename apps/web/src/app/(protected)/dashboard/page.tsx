@@ -538,7 +538,7 @@ export default function DashboardPage() {
       <section className="sn-card p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold">À traiter maintenant</h2>
+            <h2 className="text-lg font-semibold">À traiter</h2>
             <p className="text-sm text-muted-foreground">En retard, aujourd’hui, puis dans les prochains jours.</p>
           </div>
           <Link href={tasksCalendarHref} className="sn-text-btn text-sm">
