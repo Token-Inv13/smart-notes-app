@@ -3,6 +3,7 @@ import * as admin from 'firebase-admin';
 import * as nodemailer from 'nodemailer';
 import { createHash } from 'crypto';
 import { parseAssistantVoiceIntent } from './assistant/voiceIntent';
+import { syncTaskToGoogleCalendar } from './googleCalendarSync';
 export * from './admin';
 
 if (!admin.apps.length) {
@@ -4429,6 +4430,7 @@ export const scheduleChecklistItemWithPlanGuard = functions.https.onCall(async (
   const db = admin.firestore();
   const normalizedWindow = normalizeChecklistSchedule(schedule);
   const taskRef = db.collection('tasks').doc();
+  let taskTitle = 'Élément de checklist';
 
   const agendaPlan = await db.runTransaction(async (tx) => {
     const todoRef = db.collection('todos').doc(todoId);
@@ -4450,9 +4452,10 @@ export const scheduleChecklistItemWithPlanGuard = functions.https.onCall(async (
     await assertCanCreateFreeTask(tx, db, userId);
 
     const item = items[itemIndex] as any;
+    taskTitle = typeof item?.text === 'string' && item.text.trim() ? item.text.trim() : 'Élément de checklist';
     tx.create(taskRef, buildTaskWritePayload({
       userId,
-      title: typeof item?.text === 'string' && item.text.trim() ? item.text.trim() : 'Élément de checklist',
+      title: taskTitle,
       description: `Checklist: ${typeof todoData?.title === 'string' ? todoData.title : 'Checklist'}`,
       status: item?.done === true ? 'done' : 'todo',
       workspaceId: typeof todoData?.workspaceId === 'string' ? todoData.workspaceId : null,
@@ -4493,6 +4496,32 @@ export const scheduleChecklistItemWithPlanGuard = functions.https.onCall(async (
       dueDateMs: normalizedWindow.dueDate.toMillis(),
     };
   });
+
+  const googleSync = await syncTaskToGoogleCalendar({
+    userId,
+    title: taskTitle,
+    start: normalizedWindow.startDate.toDate(),
+    end: normalizedWindow.dueDate.toDate(),
+    allDay: normalizedWindow.allDay,
+    timeZone: 'Europe/Paris',
+    taskId: agendaPlan.taskId,
+    contextLabel: 'scheduleChecklistItemWithPlanGuard',
+  });
+
+  if (googleSync.created && googleSync.eventId) {
+    try {
+      await db.collection('tasks').doc(agendaPlan.taskId).update({
+        googleEventId: googleSync.eventId,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (error) {
+      console.warn('google.calendar.task_sync.link_write_failed', {
+        uid: userId,
+        taskId: agendaPlan.taskId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   return { agendaPlan };
 });
@@ -4535,11 +4564,17 @@ export const createTodoWithScheduledItemsPlanGuard = functions.https.onCall(asyn
   const scheduledItems = items.filter((item) => item.draftSchedule);
   const db = admin.firestore();
   const todoRef = db.collection('todos').doc();
-
-  await db.runTransaction(async (tx) => {
+  const transactionResult = await db.runTransaction(async (tx) => {
     await assertCanCreateMultipleFreeTasks(tx, db, userId, scheduledItems.length);
 
     const persistedItems = [] as any[];
+    const createdAgendaTasks: Array<{
+      taskId: string;
+      title: string;
+      allDay: boolean;
+      startDate: admin.firestore.Timestamp;
+      dueDate: admin.firestore.Timestamp;
+    }> = [];
     for (const item of items) {
       const draftSchedule = item.draftSchedule as ChecklistScheduleInput | null;
       if (!draftSchedule) {
@@ -4555,9 +4590,10 @@ export const createTodoWithScheduledItemsPlanGuard = functions.https.onCall(asyn
 
       const normalizedWindow = normalizeChecklistSchedule(draftSchedule);
       const taskRef = db.collection('tasks').doc();
+      const taskTitle = item.text || 'Élément de checklist';
       tx.create(taskRef, buildTaskWritePayload({
         userId,
-        title: item.text,
+        title: taskTitle,
         description: `Checklist: ${title}`,
         status: item.done ? 'done' : 'todo',
         workspaceId,
@@ -4586,6 +4622,14 @@ export const createTodoWithScheduledItemsPlanGuard = functions.https.onCall(asyn
           dueDate: normalizedWindow.dueDate,
         },
       });
+
+      createdAgendaTasks.push({
+        taskId: taskRef.id,
+        title: taskTitle,
+        allDay: normalizedWindow.allDay,
+        startDate: normalizedWindow.startDate,
+        dueDate: normalizedWindow.dueDate,
+      });
     }
 
     tx.create(todoRef, {
@@ -4600,9 +4644,46 @@ export const createTodoWithScheduledItemsPlanGuard = functions.https.onCall(asyn
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+
+    return {
+      todoId: todoRef.id,
+      createdAgendaTasks,
+    };
   });
 
-  return { todoId: todoRef.id };
+  await Promise.all(
+    transactionResult.createdAgendaTasks.map(async (taskInfo) => {
+      const googleSync = await syncTaskToGoogleCalendar({
+        userId,
+        title: taskInfo.title,
+        start: taskInfo.startDate.toDate(),
+        end: taskInfo.dueDate.toDate(),
+        allDay: taskInfo.allDay,
+        timeZone: 'Europe/Paris',
+        taskId: taskInfo.taskId,
+        contextLabel: 'createTodoWithScheduledItemsPlanGuard',
+      });
+
+      if (!googleSync.created || !googleSync.eventId) {
+        return;
+      }
+
+      try {
+        await db.collection('tasks').doc(taskInfo.taskId).update({
+          googleEventId: googleSync.eventId,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } catch (error) {
+        console.warn('google.calendar.task_sync.link_write_failed', {
+          uid: userId,
+          taskId: taskInfo.taskId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }),
+  );
+
+  return { todoId: transactionResult.todoId };
 });
 
 export const assistantApplySuggestion = functions.https.onCall(async (data, context) => {
