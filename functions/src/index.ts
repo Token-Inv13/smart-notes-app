@@ -1328,7 +1328,7 @@ async function callOpenAIWhisperTranscription(params: {
   const projectHeader = getOpenAIProjectHeader();
 
   const form = new FormData();
-  const blob = new Blob([params.buffer], { type: params.contentType });
+  const blob = new Blob([new Uint8Array(params.buffer)], { type: params.contentType });
   form.append('file', blob, params.filename);
   form.append('model', 'whisper-1');
   if (params.language) form.append('language', params.language);
