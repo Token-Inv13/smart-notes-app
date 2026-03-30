@@ -852,7 +852,6 @@ export default function AgendaCalendar({
                   view: arg.view,
                 } as DateSelectArg)
               }
-              eventClick={openDraftFromEvent}
               eventDrop={handleMoveOrResize}
               eventResize={handleMoveOrResize}
               timeZone={userTimezone}
