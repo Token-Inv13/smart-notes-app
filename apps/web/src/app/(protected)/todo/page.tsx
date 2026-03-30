@@ -251,7 +251,7 @@ export default function TodoPage() {
 
   return (
     <DndContext sensors={dndSensors} onDragStart={handleDragStart} onDragCancel={handleDragCancel} onDragEnd={handleDragEnd}>
-      <div className="space-y-4" {...workspaceTabsSwipeHandlers}>
+      <div className="space-y-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] md:pb-4" {...workspaceTabsSwipeHandlers}>
       {workspaceId && tabs}
       <header className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Checklist</h1>
