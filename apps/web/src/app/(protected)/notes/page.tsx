@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
 import {
@@ -84,7 +84,9 @@ export default function NotesPage() {
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [activeDragItem, setActiveDragItem] = useState<FolderDragData | null>(null);
   const [optimisticWorkspaceIdByNoteId, setOptimisticWorkspaceIdByNoteId] = useState<Record<string, string | null>>({});
+  const [optimisticFavoriteByNoteId, setOptimisticFavoriteByNoteId] = useState<Record<string, boolean | null>>({});
   const [optimisticParentIdByWorkspaceId, setOptimisticParentIdByWorkspaceId] = useState<Record<string, string | null>>({});
+  const favoriteFeedbackTimerRef = useRef<number | null>(null);
 
   const dndSensors = useSensors(
     useSensor(PointerSensor, {
@@ -122,6 +124,33 @@ export default function NotesPage() {
     () => applyWorkspaceAssignmentOverrides(notes, optimisticWorkspaceIdByNoteId),
     [notes, optimisticWorkspaceIdByNoteId],
   );
+  const effectiveNotesWithFavoriteOverrides = useMemo(
+    () =>
+      effectiveNotes.map((note) => {
+        if (!note.id || !Object.prototype.hasOwnProperty.call(optimisticFavoriteByNoteId, note.id)) return note;
+        return {
+          ...note,
+          favorite: optimisticFavoriteByNoteId[note.id],
+        };
+      }),
+    [effectiveNotes, optimisticFavoriteByNoteId],
+  );
+
+  useEffect(() => {
+    setOptimisticFavoriteByNoteId((prev) => {
+      const entries = Object.entries(prev);
+      if (entries.length === 0) return prev;
+
+      const nextEntries = entries.filter(([noteId, optimisticFavorite]) => {
+        const current = notes.find((note) => note.id === noteId);
+        if (!current) return false;
+        return (current.favorite === true) !== optimisticFavorite;
+      });
+
+      if (nextEntries.length === entries.length) return prev;
+      return Object.fromEntries(nextEntries);
+    });
+  }, [notes]);
 
   const workspaceNameById = useMemo(() => {
     const m = new Map<string, string>();
@@ -206,7 +235,7 @@ export default function NotesPage() {
   );
 
   const sortedNotes = useMemo(() => {
-    const sorted = effectiveNotes
+    const sorted = effectiveNotesWithFavoriteOverrides
       .filter((note) => {
         if (!selectedWorkspaceIds) return true;
         return selectedWorkspaceIds.has(note.workspaceId ?? "");
@@ -223,7 +252,7 @@ export default function NotesPage() {
       return bUpdated - aUpdated;
     });
     return sorted;
-  }, [effectiveNotes, selectedWorkspaceIds, sortBy]);
+  }, [effectiveNotesWithFavoriteOverrides, selectedWorkspaceIds, sortBy]);
 
   useEffect(() => {
     try {
@@ -256,7 +285,7 @@ export default function NotesPage() {
         });
     }
 
-    return effectiveNotes
+    return effectiveNotesWithFavoriteOverrides
       .filter((n) => {
         if (n.archived !== true) return false;
         if (!selectedWorkspaceIds) return true;
@@ -272,7 +301,7 @@ export default function NotesPage() {
         const bUpdated = toMillisSafe(b.updatedAt);
         return bUpdated - aUpdated;
       });
-  }, [effectiveNotes, selectedWorkspaceIds, sortBy]);
+  }, [effectiveNotesWithFavoriteOverrides, selectedWorkspaceIds, sortBy]);
 
   const visibleNotes = useMemo(() => {
     const base = archiveView === "archived" ? archivedNotesSorted : sortedNotes.filter((n) => n.archived !== true);
@@ -397,10 +426,28 @@ export default function NotesPage() {
       return;
     }
 
+    const nextFavorite = !(note.favorite === true);
+    setEditError(null);
+    setOptimisticFavoriteByNoteId((prev) => ({ ...prev, [note.id!]: nextFavorite }));
+    setActionFeedback(nextFavorite ? "Note ajoutée aux favoris." : "Favori retiré.");
+    if (favoriteFeedbackTimerRef.current) {
+      window.clearTimeout(favoriteFeedbackTimerRef.current);
+    }
+    favoriteFeedbackTimerRef.current = window.setTimeout(() => {
+      setActionFeedback(null);
+      favoriteFeedbackTimerRef.current = null;
+    }, 1800);
+
     try {
-      await setNoteFavoriteWithPlanGuard(note.id, !note.favorite);
+      await setNoteFavoriteWithPlanGuard(note.id, nextFavorite);
     } catch (e) {
       console.error("Error toggling favorite", e);
+      setOptimisticFavoriteByNoteId((prev) => {
+        if (!Object.prototype.hasOwnProperty.call(prev, note.id!)) return prev;
+        const next = { ...prev };
+        delete next[note.id!];
+        return next;
+      });
       setEditError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "Erreur lors de la mise à jour des favoris."));
     }
   };

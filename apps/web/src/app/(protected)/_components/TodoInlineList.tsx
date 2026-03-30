@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
@@ -38,6 +38,8 @@ export default function TodoInlineList({
   const [editError, setEditError] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [todoView, setTodoView] = useState<"active" | "completed">("active");
+  const [optimisticFavoriteByTodoId, setOptimisticFavoriteByTodoId] = useState<Record<string, boolean | null>>({});
+  const favoriteFeedbackTimerRef = useRef<number | null>(null);
 
   const todoTabsSwipeHandlers = useSwipeNavigation<HTMLDivElement>({
     onSwipeLeft: () => setTodoView("completed"),
@@ -117,6 +119,32 @@ export default function TodoInlineList({
     () => applyWorkspaceAssignmentOverrides(todos, optimisticWorkspaceIdByTodoId),
     [optimisticWorkspaceIdByTodoId, todos],
   );
+  const effectiveTodosWithFavoriteOverrides = useMemo(
+    () =>
+      effectiveTodos.map((todo) => {
+        if (!todo.id || !Object.prototype.hasOwnProperty.call(optimisticFavoriteByTodoId, todo.id)) return todo;
+        return {
+          ...todo,
+          favorite: optimisticFavoriteByTodoId[todo.id],
+        };
+      }),
+    [effectiveTodos, optimisticFavoriteByTodoId],
+  );
+  useEffect(() => {
+    setOptimisticFavoriteByTodoId((prev) => {
+      const entries = Object.entries(prev);
+      if (entries.length === 0) return prev;
+
+      const nextEntries = entries.filter(([todoId, optimisticFavorite]) => {
+        const current = todos.find((todo) => todo.id === todoId);
+        if (!current) return false;
+        return (current.favorite === true) !== optimisticFavorite;
+      });
+
+      if (nextEntries.length === entries.length) return prev;
+      return Object.fromEntries(nextEntries);
+    });
+  }, [todos]);
   const selectedWorkspaceIds = useMemo(
     () =>
       workspaceFilter === "all"
@@ -149,8 +177,8 @@ export default function TodoInlineList({
     return "bg-emerald-500/80";
   };
 
-  const activeTodos = useMemo(() => effectiveTodos.filter((t) => t.completed !== true), [effectiveTodos]);
-  const completedTodos = useMemo(() => effectiveTodos.filter((t) => t.completed === true), [effectiveTodos]);
+  const activeTodos = useMemo(() => effectiveTodosWithFavoriteOverrides.filter((t) => t.completed !== true), [effectiveTodosWithFavoriteOverrides]);
+  const completedTodos = useMemo(() => effectiveTodosWithFavoriteOverrides.filter((t) => t.completed === true), [effectiveTodosWithFavoriteOverrides]);
 
   const filteredTodos = useMemo(() => {
     const now = new Date();
@@ -268,6 +296,16 @@ export default function TodoInlineList({
     if (!user || user.uid !== todo.userId) return;
 
     setEditError(null);
+    const nextFavorite = !(todo.favorite === true);
+    setOptimisticFavoriteByTodoId((prev) => ({ ...prev, [todo.id!]: nextFavorite }));
+    setActionFeedback(nextFavorite ? "Checklist ajoutée aux favoris." : "Favori retiré.");
+    if (favoriteFeedbackTimerRef.current) {
+      window.clearTimeout(favoriteFeedbackTimerRef.current);
+    }
+    favoriteFeedbackTimerRef.current = window.setTimeout(() => {
+      setActionFeedback(null);
+      favoriteFeedbackTimerRef.current = null;
+    }, 1800);
 
     try {
       await updateDoc(doc(db, "todos", todo.id), {
@@ -275,11 +313,17 @@ export default function TodoInlineList({
         workspaceId: typeof todo.workspaceId === "string" ? todo.workspaceId : null,
         title: todo.title,
         completed: todo.completed === true,
-        favorite: !(todo.favorite === true),
+        favorite: nextFavorite,
         updatedAt: serverTimestamp(),
       });
     } catch (e) {
       console.error("Error toggling todo favorite", e);
+      setOptimisticFavoriteByTodoId((prev) => {
+        if (!Object.prototype.hasOwnProperty.call(prev, todo.id!)) return prev;
+        const next = { ...prev };
+        delete next[todo.id!];
+        return next;
+      });
       setEditError(toUserErrorMessage(e, "Erreur lors de la mise à jour."));
     }
   };
