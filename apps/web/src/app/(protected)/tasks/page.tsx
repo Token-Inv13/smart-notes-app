@@ -1861,6 +1861,7 @@ export default function TasksPage() {
       {!loading && !error && archiveView === "active" && viewMode === "calendar" && (
         <AgendaCalendar
           tasks={mainTasks}
+          todos={todosForCounter}
           workspaces={effectiveWorkspaces}
           initialAnchorDate={initialCalendarAnchorDate}
           initialPreferences={calendarInitialPreferences}

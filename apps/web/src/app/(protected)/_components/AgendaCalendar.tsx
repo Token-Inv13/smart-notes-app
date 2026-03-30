@@ -23,8 +23,9 @@ import { useAgendaMergedEvents } from "./useAgendaMergedEvents";
 import AgendaCalendarFiltersBar from "./AgendaCalendarFiltersBar";
 import AgendaCalendarDraftModal from "./AgendaCalendarDraftModal";
 import { projectTasksToEvents } from "@/lib/agenda/taskEventProjector";
+import { projectTodosToAgendaEvents } from "@/lib/agenda/todoEventProjector";
 import { getUserTimezone } from "@/lib/datetime";
-import type { TaskCalendarKind, TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq } from "@/types/firestore";
+import type { TaskCalendarKind, TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq, TodoDoc } from "@/types/firestore";
 
 type CalendarViewMode = "dayGridMonth" | "timeGridWeek" | "timeGridDay";
 type AgendaDisplayMode = "calendar";
@@ -68,6 +69,7 @@ type CalendarRecurrenceInput = {
 
 interface AgendaCalendarProps {
   tasks: TaskDoc[];
+  todos: TodoDoc[];
   workspaces: WorkspaceDoc[];
   onCreateEvent: (input: {
     title: string;
@@ -212,6 +214,7 @@ function formatCalendarLabel(windowRange: { start: Date; end: Date }, mode: Cale
 
 export default function AgendaCalendar({
   tasks,
+  todos,
   workspaces,
   onCreateEvent,
   onUpdateEvent,
@@ -416,7 +419,30 @@ export default function AgendaCalendar({
       tasks,
       window: { start: rangeStart, end: rangeEnd },
     });
-    const withDates = [...projected.events];
+    const projectedTodos = projectTodosToAgendaEvents({
+      todos,
+      window: { start: rangeStart, end: rangeEnd },
+    });
+    const todoProjected = projectedTodos.map((item) => ({
+      eventId: item.eventId,
+      taskId: item.eventId,
+      task: {
+        title: item.todo.title,
+        workspaceId: item.todo.workspaceId ?? null,
+        priority: item.todo.priority ?? null,
+        calendarKind: "task",
+        sourceType: null,
+        sourceTodoId: item.todoId,
+        sourceTodoItemId: null,
+      } as TaskDoc,
+      start: item.start,
+      end: item.end,
+      allDay: item.allDay,
+      recurrence: null,
+      instanceDate: undefined,
+      todoEvent: true as const,
+    }));
+    const withDates = [...projected.events, ...todoProjected];
 
     withDates.sort((a, b) => a.start.getTime() - b.start.getTime());
 
@@ -439,6 +465,7 @@ export default function AgendaCalendar({
       const itemPriority = (task.priority ?? "") as Priority | "";
       const itemCalendarKind = (task.calendarKind ?? "task") as TaskCalendarKind;
       const itemHasConflict = conflictIds.has(eventId);
+      const isTodoEvent = "todoEvent" in item && item.todoEvent === true;
       const startHour = start.getHours();
 
       const matchesTimeWindow = (() => {
@@ -463,6 +490,7 @@ export default function AgendaCalendar({
         start: fcStart,
         end: fcEnd,
         allDay,
+        editable: isTodoEvent ? false : undefined,
         backgroundColor: itemCalendarKind === "birthday" ? "#db2777" : priorityColor(itemPriority),
         borderColor: itemCalendarKind === "birthday" ? "#db2777" : priorityColor(itemPriority),
         classNames: [
@@ -470,6 +498,7 @@ export default function AgendaCalendar({
           "agenda-event-local",
           `agenda-priority-${itemPriority || "none"}`,
           `agenda-kind-${itemCalendarKind}`,
+          ...(isTodoEvent ? ["agenda-kind-todo"] : []),
         ],
         extendedProps: {
           taskId,
@@ -480,6 +509,7 @@ export default function AgendaCalendar({
           sourceType: task.sourceType ?? null,
           sourceTodoId: task.sourceTodoId ?? null,
           sourceTodoItemId: task.sourceTodoItemId ?? null,
+          todoEvent: isTodoEvent,
           recurrence,
           instanceDate,
           conflict: itemHasConflict,
@@ -505,6 +535,7 @@ export default function AgendaCalendar({
     tasks,
     timeWindowFilter,
     workspaceNameById,
+    todos,
   ]);
 
   const { handleMoveOrResize } = useAgendaEventMutation({
@@ -531,6 +562,14 @@ export default function AgendaCalendar({
     onSkipOccurrence,
     setError,
   });
+
+  const handleEventClick = useCallback(
+    (arg: import("@fullcalendar/core").EventClickArg) => {
+      if (arg.event.extendedProps.todoEvent === true) return;
+      openDraftFromEvent(arg);
+    },
+    [openDraftFromEvent],
+  );
 
   useEffect(() => {
     if (!createRequest) {
@@ -817,6 +856,7 @@ export default function AgendaCalendar({
               eventDrop={handleMoveOrResize}
               eventResize={handleMoveOrResize}
               timeZone={userTimezone}
+              eventClick={handleEventClick}
             />
             <p className="mt-2 px-1 text-[11px] text-muted-foreground md:hidden">
               Astuce: glissez gauche/droite pour changer de période.

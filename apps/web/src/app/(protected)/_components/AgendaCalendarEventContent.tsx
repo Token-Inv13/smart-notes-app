@@ -12,13 +12,14 @@ export function renderAgendaCalendarEventContent(arg: EventContentArg, isCompact
 
   const conflictLabel =
     conflictSource === "google"
-      ? "Local ↔ Google"
+      ? "Local \u2194 Google"
       : conflictSource === "mix"
         ? "Mixte"
         : "Local";
 
-  const sourceLabel = source === "google-calendar" ? "Google" : source === "holiday" ? "Férié" : "Local";
+  const sourceLabel = source === "google-calendar" ? "Google" : source === "holiday" ? "F\u00e9ri\u00e9" : "Local";
   const fromChecklist = arg.event.extendedProps.sourceType === "checklist_item";
+  const fromTodoChecklist = arg.event.extendedProps.todoEvent === true;
   const isBirthday = calendarKind === "birthday";
   const isHoliday = source === "holiday";
   const isRecurring = Boolean(arg.event.extendedProps.recurrence?.freq);
@@ -35,8 +36,9 @@ export function renderAgendaCalendarEventContent(arg: EventContentArg, isCompact
       <div className="px-1 py-0.5 text-[11px] leading-tight text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]">
         <div className="flex items-center gap-1.5">
           {isHoliday && <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-slate-200" aria-hidden />}
-          {isBirthday && <span className="inline-block shrink-0 text-[10px]" aria-hidden>🎂</span>}
+          {isBirthday && <span className="inline-block shrink-0 text-[10px]" aria-hidden>{"\u{1F382}"}</span>}
           {fromChecklist && <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-200" aria-hidden />}
+          {fromTodoChecklist && <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-200" aria-hidden />}
           {isRecurring && <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-sky-200" aria-hidden />}
           <span className="truncate font-semibold">{arg.event.title}</span>
           {hasConflict && <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-red-200" aria-hidden />}
@@ -51,13 +53,14 @@ export function renderAgendaCalendarEventContent(arg: EventContentArg, isCompact
       {compactPresentation ? (
         <div className="mt-0.5 inline-flex items-center gap-1 text-[9px] text-white/90">
           <span className="rounded-full bg-black/25 px-1.5 py-0.5 font-semibold uppercase tracking-wide">
-            {sourceLabel === "Google" ? "G" : sourceLabel === "Férié" ? "F" : "L"}
+            {sourceLabel === "Google" ? "G" : sourceLabel === "F\u00e9ri\u00e9" ? "F" : "L"}
           </span>
-          {isHoliday && <span className="rounded-full bg-slate-500/85 px-1.5 py-0.5 font-semibold">Férié</span>}
-          {isBirthday && <span className="rounded-full bg-pink-500/85 px-1.5 py-0.5 font-semibold">🎂</span>}
+          {isHoliday && <span className="rounded-full bg-slate-500/85 px-1.5 py-0.5 font-semibold">F\u00e9ri\u00e9</span>}
+          {isBirthday && <span className="rounded-full bg-pink-500/85 px-1.5 py-0.5 font-semibold">{"\u{1F382}"}</span>}
           {isRecurring && <span className="rounded-full bg-sky-500/85 px-1.5 py-0.5 font-semibold">Rec</span>}
           {fromChecklist && <span className="rounded-full bg-emerald-500/80 px-1.5 py-0.5 font-semibold">Checklist</span>}
-          {hasConflict && <span className="rounded-full bg-red-500/85 px-1.5 py-0.5 font-semibold">C · P{Math.min(9, conflictScore)}</span>}
+          {fromTodoChecklist && <span className="rounded-full bg-cyan-500/80 px-1.5 py-0.5 font-semibold">Checklist</span>}
+          {hasConflict && <span className="rounded-full bg-red-500/85 px-1.5 py-0.5 font-semibold">C \u00b7 P{Math.min(9, conflictScore)}</span>}
         </div>
       ) : (
         <>
@@ -65,23 +68,26 @@ export function renderAgendaCalendarEventContent(arg: EventContentArg, isCompact
           <div className="mt-0.5 inline-flex flex-wrap items-center gap-1">
             <span className="rounded-full bg-black/25 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white/95">{sourceLabel}</span>
             {isHoliday && (
-              <span className="rounded-full bg-slate-500/85 px-1.5 py-0.5 text-[9px] font-semibold text-white">Jour férié</span>
+              <span className="rounded-full bg-slate-500/85 px-1.5 py-0.5 text-[9px] font-semibold text-white">Jour f\u00e9ri\u00e9</span>
             )}
             {isBirthday && (
-              <span className="rounded-full bg-pink-500/85 px-1.5 py-0.5 text-[9px] font-semibold text-white">🎂 Anniversaire</span>
+              <span className="rounded-full bg-pink-500/85 px-1.5 py-0.5 text-[9px] font-semibold text-white">{"\u{1F382}"} Anniversaire</span>
             )}
             {isRecurring && (
-              <span className="rounded-full bg-sky-500/85 px-1.5 py-0.5 text-[9px] font-semibold text-white">Récurrent</span>
+              <span className="rounded-full bg-sky-500/85 px-1.5 py-0.5 text-[9px] font-semibold text-white">R\u00e9current</span>
             )}
             {fromChecklist && (
               <span className="rounded-full bg-emerald-500/80 px-1.5 py-0.5 text-[9px] font-semibold text-white">Checklist</span>
+            )}
+            {fromTodoChecklist && (
+              <span className="rounded-full bg-cyan-500/80 px-1.5 py-0.5 text-[9px] font-semibold text-white">Checklist</span>
             )}
             {priority && (
               <span className="rounded-full bg-black/20 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white/95">{priority}</span>
             )}
             {hasConflict && (
               <span className="rounded-full bg-red-500/85 px-1.5 py-0.5 text-[9px] font-semibold text-white">
-                Conflit {conflictLabel} · P{Math.min(9, conflictScore)}
+                Conflit {conflictLabel} \u00b7 P{Math.min(9, conflictScore)}
               </span>
             )}
           </div>
