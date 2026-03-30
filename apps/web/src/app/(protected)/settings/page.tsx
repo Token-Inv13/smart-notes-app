@@ -977,7 +977,7 @@ export default function SettingsPage() {
               </div>
 
               <div className="space-y-1">
-                <div className="text-sm font-medium">JTBD principal</div>
+                <div className="text-sm font-medium">Objectif principal</div>
                 <select
                   value={assistantJtbdDraft}
                   onChange={(e) => {
@@ -987,7 +987,7 @@ export default function SettingsPage() {
                     }
                   }}
                   className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
-                  aria-label="JTBD principal"
+                  aria-label="Objectif principal"
                 >
                   <option value="daily_planning">Planifier ma journée</option>
                   <option value="dont_forget">Ne rien oublier / suivi</option>
