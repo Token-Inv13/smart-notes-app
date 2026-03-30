@@ -29,7 +29,7 @@ type AgendaCalendarDraftModalProps = {
   setEditScope: Dispatch<SetStateAction<"series" | "occurrence">>;
   workspaces: WorkspaceDoc[];
   onOpenTask: (taskId: string) => void;
-  onSkipOccurrence?: (taskId: string, occurrenceDate: string) => Promise<void>;
+  onDeleteTask: (taskId: string) => Promise<void>;
   skipOccurrence: () => Promise<void>;
   saveDraft: () => Promise<void>;
   saving: boolean;
@@ -42,12 +42,14 @@ export default function AgendaCalendarDraftModal({
   setEditScope,
   workspaces,
   onOpenTask,
-  onSkipOccurrence,
+  onDeleteTask,
   skipOccurrence,
   saveDraft,
   saving,
 }: AgendaCalendarDraftModalProps) {
   const [closing, setClosing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const hadDraftRef = useRef(false);
   const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
@@ -71,6 +73,8 @@ export default function AgendaCalendarDraftModal({
 
   useEffect(() => {
     if (!draft) return;
+    setDeleting(false);
+    setDeleteError(null);
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -84,6 +88,7 @@ export default function AgendaCalendarDraftModal({
 
   if (!draft) return null;
   const isBirthday = draft.calendarKind === "birthday";
+  const isOccurrenceDeletion = Boolean(draft.taskId && draft.instanceDate && draft.recurrenceFreq && editScope === "occurrence");
 
   const applyCalendarKind = (nextKind: TaskCalendarKind) => {
     setDraft((prev) => {
@@ -109,6 +114,31 @@ export default function AgendaCalendarDraftModal({
         calendarKind: "task",
       };
     });
+  };
+
+  const handleDelete = async () => {
+    if (!draft.taskId || saving || deleting) return;
+
+    const confirmMessage = isOccurrenceDeletion
+      ? "Supprimer cette occurrence ? Cette action est irréversible."
+      : "Supprimer cet élément ? Cette action est irréversible.";
+    if (!window.confirm(confirmMessage)) return;
+
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      if (isOccurrenceDeletion) {
+        await skipOccurrence();
+        return;
+      }
+
+      await onDeleteTask(draft.taskId);
+      requestClose();
+    } catch {
+      setDeleteError("Impossible de supprimer l’élément pour le moment.");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -161,86 +191,96 @@ export default function AgendaCalendarDraftModal({
           />
         </div>
 
-        <label className="text-xs flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={draft.allDay}
-            disabled={isBirthday}
-            onChange={(e) =>
-              setDraft((prev) => {
-                if (!prev) return prev;
-                const nextAllDay = e.target.checked;
-                const start = parseDateFromDraft(prev.startLocal, prev.allDay) ?? new Date();
-                const end =
-                  parseDateFromDraft(prev.endLocal, prev.allDay) ??
-                  new Date(start.getTime() + 60 * 60 * 1000);
-                const safeTimedEnd = end.getTime() > start.getTime() ? end : new Date(start.getTime() + 60 * 60 * 1000);
-                return {
-                  ...prev,
-                  allDay: nextAllDay,
-                  startLocal: nextAllDay ? toLocalDateInputValue(start) : toLocalInputValue(start),
-                  endLocal: nextAllDay ? toLocalDateInputValue(end) : toLocalInputValue(safeTimedEnd),
-                };
-              })
-            }
-          />
-          Toute la journée
-        </label>
+        <div className="space-y-2 rounded-xl border border-border/70 bg-background/60 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-medium">Date et heure</div>
+            <label className="text-xs flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={draft.allDay}
+                disabled={isBirthday}
+                onChange={(e) =>
+                  setDraft((prev) => {
+                    if (!prev) return prev;
+                    const nextAllDay = e.target.checked;
+                    const start = parseDateFromDraft(prev.startLocal, prev.allDay) ?? new Date();
+                    const end =
+                      parseDateFromDraft(prev.endLocal, prev.allDay) ?? new Date(start.getTime() + 60 * 60 * 1000);
+                    const safeTimedEnd = end.getTime() > start.getTime() ? end : new Date(start.getTime() + 60 * 60 * 1000);
+                    return {
+                      ...prev,
+                      allDay: nextAllDay,
+                      startLocal: nextAllDay ? toLocalDateInputValue(start) : toLocalInputValue(start),
+                      endLocal: nextAllDay ? toLocalDateInputValue(end) : toLocalInputValue(safeTimedEnd),
+                    };
+                  })
+                }
+              />
+              Toute la journée
+            </label>
+          </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <label className="space-y-1">
+              <span className="text-sm font-medium">{TASK_FIELD_START_LABEL}</span>
+              <input
+                type={draft.allDay ? "date" : "datetime-local"}
+                value={draft.startLocal}
+                onChange={(e) => setDraft((prev) => (prev ? { ...prev, startLocal: e.target.value } : prev))}
+                className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                aria-label={TASK_FIELD_START_LABEL}
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-sm font-medium">{TASK_FIELD_DUE_LABEL}</span>
+              <input
+                type={draft.allDay ? "date" : "datetime-local"}
+                value={draft.endLocal}
+                onChange={(e) => setDraft((prev) => (prev ? { ...prev, endLocal: e.target.value } : prev))}
+                className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                aria-label={TASK_FIELD_DUE_LABEL}
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <label className="space-y-1">
-            <span className="text-sm font-medium">{TASK_FIELD_START_LABEL}</span>
-            <input
-              type={draft.allDay ? "date" : "datetime-local"}
-              value={draft.startLocal}
-              onChange={(e) => setDraft((prev) => (prev ? { ...prev, startLocal: e.target.value } : prev))}
+            <span className="text-sm font-medium">Type</span>
+            <select
+              value={draft.calendarKind}
+              onChange={(e) => applyCalendarKind(e.target.value as TaskCalendarKind)}
               className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-              aria-label={TASK_FIELD_START_LABEL}
-            />
+              aria-label="Type d’événement"
+            >
+              <option value="task">Élément agenda</option>
+              <option value="birthday">Anniversaire</option>
+            </select>
           </label>
+
           <label className="space-y-1">
-            <span className="text-sm font-medium">{TASK_FIELD_DUE_LABEL}</span>
-            <input
-              type={draft.allDay ? "date" : "datetime-local"}
-              value={draft.endLocal}
-              onChange={(e) => setDraft((prev) => (prev ? { ...prev, endLocal: e.target.value } : prev))}
+            <span className="text-sm font-medium">Récurrence</span>
+            <select
+              value={draft.recurrenceFreq}
+              onChange={(e) =>
+                setDraft((prev) =>
+                  prev ? { ...prev, recurrenceFreq: e.target.value as "" | TaskRecurrenceFreq } : prev,
+                )
+              }
               className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-              aria-label={TASK_FIELD_DUE_LABEL}
-            />
+              aria-label="Récurrence"
+              disabled={isBirthday}
+            >
+              <option value="">Sans récurrence</option>
+              <option value="daily">Chaque jour</option>
+              <option value="weekly">Chaque semaine</option>
+              <option value="monthly">Chaque mois</option>
+              <option value="yearly">Chaque année</option>
+            </select>
           </label>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <select
-            value={draft.calendarKind}
-            onChange={(e) => applyCalendarKind(e.target.value as TaskCalendarKind)}
-            className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-            aria-label="Type d’événement"
-          >
-            <option value="task">Élément agenda</option>
-            <option value="birthday">Anniversaire</option>
-          </select>
-
-          <select
-            value={draft.recurrenceFreq}
-            onChange={(e) =>
-              setDraft((prev) =>
-                prev ? { ...prev, recurrenceFreq: e.target.value as "" | TaskRecurrenceFreq } : prev,
-              )
-            }
-            className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-            aria-label="Récurrence"
-            disabled={isBirthday}
-          >
-            <option value="">Sans récurrence</option>
-            <option value="daily">Chaque jour</option>
-            <option value="weekly">Chaque semaine</option>
-            <option value="monthly">Chaque mois</option>
-            <option value="yearly">Chaque année</option>
-          </select>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <label className="space-y-1">
             <span className="text-sm font-medium">{TASK_FIELD_WORKSPACE_LABEL}</span>
             <select
@@ -278,19 +318,26 @@ export default function AgendaCalendarDraftModal({
           </label>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <input
-            type="date"
-            value={draft.recurrenceUntil}
-            onChange={(e) =>
-              setDraft((prev) => (prev ? { ...prev, recurrenceUntil: e.target.value } : prev))
-            }
-            className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-            aria-label="Récurrence jusqu’au"
-            disabled={!draft.recurrenceFreq && !isBirthday}
-          />
-          <div className="hidden sm:block" aria-hidden />
-        </div>
+        {(draft.recurrenceFreq || isBirthday) && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <label className="space-y-1">
+              <span className="text-sm font-medium">Récurrence jusqu’au</span>
+              <input
+                type="date"
+                value={draft.recurrenceUntil}
+                onChange={(e) =>
+                  setDraft((prev) => (prev ? { ...prev, recurrenceUntil: e.target.value } : prev))
+                }
+                className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
+                aria-label="Récurrence jusqu’au"
+                disabled={!draft.recurrenceFreq && !isBirthday}
+              />
+            </label>
+            <div className="hidden sm:block" aria-hidden />
+          </div>
+        )}
+
+        {deleteError ? <div className="sn-alert sn-alert--error">{deleteError}</div> : null}
 
         <div className="flex items-center justify-between gap-3">
           {draft.taskId ? (
@@ -305,11 +352,6 @@ export default function AgendaCalendarDraftModal({
               >
                 Ouvrir le détail
               </button>
-              {draft.recurrenceFreq && draft.instanceDate && onSkipOccurrence && (
-                <button type="button" className="sn-text-btn" onClick={() => void skipOccurrence()}>
-                  Ignorer cette occurrence
-                </button>
-              )}
             </div>
           ) : (
             <span />
@@ -319,6 +361,16 @@ export default function AgendaCalendarDraftModal({
             <button type="button" className="sn-text-btn" onClick={requestClose}>
               Annuler
             </button>
+            {draft.taskId ? (
+              <button
+                type="button"
+                onClick={() => void handleDelete()}
+                disabled={saving || deleting}
+                className="inline-flex items-center justify-center h-10 px-4 rounded-md border border-destructive/30 bg-destructive/5 text-sm font-medium text-destructive disabled:opacity-50"
+              >
+                {deleting ? "Suppression…" : isOccurrenceDeletion ? "Supprimer cette occurrence" : "Supprimer"}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => void saveDraft()}

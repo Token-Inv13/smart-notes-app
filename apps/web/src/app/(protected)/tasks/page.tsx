@@ -13,7 +13,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
-import { arrayUnion, doc, Timestamp, updateDoc, serverTimestamp } from "firebase/firestore";
+import { arrayUnion, deleteDoc, doc, Timestamp, updateDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserNotes } from "@/hooks/useUserNotes";
@@ -542,6 +542,54 @@ export default function TasksPage() {
         return next;
       });
       throw e;
+    }
+  };
+
+  const handleCalendarDelete = async (taskId: string) => {
+    const user = auth.currentUser;
+    const current = effectiveAllTasks.find((t) => t.id === taskId);
+    if (!user || !current || current.userId !== user.uid) {
+      setEditError("Impossible de supprimer cet élément d’agenda.");
+      return;
+    }
+
+    setEditError(null);
+
+    try {
+      if (current.googleEventId) {
+        void fetch("/api/google/calendar/events", {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ googleEventId: current.googleEventId }),
+        }).then((response) => {
+          if (!response.ok) {
+            console.warn("agenda.google.delete_failed", {
+              status: response.status,
+              taskId,
+            });
+          }
+        }).catch(() => {
+          console.warn("agenda.google.delete_failed", {
+            taskId,
+          });
+        });
+      }
+
+      await deleteDoc(doc(db, "tasks", taskId));
+
+      setOptimisticAgendaTaskById((prev) => {
+        if (!prev[taskId]) return prev;
+        const next = { ...prev };
+        delete next[taskId];
+        return next;
+      });
+      setOptimisticCreatedAgendaTasks((prev) => prev.filter((task) => task.id !== taskId));
+      setActionFeedback("Élément d’agenda supprimé.");
+      window.setTimeout(() => setActionFeedback(null), 1800);
+    } catch (error) {
+      setEditError(toErrorMessage(error, "Erreur lors de la suppression de l’élément d’agenda."));
     }
   };
 
@@ -1869,6 +1917,7 @@ export default function TasksPage() {
           createRequest={agendaCreateRequest}
           onCreateRequestHandled={handleAgendaCreateRequestHandled}
           onCreateEvent={handleCalendarCreate}
+          onDeleteEvent={handleCalendarDelete}
           onUpdateEvent={handleCalendarUpdate}
           onSkipOccurrence={handleSkipOccurrence}
           onVisibleRangeChange={handleCalendarVisibleRangeChange}

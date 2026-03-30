@@ -10,6 +10,7 @@ import type {
   DatesSetArg,
   EventInput,
 } from "@fullcalendar/core";
+import { Plus } from "lucide-react";
 import {
   CALENDAR_PREFERENCES_STORAGE_KEY,
   priorityColor,
@@ -82,6 +83,7 @@ interface AgendaCalendarProps {
     calendarKind?: TaskCalendarKind | null;
     recurrence?: CalendarRecurrenceInput;
   }) => Promise<void>;
+  onDeleteEvent: (taskId: string) => Promise<void>;
   onUpdateEvent: (input: {
     taskId: string;
     title?: string;
@@ -217,6 +219,7 @@ export default function AgendaCalendar({
   todos,
   workspaces,
   onCreateEvent,
+  onDeleteEvent,
   onUpdateEvent,
   onSkipOccurrence,
   onOpenTask,
@@ -713,6 +716,17 @@ export default function AgendaCalendar({
               </button>
             </div>
 
+            <button
+              type="button"
+              onClick={() => openQuickDraft()}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:opacity-95"
+              aria-label="Créer un élément d’agenda"
+              title="Créer un élément"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Créer</span>
+            </button>
+
             <div className="hidden min-w-0 text-sm font-semibold sm:block">{label}</div>
           </div>
 
@@ -875,7 +889,7 @@ export default function AgendaCalendar({
         setEditScope={setEditScope}
         workspaces={workspaces}
         onOpenTask={onOpenTask}
-        onSkipOccurrence={onSkipOccurrence}
+        onDeleteTask={onDeleteEvent}
         skipOccurrence={skipOccurrence}
         saveDraft={saveDraft}
         saving={saving}
