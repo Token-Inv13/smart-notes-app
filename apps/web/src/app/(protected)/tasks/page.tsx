@@ -122,20 +122,28 @@ function taskMatchesSnapshot(current: TaskDoc, optimistic: TaskDoc) {
   );
 }
 
-function mergeTaskCollections(baseTasks: TaskDoc[], optimisticTaskById: Record<string, TaskDoc>, optimisticCreatedTasks: TaskDoc[]) {
+function mergeTaskCollections(
+  baseTasks: TaskDoc[],
+  optimisticTaskById: Record<string, TaskDoc>,
+  optimisticCreatedTasks: TaskDoc[],
+  deletedTaskIds: Record<string, true>,
+) {
   const byId = new Map<string, TaskDoc>();
 
   for (const task of baseTasks) {
     if (!task.id) continue;
+    if (deletedTaskIds[task.id]) continue;
     byId.set(task.id, task);
   }
 
   for (const [taskId, task] of Object.entries(optimisticTaskById)) {
+    if (deletedTaskIds[taskId]) continue;
     byId.set(taskId, task);
   }
 
   for (const task of optimisticCreatedTasks) {
     if (!task.id) continue;
+    if (deletedTaskIds[task.id]) continue;
     byId.set(task.id, task);
   }
 
@@ -548,12 +556,24 @@ export default function TasksPage() {
   const handleCalendarDelete = async (taskId: string) => {
     const user = auth.currentUser;
     const current = effectiveAllTasks.find((t) => t.id === taskId);
+    const wasOptimisticCreated = optimisticCreatedAgendaTasks.some((task) => task.id === taskId);
     if (!user || !current || current.userId !== user.uid) {
       setEditError("Impossible de supprimer cet élément d’agenda.");
       return;
     }
 
     setEditError(null);
+    setOptimisticDeletedAgendaTaskIds((prev) => ({ ...prev, [taskId]: true }));
+    if (current.googleEventId) {
+      setOptimisticDeletedGoogleEventIds((prev) => ({ ...prev, [current.googleEventId as string]: true }));
+    }
+    setOptimisticAgendaTaskById((prev) => {
+      if (!prev[taskId]) return prev;
+      const next = { ...prev };
+      delete next[taskId];
+      return next;
+    });
+    setOptimisticCreatedAgendaTasks((prev) => prev.filter((task) => task.id !== taskId));
 
     try {
       if (current.googleEventId) {
@@ -578,17 +598,29 @@ export default function TasksPage() {
       }
 
       await deleteDoc(doc(db, "tasks", taskId));
-
-      setOptimisticAgendaTaskById((prev) => {
+      setActionFeedback("Élément d’agenda supprimé.");
+      window.setTimeout(() => setActionFeedback(null), 1800);
+    } catch (error) {
+      setOptimisticDeletedAgendaTaskIds((prev) => {
         if (!prev[taskId]) return prev;
         const next = { ...prev };
         delete next[taskId];
         return next;
       });
-      setOptimisticCreatedAgendaTasks((prev) => prev.filter((task) => task.id !== taskId));
-      setActionFeedback("Élément d’agenda supprimé.");
-      window.setTimeout(() => setActionFeedback(null), 1800);
-    } catch (error) {
+      if (current.googleEventId) {
+        setOptimisticDeletedGoogleEventIds((prev) => {
+          if (!prev[current.googleEventId as string]) return prev;
+          const next = { ...prev };
+          delete next[current.googleEventId as string];
+          return next;
+        });
+      }
+      if (wasOptimisticCreated) {
+        setOptimisticCreatedAgendaTasks((prev) => {
+          if (prev.some((task) => task.id === taskId)) return prev;
+          return [...prev, current];
+        });
+      }
       setEditError(toErrorMessage(error, "Erreur lors de la suppression de l’élément d’agenda."));
     }
   };
@@ -656,6 +688,8 @@ export default function TasksPage() {
   const [optimisticParentIdByWorkspaceId, setOptimisticParentIdByWorkspaceId] = useState<Record<string, string | null>>({});
   const [optimisticAgendaTaskById, setOptimisticAgendaTaskById] = useState<Record<string, TaskDoc>>({});
   const [optimisticCreatedAgendaTasks, setOptimisticCreatedAgendaTasks] = useState<TaskDoc[]>([]);
+  const [optimisticDeletedAgendaTaskIds, setOptimisticDeletedAgendaTaskIds] = useState<Record<string, true>>({});
+  const [optimisticDeletedGoogleEventIds, setOptimisticDeletedGoogleEventIds] = useState<Record<string, true>>({});
   const [pushStatus, setPushStatus] = useState<string | null>(null);
   const [enablingPush, setEnablingPush] = useState(false);
   const [calendarPrefsLocalFallback, setCalendarPrefsLocalFallback] = useState<AgendaCalendarPreferences | null>(null);
@@ -717,13 +751,13 @@ export default function TasksPage() {
   }, [calendarWindowDueTasks, calendarWindowStartTasks, recurringCalendarTasks]);
 
   const optimisticAllTasks = useMemo(
-    () => mergeTaskCollections(allTasks, optimisticAgendaTaskById, optimisticCreatedAgendaTasks),
-    [allTasks, optimisticAgendaTaskById, optimisticCreatedAgendaTasks],
+    () => mergeTaskCollections(allTasks, optimisticAgendaTaskById, optimisticCreatedAgendaTasks, optimisticDeletedAgendaTaskIds),
+    [allTasks, optimisticAgendaTaskById, optimisticCreatedAgendaTasks, optimisticDeletedAgendaTaskIds],
   );
 
   const optimisticCalendarWindowTasks = useMemo(
-    () => mergeTaskCollections(calendarWindowTasks, optimisticAgendaTaskById, optimisticCreatedAgendaTasks),
-    [calendarWindowTasks, optimisticAgendaTaskById, optimisticCreatedAgendaTasks],
+    () => mergeTaskCollections(calendarWindowTasks, optimisticAgendaTaskById, optimisticCreatedAgendaTasks, optimisticDeletedAgendaTaskIds),
+    [calendarWindowTasks, optimisticAgendaTaskById, optimisticCreatedAgendaTasks, optimisticDeletedAgendaTaskIds],
   );
 
   const effectiveCalendarWindowTasks = useMemo(
@@ -798,6 +832,17 @@ export default function TasksPage() {
       if (prev.length === 0) return prev;
       const next = prev.filter((task) => !allTasks.some((current) => current.id === task.id));
       return next.length === prev.length ? prev : next;
+    });
+  }, [allTasks]);
+
+  useEffect(() => {
+    setOptimisticDeletedAgendaTaskIds((prev) => {
+      const entries = Object.entries(prev);
+      if (entries.length === 0) return prev;
+
+      const nextEntries = entries.filter(([taskId]) => allTasks.some((task) => task.id === taskId));
+      if (nextEntries.length === entries.length) return prev;
+      return Object.fromEntries(nextEntries);
     });
   }, [allTasks]);
 
@@ -1918,6 +1963,7 @@ export default function TasksPage() {
           onCreateRequestHandled={handleAgendaCreateRequestHandled}
           onCreateEvent={handleCalendarCreate}
           onDeleteEvent={handleCalendarDelete}
+          hiddenGoogleEventIds={optimisticDeletedGoogleEventIds}
           onUpdateEvent={handleCalendarUpdate}
           onSkipOccurrence={handleSkipOccurrence}
           onVisibleRangeChange={handleCalendarVisibleRangeChange}

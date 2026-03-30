@@ -84,6 +84,7 @@ interface AgendaCalendarProps {
     recurrence?: CalendarRecurrenceInput;
   }) => Promise<void>;
   onDeleteEvent: (taskId: string) => Promise<void>;
+  hiddenGoogleEventIds?: Record<string, true>;
   onUpdateEvent: (input: {
     taskId: string;
     title?: string;
@@ -220,6 +221,7 @@ export default function AgendaCalendar({
   workspaces,
   onCreateEvent,
   onDeleteEvent,
+  hiddenGoogleEventIds,
   onUpdateEvent,
   onSkipOccurrence,
   onOpenTask,
@@ -664,7 +666,10 @@ export default function AgendaCalendar({
 
   const { agendaEvents, isCompactDensity } = useAgendaMergedEvents({
     calendarData,
-    googleCalendarEvents,
+    googleCalendarEvents: useMemo(
+      () => googleCalendarEvents.filter((event) => !hiddenGoogleEventIds?.[event.id]),
+      [googleCalendarEvents, hiddenGoogleEventIds],
+    ),
     showGoogleCalendar: true,
     visibleRange: effectiveVisibleRange,
   });
