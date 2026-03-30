@@ -378,7 +378,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
       setActionError("Contenu proposé vide.");
       return;
     }
-    const ok = window.confirm("Remplacer le contenu de la note par la proposition IA ?");
+    const ok = window.confirm("Appliquer cette suggestion IA et remplacer le texte de la note ?");
     if (!ok) return;
 
     try {
@@ -891,7 +891,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
             disabled={isBusy || expired}
             className="px-2.5 py-1 rounded-md bg-primary text-primary-foreground text-[11px] font-medium disabled:opacity-50"
           >
-            {isBusy ? "Application…" : s.kind === "rewrite_note" ? "Prévisualiser" : isConfirming ? "Confirmer ?" : "Appliquer"}
+            {isBusy ? "Application…" : s.kind === "rewrite_note" ? "Voir la proposition" : isConfirming ? "Appliquer ?" : "Appliquer la suggestion"}
           </button>
           <button
             type="button"
@@ -904,21 +904,21 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
         </div>
         {isConfirming ? (
           <div className="flex items-center gap-2 text-[11px]">
-            <span className="text-muted-foreground">Confirmer l’application ?</span>
+            <span className="text-muted-foreground">Appliquer cette suggestion ?</span>
             <button
               type="button"
               onClick={() => void handleAccept(s)}
               disabled={isBusy || expired}
               className="px-2 py-0.5 rounded-md bg-primary text-primary-foreground disabled:opacity-50"
             >
-              Confirmer
+              Appliquer
             </button>
             <button
               type="button"
               onClick={() => setConfirmingSuggestionId(null)}
               className="px-2 py-0.5 rounded-md border border-input"
             >
-              Annuler
+              Ignorer
             </button>
           </div>
         ) : null}
@@ -1027,6 +1027,14 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
     return `${visibleSuggestionsCount} amélioration(s) détectée(s).`;
   })();
 
+  const aiLoadingText = (() => {
+    if (busyAIAnalysis) return "Génération IA en cours…";
+    if (busyReanalysis || aiJobStatus === "queued" || aiJobStatus === "processing" || jobStatus === "queued" || jobStatus === "processing") {
+      return "Traitement en cours…";
+    }
+    return null;
+  })();
+
   const aiRecommendations = (() => {
     const list: string[] = [];
     if (suggestionGroups.clarity.length > 0) list.push("Améliorer la lisibilité et la formulation.");
@@ -1038,26 +1046,32 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
     <>
       <div className="h-full border border-border rounded-xl bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 shadow-sm p-2.5 md:p-3 space-y-2.5 overflow-y-auto">
         <div className="flex items-center justify-between gap-2">
-          <div className="text-sm font-semibold">Aide à la rédaction</div>
+          <div className="space-y-0.5">
+            <div className="text-sm font-semibold">Aide à la rédaction</div>
+            <div className="text-[11px] text-muted-foreground">
+              Choisis une action, compare la proposition, puis applique-la ou ignore-la.
+            </div>
+          </div>
           <button type="button" onClick={() => setSuggestionsOpen((v) => !v)} className="px-2 py-1 rounded-md border border-input text-[11px]">
-            {suggestionsOpen ? "Masquer les suggestions" : "Voir les suggestions"}
+            {suggestionsOpen ? "Masquer les suggestions" : "Afficher les suggestions IA"}
           </button>
         </div>
 
         {actionMessage ? <div className="sn-alert">{actionMessage}</div> : null}
         {actionError ? <div className="sn-alert sn-alert--error">{actionError}</div> : null}
+        {aiLoadingText ? <div className="sn-alert sn-alert--info">{aiLoadingText}</div> : null}
 
         <section className="space-y-2">
           <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Actions principales</div>
           <div className="flex flex-wrap gap-1.5">
             <AssistantActionButton
-              label={busyAIAnalysis ? "Résumé…" : "Résumer"}
+              label={busyAIAnalysis ? "Résumé en cours…" : "Résumer cette note"}
               onClick={() => void handleAIAnalyzeWithModes(["summary"], null, "Résumé")}
               disabled={!noteId || busyAIAnalysis}
               variant="secondary"
             />
             <AssistantActionButton
-              label={busyAIAnalysis ? "Amélioration…" : "Améliorer"}
+              label={busyAIAnalysis ? "Amélioration en cours…" : "Améliorer ce texte"}
               onClick={() => void handleAIAnalyzeWithModes(["rewrite"], null, "Amélioration")}
               disabled={!noteId || busyAIAnalysis}
               variant="secondary"
@@ -1084,7 +1098,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
                 disabled={!noteId || busyAIAnalysis}
                 className="px-2 py-1 rounded-md border border-input text-[11px] whitespace-nowrap disabled:opacity-50"
               >
-                Traduction
+                Traduire le texte
               </button>
               <button
                 type="button"
@@ -1094,7 +1108,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
                 disabled={!noteId || busyAIAnalysis}
                 className="px-2 py-1 rounded-md border border-input text-[11px] whitespace-nowrap disabled:opacity-50"
               >
-                Correction
+                Corriger le texte
               </button>
               <button
                 type="button"
@@ -1104,7 +1118,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
                 disabled={!noteId || busyAIAnalysis}
                 className="px-2 py-1 rounded-md border border-input text-[11px] whitespace-nowrap disabled:opacity-50"
               >
-                Reformuler
+                Reformuler le texte
               </button>
               <button
                 type="button"
@@ -1118,7 +1132,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
                 disabled={!noteId || busyAIAnalysis}
                 className="px-2 py-1 rounded-md border border-input text-[11px] whitespace-nowrap disabled:opacity-50"
               >
-                Structurer
+                Structurer le texte
               </button>
               <button
                 type="button"
@@ -1126,7 +1140,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
                 disabled={!noteId || busyReanalysis || cooldownActive}
                 className="px-2 py-1 rounded-md border border-input text-[11px] whitespace-nowrap disabled:opacity-50"
               >
-                {busyReanalysis ? "Création…" : "Planifier dans l’Agenda à partir de cette note"}
+                {busyReanalysis ? "Création…" : "Créer un plan depuis cette note"}
               </button>
             </div>
           </section>
@@ -1150,7 +1164,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
             {(["clarity", "content"] as const).map((cat) => {
               const items = suggestionGroups[cat];
               const visibleItems = items.slice(0, categoryVisibleCount[cat]);
-              const title = cat === "clarity" ? "Clarté" : "Contenu";
+              const title = cat === "clarity" ? "Clarté du texte" : "Contenu à compléter";
               const isOpen = categoryOpen[cat];
               return (
                 <div key={cat} className="rounded-lg bg-card/70">
@@ -1192,7 +1206,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
       </div>
 
       {textModal ? (
-        <Modal title={textModal.title} onBeforeClose={() => setTextModal(null)}>
+        <Modal title={`Suggestion IA · ${textModal.title}`} onBeforeClose={() => setTextModal(null)}>
           <div className="space-y-3">
             {textModal.originalText ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -1227,7 +1241,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
             )}
             <div className="flex flex-col md:flex-row md:items-center justify-end gap-2">
               <button type="button" onClick={() => setTextModal(null)} className="px-3 py-2 rounded-md border border-input text-sm">
-                Annuler
+                Ignorer la suggestion
               </button>
               <button
                 type="button"
@@ -1245,7 +1259,7 @@ export default function AssistantNotePanel({ noteId, currentNoteContent, onNoteC
                   disabled={!noteId}
                   className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
                 >
-                  Remplacer le contenu
+                  Appliquer la suggestion
                 </button>
               ) : null}
             </div>
