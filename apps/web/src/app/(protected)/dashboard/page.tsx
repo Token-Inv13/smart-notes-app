@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Timestamp, doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "@/hooks/useAuth";
 import { useUserNotes } from "@/hooks/useUserNotes";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserTasks } from "@/hooks/useUserTasks";
@@ -11,10 +12,12 @@ import { useUserTodos } from "@/hooks/useUserTodos";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { projectTaskToEvent } from "@/lib/agenda/taskEventProjector";
 import { auth, db } from "@/lib/firebase";
+import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
 import { FREE_TASK_LIMIT_MESSAGE, getPlanLimitMessage, setTaskFavoriteWithPlanGuard } from "@/lib/planGuardedMutations";
 import { toUserErrorMessage } from "@/lib/userError";
 import { buildWorkspacePathLabelMap, getWorkspaceSelfAndDescendantIds } from "@/lib/workspaces";
 import type { TaskDoc, TodoDoc } from "@/types/firestore";
+import OnboardingOverlay, { type OnboardingStep } from "../_components/OnboardingOverlay";
 
 type TaskStatus = "todo" | "doing" | "done";
 type TaskOptimisticPatch = Pick<TaskDoc, "status" | "favorite" | "startDate" | "dueDate">;
@@ -101,6 +104,7 @@ type TaskBucket = "overdue" | "today" | "upcoming";
 export default function DashboardPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user, loading: authLoading } = useAuth();
   const workspaceId = searchParams.get("workspaceId") || undefined;
   const suffix = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
   const notesHref = useMemo(() => {
@@ -130,6 +134,9 @@ export default function DashboardPage() {
   const activeChecklistHref = useMemo(() => {
     return workspaceId ? `/todo?workspaceId=${encodeURIComponent(workspaceId)}` : "/todo";
   }, [workspaceId]);
+  const quickNoteHref = notesHref.includes("?") ? `${notesHref}&create=1` : `${notesHref}?create=1`;
+  const quickTaskHref = "/tasks?create=1";
+  const quickPlanHref = `/tasks?create=1&startDate=${toLocalDateParam(new Date())}`;
 
   useEffect(() => {
     if (!workspaceId) return;
@@ -141,6 +148,10 @@ export default function DashboardPage() {
     loading: notesLoading,
     error: notesError,
   } = useUserNotes({ favoriteOnly: true });
+  const {
+    data: onboardingNotes,
+    loading: onboardingNotesLoading,
+  } = useUserNotes({ limit: 1 });
   const {
     data: dashboardTasks,
     loading: tasksLoading,
@@ -176,6 +187,8 @@ export default function DashboardPage() {
   const [taskActionFeedback, setTaskActionFeedback] = useState<string | null>(null);
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const [optimisticTaskById, setOptimisticTaskById] = useState<Record<string, TaskOptimisticPatch>>({});
+  const [onboardingActive, setOnboardingActive] = useState(false);
+  const [onboardingSnapshot, setOnboardingSnapshot] = useState<{ notes: number; tasks: number; scheduled: number } | null>(null);
   const isPro = userSettings?.plan === "pro";
 
   const workspaceLabelById = useMemo(() => buildWorkspacePathLabelMap(workspaces), [workspaces]);
@@ -486,6 +499,55 @@ export default function DashboardPage() {
     };
   }, [displayDashboardTasks]);
 
+  const onboardingNotesCount = onboardingNotes.length;
+  const onboardingTaskCount = useMemo(
+    () => dashboardTasks.filter((task) => task.archived !== true).length,
+    [dashboardTasks],
+  );
+  const onboardingScheduledTaskCount = useMemo(
+    () =>
+      dashboardTasks.filter((task) => {
+        if (task.archived === true) return false;
+        return Boolean(task.startDate || task.dueDate);
+      }).length,
+    [dashboardTasks],
+  );
+  const onboardingCompleted = !!user?.uid && getOnboardingFlag(user.uid, "onboardingCompleted");
+  const onboardingEligible = !authLoading && !onboardingNotesLoading && !tasksLoading && !!user?.uid && !onboardingCompleted && (onboardingNotesCount === 0 || onboardingTaskCount === 0);
+
+  useEffect(() => {
+    if (onboardingEligible && !onboardingActive) {
+      setOnboardingActive(true);
+      setOnboardingSnapshot({
+        notes: onboardingNotesCount,
+        tasks: onboardingTaskCount,
+        scheduled: onboardingScheduledTaskCount,
+      });
+    }
+  }, [onboardingActive, onboardingEligible, onboardingNotesCount, onboardingScheduledTaskCount, onboardingTaskCount]);
+
+  const onboardingStep = useMemo<OnboardingStep | null>(() => {
+    if (!onboardingActive || !onboardingSnapshot) return null;
+    if (onboardingNotesCount <= onboardingSnapshot.notes) return 1;
+    if (onboardingTaskCount <= onboardingSnapshot.tasks) return 2;
+    if (onboardingScheduledTaskCount <= onboardingSnapshot.scheduled) return 3;
+    return 4;
+  }, [onboardingActive, onboardingNotesCount, onboardingScheduledTaskCount, onboardingSnapshot, onboardingTaskCount]);
+
+  const handleOnboardingSkip = useCallback(() => {
+    if (!user?.uid) return;
+    setOnboardingFlag(user.uid, "onboardingCompleted", true);
+    setOnboardingActive(false);
+    setOnboardingSnapshot(null);
+  }, [user?.uid]);
+
+  const handleOnboardingContinue = useCallback(() => {
+    if (!user?.uid) return;
+    setOnboardingFlag(user.uid, "onboardingCompleted", true);
+    setOnboardingActive(false);
+    setOnboardingSnapshot(null);
+  }, [user?.uid]);
+
   if (workspaceId) {
     return null;
   }
@@ -504,6 +566,16 @@ export default function DashboardPage() {
           {flashMessage}
         </div>
       )}
+
+      <OnboardingOverlay
+        open={onboardingStep !== null}
+        step={onboardingStep ?? 1}
+        notesHref={quickNoteHref}
+        tasksHref={quickTaskHref}
+        planHref={quickPlanHref}
+        onSkip={handleOnboardingSkip}
+        onContinue={handleOnboardingContinue}
+      />
 
       <section className="grid gap-2.5 sm:gap-3 sm:grid-cols-3">
         <Link
