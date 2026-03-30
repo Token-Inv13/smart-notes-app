@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { PanelLeft, Menu, X } from "lucide-react";
+import { Bug, Loader2, PanelLeft, Menu, X } from "lucide-react";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import SidebarWorkspaces from "./SidebarWorkspaces";
 import PwaInstallCta, { PwaInstallSidebarEntry } from "./_components/PwaInstallCta";
@@ -596,6 +596,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   };
 
   const submitBugReport = async () => {
+    if (bugSubmitting) return;
     const message = bugMessage.trim();
     const meaningfulMessage = message
       .replace("Ce que je faisais :", "")
@@ -705,18 +706,23 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
 
   const renderBugReportAction = (mobile = false) => (
     <div className={mobile ? "mt-3 border-t border-border pt-3" : "shrink-0 border-t border-border p-3"}>
-      {bugFeedback ? <div className="sn-alert mb-2 text-xs">{bugFeedback}</div> : null}
+      {bugFeedback ? (
+        <div className="sn-alert sn-alert--success mb-2 text-xs" role="status" aria-live="polite">
+          {bugFeedback}
+        </div>
+      ) : null}
       <button
         type="button"
         onClick={() => {
           if (mobile) closeMobile();
           openBugModal();
         }}
-        className={`w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${mobile ? "text-left" : collapsed ? "text-center" : "text-left"}`}
+        className={`inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${mobile ? "w-full justify-start text-left" : collapsed ? "h-11 w-11 justify-center px-0" : "w-full justify-start text-left"}`}
         aria-label="Signaler un bug"
         title="Signaler un bug"
       >
-        {collapsed && !mobile ? "Bug" : "Signaler un bug"}
+        <Bug className="h-4 w-4 shrink-0" />
+        {collapsed && !mobile ? null : <span>Signaler un bug</span>}
       </button>
     </div>
   );
@@ -933,7 +939,13 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
           >
             <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
               <div className="min-w-0">
-                <div className="text-sm font-semibold">Signaler un bug</div>
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <Bug className="h-4 w-4 shrink-0" />
+                  <span>Signaler un bug</span>
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Décris ce qui s’est passé pour qu’on puisse reproduire et corriger le problème.
+                </div>
               </div>
               <button
                 type="button"
@@ -954,7 +966,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
               </div>
 
               <div className="space-y-1">
-                <label className="sr-only" htmlFor="bug-report-message">
+                <label className="text-sm font-medium text-foreground" htmlFor="bug-report-message">
                   Décrire le bug
                 </label>
                 <textarea
@@ -963,8 +975,11 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
                   onChange={(e) => setBugMessage(e.target.value)}
                   disabled={bugSubmitting}
                   className="min-h-[180px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder={BUG_REPORT_TEMPLATE}
+                  placeholder="Explique ce que tu faisais, ce que tu as observé, et ce que tu attendais."
                 />
+                <div className="text-xs text-muted-foreground">
+                  Plus tu es précis, plus le signalement sera utile.
+                </div>
               </div>
 
               <div className="text-xs text-muted-foreground">
@@ -985,11 +1000,15 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
               </button>
               <button
                 type="button"
-                onClick={() => void submitBugReport()}
+                onClick={() => {
+                  if (bugSubmitting) return;
+                  void submitBugReport();
+                }}
                 disabled={bugSubmitting}
-                className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
               >
-                {bugSubmitting ? "Envoi…" : "Envoyer"}
+                {bugSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {bugSubmitting ? "Envoi…" : "Envoyer le signalement"}
               </button>
             </div>
           </div>
