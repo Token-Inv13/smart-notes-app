@@ -144,7 +144,7 @@ export default function TodoInlineList({
       if (nextEntries.length === entries.length) return prev;
       return Object.fromEntries(nextEntries);
     });
-  }, [todos]);
+  }, [effectiveTodos, todos]);
   const selectedWorkspaceIds = useMemo(
     () =>
       workspaceFilter === "all"

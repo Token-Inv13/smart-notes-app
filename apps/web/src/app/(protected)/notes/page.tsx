@@ -150,7 +150,7 @@ export default function NotesPage() {
       if (nextEntries.length === entries.length) return prev;
       return Object.fromEntries(nextEntries);
     });
-  }, [notes]);
+  }, [effectiveNotes, notes]);
 
   const workspaceNameById = useMemo(() => {
     const m = new Map<string, string>();
