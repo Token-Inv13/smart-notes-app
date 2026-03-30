@@ -38,7 +38,7 @@ export default function TodoInlineList({
   const [editError, setEditError] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [todoView, setTodoView] = useState<"active" | "completed">("active");
-  const [optimisticFavoriteByTodoId, setOptimisticFavoriteByTodoId] = useState<Record<string, boolean | null>>({});
+  const [optimisticFavoriteByTodoId, setOptimisticFavoriteByTodoId] = useState<Record<string, boolean>>({});
   const favoriteFeedbackTimerRef = useRef<number | null>(null);
 
   const todoTabsSwipeHandlers = useSwipeNavigation<HTMLDivElement>({
@@ -126,7 +126,7 @@ export default function TodoInlineList({
         return {
           ...todo,
           favorite: optimisticFavoriteByTodoId[todo.id],
-        };
+        } as TodoDoc;
       }),
     [effectiveTodos, optimisticFavoriteByTodoId],
   );
@@ -136,7 +136,7 @@ export default function TodoInlineList({
       if (entries.length === 0) return prev;
 
       const nextEntries = entries.filter(([todoId, optimisticFavorite]) => {
-        const current = todos.find((todo) => todo.id === todoId);
+        const current = effectiveTodos.find((todo) => todo.id === todoId);
         if (!current) return false;
         return (current.favorite === true) !== optimisticFavorite;
       });

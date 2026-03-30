@@ -84,7 +84,7 @@ export default function NotesPage() {
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [activeDragItem, setActiveDragItem] = useState<FolderDragData | null>(null);
   const [optimisticWorkspaceIdByNoteId, setOptimisticWorkspaceIdByNoteId] = useState<Record<string, string | null>>({});
-  const [optimisticFavoriteByNoteId, setOptimisticFavoriteByNoteId] = useState<Record<string, boolean | null>>({});
+  const [optimisticFavoriteByNoteId, setOptimisticFavoriteByNoteId] = useState<Record<string, boolean>>({});
   const [optimisticParentIdByWorkspaceId, setOptimisticParentIdByWorkspaceId] = useState<Record<string, string | null>>({});
   const favoriteFeedbackTimerRef = useRef<number | null>(null);
 
@@ -131,7 +131,7 @@ export default function NotesPage() {
         return {
           ...note,
           favorite: optimisticFavoriteByNoteId[note.id],
-        };
+        } as NoteDoc;
       }),
     [effectiveNotes, optimisticFavoriteByNoteId],
   );
@@ -142,7 +142,7 @@ export default function NotesPage() {
       if (entries.length === 0) return prev;
 
       const nextEntries = entries.filter(([noteId, optimisticFavorite]) => {
-        const current = notes.find((note) => note.id === noteId);
+        const current = effectiveNotes.find((note) => note.id === noteId);
         if (!current) return false;
         return (current.favorite === true) !== optimisticFavorite;
       });
@@ -267,7 +267,7 @@ export default function NotesPage() {
 
   const archivedNotesSorted = useMemo(() => {
     if (sortBy === "createdAt") {
-      return effectiveNotes
+      return effectiveNotesWithFavoriteOverrides
         .filter((n) => {
           if (n.archived !== true) return false;
           if (!selectedWorkspaceIds) return true;
