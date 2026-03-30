@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { isAndroidNative } from '@/lib/runtimePlatform';
 import type { UserDoc } from '@/types/firestore';
@@ -45,6 +46,7 @@ const FEATURE_MATRIX = [
 ];
 
 export default function UpgradePage() {
+  const searchParams = useSearchParams();
   const { data: userSettings, loading: userLoading, refetch } = useUserSettings();
   const isPro = userSettings?.plan === 'pro';
   const stripeCustomerId = (userSettings as UserDoc | undefined)?.stripeCustomerId;
@@ -60,6 +62,8 @@ export default function UpgradePage() {
 
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
+  const portalReturnDetected = searchParams.get('portal') === 'return';
+  const [portalReturnFeedback, setPortalReturnFeedback] = useState<string | null>(null);
 
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -120,6 +124,13 @@ export default function UpgradePage() {
     if (hasActiveStripeSubscription) return;
     void handleSync();
   }, [handleSync, hasActiveStripeSubscription, hasStripeSubscriptionData, isAndroid, isPro, userLoading, userSettings]);
+
+  useEffect(() => {
+    if (!portalReturnDetected) return;
+    setPortalReturnFeedback('Retour Stripe détecté. TaskNote actualise ton statut d’abonnement.');
+    const timer = window.setTimeout(() => setPortalReturnFeedback(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [portalReturnDetected]);
 
   const handleCheckout = async () => {
     if (isAndroid) {
@@ -195,8 +206,8 @@ export default function UpgradePage() {
       } else if (message === 'RETURN_URL_NOT_ALLOWED') {
         const upgradeUrl =
           typeof window !== 'undefined' && window.location?.origin
-            ? `${window.location.origin}/upgrade`
-            : 'https://app.tasknote.io/upgrade';
+            ? `${window.location.origin}/upgrade?portal=return`
+            : 'https://app.tasknote.io/upgrade?portal=return';
         setPortalError(
           `Configuration Stripe requise: ajoute ${upgradeUrl} dans les URLs de retour autorisées du portail client, puis réessaie.`,
         );
@@ -232,6 +243,12 @@ export default function UpgradePage() {
           </p>
         )}
       </div>
+
+      {portalReturnFeedback && (
+        <div className="sn-alert sn-alert--success" role="status" aria-live="polite">
+          {portalReturnFeedback}
+        </div>
+      )}
 
       <div className="border border-border rounded-lg p-4 bg-card space-y-4">
         <div className="flex items-center justify-between gap-3">
@@ -378,18 +395,28 @@ export default function UpgradePage() {
 
               {isPro && hasActiveStripeSubscription && (
                 <div className="rounded-lg border border-border bg-background p-3 space-y-2">
-                  <div className="text-sm font-medium">Gérer mon abonnement (Stripe sécurisé)</div>
+                  <div className="text-sm font-medium">Gérer mon abonnement</div>
                   <div className="text-xs text-muted-foreground">
-                    Accède au portail Stripe pour modifier ton moyen de paiement, télécharger tes factures, ou annuler.
+                    Tout se fait dans le portail Stripe sécurisé. Tu peux y modifier ton moyen de paiement, télécharger tes factures ou annuler.
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleOpenPortal}
-                    disabled={portalLoading}
-                    className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium disabled:opacity-50"
-                  >
-                    {portalLoading ? 'Ouverture…' : 'Ouvrir le portail Stripe'}
-                  </button>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <button
+                      type="button"
+                      onClick={handleOpenPortal}
+                      disabled={portalLoading}
+                      className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+                    >
+                      {portalLoading ? 'Ouverture…' : 'Gérer mon abonnement'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenPortal}
+                      disabled={portalLoading}
+                      className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-destructive/30 bg-destructive/5 text-sm font-medium text-destructive disabled:opacity-50"
+                    >
+                      {portalLoading ? 'Ouverture…' : 'Annuler l’abonnement'}
+                    </button>
+                  </div>
                   <button
                     type="button"
                     onClick={handleSync}

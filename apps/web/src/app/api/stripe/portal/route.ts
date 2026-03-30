@@ -102,7 +102,7 @@ export async function POST() {
     const attemptCreatePortal = async (customerId: string) =>
       stripe.billingPortal.sessions.create({
         customer: customerId,
-        return_url: `${origin}/upgrade`,
+        return_url: `${origin}/upgrade?portal=return`,
       });
 
     const attemptRecoveryAndCreate = async (err: unknown) => {
