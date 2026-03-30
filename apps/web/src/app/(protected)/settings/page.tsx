@@ -2,7 +2,7 @@
 
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useAssistantSettings } from "@/hooks/useAssistantSettings";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { auth, db } from "@/lib/firebase";
 import { isAndroidNative } from "@/lib/runtimePlatform";
@@ -117,6 +117,7 @@ export default function SettingsPage() {
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarBusy, setCalendarBusy] = useState(false);
   const [calendarMessage, setCalendarMessage] = useState<string | null>(null);
+  const autoRegisterPushRef = useRef(false);
   const safeCalendarMessage = sanitizeUiText(calendarMessage);
   const safeAssistantMessage = sanitizeUiText(assistantMessage);
 
@@ -454,10 +455,6 @@ export default function SettingsPage() {
     } catch {
       // ignore
     }
-
-    if (next === "calendar") {
-      window.location.assign("/tasks");
-    }
   };
 
   const hasFcmTokens = Object.keys(user?.fcmTokens ?? {}).length > 0;
@@ -573,7 +570,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handleEnablePushNotifications = async () => {
+  const handleEnablePushNotifications = useCallback(async () => {
     setFcmStatus("Activation des notifications push…");
     setEnablingPush(true);
     try {
@@ -593,18 +590,13 @@ export default function SettingsPage() {
     } finally {
       setEnablingPush(false);
     }
-  };
+  }, []);
 
   const notificationPermission: NotificationPermission | "unsupported" = (() => {
     if (typeof window === "undefined") return "unsupported";
     if (!("Notification" in window)) return "unsupported";
     return Notification.permission;
   })();
-
-  const shouldShowRegisterDeviceCta =
-    !!user?.settings?.notifications?.taskReminders &&
-    notificationPermission === "granted" &&
-    !hasFcmTokens;
 
   const remindersEnabled = !!user?.settings?.notifications?.taskReminders;
   const remindersStatusBadgeClass = remindersEnabled
@@ -628,6 +620,18 @@ export default function SettingsPage() {
       : notificationPermission === "denied"
         ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
         : "border-border bg-muted text-muted-foreground";
+
+  useEffect(() => {
+    if (!remindersEnabled || notificationPermission !== "granted" || hasFcmTokens) {
+      autoRegisterPushRef.current = false;
+      return;
+    }
+
+    if (autoRegisterPushRef.current || toggling || enablingPush) return;
+
+    autoRegisterPushRef.current = true;
+    void handleEnablePushNotifications();
+  }, [enablingPush, hasFcmTokens, handleEnablePushNotifications, notificationPermission, remindersEnabled, toggling]);
 
   const notificationsSummary =
     !remindersEnabled
@@ -879,21 +883,9 @@ export default function SettingsPage() {
             <p className="text-sm text-muted-foreground">{notificationsSummary}</p>
 
             {toggleMessage && <p className="text-sm">{toggleMessage}</p>}
-
-            {shouldShowRegisterDeviceCta && (
-              <div className="space-y-2">
-                <div className="sn-alert sn-alert--info">
-                  ⚠️ Notifications autorisées, mais aucun appareil n’est enregistré. Clique ci-dessous pour enregistrer ce navigateur.
-                </div>
-                <button
-                  type="button"
-                  onClick={handleEnablePushNotifications}
-                  disabled={enablingPush}
-                  className="border border-border rounded-lg px-3 py-2 bg-background text-sm hover:bg-accent/60 disabled:opacity-50"
-                >
-                  {enablingPush ? "Enregistrement…" : "Enregistrer cet appareil"}
-                </button>
-                {fcmStatus && <p className="text-sm">{fcmStatus}</p>}
+            {remindersEnabled && notificationPermission === "granted" && !hasFcmTokens && (
+              <div className="sn-alert sn-alert--info">
+                L’enregistrement de cet appareil se fait automatiquement pour activer les rappels.
               </div>
             )}
 
