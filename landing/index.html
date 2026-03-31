@@ -147,14 +147,22 @@
 
           <div class="hero-visual" aria-label="Aperçu de TaskNote">
             <figure class="hero-shot">
-              <img
-                src="/assets/screens/hero.png"
-                alt="Aperçu de TaskNote avec notes, tâches et agenda sur desktop et mobile"
-                width="1536"
-                height="1024"
-                loading="eager"
-                decoding="async"
-              />
+              <picture class="responsive-media">
+                <source
+                  type="image/webp"
+                  srcset="/assets/screens/hero-640.webp 640w, /assets/screens/hero-960.webp 960w, /assets/screens/hero-1280.webp 1280w"
+                  sizes="(max-width: 980px) 92vw, 535px"
+                />
+                <img
+                  src="/assets/screens/hero.png"
+                  alt="Aperçu de TaskNote avec notes, tâches et agenda sur desktop et mobile"
+                  width="1536"
+                  height="1024"
+                  loading="eager"
+                  fetchpriority="high"
+                  decoding="async"
+                />
+              </picture>
             </figure>
           </div>
         </div>
@@ -194,15 +202,21 @@
               <li>Retrouve tes contenus par dossier et favoris</li>
               <li>Passe du texte brut à l’action en quelques clics</li>
             </ul>
-            <img
-              class="feature-shot feature-shot--notes"
-              src="/assets/screens/notes.png"
-              alt="Vue des notes dans TaskNote avec dossiers et notes récentes"
-              width="735"
-              height="782"
-              loading="lazy"
-              decoding="async"
-            />
+            <picture class="feature-shot feature-shot--notes responsive-media">
+              <source
+                type="image/webp"
+                srcset="/assets/screens/notes-640.webp 640w, /assets/screens/notes-960.webp 960w"
+                sizes="(max-width: 980px) calc(92vw - 36px), 456px"
+              />
+              <img
+                src="/assets/screens/notes.png"
+                alt="Vue des notes dans TaskNote avec dossiers et notes récentes"
+                width="735"
+                height="782"
+                loading="lazy"
+                decoding="async"
+              />
+            </picture>
           </article>
 
           <article class="feature-panel" id="agenda">
@@ -212,15 +226,21 @@
               <li>All-day, horaires et navigation calendrier fiables</li>
               <li>Option Google Calendar si tu veux garder ton workflow actuel</li>
             </ul>
-            <img
-              class="feature-shot"
-              src="/assets/screens/tasks.png"
-              alt="Vue des tâches dans TaskNote avec planification et rappel"
-              width="1536"
-              height="1024"
-              loading="lazy"
-              decoding="async"
-            />
+            <picture class="feature-shot responsive-media">
+              <source
+                type="image/webp"
+                srcset="/assets/screens/tasks-640.webp 640w, /assets/screens/tasks-960.webp 960w, /assets/screens/tasks-1280.webp 1280w"
+                sizes="(max-width: 980px) calc(92vw - 36px), 518px"
+              />
+              <img
+                src="/assets/screens/tasks.png"
+                alt="Vue des tâches dans TaskNote avec planification et rappel"
+                width="1536"
+                height="1024"
+                loading="lazy"
+                decoding="async"
+              />
+            </picture>
           </article>
 
           <article class="feature-panel" id="checklists">

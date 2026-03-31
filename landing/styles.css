@@ -234,6 +234,18 @@ a {
   height: auto;
 }
 
+.responsive-media {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+}
+
+.responsive-media > img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 .mock-card {
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
