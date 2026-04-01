@@ -687,7 +687,7 @@ export default function AgendaCalendar({
     <section className="space-y-3 overflow-x-hidden">
       <div className="rounded-xl border border-border bg-card/60 p-2.5 sm:p-3">
         <div className="flex flex-col gap-2.5">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-2 sm:hidden">
             <div className="inline-flex rounded-xl border border-input bg-background overflow-hidden w-fit max-w-full">
               <button
                 type="button"
@@ -731,8 +731,56 @@ export default function AgendaCalendar({
               <Plus className="h-4 w-4" />
               <span>Créer</span>
             </button>
+          </div>
 
-            <div className="hidden min-w-0 text-sm font-semibold sm:block">{label}</div>
+          <div className="hidden sm:flex sm:items-start sm:justify-between sm:gap-4">
+            <div className="inline-flex rounded-xl border border-input bg-background overflow-hidden w-fit max-w-full">
+              <button
+                type="button"
+                className="px-3 py-2 text-sm hover:bg-accent/60 transition-colors"
+                onClick={() => {
+                  triggerViewTransition();
+                  jump("prev");
+                }}
+              >
+                ←
+              </button>
+              <button
+                type="button"
+                className="px-3 py-2 text-sm border-l border-input hover:bg-accent/60 transition-colors"
+                onClick={() => {
+                  triggerViewTransition();
+                  jump("today");
+                }}
+              >
+                Aujourd’hui
+              </button>
+              <button
+                type="button"
+                className="px-3 py-2 text-sm border-l border-input hover:bg-accent/60 transition-colors"
+                onClick={() => {
+                  triggerViewTransition();
+                  jump("next");
+                }}
+              >
+                →
+              </button>
+            </div>
+
+            <div className="flex min-w-0 flex-col items-end gap-2">
+              <div className="min-w-0 text-sm font-semibold text-right">{label}</div>
+
+              <button
+                type="button"
+                onClick={() => openQuickDraft()}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:opacity-95"
+                aria-label="Créer un élément d’agenda"
+                title="Créer un élément"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Créer</span>
+              </button>
+            </div>
           </div>
 
           <div className="text-sm font-semibold sm:hidden">{label}</div>
