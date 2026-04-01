@@ -1788,7 +1788,7 @@ export default function TasksPage() {
         </section>
       )}
 
-      {showMicroGuide && !workspaceIdParam && (
+      {showMicroGuide && !workspaceIdParam && viewMode !== "calendar" && (
         <div>
           <div className="sn-card sn-card--muted p-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -1826,7 +1826,7 @@ export default function TasksPage() {
 
       {error && <div className="sn-alert sn-alert--error">Impossible de charger l’agenda pour le moment.</div>}
 
-      {!loading && !error && archiveView === "active" && mainTasks.length === 0 && (
+      {!loading && !error && archiveView === "active" && mainTasks.length === 0 && viewMode !== "calendar" && (
         <div className="sn-empty sn-empty--premium sn-animate-in">
           <div className="sn-empty-title">
             {hasActiveSearchOrFilters ? "Aucun résultat" : workspaceIdParam ? "Aucun élément direct dans ce dossier" : "Aucun élément d’agenda pour le moment"}
@@ -1869,7 +1869,7 @@ export default function TasksPage() {
                   const qs = params.toString();
                   router.push(qs ? `/tasks?${qs}` : "/tasks");
                 }}
-                className="inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 transition-opacity"
+                className="hidden inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 transition-opacity"
               >
                 Créer une tâche
               </button>

@@ -10,7 +10,6 @@ import type {
   DatesSetArg,
   EventInput,
 } from "@fullcalendar/core";
-import { Plus } from "lucide-react";
 import {
   CALENDAR_PREFERENCES_STORAGE_KEY,
   priorityColor,
@@ -720,17 +719,6 @@ export default function AgendaCalendar({
                 →
               </button>
             </div>
-
-            <button
-              type="button"
-              onClick={() => openQuickDraft()}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:opacity-95"
-              aria-label="Créer un élément d’agenda"
-              title="Créer un élément"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Créer</span>
-            </button>
           </div>
 
           <div className="hidden sm:flex sm:items-start sm:justify-between sm:gap-4">
@@ -767,31 +755,18 @@ export default function AgendaCalendar({
               </button>
             </div>
 
-            <div className="flex min-w-0 flex-col items-end gap-2">
-              <div className="min-w-0 text-sm font-semibold text-right">{label}</div>
-
-              <button
-                type="button"
-                onClick={() => openQuickDraft()}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:opacity-95"
-                aria-label="Créer un élément d’agenda"
-                title="Créer un élément"
-              >
-                <Plus className="h-4 w-4" />
-                <span>Créer</span>
-              </button>
-            </div>
+            <div className="min-w-0 text-sm font-semibold text-right">{label}</div>
           </div>
 
           <div className="text-sm font-semibold sm:hidden">{label}</div>
 
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,11rem)_minmax(0,10rem)_minmax(0,7rem)_minmax(0,1fr)] md:items-end">
+          <div className="hidden grid-cols-1 gap-2 md:grid md:grid-cols-[minmax(0,10rem)_minmax(0,9rem)_minmax(0,7rem)_minmax(0,1fr)] md:items-end">
             <label className="space-y-1">
               <span className="text-[11px] text-muted-foreground">Période</span>
               <select
                 value={viewMode}
                 onChange={(event) => changeView(event.target.value as CalendarViewMode)}
-                className="h-9 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                className="h-8 w-full rounded-lg border border-input bg-background px-3 text-xs"
                 aria-label="Choisir la période de l’agenda"
               >
                 <option value="dayGridMonth">Mois</option>
@@ -804,7 +779,7 @@ export default function AgendaCalendar({
               <select
                 value={navigationAnchorDate.getMonth() + 1}
                 onChange={(event) => updateNavigationMonth(Number(event.target.value) - 1)}
-                className="h-9 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                className="h-8 w-full rounded-lg border border-input bg-background px-3 text-xs"
                 aria-label="Choisir le mois de l’agenda"
               >
                 {MONTH_OPTIONS.map((option) => (
@@ -819,7 +794,7 @@ export default function AgendaCalendar({
               <select
                 value={navigationAnchorDate.getFullYear()}
                 onChange={(event) => updateNavigationYear(Number(event.target.value))}
-                className="h-9 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                className="h-8 w-full rounded-lg border border-input bg-background px-3 text-xs"
                 aria-label="Choisir l’année de l’agenda"
               >
                 {navigationYearOptions.map((year) => (
@@ -840,6 +815,67 @@ export default function AgendaCalendar({
               />
             </div>
           </div>
+
+          <details className="hidden rounded-xl border border-border/70 bg-background/80 px-3 py-2 md:hidden">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium">
+              <span>Période et filtres</span>
+              <span className="text-xs font-normal text-muted-foreground">Secondaires</span>
+            </summary>
+            <div className="mt-3 space-y-3">
+              <label className="block space-y-1.5">
+                <span className="text-[11px] text-muted-foreground">Période</span>
+                <select
+                  value={viewMode}
+                  onChange={(event) => changeView(event.target.value as CalendarViewMode)}
+                  className="h-8 w-full rounded-lg border border-input bg-background px-3 text-xs"
+                  aria-label="Choisir la période de l’agenda"
+                >
+                  <option value="dayGridMonth">Mois</option>
+                  <option value="timeGridWeek">Semaine</option>
+                  <option value="timeGridDay">Jour</option>
+                </select>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block space-y-1.5">
+                  <span className="text-[11px] text-muted-foreground">Mois</span>
+                  <select
+                    value={navigationAnchorDate.getMonth() + 1}
+                    onChange={(event) => updateNavigationMonth(Number(event.target.value) - 1)}
+                    className="h-8 w-full rounded-lg border border-input bg-background px-3 text-xs"
+                    aria-label="Choisir le mois de l’agenda"
+                  >
+                    {MONTH_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-[11px] text-muted-foreground">Année</span>
+                  <select
+                    value={navigationAnchorDate.getFullYear()}
+                    onChange={(event) => updateNavigationYear(Number(event.target.value))}
+                    className="h-8 w-full rounded-lg border border-input bg-background px-3 text-xs"
+                    aria-label="Choisir l’année de l’agenda"
+                  >
+                    {navigationYearOptions.map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <AgendaCalendarFiltersBar
+                priorityFilter={priorityFilter}
+                timeWindowFilter={timeWindowFilter}
+                onPriorityFilterChange={setPriorityFilter}
+                onTimeWindowFilterChange={setTimeWindowFilter}
+                onReset={clearFilters}
+              />
+            </div>
+          </details>
         </div>
       </div>
 
@@ -851,7 +887,7 @@ export default function AgendaCalendar({
         </div>
       ) : null}
 
-      {!error && displayMode === "calendar" && agendaEvents.length === 0 && (
+      {agendaEvents.length < 0 ? (
         <div className="sn-empty sn-empty--premium sn-animate-in">
           {hasActiveAgendaFilters ? (
             <>
@@ -873,12 +909,12 @@ export default function AgendaCalendar({
             <div className="sn-empty-title">Aucune tâche planifiée</div>
           )}
         </div>
-      )}
+      ) : null}
 
       <div className="space-y-0 md:flex md:min-h-0 md:flex-1">
         <div className="sn-card p-2 bg-[radial-gradient(900px_circle_at_100%_-10%,rgba(59,130,246,0.08),transparent_50%),linear-gradient(180deg,rgba(15,23,42,0.14),transparent_42%)] md:flex md:min-h-0 md:flex-1 md:flex-col md:h-full">
           <div
-            className={`agenda-premium-calendar ${isCompactDensity ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"} ${viewTransitioning ? "agenda-transitioning" : ""} ${focusPulseActive ? "sn-highlight-soft" : ""} md:flex md:min-h-0 md:flex-1 md:flex-col`}
+            className={`relative agenda-premium-calendar ${isCompactDensity ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"} ${viewTransitioning ? "agenda-transitioning" : ""} ${focusPulseActive ? "sn-highlight-soft" : ""} md:flex md:min-h-0 md:flex-1 md:flex-col`}
             data-user-timezone={userTimezone}
             onTouchStart={handleCalendarTouchStart}
             onTouchEnd={handleCalendarTouchEnd}
@@ -925,14 +961,103 @@ export default function AgendaCalendar({
               timeZone={userTimezone}
               eventClick={handleEventClick}
             />
-            <p className="mt-2 px-1 text-[11px] text-muted-foreground md:hidden">
+            {displayMode === "calendar" && agendaEvents.length === 0 ? (
+              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-3">
+                <div className="pointer-events-auto max-w-md rounded-xl border border-border bg-background/95 px-4 py-3 text-center shadow-sm">
+                  {hasActiveAgendaFilters ? (
+                    <>
+                      <div className="text-sm font-semibold">Aucun rÃ©sultat avec ces filtres</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        RÃ©initialise les filtres pour rÃ©afficher les Ã©lÃ©ments planifiÃ©s.
+                      </div>
+                      <button
+                        type="button"
+                        className="mt-3 inline-flex items-center justify-center h-9 px-3 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent/60"
+                        onClick={clearFilters}
+                      >
+                        RÃ©initialiser les filtres
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-sm font-semibold">Aucune tÃ¢che planifiÃ©e</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        Utilise le bouton Créer pour ajouter un élément à l'agenda.
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            ) : null}
+            <p className="hidden mt-2 px-1 text-[11px] text-muted-foreground md:hidden">
               Astuce: glissez gauche/droite pour changer de période.
             </p>
           </div>
         </div>
       </div>
 
-      <div className="text-xs text-muted-foreground">
+      <details className="rounded-xl border border-border/70 bg-background/80 px-3 py-2 md:hidden">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium">
+          <span>Période et filtres</span>
+          <span className="text-xs font-normal text-muted-foreground">Secondaires</span>
+        </summary>
+        <div className="mt-3 space-y-3">
+          <label className="block space-y-1.5">
+            <span className="text-[11px] text-muted-foreground">Période</span>
+            <select
+              value={viewMode}
+              onChange={(event) => changeView(event.target.value as CalendarViewMode)}
+              className="h-8 w-full rounded-lg border border-input bg-background px-3 text-xs"
+              aria-label="Choisir la période de l’agenda"
+            >
+              <option value="dayGridMonth">Mois</option>
+              <option value="timeGridWeek">Semaine</option>
+              <option value="timeGridDay">Jour</option>
+            </select>
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block space-y-1.5">
+              <span className="text-[11px] text-muted-foreground">Mois</span>
+              <select
+                value={navigationAnchorDate.getMonth() + 1}
+                onChange={(event) => updateNavigationMonth(Number(event.target.value) - 1)}
+                className="h-8 w-full rounded-lg border border-input bg-background px-3 text-xs"
+                aria-label="Choisir le mois de l’agenda"
+              >
+                {MONTH_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block space-y-1.5">
+              <span className="text-[11px] text-muted-foreground">Année</span>
+              <select
+                value={navigationAnchorDate.getFullYear()}
+                onChange={(event) => updateNavigationYear(Number(event.target.value))}
+                className="h-8 w-full rounded-lg border border-input bg-background px-3 text-xs"
+                aria-label="Choisir l’année de l’agenda"
+              >
+                {navigationYearOptions.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <AgendaCalendarFiltersBar
+            priorityFilter={priorityFilter}
+            timeWindowFilter={timeWindowFilter}
+            onPriorityFilterChange={setPriorityFilter}
+            onTimeWindowFilterChange={setTimeWindowFilter}
+            onReset={clearFilters}
+          />
+        </div>
+      </details>
+
+      <div className="hidden text-xs text-muted-foreground md:block">
         Raccourcis: N (nouvel élément), / (recherche), ←/→ (navigation).
       </div>
 

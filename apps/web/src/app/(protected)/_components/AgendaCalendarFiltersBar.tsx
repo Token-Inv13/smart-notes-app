@@ -29,12 +29,12 @@ export default function AgendaCalendarFiltersBar({
   const [secondaryFiltersOpen, setSecondaryFiltersOpen] = useState(activeFiltersCount > 0);
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
         <button
           type="button"
           onClick={() => setSecondaryFiltersOpen((prev) => !prev)}
-          className="h-9 px-3 rounded-xl border border-input bg-background text-sm"
+          className="h-8 px-2.5 rounded-lg border border-input bg-background text-xs"
           aria-expanded={secondaryFiltersOpen}
           aria-label="Afficher les filtres agenda"
         >
@@ -44,7 +44,7 @@ export default function AgendaCalendarFiltersBar({
           <button
             type="button"
             onClick={onReset}
-            className="h-9 px-3 rounded-xl border border-input bg-background text-sm"
+            className="h-8 px-2.5 rounded-lg border border-input bg-background text-xs"
           >
             Réinitialiser
           </button>
@@ -52,11 +52,11 @@ export default function AgendaCalendarFiltersBar({
       </div>
 
       {secondaryFiltersOpen ? (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <select
             value={priorityFilter}
             onChange={(e) => onPriorityFilterChange(e.target.value as "" | Priority)}
-            className="h-9 min-w-[11rem] rounded-xl border border-input bg-background px-3 text-sm"
+            className="h-8 min-w-[10rem] rounded-lg border border-input bg-background px-2.5 text-xs"
             aria-label="Filtrer par priorité"
           >
             <option value="">Toutes priorités</option>
@@ -68,7 +68,7 @@ export default function AgendaCalendarFiltersBar({
           <select
             value={timeWindowFilter}
             onChange={(e) => onTimeWindowFilterChange(e.target.value as CalendarTimeWindowFilter)}
-            className="h-9 min-w-[12rem] rounded-xl border border-input bg-background px-3 text-sm"
+            className="h-8 min-w-[10.5rem] rounded-lg border border-input bg-background px-2.5 text-xs"
             aria-label="Filtrer par plage horaire"
           >
             <option value="">Toutes plages</option>
