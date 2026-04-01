@@ -273,6 +273,15 @@ test("agenda_calendar_hides_header_filter_but_keeps_search", async ({ page }) =>
   await expect(page.getByRole("button", { name: "Aujourd’hui" })).toBeVisible();
 });
 
+test("agenda_calendar_keeps_create_button_visible_on_mobile", async ({ page }) => {
+  const users = getE2EUsers();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  await page.goto("/tasks?view=calendar");
+  await expect(page.getByRole("button", { name: "Créer" })).toBeVisible();
+});
+
 test("agenda_microguide_hides_immediately_and_stays_hidden_after_revisit", async ({ page }) => {
   const users = getE2EUsers();
   await loginViaUi(page, users.owner, "/tasks?view=list");

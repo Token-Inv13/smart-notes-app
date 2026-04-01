@@ -152,7 +152,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   const isAdminBackofficeRoute = pathname.startsWith("/admin");
   const isAgendaRoute = pathname.startsWith("/tasks");
   const shouldShowPwaInstallCta = pathname === "/dashboard";
-  const shouldRenderDock = !isAgendaRoute || !isTasksCalendarView;
+  const shouldRenderDock = !isAgendaRoute || !isTasksCalendarView || isMobileViewport;
   const currentPath = useMemo(() => {
     const qs = searchParams.toString();
     return qs ? `${pathname}?${qs}` : pathname;
