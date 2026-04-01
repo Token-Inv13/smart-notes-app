@@ -684,7 +684,7 @@ export default function AgendaCalendar({
     googleCalendarEvents.length === 0;
 
   return (
-    <section className="space-y-3 overflow-x-hidden">
+    <section className="space-y-3 overflow-x-hidden md:flex md:min-h-[calc(100dvh-18rem)] md:flex-col md:space-y-0 md:gap-3">
       <div className="rounded-xl border border-border bg-card/60 p-2.5 sm:p-3">
         <div className="flex flex-col gap-2.5">
           <div className="flex flex-col gap-2 sm:hidden">
@@ -875,10 +875,10 @@ export default function AgendaCalendar({
         </div>
       )}
 
-      <div className="space-y-0">
-        <div className="sn-card p-2 bg-[radial-gradient(900px_circle_at_100%_-10%,rgba(59,130,246,0.08),transparent_50%),linear-gradient(180deg,rgba(15,23,42,0.14),transparent_42%)]">
+      <div className="space-y-0 md:flex md:min-h-0 md:flex-1">
+        <div className="sn-card p-2 bg-[radial-gradient(900px_circle_at_100%_-10%,rgba(59,130,246,0.08),transparent_50%),linear-gradient(180deg,rgba(15,23,42,0.14),transparent_42%)] md:flex md:min-h-0 md:flex-1 md:flex-col md:h-full">
           <div
-            className={`agenda-premium-calendar ${isCompactDensity ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"} ${viewTransitioning ? "agenda-transitioning" : ""} ${focusPulseActive ? "sn-highlight-soft" : ""}`}
+            className={`agenda-premium-calendar ${isCompactDensity ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"} ${viewTransitioning ? "agenda-transitioning" : ""} ${focusPulseActive ? "sn-highlight-soft" : ""} md:flex md:min-h-0 md:flex-1 md:flex-col`}
             data-user-timezone={userTimezone}
             onTouchStart={handleCalendarTouchStart}
             onTouchEnd={handleCalendarTouchEnd}
@@ -887,6 +887,7 @@ export default function AgendaCalendar({
               ref={calendarRef}
               plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
               initialView={viewMode}
+              height="100%"
               headerToolbar={false}
               locale="fr"
               firstDay={1}
