@@ -899,7 +899,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
           {shouldRenderDock ? (
             <SmartActionDock
               mobileHidden={mobileOpen}
-              hiddenOnScroll={dockHiddenOnScroll}
+              hiddenOnScroll={isAgendaRoute ? false : dockHiddenOnScroll}
               desktopTopClass={dockDesktopTopClass}
               subtleIdle={isAgendaRoute}
               createAction={(

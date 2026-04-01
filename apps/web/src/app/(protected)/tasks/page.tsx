@@ -51,6 +51,7 @@ import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
 import { CALENDAR_PREFERENCES_STORAGE_KEY } from "../_components/agendaCalendarUtils";
 import type { AgendaCalendarPreferences } from "../_components/AgendaCalendar";
 import AgendaActionBar from "../_components/AgendaActionBar";
+import CreateButton from "../_components/CreateButton";
 import {
   createTaskWithPlanGuard,
   FREE_TASK_LIMIT_MESSAGE,
@@ -1594,7 +1595,25 @@ export default function TasksPage() {
             searchValue={searchInput}
             onSearchChange={setSearchInput}
             onFilterToggle={() => setFiltersOpen(true)}
-            trailingSlot={<div id="sn-create-slot" data-task-view-mode={viewMode} />}
+            trailingSlot={
+              <div id="sn-create-slot" data-task-view-mode={viewMode}>
+                {viewMode === "calendar" ? (
+                  <CreateButton
+                    renderCustomTrigger={({ onClick, ariaLabel, title }) => (
+                      <button
+                        type="button"
+                        onClick={onClick}
+                        aria-label={ariaLabel}
+                        title={title}
+                        className="hidden md:inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground shadow-sm transition-opacity hover:opacity-95"
+                      >
+                        Créer
+                      </button>
+                    )}
+                  />
+                ) : null}
+              </div>
+            }
           />
         </div>
 

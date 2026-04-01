@@ -687,6 +687,14 @@ export default function AgendaCalendar({
     Boolean(priorityFilter) ||
     timeWindowFilter !== "";
   const isMobileDenseView = isMobileViewport && viewMode !== "timeGridDay";
+  const calendarHeight =
+    !isMobileViewport
+      ? "100%"
+      : viewMode === "dayGridMonth"
+        ? "auto"
+        : viewMode === "timeGridDay"
+          ? "min(38rem, 72dvh)"
+          : "min(40rem, 74dvh)";
   const mobileCalendarMinWidthClass =
     isMobileDenseView && viewMode === "dayGridMonth"
       ? "min-w-[42rem]"
@@ -920,7 +928,7 @@ export default function AgendaCalendar({
               ref={calendarRef}
               plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
               initialView={viewMode}
-              height={isMobileViewport ? "auto" : "100%"}
+              height={calendarHeight}
               headerToolbar={false}
               locale="fr"
               firstDay={1}
