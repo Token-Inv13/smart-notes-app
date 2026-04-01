@@ -699,8 +699,15 @@ export default function AgendaCalendar({
     isMobileDenseView && viewMode === "dayGridMonth"
       ? "min-w-[42rem]"
       : isMobileDenseView
-        ? "min-w-[44rem]"
+        ? "min-w-[46rem]"
         : "";
+  const dayHeaderFormat = isMobileViewport
+    ? viewMode === "timeGridWeek"
+      ? { weekday: "narrow" as const, day: "numeric" as const }
+      : viewMode === "dayGridMonth"
+        ? { weekday: "narrow" as const }
+        : { weekday: "short" as const, day: "numeric" as const }
+    : undefined;
 
   const showNoGoogleEventsMessage =
     calendarConnected &&
@@ -931,6 +938,7 @@ export default function AgendaCalendar({
               height={calendarHeight}
               headerToolbar={false}
               locale="fr"
+              dayHeaderFormat={dayHeaderFormat}
               firstDay={1}
               nowIndicator
               selectable

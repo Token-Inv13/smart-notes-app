@@ -380,6 +380,15 @@ body {
     .agenda-premium-calendar .fc .fc-daygrid-day-number {
       font-size: 0.75rem;
     }
+
+    .agenda-premium-calendar.agenda-view-timegrid .fc .fc-col-header-cell-cushion {
+      padding-inline: 0.15rem;
+      white-space: nowrap;
+    }
+
+    .agenda-premium-calendar.agenda-view-timegrid .fc .fc-timegrid-axis-cushion {
+      font-size: 0.68rem;
+    }
   }
 
   .bg-card {

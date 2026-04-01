@@ -1599,13 +1599,13 @@ export default function TasksPage() {
               <div id="sn-create-slot" data-task-view-mode={viewMode}>
                 {viewMode === "calendar" ? (
                   <CreateButton
-                    renderCustomTrigger={({ onClick, ariaLabel, title }) => (
+                    renderCustomTrigger={({ onClick, className, ariaLabel, title }) => (
                       <button
                         type="button"
                         onClick={onClick}
                         aria-label={ariaLabel}
                         title={title}
-                        className="hidden md:inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground shadow-sm transition-opacity hover:opacity-95"
+                        className={`hidden md:inline-flex ${className} text-[0] before:content-['+'] before:text-2xl before:leading-none`}
                       >
                         Créer
                       </button>
