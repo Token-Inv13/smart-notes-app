@@ -683,7 +683,7 @@ export default function AgendaCalendar({
     googleCalendarEvents.length === 0;
 
   return (
-    <section className="space-y-2 overflow-x-hidden md:flex md:min-h-[calc(100dvh-9rem)] md:flex-col md:space-y-0 md:gap-2">
+    <section className="space-y-2 overflow-x-hidden md:flex md:h-[calc(100dvh-9rem)] md:min-h-[calc(100dvh-9rem)] md:flex-col md:space-y-0 md:gap-2">
       <div className="rounded-xl border border-border bg-card/60 p-2 sm:p-2.5">
         <div className="flex flex-col gap-2">
           <div className="flex flex-col gap-2 sm:hidden">

@@ -810,6 +810,7 @@ export default function TasksPage() {
     [optimisticAllTasks, optimisticWorkspaceIdByTaskId],
   );
   const tasks = viewMode === "calendar" ? effectiveCalendarWindowTasks : effectiveAllTasks;
+  const isCalendarView = viewMode === "calendar";
 
   useEffect(() => {
     setOptimisticAgendaTaskById((prev) => {
@@ -1574,9 +1575,12 @@ export default function TasksPage() {
       onDragCancel={handleFolderDragCancel}
       onDragEnd={handleFolderDragEnd}
     >
-      <div className="space-y-3 md:space-y-2" {...workspaceTabsSwipeHandlers}>
+      <div
+        className={isCalendarView ? "flex min-h-0 flex-1 flex-col gap-2 md:gap-2" : "space-y-3 md:space-y-2"}
+        {...workspaceTabsSwipeHandlers}
+      >
       {workspaceIdParam && tabs}
-      <header className="flex flex-col gap-2 mb-2 md:mb-2">
+      <header className={isCalendarView ? "flex flex-col gap-1.5 mb-1 md:mb-1" : "flex flex-col gap-2 mb-2 md:mb-2"}>
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-xl font-semibold">Agenda</h1>
         </div>
@@ -1952,26 +1956,28 @@ export default function TasksPage() {
       )}
 
       {!loading && !error && archiveView === "active" && viewMode === "calendar" && (
-        <AgendaCalendar
-          tasks={mainTasks}
-          todos={todosForCounter}
-          workspaces={effectiveWorkspaces}
-          initialAnchorDate={initialCalendarAnchorDate}
-          initialPreferences={calendarInitialPreferences}
-          onPreferencesChange={handleAgendaCalendarPreferencesChange}
-          createRequest={agendaCreateRequest}
-          onCreateRequestHandled={handleAgendaCreateRequestHandled}
-          onCreateEvent={handleCalendarCreate}
-          onDeleteEvent={handleCalendarDelete}
-          hiddenGoogleEventIds={optimisticDeletedGoogleEventIds}
-          onUpdateEvent={handleCalendarUpdate}
-          onSkipOccurrence={handleSkipOccurrence}
-          onVisibleRangeChange={handleCalendarVisibleRangeChange}
-          onOpenTask={(taskId) => {
-            const qs = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
-            router.push(`/tasks/${taskId}${qs}`);
-          }}
-        />
+        <div className="min-h-0 flex-1">
+          <AgendaCalendar
+            tasks={mainTasks}
+            todos={todosForCounter}
+            workspaces={effectiveWorkspaces}
+            initialAnchorDate={initialCalendarAnchorDate}
+            initialPreferences={calendarInitialPreferences}
+            onPreferencesChange={handleAgendaCalendarPreferencesChange}
+            createRequest={agendaCreateRequest}
+            onCreateRequestHandled={handleAgendaCreateRequestHandled}
+            onCreateEvent={handleCalendarCreate}
+            onDeleteEvent={handleCalendarDelete}
+            hiddenGoogleEventIds={optimisticDeletedGoogleEventIds}
+            onUpdateEvent={handleCalendarUpdate}
+            onSkipOccurrence={handleSkipOccurrence}
+            onVisibleRangeChange={handleCalendarVisibleRangeChange}
+            onOpenTask={(taskId) => {
+              const qs = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
+              router.push(`/tasks/${taskId}${qs}`);
+            }}
+          />
+        </div>
       )}
 
       {!loading && !error && archiveView === "active" && viewMode === "list" && mainTasks.length > 0 && (
