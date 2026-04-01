@@ -1574,9 +1574,9 @@ export default function TasksPage() {
       onDragCancel={handleFolderDragCancel}
       onDragEnd={handleFolderDragEnd}
     >
-      <div className="space-y-4 md:space-y-3" {...workspaceTabsSwipeHandlers}>
+      <div className="space-y-3 md:space-y-2" {...workspaceTabsSwipeHandlers}>
       {workspaceIdParam && tabs}
-      <header className="flex flex-col gap-2 mb-4 md:mb-3">
+      <header className="flex flex-col gap-2 mb-2 md:mb-2">
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-xl font-semibold">Agenda</h1>
         </div>

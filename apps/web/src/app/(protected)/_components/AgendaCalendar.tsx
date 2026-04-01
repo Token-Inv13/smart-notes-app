@@ -683,9 +683,9 @@ export default function AgendaCalendar({
     googleCalendarEvents.length === 0;
 
   return (
-    <section className="space-y-3 overflow-x-hidden md:flex md:min-h-[calc(100dvh-18rem)] md:flex-col md:space-y-0 md:gap-3">
-      <div className="rounded-xl border border-border bg-card/60 p-2.5 sm:p-3">
-        <div className="flex flex-col gap-2.5">
+    <section className="space-y-2 overflow-x-hidden md:flex md:min-h-[calc(100dvh-9rem)] md:flex-col md:space-y-0 md:gap-2">
+      <div className="rounded-xl border border-border bg-card/60 p-2 sm:p-2.5">
+        <div className="flex flex-col gap-2">
           <div className="flex flex-col gap-2 sm:hidden">
             <div className="inline-flex rounded-xl border border-input bg-background overflow-hidden w-fit max-w-full">
               <button
@@ -721,7 +721,7 @@ export default function AgendaCalendar({
             </div>
           </div>
 
-          <div className="hidden sm:flex sm:items-start sm:justify-between sm:gap-4">
+          <div className="hidden sm:flex sm:items-start sm:justify-between sm:gap-2">
             <div className="inline-flex rounded-xl border border-input bg-background overflow-hidden w-fit max-w-full">
               <button
                 type="button"
@@ -758,8 +758,7 @@ export default function AgendaCalendar({
             <div className="min-w-0 text-sm font-semibold text-right">{label}</div>
           </div>
 
-          <div className="text-sm font-semibold sm:hidden">{label}</div>
-
+          
           <div className="hidden grid-cols-1 gap-2 md:grid md:grid-cols-[minmax(0,10rem)_minmax(0,9rem)_minmax(0,7rem)_minmax(0,1fr)] md:items-end">
             <label className="space-y-1">
               <span className="text-[11px] text-muted-foreground">Période</span>
@@ -816,66 +815,7 @@ export default function AgendaCalendar({
             </div>
           </div>
 
-          <details className="hidden rounded-xl border border-border/70 bg-background/80 px-3 py-2 md:hidden">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium">
-              <span>Période et filtres</span>
-              <span className="text-xs font-normal text-muted-foreground">Secondaires</span>
-            </summary>
-            <div className="mt-3 space-y-3">
-              <label className="block space-y-1.5">
-                <span className="text-[11px] text-muted-foreground">Période</span>
-                <select
-                  value={viewMode}
-                  onChange={(event) => changeView(event.target.value as CalendarViewMode)}
-                  className="h-8 w-full rounded-lg border border-input bg-background px-3 text-xs"
-                  aria-label="Choisir la période de l’agenda"
-                >
-                  <option value="dayGridMonth">Mois</option>
-                  <option value="timeGridWeek">Semaine</option>
-                  <option value="timeGridDay">Jour</option>
-                </select>
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <label className="block space-y-1.5">
-                  <span className="text-[11px] text-muted-foreground">Mois</span>
-                  <select
-                    value={navigationAnchorDate.getMonth() + 1}
-                    onChange={(event) => updateNavigationMonth(Number(event.target.value) - 1)}
-                    className="h-8 w-full rounded-lg border border-input bg-background px-3 text-xs"
-                    aria-label="Choisir le mois de l’agenda"
-                  >
-                    {MONTH_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block space-y-1.5">
-                  <span className="text-[11px] text-muted-foreground">Année</span>
-                  <select
-                    value={navigationAnchorDate.getFullYear()}
-                    onChange={(event) => updateNavigationYear(Number(event.target.value))}
-                    className="h-8 w-full rounded-lg border border-input bg-background px-3 text-xs"
-                    aria-label="Choisir l’année de l’agenda"
-                  >
-                    {navigationYearOptions.map((year) => (
-                      <option key={year} value={year}>
-                        {year}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <AgendaCalendarFiltersBar
-                priorityFilter={priorityFilter}
-                timeWindowFilter={timeWindowFilter}
-                onPriorityFilterChange={setPriorityFilter}
-                onTimeWindowFilterChange={setTimeWindowFilter}
-                onReset={clearFilters}
-              />
-            </div>
-          </details>
+          
         </div>
       </div>
 
@@ -887,31 +827,7 @@ export default function AgendaCalendar({
         </div>
       ) : null}
 
-      {agendaEvents.length < 0 ? (
-        <div className="sn-empty sn-empty--premium sn-animate-in">
-          {hasActiveAgendaFilters ? (
-            <>
-              <div className="sn-empty-title">Aucun résultat avec ces filtres</div>
-              <div className="sn-empty-desc">
-                Essaie de réinitialiser les filtres de l’agenda pour afficher plus d’éléments.
-              </div>
-              <div className="mt-3">
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center h-10 px-4 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent/60"
-                  onClick={clearFilters}
-                >
-                  Réinitialiser les filtres
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="sn-empty-title">Aucune tâche planifiée</div>
-          )}
-        </div>
-      ) : null}
-
-      <div className="space-y-0 md:flex md:min-h-0 md:flex-1">
+            <div className="space-y-0 md:flex md:min-h-0 md:flex-1">
         <div className="sn-card p-2 bg-[radial-gradient(900px_circle_at_100%_-10%,rgba(59,130,246,0.08),transparent_50%),linear-gradient(180deg,rgba(15,23,42,0.14),transparent_42%)] md:flex md:min-h-0 md:flex-1 md:flex-col md:h-full">
           <div
             className={`relative agenda-premium-calendar ${isCompactDensity ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"} ${viewTransitioning ? "agenda-transitioning" : ""} ${focusPulseActive ? "sn-highlight-soft" : ""} md:flex md:min-h-0 md:flex-1 md:flex-col`}
@@ -989,9 +905,6 @@ export default function AgendaCalendar({
                 </div>
               </div>
             ) : null}
-            <p className="hidden mt-2 px-1 text-[11px] text-muted-foreground md:hidden">
-              Astuce: glissez gauche/droite pour changer de période.
-            </p>
           </div>
         </div>
       </div>
