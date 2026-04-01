@@ -1,7 +1,5 @@
 "use client";
 
-import { auth } from "@/lib/firebase";
-
 type ClientSeverity = "error" | "warn";
 
 type ClientErrorPayload = {
@@ -35,10 +33,15 @@ function hashUid(uid: string): string {
   return `u_${(hash >>> 0).toString(16)}`;
 }
 
-function getUidHash() {
-  const uid = auth.currentUser?.uid;
-  if (!uid) return "anonymous";
-  return hashUid(uid);
+async function getUidHash() {
+  try {
+    const { auth } = await import("@/lib/firebase");
+    const uid = auth.currentUser?.uid;
+    if (!uid) return "anonymous";
+    return hashUid(uid);
+  } catch {
+    return "anonymous";
+  }
 }
 
 function normalizeError(error: unknown): { message: string; stack?: string } {
@@ -55,13 +58,14 @@ function normalizeError(error: unknown): { message: string; stack?: string } {
 }
 
 export async function captureClientError(input: ClientErrorPayload) {
+  const uidHash = input.uidHash ?? (await getUidHash());
   const payload = {
     eventName: input.eventName,
     severity: input.severity ?? "error",
     message: input.message,
     stack: input.stack,
     route: input.route ?? currentRoute(),
-    uidHash: input.uidHash ?? getUidHash(),
+    uidHash,
     source: input.source ?? "web",
     kind: input.kind ?? "client",
     env: input.env ?? (process.env.NODE_ENV ?? "development"),

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { DateSelectArg, EventClickArg } from "@fullcalendar/core";
 import { toUserErrorMessage } from "@/lib/userError";
 import type { Priority, TaskCalendarKind, TaskDoc, TaskRecurrenceFreq } from "@/types/firestore";
@@ -68,6 +68,15 @@ export function useAgendaDraftManager({
   const [draft, setDraft] = useState<CalendarDraft | null>(null);
   const [editScope, setEditScope] = useState<"series" | "occurrence">("series");
   const [saving, setSaving] = useState(false);
+  const draftRef = useRef<CalendarDraft | null>(null);
+  const closedBySaveRef = useRef(false);
+
+  useEffect(() => {
+    draftRef.current = draft;
+    if (draft) {
+      closedBySaveRef.current = false;
+    }
+  }, [draft]);
 
   const openDraftFromSelect = useCallback((arg: DateSelectArg) => {
     const isTimeGridSelection = arg.view.type === "timeGridWeek" || arg.view.type === "timeGridDay";
@@ -125,12 +134,15 @@ export function useAgendaDraftManager({
   const saveDraft = useCallback(async () => {
     if (!draft) return;
 
-    const isBirthday = draft.calendarKind === "birthday";
-    const effectiveAllDay = isBirthday ? true : draft.allDay;
-    const effectiveRecurrenceFreq = isBirthday ? "yearly" : draft.recurrenceFreq;
+    const draftSnapshot = draft;
+    const editScopeSnapshot = editScope;
 
-    const start = parseDateFromDraft(draft.startLocal, effectiveAllDay);
-    const end = parseDateFromDraft(draft.endLocal, effectiveAllDay);
+    const isBirthday = draftSnapshot.calendarKind === "birthday";
+    const effectiveAllDay = isBirthday ? true : draftSnapshot.allDay;
+    const effectiveRecurrenceFreq = isBirthday ? "yearly" : draftSnapshot.recurrenceFreq;
+
+    const start = parseDateFromDraft(draftSnapshot.startLocal, effectiveAllDay);
+    const end = parseDateFromDraft(draftSnapshot.endLocal, effectiveAllDay);
     if (!start || !end) {
       setError("Date/heure invalide.");
       return;
@@ -145,7 +157,7 @@ export function useAgendaDraftManager({
       return;
     }
 
-    if (!draft.title.trim()) {
+    if (!draftSnapshot.title.trim()) {
       setError("Le titre est obligatoire.");
       return;
     }
@@ -153,66 +165,77 @@ export function useAgendaDraftManager({
     const recurrence = effectiveRecurrenceFreq
       ? {
           freq: effectiveRecurrenceFreq,
-          interval: Math.max(1, Number(draft.recurrenceInterval || 1)),
-          until: draft.recurrenceUntil ? new Date(`${draft.recurrenceUntil}T23:59:59`) : null,
-          exceptions: draft.recurrenceExceptions,
+          interval: Math.max(1, Number(draftSnapshot.recurrenceInterval || 1)),
+          until: draftSnapshot.recurrenceUntil ? new Date(`${draftSnapshot.recurrenceUntil}T23:59:59`) : null,
+          exceptions: draftSnapshot.recurrenceExceptions,
         }
       : null;
 
     setSaving(true);
     setError(null);
     try {
-      if (draft.taskId && draft.instanceDate && draft.recurrenceFreq && editScope === "occurrence") {
+      if (draftSnapshot.taskId && draftSnapshot.instanceDate && draftSnapshot.recurrenceFreq && editScopeSnapshot === "occurrence") {
         if (!onSkipOccurrence) {
           setError("Impossible d’éditer cette occurrence pour le moment.");
           return;
         }
 
-        await onSkipOccurrence(draft.taskId, draft.instanceDate);
+        closedBySaveRef.current = true;
+        setDraft(null);
+        await onSkipOccurrence(draftSnapshot.taskId, draftSnapshot.instanceDate);
         await onCreateEvent({
-          title: draft.title.trim(),
+          title: draftSnapshot.title.trim(),
           start,
           end: allDayEnd,
           allDay: effectiveAllDay,
-          workspaceId: draft.workspaceId || null,
-          priority: draft.priority || null,
-          favorite: draft.favorite === true,
-          calendarKind: draft.calendarKind,
+          workspaceId: draftSnapshot.workspaceId || null,
+          priority: draftSnapshot.priority || null,
+          favorite: draftSnapshot.favorite === true,
+          calendarKind: draftSnapshot.calendarKind,
           recurrence: null,
         });
-        setDraft(null);
         return;
       }
 
-      if (draft.taskId) {
+      closedBySaveRef.current = true;
+      setDraft(null);
+      if (draftSnapshot.taskId) {
         await onUpdateEvent({
-          taskId: draft.taskId,
-          title: draft.title.trim(),
+          taskId: draftSnapshot.taskId,
+          title: draftSnapshot.title.trim(),
           start,
           end: allDayEnd,
           allDay: effectiveAllDay,
-          workspaceId: draft.workspaceId || null,
-          priority: draft.priority || null,
-          calendarKind: draft.calendarKind,
+          workspaceId: draftSnapshot.workspaceId || null,
+          priority: draftSnapshot.priority || null,
+          calendarKind: draftSnapshot.calendarKind,
           recurrence,
         });
       } else {
         await onCreateEvent({
-          title: draft.title.trim(),
+          title: draftSnapshot.title.trim(),
           start,
           end: allDayEnd,
           allDay: effectiveAllDay,
-          workspaceId: draft.workspaceId || null,
-          priority: draft.priority || null,
-          favorite: draft.favorite === true,
-          calendarKind: draft.calendarKind,
+          workspaceId: draftSnapshot.workspaceId || null,
+          priority: draftSnapshot.priority || null,
+          favorite: draftSnapshot.favorite === true,
+          calendarKind: draftSnapshot.calendarKind,
           recurrence,
         });
       }
-      setDraft(null);
     } catch (e) {
-      setError(toUserErrorMessage(e, "Erreur de sauvegarde."));
+      if (closedBySaveRef.current) {
+        setDraft(draftSnapshot);
+        setEditScope(editScopeSnapshot);
+        setError(toUserErrorMessage(e, "Erreur de sauvegarde."));
+      } else {
+        console.warn("agenda.draft_save_failed_after_reopen", {
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
     } finally {
+      closedBySaveRef.current = false;
       setSaving(false);
     }
   }, [draft, editScope, onCreateEvent, onSkipOccurrence, onUpdateEvent, setError]);

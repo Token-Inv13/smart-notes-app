@@ -692,6 +692,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
 
   const saveEdits = async (opts?: { setView?: boolean }): Promise<boolean> => {
     if (!note?.id) return false;
+    if (saving) return false;
 
     const user = auth.currentUser;
     if (!user || user.uid !== note.userId) {
@@ -740,6 +741,25 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
       workspaceId: validation.data.workspaceId,
     });
 
+    const shouldSwitchToView = opts?.setView === true;
+    const previousNote = note;
+    const previousMode = mode;
+    const previousSnapshot = lastSavedSnapshotRef.current;
+    const previousDirty = isDirtyRef.current;
+    const optimisticNote = {
+      ...note,
+      title: validation.data.title,
+      content: validation.data.content ?? "",
+      workspaceId: validation.data.workspaceId ?? null,
+    };
+
+    setNote(optimisticNote);
+    if (shouldSwitchToView) {
+      setMode("view");
+    }
+    lastSavedSnapshotRef.current = nextSnapshot;
+    setDirty(false);
+
     try {
       await updateDoc(doc(db, "notes", note.id), {
         title: validation.data.title,
@@ -750,23 +770,13 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
 
       console.info("[note modal] saveEdits success", { noteId: note.id });
 
-      lastSavedSnapshotRef.current = nextSnapshot;
-      setDirty(false);
-
-      setNote((prev) =>
-        prev
-          ? {
-              ...prev,
-              title: validation.data.title,
-              content: validation.data.content ?? "",
-              workspaceId: validation.data.workspaceId ?? null,
-            }
-          : prev,
-      );
-      if (opts?.setView) setMode("view");
       return true;
     } catch (e) {
       console.error("Error updating note (modal)", e);
+      setNote(previousNote);
+      setMode(previousMode);
+      lastSavedSnapshotRef.current = previousSnapshot;
+      setDirty(previousDirty);
       setEditError(toUserErrorMessage(e, "Erreur lors de la modification de la note."));
       return false;
     } finally {
@@ -928,6 +938,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
           <>
             <div className="flex h-full min-h-0 flex-col gap-4">
               {shareFeedback && <div className="sn-alert shrink-0">{shareFeedback}</div>}
+              {saving ? <div className="sn-alert shrink-0" role="status" aria-live="polite">Enregistrement en cours…</div> : null}
               {sharedUrl && (
                 <div className="sn-card shrink-0 p-3">
                   <div className="text-xs text-muted-foreground mb-1">Lien interne de la note</div>

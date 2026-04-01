@@ -3,8 +3,6 @@
 import { useEffect } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
-import { listenToForegroundMessages } from "@/lib/fcm";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import { installGlobalErrorHandlers, observeCaughtError } from "@/lib/clientObservability";
 
@@ -53,7 +51,6 @@ function readLocalAppearance(): { mode: ThemeMode; background: BackgroundPreset 
 
 export default function ThemeClientProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
-    listenToForegroundMessages();
     const uninstallGlobalErrorHandlers = installGlobalErrorHandlers();
 
     const local = readLocalAppearance();
@@ -61,48 +58,62 @@ export default function ThemeClientProvider({ children }: { children: React.Reac
     applyBackground(local.background);
 
     let unsubscribeSettings: (() => void) | null = null;
+    let unsubscribeAuth: (() => void) | null = null;
+    let cancelled = false;
 
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      if (unsubscribeSettings) {
-        unsubscribeSettings();
-        unsubscribeSettings = null;
-      }
-      if (!user) return;
+    void (async () => {
+      const [{ auth, db }, { listenToForegroundMessages }] = await Promise.all([
+        import("@/lib/firebase"),
+        import("@/lib/fcm"),
+      ]);
 
-      const ref = doc(db, "users", user.uid);
-      unsubscribeSettings = onSnapshot(
-        ref,
-        (snap) => {
-          const data = snap.data() as UserAppearanceDoc | undefined;
-          const mode = data?.settings?.appearance?.mode ?? local.mode;
-          const background = data?.settings?.appearance?.background ?? local.background;
+      if (cancelled) return;
 
-          const normalizedMode: ThemeMode = mode === "dark" ? "dark" : "light";
-          const normalizedBg: BackgroundPreset =
-            background === "dots" || background === "grid" ? background : "none";
+      listenToForegroundMessages();
 
-          localStorage.setItem("themeMode", normalizedMode);
-          localStorage.setItem("themeBackground", normalizedBg);
+      unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+        if (unsubscribeSettings) {
+          unsubscribeSettings();
+          unsubscribeSettings = null;
+        }
+        if (!user) return;
 
-          applyTheme(normalizedMode);
-          applyBackground(normalizedBg);
-        },
-        (err) => {
-          if (isAuthInvalidError(err)) {
-            void invalidateAuthSession();
-            return;
-          }
+        const ref = doc(db, "users", user.uid);
+        unsubscribeSettings = onSnapshot(
+          ref,
+          (snap) => {
+            const data = snap.data() as UserAppearanceDoc | undefined;
+            const mode = data?.settings?.appearance?.mode ?? local.mode;
+            const background = data?.settings?.appearance?.background ?? local.background;
 
-          void observeCaughtError("frontend.auth_settings_snapshot_error", err, {
-            source: "ThemeClientProvider",
-          });
-        },
-      );
-    });
+            const normalizedMode: ThemeMode = mode === "dark" ? "dark" : "light";
+            const normalizedBg: BackgroundPreset =
+              background === "dots" || background === "grid" ? background : "none";
+
+            localStorage.setItem("themeMode", normalizedMode);
+            localStorage.setItem("themeBackground", normalizedBg);
+
+            applyTheme(normalizedMode);
+            applyBackground(normalizedBg);
+          },
+          (err) => {
+            if (isAuthInvalidError(err)) {
+              void invalidateAuthSession();
+              return;
+            }
+
+            void observeCaughtError("frontend.auth_settings_snapshot_error", err, {
+              source: "ThemeClientProvider",
+            });
+          },
+        );
+      });
+    })();
 
     return () => {
+      cancelled = true;
       if (unsubscribeSettings) unsubscribeSettings();
-      unsubscribeAuth();
+      if (unsubscribeAuth) unsubscribeAuth();
       uninstallGlobalErrorHandlers();
     };
   }, []);

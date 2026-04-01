@@ -870,6 +870,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
   const saveEdits = async (opts?: { setView?: boolean }): Promise<boolean> => {
     if (!task?.id) return false;
+    if (saving) return false;
 
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) {
@@ -954,6 +955,29 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       status: validation.data.status,
     });
 
+    const shouldSwitchToView = opts?.setView === true;
+    const previousTask = task;
+    const previousMode = mode;
+    const previousSnapshot = lastSavedSnapshotRef.current;
+    const previousDirty = isDirtyRef.current;
+    const optimisticTask = {
+      ...task,
+      title: validation.data.title,
+      status: validation.data.status,
+      workspaceId: validation.data.workspaceId ?? null,
+      allDay: explicitAllDay,
+      startDate: startTimestamp,
+      dueDate: dueTimestamp,
+      priority,
+    };
+
+    setTask(optimisticTask);
+    if (shouldSwitchToView) {
+      setMode("view");
+    }
+    lastSavedSnapshotRef.current = nextSnapshot;
+    setDirty(false);
+
     try {
       await updateDoc(doc(db, "tasks", task.id), {
         title: validation.data.title,
@@ -1021,25 +1045,6 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
         setSyncFeedback(GOOGLE_SYNC_INCOMPLETE_WINDOW_MESSAGE);
       }
 
-      setTask((prev) =>
-        prev
-          ? {
-              ...prev,
-              title: validation.data.title,
-              status: validation.data.status,
-              workspaceId: validation.data.workspaceId ?? null,
-              allDay: explicitAllDay,
-              startDate: startTimestamp,
-              dueDate: dueTimestamp,
-              priority,
-            }
-          : prev,
-      );
-
-      lastSavedSnapshotRef.current = nextSnapshot;
-      setDirty(false);
-      if (opts?.setView) setMode("view");
-
       if (isPro) {
         const remindersAllowedForTask = !task.recurrence?.freq && !explicitAllDay;
         void syncTaskRemindersAfterSave({
@@ -1054,10 +1059,18 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       return true;
     } catch (e) {
       console.error("Error updating task (modal)", e);
-      setEditError(toUserErrorMessage(e, "Erreur lors de la modification de l’élément d’agenda."));
+      if (isMountedRef.current) {
+        setTask(previousTask);
+        setMode(previousMode);
+        lastSavedSnapshotRef.current = previousSnapshot;
+        setDirty(previousDirty);
+        setEditError(toUserErrorMessage(e, "Erreur lors de la modification de l’élément d’agenda."));
+      }
       return false;
     } finally {
-      setSaving(false);
+      if (isMountedRef.current) {
+        setSaving(false);
+      }
     }
   };
 
@@ -1213,6 +1226,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
         return (
         <div className="space-y-4">
           {shareFeedback && <div className="sn-alert">{shareFeedback}</div>}
+          {saving ? <div className="sn-alert" role="status" aria-live="polite">Enregistrement en cours…</div> : null}
           {syncFeedback && <div className="sn-alert" role="status" aria-live="polite">{syncFeedback}</div>}
           {sharedUrl && (
             <div className="sn-card p-3">
