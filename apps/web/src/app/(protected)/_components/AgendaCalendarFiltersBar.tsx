@@ -52,11 +52,11 @@ export default function AgendaCalendarFiltersBar({
       </div>
 
       {secondaryFiltersOpen ? (
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="grid gap-1.5 sm:flex sm:flex-wrap sm:items-center">
           <select
             value={priorityFilter}
             onChange={(e) => onPriorityFilterChange(e.target.value as "" | Priority)}
-            className="h-8 min-w-[10rem] rounded-lg border border-input bg-background px-2.5 text-xs"
+            className="h-8 w-full min-w-0 rounded-lg border border-input bg-background px-2.5 text-xs sm:w-auto sm:min-w-[10rem]"
             aria-label="Filtrer par priorité"
           >
             <option value="">Toutes priorités</option>
@@ -68,7 +68,7 @@ export default function AgendaCalendarFiltersBar({
           <select
             value={timeWindowFilter}
             onChange={(e) => onTimeWindowFilterChange(e.target.value as CalendarTimeWindowFilter)}
-            className="h-8 min-w-[10.5rem] rounded-lg border border-input bg-background px-2.5 text-xs"
+            className="h-8 w-full min-w-0 rounded-lg border border-input bg-background px-2.5 text-xs sm:w-auto sm:min-w-[10.5rem]"
             aria-label="Filtrer par plage horaire"
           >
             <option value="">Toutes plages</option>
