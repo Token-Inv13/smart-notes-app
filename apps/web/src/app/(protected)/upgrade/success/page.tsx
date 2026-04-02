@@ -26,24 +26,15 @@ export default function UpgradeSuccessPage() {
             ok?: boolean;
             found?: boolean;
             stripeMode?: 'live' | 'test' | 'unknown';
-            adminProjectId?: string | null;
             attempts?: Array<{ step: string; ok: boolean; detail?: string }>;
             plan?: 'free' | 'pro';
           }
         | null;
 
-      const clientProjectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-      if (json && json.adminProjectId && clientProjectId && json.adminProjectId !== clientProjectId) {
-        setSyncError(
-          `La synchro s’exécute sur un autre projet Firebase (admin: ${json.adminProjectId}, client: ${clientProjectId}). Vérifie les variables FIREBASE_ADMIN_JSON/PROJECT_ID côté serveur.`,
-        );
-        return;
-      }
-
       if (json && json.found === false) {
         const mode = json.stripeMode ?? 'unknown';
         setSyncError(
-          `Aucun abonnement Stripe n’a été retrouvé pour ce compte (mode Stripe: ${mode}). Si la souscription est visible dans l’autre mode (test/live), corrige STRIPE_SECRET_KEY.`,
+          `Aucun abonnement Stripe nÃ¢â‚¬â„¢a ÃƒÂ©tÃƒÂ© retrouvÃƒÂ© pour ce compte (mode Stripe: ${mode}). Si la souscription est visible dans lÃ¢â‚¬â„¢autre mode (test/live), corrige STRIPE_SECRET_KEY.`,
         );
         return;
       }
@@ -51,7 +42,7 @@ export default function UpgradeSuccessPage() {
       refetch();
     } catch (e) {
       console.error('Sync error', e);
-      setSyncError('Impossible de rafraîchir le statut pour le moment. Réessaie dans quelques instants.');
+      setSyncError('Impossible de rafraÃƒÂ®chir le statut pour le moment. RÃƒÂ©essaie dans quelques instants.');
     } finally {
       setSyncLoading(false);
     }
@@ -65,27 +56,27 @@ export default function UpgradeSuccessPage() {
 
   return (
     <div className="max-w-xl space-y-4">
-      <h1 className="text-xl font-semibold">Paiement confirmé</h1>
+      <h1 className="text-xl font-semibold">Paiement confirme</h1>
       <p className="text-sm text-muted-foreground">
-        Merci. Ton abonnement est actif. Si ton statut n’est pas encore à jour, attends quelques secondes : la mise à
+        Merci. Ton abonnement est actif. Si ton statut n'est pas encore a jour, attends quelques secondes : la mise a
         jour se fait automatiquement via le webhook Stripe.
       </p>
 
       <div className="border border-border rounded-lg p-4 bg-card text-sm">
         <span className="font-medium">Statut actuel:</span>{' '}
-        <span>{loading ? 'Chargement…' : isPro ? 'Pro' : 'Free'}</span>
+        <span>{loading ? 'Chargement...' : isPro ? 'Pro' : 'Free'}</span>
       </div>
 
       {!isPro && (
         <div className="rounded-lg border border-border bg-background p-4 space-y-2">
-          <div className="text-sm font-medium">Statut pas encore à jour ?</div>
+          <div className="text-sm font-medium">Statut pas encore a jour ?</div>
           <button
             type="button"
             onClick={handleSync}
             disabled={syncLoading}
             className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium disabled:opacity-50"
           >
-            {syncLoading ? 'Rafraîchissement…' : 'Rafraîchir le statut'}
+            {syncLoading ? 'RafraÃƒÂ®chissementÃ¢â‚¬Â¦' : 'RafraÃƒÂ®chir le statut'}
           </button>
           {syncError && <p className="text-sm text-destructive">{syncError}</p>}
         </div>
@@ -108,7 +99,7 @@ export default function UpgradeSuccessPage() {
           href="/settings"
           className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium"
         >
-          Paramètres
+          ParamÃƒÂ¨tres
         </Link>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import Stripe from 'stripe';
 import admin from 'firebase-admin';
-import { getAdminDb, getAdminProjectId, verifySessionCookie } from '@/lib/firebaseAdmin';
+import { getAdminDb, verifySessionCookie } from '@/lib/firebaseAdmin';
 import { logServerError, logServerWarn } from '@/lib/observability';
 import { getStripeModeFromSecret, normalizeEmail, normalizeStripeId, type StripeMode } from '@/lib/stripeUtils';
 import { beginApiObserve, observedError, observedJson, observedText } from '@/lib/apiObservability';
@@ -151,7 +151,6 @@ export async function POST() {
     });
 
     const stripeMode = getStripeModeFromSecret(process.env.STRIPE_SECRET_KEY);
-    const adminProjectId = getAdminProjectId();
 
     if (!sub) {
       const hasStripeContext =
@@ -174,7 +173,7 @@ export async function POST() {
         );
       }
 
-      return observedJson(obsUser, { ok: true, found: false, stripeMode, adminProjectId, attempts });
+      return observedJson(obsUser, { ok: true, found: false, stripeMode, attempts });
     }
 
     if (isSubscriptionModeMismatch(sub, stripeMode)) {
@@ -192,7 +191,6 @@ export async function POST() {
         ignored: true,
         reason: 'mode_mismatch',
         stripeMode,
-        adminProjectId,
         attempts,
       });
     }
@@ -219,7 +217,6 @@ export async function POST() {
       ok: true,
       found: true,
       stripeMode,
-      adminProjectId,
       attempts,
       subscription: {
         id: sub.id,

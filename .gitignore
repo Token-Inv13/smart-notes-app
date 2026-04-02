@@ -48,6 +48,7 @@ apps/web/e2e/test-results/
 *.sln
 *.sw?
 .vercel
+.env
 .env*.local
 functions/.env
 functions/.env.*
