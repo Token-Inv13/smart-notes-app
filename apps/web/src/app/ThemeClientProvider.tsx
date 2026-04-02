@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -51,7 +51,7 @@ function readLocalAppearance(): { mode: ThemeMode; background: BackgroundPreset 
   };
 }
 
-export default function ThemeClientProvider({ children }: { children: React.ReactNode }) {
+function PageViewTracker() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const lastTrackedPathRef = useRef<string | null>(null);
@@ -71,6 +71,11 @@ export default function ThemeClientProvider({ children }: { children: React.Reac
       source: "app",
     });
   }, [pathname, searchParams]);
+
+  return null;
+}
+
+export default function ThemeClientProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const uninstallGlobalErrorHandlers = installGlobalErrorHandlers();
@@ -140,5 +145,12 @@ export default function ThemeClientProvider({ children }: { children: React.Reac
     };
   }, []);
 
-  return children;
+  return (
+    <>
+      <Suspense fallback={null}>
+        <PageViewTracker />
+      </Suspense>
+      {children}
+    </>
+  );
 }
