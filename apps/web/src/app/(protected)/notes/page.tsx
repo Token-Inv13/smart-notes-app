@@ -31,6 +31,7 @@ import {
 } from "@/lib/workspaces";
 import type { NoteDoc } from "@/types/firestore";
 import { htmlToPlainText } from "@/lib/richText";
+import { normalizeDisplayText } from "@/lib/normalizeText";
 import { toUserErrorMessage } from "@/lib/userError";
 import Link from "next/link";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
@@ -104,15 +105,15 @@ export default function NotesPage() {
     return 0;
   };
 
-  const normalizeText = (raw: string) => {
+  const normalizeSearchText = (raw: string) => {
     try {
-      return raw
+      return normalizeDisplayText(raw)
         .toLowerCase()
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
         .trim();
     } catch {
-      return raw.toLowerCase().trim();
+      return normalizeDisplayText(raw).toLowerCase().trim();
     }
   };
 
@@ -155,7 +156,7 @@ export default function NotesPage() {
   const workspaceNameById = useMemo(() => {
     const m = new Map<string, string>();
     for (const ws of effectiveWorkspaces) {
-      if (ws.id) m.set(ws.id, ws.name);
+      if (ws.id) m.set(ws.id, normalizeDisplayText(ws.name));
     }
     return m;
   }, [effectiveWorkspaces]);
@@ -305,7 +306,7 @@ export default function NotesPage() {
 
   const visibleNotes = useMemo(() => {
     const base = archiveView === "archived" ? archivedNotesSorted : sortedNotes.filter((n) => n.archived !== true);
-    const q = normalizeText(debouncedSearch);
+    const q = normalizeSearchText(debouncedSearch);
 
     return base.filter((n) => {
       if (selectedWorkspaceIds && !selectedWorkspaceIds.has(n.workspaceId ?? "")) return false;
@@ -315,8 +316,8 @@ export default function NotesPage() {
 
       const workspaceName = n.workspaceId ? workspaceNameById.get(n.workspaceId) ?? "" : "";
       const tagsText = Array.isArray(n.tags) ? n.tags.join(" ") : "";
-      const text = normalizeText(
-        `${n.title}\n${htmlToPlainText(n.content ?? "")}\n${workspaceName}\n${tagsText}`,
+      const text = normalizeSearchText(
+        `${normalizeDisplayText(n.title)}\n${htmlToPlainText(n.content ?? "")}\n${workspaceName}\n${tagsText}`,
       );
       return text.includes(q);
     });
@@ -676,7 +677,7 @@ export default function NotesPage() {
                     <option value="all">Tous les dossiers</option>
                     {effectiveWorkspaces.map((ws) => (
                       <option key={ws.id ?? ws.name} value={ws.id ?? ""} disabled={!ws.id}>
-                        {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
+                        {workspaceOptionLabelById.get(ws.id ?? "") ?? normalizeDisplayText(ws.name)}
                       </option>
                     ))}
                   </select>
@@ -874,9 +875,9 @@ export default function NotesPage() {
                   >
                     <div className="sn-card-header">
                       <div className="min-w-0">
-                        <div className="sn-card-title truncate">{note.title}</div>
+                        <div className="sn-card-title truncate">{normalizeDisplayText(note.title)}</div>
                         <div className="sn-card-meta">
-                          <span className="sn-badge">{workspaceName}</span>
+                          <span className="sn-badge">{normalizeDisplayText(workspaceName)}</span>
                           {archivedLabel && <span className="sn-badge">Archivée: {archivedLabel}</span>}
                         </div>
                       </div>
@@ -926,9 +927,9 @@ export default function NotesPage() {
                         <div className="space-y-2">
                           <div className="sn-card-header">
                             <div className="min-w-0">
-                              <div className="sn-card-title truncate">{note.title}</div>
+                              <div className="sn-card-title truncate">{normalizeDisplayText(note.title)}</div>
                               <div className="sn-card-meta">
-                                <span className="sn-badge">{workspaceName}</span>
+                                <span className="sn-badge">{normalizeDisplayText(workspaceName)}</span>
                                 {note.favorite && <span className="sn-badge">Favori</span>}
                               </div>
                             </div>
@@ -978,9 +979,9 @@ export default function NotesPage() {
                   <div className="flex flex-col gap-3">
                     <div className="sn-card-header">
                       <div className="min-w-0">
-                        <div className="sn-card-title line-clamp-2">{note.title}</div>
+                        <div className="sn-card-title line-clamp-2">{normalizeDisplayText(note.title)}</div>
                         <div className="sn-card-meta">
-                          <span className="sn-badge">{workspaceName}</span>
+                          <span className="sn-badge">{normalizeDisplayText(workspaceName)}</span>
                           {note.favorite && <span className="sn-badge">Favori</span>}
                         </div>
                       </div>

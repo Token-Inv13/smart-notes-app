@@ -31,6 +31,7 @@ import {
 import { FEATURE_FLAGS } from "@/lib/featureFlags";
 import { registerFcmToken } from "@/lib/fcm";
 import { trackEvent } from "@/lib/analytics";
+import { normalizeDisplayText } from "@/lib/normalizeText";
 import { DraggableCard, type FolderDragData } from "../_components/folderDnd";
 import WorkspaceFolderBrowser from "../_components/WorkspaceFolderBrowser";
 import {
@@ -799,15 +800,15 @@ export default function TasksPage() {
     return 0;
   };
 
-  const normalizeText = (raw: string) => {
+  const normalizeSearchText = (raw: string) => {
     try {
-      return raw
+      return normalizeDisplayText(raw)
         .toLowerCase()
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
         .trim();
     } catch {
-      return raw.toLowerCase().trim();
+      return normalizeDisplayText(raw).toLowerCase().trim();
     }
   };
 
@@ -859,7 +860,7 @@ export default function TasksPage() {
   const workspaceNameById = useMemo(() => {
     const m = new Map<string, string>();
     for (const ws of effectiveWorkspaces) {
-      if (ws.id) m.set(ws.id, ws.name);
+      if (ws.id) m.set(ws.id, normalizeDisplayText(ws.name));
     }
     return m;
   }, [effectiveWorkspaces]);
@@ -1126,7 +1127,7 @@ export default function TasksPage() {
 
   const filteredTasks = useMemo(() => {
     const now = new Date();
-    const q = normalizeText(debouncedSearch);
+    const q = normalizeSearchText(debouncedSearch);
 
     let result = tasks;
 
@@ -1148,8 +1149,8 @@ export default function TasksPage() {
         const startLabel = formatStartDate(task.startDate ?? null);
         const dueLabel = formatDueDate(task.dueDate ?? null);
         const sourceLabel = task.sourceType === "checklist_item" ? "checklist" : "tache";
-        const text = normalizeText(
-          `${task.title}\n${task.description ?? ""}\n${workspaceName}\n${statusLabel(status)}\n${priority}\n${startLabel}\n${dueLabel}\n${sourceLabel}`,
+        const text = normalizeSearchText(
+          `${normalizeDisplayText(task.title)}\n${task.description ?? ""}\n${workspaceName}\n${statusLabel(status)}\n${priority}\n${startLabel}\n${dueLabel}\n${sourceLabel}`,
         );
         return text.includes(q);
       });
@@ -1712,7 +1713,7 @@ export default function TasksPage() {
                     <option value="all">Tous les dossiers</option>
                     {effectiveWorkspaces.map((ws) => (
                       <option key={ws.id ?? ws.name} value={ws.id ?? ""} disabled={!ws.id}>
-                        {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
+                        {workspaceOptionLabelById.get(ws.id ?? "") ?? normalizeDisplayText(ws.name)}
                       </option>
                     ))}
                   </select>
@@ -1927,9 +1928,9 @@ export default function TasksPage() {
                 >
                   <div className="sn-card-header">
                     <div className="min-w-0">
-                      <div className="sn-card-title truncate">{task.title}</div>
+                      <div className="sn-card-title truncate">{normalizeDisplayText(task.title)}</div>
                       <div className="sn-card-meta">
-                        <span className="sn-badge">{workspaceName}</span>
+                        <span className="sn-badge">{normalizeDisplayText(workspaceName)}</span>
                         <span className="sn-badge">{statusLabel(status)}</span>
                         {startLabel && <span className="sn-badge">DÃƒÂ©but: {startLabel}</span>}
                         {dueLabel && <span className="sn-badge">Ãƒâ€°chÃƒÂ©ance: {dueLabel}</span>}
@@ -2024,9 +2025,9 @@ export default function TasksPage() {
                       <div className="space-y-3">
                         <div className="sn-card-header">
                           <div className="min-w-0">
-                            <div className="sn-card-title truncate">{task.title}</div>
+                            <div className="sn-card-title truncate">{normalizeDisplayText(task.title)}</div>
                             <div className="sn-card-meta">
-                              <span className="sn-badge">{workspaceName}</span>
+                              <span className="sn-badge">{normalizeDisplayText(workspaceName)}</span>
                               <span className="sn-badge">{statusLabel(status)}</span>
                               {startLabel && <span className="sn-badge">DÃƒÂ©but: {startLabel}</span>}
                               {dueLabel && <span className="sn-badge">Ãƒâ€°chÃƒÂ©ance: {dueLabel}</span>}
@@ -2107,9 +2108,9 @@ export default function TasksPage() {
                   <div className="flex flex-col gap-3">
                     <div className="sn-card-header">
                       <div className="min-w-0">
-                        <div className="sn-card-title line-clamp-2">{task.title}</div>
+                        <div className="sn-card-title line-clamp-2">{normalizeDisplayText(task.title)}</div>
                         <div className="sn-card-meta">
-                          <span className="sn-badge">{workspaceName}</span>
+                          <span className="sn-badge">{normalizeDisplayText(workspaceName)}</span>
                           <span className="sn-badge">{statusLabel(status)}</span>
                           {startLabel && <span className="sn-badge">DÃƒÂ©but: {startLabel}</span>}
                           {dueLabel && <span className="sn-badge">Ãƒâ€°chÃƒÂ©ance: {dueLabel}</span>}
@@ -2174,7 +2175,7 @@ export default function TasksPage() {
               >
                 <div className="sn-card-header">
                   <div className="min-w-0">
-                    <div className="sn-card-title truncate">{task.title}</div>
+                    <div className="sn-card-title truncate">{normalizeDisplayText(task.title)}</div>
                     <div className="sn-card-meta">
                       <span className="sn-badge">TerminÃƒÂ©e</span>
                     </div>

@@ -37,6 +37,7 @@ import {
 } from "@/lib/datetime";
 import { toUserErrorMessage } from "@/lib/userError";
 import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
+import { normalizeDisplayText } from "@/lib/normalizeText";
 import DictationMicButton from "@/app/(protected)/_components/DictationMicButton";
 import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
 import Modal from "../../../Modal";
@@ -1289,7 +1290,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                   {mode === "view" ? (
                     <div className="space-y-1 min-w-0">
                       <div className="text-sm font-semibold">{TASK_MODAL_DETAIL_TITLE}</div>
-                      <div className="text-sm text-muted-foreground truncate">{task.title}</div>
+                      <div className="text-sm text-muted-foreground truncate">{normalizeDisplayText(task.title)}</div>
                     </div>
                   ) : (
                     <div className="text-sm font-semibold">{TASK_MODAL_EDIT_TITLE}</div>
@@ -1746,7 +1747,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                       <option value="">{TASK_EMPTY_WORKSPACE_LABEL}</option>
                       {workspaces.map((ws) => (
                         <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
-                          {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
+                          {workspaceOptionLabelById.get(ws.id ?? "") ?? normalizeDisplayText(ws.name)}
                         </option>
                       ))}
                     </select>

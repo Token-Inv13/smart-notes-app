@@ -1,4 +1,5 @@
 import type { WorkspaceDoc } from "@/types/firestore";
+import { normalizeDisplayText } from "@/lib/normalizeText";
 
 export type FlattenedWorkspaceItem = {
   workspace: WorkspaceDoc;
@@ -15,7 +16,7 @@ function compareWorkspaces(a: WorkspaceDoc, b: WorkspaceDoc) {
   if (ao !== null && bo === null) return -1;
   if (ao === null && bo !== null) return 1;
 
-  return (a.name || "").localeCompare(b.name || "", "fr");
+  return normalizeDisplayText(a.name || "").localeCompare(normalizeDisplayText(b.name || ""), "fr");
 }
 
 function getWorkspaceId(workspace: WorkspaceDoc): string | null {
@@ -76,7 +77,7 @@ export function flattenWorkspaces(workspaces: WorkspaceDoc[]): FlattenedWorkspac
     if (workspaceId && visited.has(workspaceId)) return;
     if (workspaceId) visited.add(workspaceId);
 
-    const safeName = workspace.name || "Dossier";
+    const safeName = normalizeDisplayText(workspace.name) || "Dossier";
     const pathLabel = [...ancestors, safeName].join(" / ");
 
     flattened.push({
@@ -244,9 +245,9 @@ export function canMoveWorkspaceToParent(
 export function getWorkspaceOptionLabel(workspace: WorkspaceDoc, labels?: Map<string, string>) {
   const workspaceId = getWorkspaceId(workspace);
   if (workspaceId && labels?.has(workspaceId)) {
-    return labels.get(workspaceId) ?? workspace.name;
+    return normalizeDisplayText(labels.get(workspaceId) ?? workspace.name);
   }
-  return workspace.name;
+  return normalizeDisplayText(workspace.name);
 }
 
 export function getRootWorkspaceOptions(workspaces: WorkspaceDoc[]) {

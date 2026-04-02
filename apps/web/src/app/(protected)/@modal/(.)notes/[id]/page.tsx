@@ -9,6 +9,7 @@ import { auth, db, storage } from "@/lib/firebase";
 import { exportNotePdf } from "@/lib/pdf/exportPdf";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import { htmlToMarkdown, sanitizeNoteHtml } from "@/lib/richText";
+import { normalizeDisplayText } from "@/lib/normalizeText";
 import { toUserErrorMessage } from "@/lib/userError";
 import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import { useUserSettings } from "@/hooks/useUserSettings";
@@ -978,7 +979,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
                 <div className="sn-modal-header-safe sticky top-0 z-10 shrink-0 border-b border-border bg-card pb-3">
                   <div className="min-w-0 flex-1">
                     {mode === "view" ? (
-                      <div className="text-sm font-semibold truncate">{note.title}</div>
+                      <div className="text-sm font-semibold truncate">{normalizeDisplayText(note.title)}</div>
                     ) : (
                       <div className="space-y-1">
                         <label className="sr-only" htmlFor="note-modal-title">
@@ -1147,7 +1148,7 @@ export default function NoteDetailModal(props: NoteDetailModalProps) {
                         <option value="">—</option>
                         {workspaces.map((ws) => (
                           <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
-                            {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
+                            {workspaceOptionLabelById.get(ws.id ?? "") ?? normalizeDisplayText(ws.name)}
                           </option>
                         ))}
                       </select>

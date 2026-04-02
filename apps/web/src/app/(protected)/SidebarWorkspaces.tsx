@@ -30,6 +30,7 @@ import {
   getWorkspaceOptionLabel,
   sortWorkspaces,
 } from "@/lib/workspaces";
+import { normalizeDisplayText } from "@/lib/normalizeText";
 import type { WorkspaceDoc } from "@/types/firestore";
 
 const createWorkspaceSchema = z.object({
@@ -195,6 +196,8 @@ export default function SidebarWorkspaces({
     childCount: number;
     collapsed: boolean;
   }) => {
+    const normalizedPathLabel = normalizeDisplayText(pathLabel);
+    const normalizedWorkspaceName = normalizeDisplayText(ws.name);
     const isChild = depth > 0;
     const indentPx = depth * 14;
     const lineLeft = indentPx + 13;
@@ -286,12 +289,12 @@ export default function SidebarWorkspaces({
                 className={`min-w-0 flex-1 overflow-hidden rounded-lg px-1 py-1 text-left transition-colors ${
                   selected ? "text-foreground" : "text-foreground/95"
                 }`}
-                aria-label={`Ouvrir le dossier ${pathLabel}`}
+                aria-label={`Ouvrir le dossier ${normalizedPathLabel}`}
               >
                 <span className="block min-w-0 overflow-hidden">
                   <span className="block truncate text-sm leading-5 text-left">
                     <span className={`${selected ? "font-semibold" : "font-medium"}`}>
-                      {ws.name}
+                      {normalizedWorkspaceName}
                     </span>
                   </span>
                   {helperLabel ? (
@@ -310,7 +313,7 @@ export default function SidebarWorkspaces({
                   startRename(ws);
                 }}
                 className="h-8 w-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-                aria-label={`Renommer le dossier ${pathLabel}`}
+                aria-label={`Renommer le dossier ${normalizedPathLabel}`}
                 title="Renommer"
                 disabled={!ws.id}
               >
@@ -323,7 +326,7 @@ export default function SidebarWorkspaces({
                   handleDelete(ws);
                 }}
                 className="h-8 w-8 inline-flex items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                aria-label={`Supprimer le dossier ${pathLabel}`}
+                aria-label={`Supprimer le dossier ${normalizedPathLabel}`}
                 title="Supprimer"
                 disabled={!ws.id || deletingId === ws.id}
               >
@@ -627,16 +630,17 @@ export default function SidebarWorkspaces({
             <div className="flex flex-col items-center gap-2">
               {flattenedWorkspaces.map(({ workspace, depth, pathLabel }) => {
                 const isSelected = workspace.id && workspace.id === currentWorkspaceId;
-                const initial = (workspace.name || "?").trim().slice(0, 1).toUpperCase();
+                const initial = (normalizeDisplayText(workspace.name) || "?").trim().slice(0, 1).toUpperCase();
                 const isChild = depth > 0;
+                const normalizedPathLabel = normalizeDisplayText(pathLabel);
                 return (
                   <button
                     key={workspace.id ?? workspace.name}
                     type="button"
                     onClick={() => navigateWithWorkspace(workspace.id ?? null)}
                     className={iconButtonClass(!!isSelected)}
-                    aria-label={`Dossier ${pathLabel}`}
-                    title={pathLabel}
+                    aria-label={`Dossier ${normalizedPathLabel}`}
+                    title={normalizedPathLabel}
                     disabled={!workspace.id}
                   >
                     {isSelected && (
