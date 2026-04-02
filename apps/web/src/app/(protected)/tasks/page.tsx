@@ -30,6 +30,7 @@ import {
 } from "@/lib/datetime";
 import { FEATURE_FLAGS } from "@/lib/featureFlags";
 import { registerFcmToken } from "@/lib/fcm";
+import { trackEvent } from "@/lib/analytics";
 import { DraggableCard, type FolderDragData } from "../_components/folderDnd";
 import WorkspaceFolderBrowser from "../_components/WorkspaceFolderBrowser";
 import {
@@ -61,7 +62,7 @@ import {
 } from "@/lib/planGuardedMutations";
 
 const AgendaCalendar = dynamic(() => import("../_components/AgendaCalendar"), {
-  loading: () => <div className="sn-empty">Chargement de l’Agenda…</div>,
+  loading: () => <div className="sn-empty">Chargement de lÃ¢â‚¬â„¢AgendaÃ¢â‚¬Â¦</div>,
 });
 
 type TaskStatus = "todo" | "doing" | "done";
@@ -80,7 +81,7 @@ type TaskPriorityFilter = "all" | NonNullable<TaskDoc["priority"]>;
 type DueFilter = "all" | "today" | "overdue";
 type TaskSortBy = "dueDate" | "updatedAt" | "createdAt";
 const GOOGLE_SYNC_FAILED_MESSAGE =
-  "Élément enregistré dans TaskNote, mais non synchronisé avec Google Calendar.";
+  "Ãƒâ€°lÃƒÂ©ment enregistrÃƒÂ© dans TaskNote, mais non synchronisÃƒÂ© avec Google Calendar.";
 
 function toTimestampOrNull(date: Date | null) {
   return date ? Timestamp.fromDate(date) : null;
@@ -207,9 +208,9 @@ export default function TasksPage() {
   const freeLimitMessage = FREE_TASK_LIMIT_MESSAGE;
 
   const statusLabel = (s: TaskStatus) => {
-    if (s === "todo") return "À faire";
+    if (s === "todo") return "Ãƒâ‚¬ faire";
     if (s === "doing") return "En cours";
-    return "Terminée";
+    return "TerminÃƒÂ©e";
   };
 
   const formatDueDate = (ts: TaskDoc["dueDate"] | null | undefined) => {
@@ -234,7 +235,7 @@ export default function TasksPage() {
   }) => {
     const user = auth.currentUser;
     if (!user) {
-      setEditError("Connecte-toi pour créer un élément d’agenda.");
+      setEditError("Connecte-toi pour crÃƒÂ©er un ÃƒÂ©lÃƒÂ©ment dÃ¢â‚¬â„¢agenda.");
       return;
     }
 
@@ -244,7 +245,7 @@ export default function TasksPage() {
       allDay: input.allDay,
     });
     if (!normalizedWindow?.startDate || !normalizedWindow?.dueDate) {
-      setEditError("Date invalide pour cet élément d’agenda.");
+      setEditError("Date invalide pour cet ÃƒÂ©lÃƒÂ©ment dÃ¢â‚¬â„¢agenda.");
       return;
     }
 
@@ -272,6 +273,14 @@ export default function TasksPage() {
         sourceType: null,
         sourceTodoId: null,
         sourceTodoItemId: null,
+      });
+
+      void trackEvent("create_task", {
+        source: "app",
+        surface: "agenda_inline",
+        all_day: normalizedWindow.allDay,
+        priority: input.priority ?? null,
+        workspace_bound: Boolean(input.workspaceId ?? null),
       });
 
       const optimisticCreatedTask: TaskDoc = {
@@ -379,7 +388,7 @@ export default function TasksPage() {
         showActionFeedback(GOOGLE_SYNC_FAILED_MESSAGE);
       });
     } catch (error) {
-      setEditError(getPlanLimitMessage(error) ?? toErrorMessage(error, "Impossible de créer cet élément d’agenda."));
+      setEditError(getPlanLimitMessage(error) ?? toErrorMessage(error, "Impossible de crÃƒÂ©er cet ÃƒÂ©lÃƒÂ©ment dÃ¢â‚¬â„¢agenda."));
     }
   };
 
@@ -387,12 +396,12 @@ export default function TasksPage() {
     const user = auth.currentUser;
     const current = effectiveAllTasks.find((t) => t.id === taskId);
     if (!user || !current || current.userId !== user.uid) {
-      setEditError("Impossible de modifier cet élément d’agenda.");
+      setEditError("Impossible de modifier cet ÃƒÂ©lÃƒÂ©ment dÃ¢â‚¬â„¢agenda.");
       return;
     }
 
     if (!current.recurrence?.freq) {
-      setEditError("Cette occurrence ne peut pas être ignorée.");
+      setEditError("Cette occurrence ne peut pas ÃƒÂªtre ignorÃƒÂ©e.");
       return;
     }
 
@@ -431,7 +440,7 @@ export default function TasksPage() {
       throw e;
     }
 
-    setActionFeedback("Occurrence ignorée.");
+    setActionFeedback("Occurrence ignorÃƒÂ©e.");
     window.setTimeout(() => setActionFeedback(null), 1800);
   };
 
@@ -449,7 +458,7 @@ export default function TasksPage() {
     const user = auth.currentUser;
     const current = effectiveAllTasks.find((t) => t.id === input.taskId);
     if (!user || !current || current.userId !== user.uid) {
-      setEditError("Impossible de modifier cet élément d’agenda.");
+      setEditError("Impossible de modifier cet ÃƒÂ©lÃƒÂ©ment dÃ¢â‚¬â„¢agenda.");
       return;
     }
 
@@ -459,7 +468,7 @@ export default function TasksPage() {
       allDay: input.allDay,
     });
     if (!normalizedWindow?.startDate || !normalizedWindow?.dueDate) {
-      setEditError("Date invalide pour cet élément d’agenda.");
+      setEditError("Date invalide pour cet ÃƒÂ©lÃƒÂ©ment dÃ¢â‚¬â„¢agenda.");
       return;
     }
 
@@ -558,7 +567,7 @@ export default function TasksPage() {
     const current = effectiveAllTasks.find((t) => t.id === taskId);
     const wasOptimisticCreated = optimisticCreatedAgendaTasks.some((task) => task.id === taskId);
     if (!user || !current || current.userId !== user.uid) {
-      setEditError("Impossible de supprimer cet élément d’agenda.");
+      setEditError("Impossible de supprimer cet ÃƒÂ©lÃƒÂ©ment dÃ¢â‚¬â„¢agenda.");
       return;
     }
 
@@ -598,7 +607,7 @@ export default function TasksPage() {
       }
 
       await deleteDoc(doc(db, "tasks", taskId));
-      setActionFeedback("Élément d’agenda supprimé.");
+      setActionFeedback("Ãƒâ€°lÃƒÂ©ment dÃ¢â‚¬â„¢agenda supprimÃƒÂ©.");
       window.setTimeout(() => setActionFeedback(null), 1800);
     } catch (error) {
       setOptimisticDeletedAgendaTaskIds((prev) => {
@@ -621,7 +630,7 @@ export default function TasksPage() {
           return [...prev, current];
         });
       }
-      setEditError(toErrorMessage(error, "Erreur lors de la suppression de l’élément d’agenda."));
+      setEditError(toErrorMessage(error, "Erreur lors de la suppression de lÃ¢â‚¬â„¢ÃƒÂ©lÃƒÂ©ment dÃ¢â‚¬â„¢agenda."));
     }
   };
 
@@ -1332,7 +1341,7 @@ export default function TasksPage() {
     if (!task.id) return;
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) {
-      setEditError("Impossible de modifier cet élément d’agenda.");
+      setEditError("Impossible de modifier cet ÃƒÂ©lÃƒÂ©ment dÃ¢â‚¬â„¢agenda.");
       return;
     }
 
@@ -1350,7 +1359,7 @@ export default function TasksPage() {
       });
 
       if (!nextDone) {
-        setActionFeedback("Élément d’agenda restauré.");
+        setActionFeedback("Ãƒâ€°lÃƒÂ©ment dÃ¢â‚¬â„¢agenda restaurÃƒÂ©.");
         window.setTimeout(() => setActionFeedback(null), 1800);
       }
     } catch (e) {
@@ -1360,7 +1369,7 @@ export default function TasksPage() {
         delete next[task.id!];
         return next;
       });
-      setEditError(toErrorMessage(e, "Erreur lors de la mise à jour de l’élément d’agenda."));
+      setEditError(toErrorMessage(e, "Erreur lors de la mise ÃƒÂ  jour de lÃ¢â‚¬â„¢ÃƒÂ©lÃƒÂ©ment dÃ¢â‚¬â„¢agenda."));
     }
   };
 
@@ -1384,7 +1393,7 @@ export default function TasksPage() {
     if (!task.id) return;
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) {
-      setEditError("Impossible de modifier cet élément d’agenda.");
+      setEditError("Impossible de modifier cet ÃƒÂ©lÃƒÂ©ment dÃ¢â‚¬â„¢agenda.");
       return;
     }
 
@@ -1396,12 +1405,12 @@ export default function TasksPage() {
         updatedAt: serverTimestamp(),
       });
 
-      setActionFeedback("Élément d’agenda restauré.");
+      setActionFeedback("Ãƒâ€°lÃƒÂ©ment dÃ¢â‚¬â„¢agenda restaurÃƒÂ©.");
       window.setTimeout(() => setActionFeedback(null), 1800);
       setArchiveView("active");
     } catch (e) {
       console.error("Error restoring archived task", e);
-      setEditError(toErrorMessage(e, "Erreur lors de la restauration de l’élément d’agenda."));
+      setEditError(toErrorMessage(e, "Erreur lors de la restauration de lÃ¢â‚¬â„¢ÃƒÂ©lÃƒÂ©ment dÃ¢â‚¬â„¢agenda."));
     }
   };
 
@@ -1409,7 +1418,7 @@ export default function TasksPage() {
     if (!task.id) return;
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) {
-      setEditError("Impossible de modifier cet élément d’agenda.");
+      setEditError("Impossible de modifier cet ÃƒÂ©lÃƒÂ©ment dÃ¢â‚¬â„¢agenda.");
       return;
     }
 
@@ -1424,7 +1433,7 @@ export default function TasksPage() {
       await setTaskFavoriteWithPlanGuard(task.id, !(task.favorite === true));
     } catch (e) {
       console.error("Error toggling favorite", e);
-      setEditError(getPlanLimitMessage(e) ?? toErrorMessage(e, "Erreur lors de la mise à jour des favoris."));
+      setEditError(getPlanLimitMessage(e) ?? toErrorMessage(e, "Erreur lors de la mise ÃƒÂ  jour des favoris."));
     }
   };
 
@@ -1522,21 +1531,21 @@ export default function TasksPage() {
   })();
 
   const handleEnableNotifications = async () => {
-    setPushStatus("Activation des notifications…");
+    setPushStatus("Activation des notificationsÃ¢â‚¬Â¦");
     setEnablingPush(true);
     try {
       await registerFcmToken();
       const nextPermission = ("Notification" in window ? Notification.permission : "denied") as NotificationPermission;
       if (nextPermission === "granted") {
-        setPushStatus("✅ Notifications activées");
+        setPushStatus("Ã¢Å“â€¦ Notifications activÃƒÂ©es");
       } else if (nextPermission === "denied") {
-        setPushStatus("⚠️ Permission refusée. Tu peux réactiver depuis les paramètres du navigateur.");
+        setPushStatus("Ã¢Å¡Â Ã¯Â¸Â Permission refusÃƒÂ©e. Tu peux rÃƒÂ©activer depuis les paramÃƒÂ¨tres du navigateur.");
       } else {
-        setPushStatus("Permission non accordée.");
+        setPushStatus("Permission non accordÃƒÂ©e.");
       }
     } catch (e) {
       console.error("Error enabling notifications", e);
-      setPushStatus("Impossible d’activer les notifications pour le moment.");
+      setPushStatus("Impossible dÃ¢â‚¬â„¢activer les notifications pour le moment.");
     } finally {
       setEnablingPush(false);
     }
@@ -1600,8 +1609,8 @@ export default function TasksPage() {
 
         {activeSearchLabel && (
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span className="sn-badge">Recherche: “{activeSearchLabel}”</span>
-            <span className="sn-badge">Résultats: {filteredTasks.length}</span>
+            <span className="sn-badge">Recherche: Ã¢â‚¬Å“{activeSearchLabel}Ã¢â‚¬Â</span>
+            <span className="sn-badge">RÃƒÂ©sultats: {filteredTasks.length}</span>
           </div>
         )}
 
@@ -1622,7 +1631,7 @@ export default function TasksPage() {
                   className="sn-icon-btn"
                   aria-label="Fermer"
                 >
-                  ×
+                  Ãƒâ€”
                 </button>
               </div>
               <div className="p-4 space-y-4">
@@ -1636,18 +1645,18 @@ export default function TasksPage() {
                       className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
                     >
                       <option value="all">Tous</option>
-                      <option value="todo">À faire</option>
+                      <option value="todo">Ãƒâ‚¬ faire</option>
                       <option value="doing">En cours</option>
-                      <option value="done">Terminée</option>
+                      <option value="done">TerminÃƒÂ©e</option>
                     </select>
                   </div>
 
                   <div className="space-y-1">
-                    <div className="text-xs text-muted-foreground">Priorité</div>
+                    <div className="text-xs text-muted-foreground">PrioritÃƒÂ©</div>
                     <select
                       value={priorityFilter}
                       onChange={(e) => setPriorityFilter(e.target.value as TaskPriorityFilter)}
-                      aria-label="Filtrer par priorité"
+                      aria-label="Filtrer par prioritÃƒÂ©"
                       className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
                     >
                       <option value="all">Toutes</option>
@@ -1660,15 +1669,15 @@ export default function TasksPage() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <div className="text-xs text-muted-foreground">Échéance</div>
+                    <div className="text-xs text-muted-foreground">Ãƒâ€°chÃƒÂ©ance</div>
                     <select
                       value={dueFilter}
                       onChange={(e) => setDueFilter(e.target.value as DueFilter)}
-                      aria-label="Filtrer par échéance"
+                      aria-label="Filtrer par ÃƒÂ©chÃƒÂ©ance"
                       className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
                     >
                       <option value="all">Toutes</option>
-                      <option value="today">Aujourd’hui</option>
+                      <option value="today">AujourdÃ¢â‚¬â„¢hui</option>
                       <option value="overdue">En retard</option>
                     </select>
                   </div>
@@ -1678,12 +1687,12 @@ export default function TasksPage() {
                     <select
                       value={sortBy}
                       onChange={(e) => setSortBy(e.target.value as TaskSortBy)}
-                      aria-label="Trier l’agenda"
+                      aria-label="Trier lÃ¢â‚¬â„¢agenda"
                       className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
                     >
-                      <option value="dueDate">Échéance</option>
-                      <option value="updatedAt">Dernière modification</option>
-                      <option value="createdAt">Date de création</option>
+                      <option value="dueDate">Ãƒâ€°chÃƒÂ©ance</option>
+                      <option value="updatedAt">DerniÃƒÂ¨re modification</option>
+                      <option value="createdAt">Date de crÃƒÂ©ation</option>
                     </select>
                   </div>
                 </div>
@@ -1723,7 +1732,7 @@ export default function TasksPage() {
                       pushWorkspaceFilterToUrl(base);
                     }}
                   >
-                    Réinitialiser
+                    RÃƒÂ©initialiser
                   </button>
 
                   <button
@@ -1742,17 +1751,17 @@ export default function TasksPage() {
         {notificationPermission !== "granted" && (
           <div className="space-y-2">
             {notificationPermission === "unsupported" && (
-              <div className="sn-alert sn-alert--info">❌ Navigateur non compatible avec les notifications.</div>
+              <div className="sn-alert sn-alert--info">Ã¢ÂÅ’ Navigateur non compatible avec les notifications.</div>
             )}
 
             {notificationPermission === "denied" && (
               <div className="sn-alert sn-alert--info">
-                ⚠️ Permission refusée. Tu peux réactiver les notifications depuis les paramètres de ton navigateur.
+                Permission refusee. Tu peux reactiver les notifications depuis les parametres de ton navigateur.
               </div>
             )}
 
             {notificationPermission === "default" && (
-              <div className="sn-alert sn-alert--info">🔔 Pour recevoir les rappels, active les notifications.</div>
+              <div className="sn-alert sn-alert--info">Ã°Å¸â€â€ Pour recevoir les rappels, active les notifications.</div>
             )}
 
             {notificationPermission !== "unsupported" && notificationPermission !== "denied" && (
@@ -1762,7 +1771,7 @@ export default function TasksPage() {
                 disabled={enablingPush}
                 className="sn-text-btn"
               >
-                {enablingPush ? "Activation…" : "Activer les notifications"}
+                {enablingPush ? "ActivationÃ¢â‚¬Â¦" : "Activer les notifications"}
               </button>
             )}
 
@@ -1787,7 +1796,7 @@ export default function TasksPage() {
         <section className="rounded-xl border-t border-border/60 pt-3">
           <div className="flex items-center justify-between gap-3">
             <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Contenu direct</div>
-            <div className="text-xs text-muted-foreground">{directWorkspaceCounts.tasks} élément{directWorkspaceCounts.tasks > 1 ? "s" : ""}</div>
+            <div className="text-xs text-muted-foreground">{directWorkspaceCounts.tasks} ÃƒÂ©lÃƒÂ©ment{directWorkspaceCounts.tasks > 1 ? "s" : ""}</div>
           </div>
         </section>
       )}
@@ -1799,7 +1808,7 @@ export default function TasksPage() {
               <div className="min-w-0">
                 <div className="text-sm font-semibold">Astuce</div>
                 <div className="text-sm text-muted-foreground">
-                  Ajoute un titre simple, puis un rappel si besoin. Tu peux épingler l’essentiel en favori ⭐.
+                  Ajoute un titre simple, puis un rappel si besoin. Tu peux ÃƒÂ©pingler lÃ¢â‚¬â„¢essentiel en favori Ã¢Â­Â.
                 </div>
               </div>
               <button
@@ -1828,21 +1837,21 @@ export default function TasksPage() {
 
       {actionFeedback && <div className="sn-alert" role="status" aria-live="polite">{actionFeedback}</div>}
 
-      {error && <div className="sn-alert sn-alert--error">Impossible de charger l’agenda pour le moment.</div>}
+      {error && <div className="sn-alert sn-alert--error">Impossible de charger lÃ¢â‚¬â„¢agenda pour le moment.</div>}
 
       {!loading && !error && archiveView === "active" && mainTasks.length === 0 && (
         <div className="sn-empty sn-empty--premium sn-animate-in">
           <div className="sn-empty-title">
-            {hasActiveSearchOrFilters ? "Aucun résultat" : workspaceIdParam ? "Aucun élément direct dans ce dossier" : "Aucun élément d’agenda pour le moment"}
+            {hasActiveSearchOrFilters ? "Aucun rÃƒÂ©sultat" : workspaceIdParam ? "Aucun ÃƒÂ©lÃƒÂ©ment direct dans ce dossier" : "Aucun ÃƒÂ©lÃƒÂ©ment dÃ¢â‚¬â„¢agenda pour le moment"}
           </div>
           <div className="sn-empty-desc">
             {hasActiveSearchOrFilters
               ? activeSearchLabel
-                ? `Aucun élément ne correspond à “${activeSearchLabel}” avec les filtres actuels.`
-                : "Aucun élément ne correspond à ta recherche ou à tes filtres actuels."
+                ? `Aucun element ne correspond a "${activeSearchLabel}" avec les filtres actuels.`
+                : "Aucun ÃƒÂ©lÃƒÂ©ment ne correspond ÃƒÂ  ta recherche ou ÃƒÂ  tes filtres actuels."
               : workspaceIdParam
-                ? "Ajoute un élément ici ou ouvre un sous-dossier."
-                : "Commence par ajouter un élément à l’agenda."}
+                ? "Ajoute un ÃƒÂ©lÃƒÂ©ment ici ou ouvre un sous-dossier."
+                : "Commence par ajouter un ÃƒÂ©lÃƒÂ©ment ÃƒÂ  lÃ¢â‚¬â„¢agenda."}
           </div>
           {hasActiveSearchOrFilters ? (
             <div className="mt-3">
@@ -1858,7 +1867,7 @@ export default function TasksPage() {
                 }}
                 className="inline-flex items-center justify-center h-10 px-4 rounded-md border border-border bg-background text-sm font-medium hover:bg-accent/60"
               >
-                Réinitialiser les filtres
+                RÃƒÂ©initialiser les filtres
               </button>
             </div>
           ) : (
@@ -1875,7 +1884,7 @@ export default function TasksPage() {
                 }}
                 className="inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 transition-opacity"
               >
-                Créer une tâche
+                CrÃƒÂ©er une tÃƒÂ¢che
               </button>
             </div>
           )}
@@ -1884,8 +1893,8 @@ export default function TasksPage() {
 
       {!loading && !error && archiveView === "archived" && archivedTasks.length === 0 && (
         <div className="sn-empty">
-          <div className="sn-empty-title">Aucun élément d’agenda archivé</div>
-          <div className="sn-empty-desc">Archive un élément d’agenda pour le retrouver ici et le restaurer plus tard.</div>
+          <div className="sn-empty-title">Aucun ÃƒÂ©lÃƒÂ©ment dÃ¢â‚¬â„¢agenda archivÃƒÂ©</div>
+          <div className="sn-empty-desc">Archive un ÃƒÂ©lÃƒÂ©ment dÃ¢â‚¬â„¢agenda pour le retrouver ici et le restaurer plus tard.</div>
         </div>
       )}
 
@@ -1893,7 +1902,7 @@ export default function TasksPage() {
         <ul className="space-y-2">
           {archivedTasks.map((task) => {
             const status = (task.status as TaskStatus | undefined) ?? "todo";
-            const workspaceName = effectiveWorkspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
+            const workspaceName = effectiveWorkspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "Ã¢â‚¬â€";
             const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
             const dueLabel = formatDueDate(task.dueDate ?? null);
             const startLabel = formatStartDate(task.startDate ?? null);
@@ -1922,15 +1931,15 @@ export default function TasksPage() {
                       <div className="sn-card-meta">
                         <span className="sn-badge">{workspaceName}</span>
                         <span className="sn-badge">{statusLabel(status)}</span>
-                        {startLabel && <span className="sn-badge">Début: {startLabel}</span>}
-                        {dueLabel && <span className="sn-badge">Échéance: {dueLabel}</span>}
+                        {startLabel && <span className="sn-badge">DÃƒÂ©but: {startLabel}</span>}
+                        {dueLabel && <span className="sn-badge">Ãƒâ€°chÃƒÂ©ance: {dueLabel}</span>}
                         {task.priority && (
                           <span className="sn-badge inline-flex items-center gap-2">
                             <span className={`h-2 w-2 rounded-full ${priorityDotClass(task.priority)}`} aria-hidden />
-                            <span>Priorité: {priorityLabel(task.priority)}</span>
+                            <span>PrioritÃƒÂ©: {priorityLabel(task.priority)}</span>
                           </span>
                         )}
-                        {archivedLabel && <span className="sn-badge">Archivée: {archivedLabel}</span>}
+                        {archivedLabel && <span className="sn-badge">ArchivÃƒÂ©e: {archivedLabel}</span>}
                       </div>
                     </div>
 
@@ -1985,7 +1994,7 @@ export default function TasksPage() {
           {mainTasks.map((task) => {
             const status = (task.status as TaskStatus | undefined) ?? "todo";
             const workspaceName =
-              effectiveWorkspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
+              effectiveWorkspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "Ã¢â‚¬â€";
             const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
             const dueLabel = formatDueDate(task.dueDate ?? null);
             const startLabel = formatStartDate(task.startDate ?? null);
@@ -2019,12 +2028,12 @@ export default function TasksPage() {
                             <div className="sn-card-meta">
                               <span className="sn-badge">{workspaceName}</span>
                               <span className="sn-badge">{statusLabel(status)}</span>
-                              {startLabel && <span className="sn-badge">Début: {startLabel}</span>}
-                              {dueLabel && <span className="sn-badge">Échéance: {dueLabel}</span>}
+                              {startLabel && <span className="sn-badge">DÃƒÂ©but: {startLabel}</span>}
+                              {dueLabel && <span className="sn-badge">Ãƒâ€°chÃƒÂ©ance: {dueLabel}</span>}
                               {task.priority && (
                                 <span className="sn-badge inline-flex items-center gap-2">
                                   <span className={`h-2 w-2 rounded-full ${priorityDotClass(task.priority)}`} aria-hidden />
-                                  <span>Priorité: {priorityLabel(task.priority)}</span>
+                                  <span>PrioritÃƒÂ©: {priorityLabel(task.priority)}</span>
                                 </span>
                               )}
                             </div>
@@ -2042,7 +2051,7 @@ export default function TasksPage() {
                               aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                               title={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                             >
-                              {task.favorite ? "★" : "☆"}
+                              {task.favorite ? "Ã¢Ëœâ€¦" : "Ã¢Ëœâ€ "}
                             </button>
                           </div>
                         </div>
@@ -2055,7 +2064,7 @@ export default function TasksPage() {
                               onClick={(e) => e.stopPropagation()}
                               onChange={(e) => toggleDone(task, e.target.checked)}
                             />
-                            <span className="text-muted-foreground">Terminé</span>
+                            <span className="text-muted-foreground">TerminÃƒÂ©</span>
                           </label>
                         </div>
                       </div>
@@ -2073,7 +2082,7 @@ export default function TasksPage() {
           {mainTasks.map((task) => {
             const status = (task.status as TaskStatus | undefined) ?? "todo";
             const workspaceName =
-              effectiveWorkspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
+              effectiveWorkspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "Ã¢â‚¬â€";
             const hrefSuffix = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
             const dueLabel = formatDueDate(task.dueDate ?? null);
             const startLabel = formatStartDate(task.startDate ?? null);
@@ -2102,12 +2111,12 @@ export default function TasksPage() {
                         <div className="sn-card-meta">
                           <span className="sn-badge">{workspaceName}</span>
                           <span className="sn-badge">{statusLabel(status)}</span>
-                          {startLabel && <span className="sn-badge">Début: {startLabel}</span>}
-                          {dueLabel && <span className="sn-badge">Échéance: {dueLabel}</span>}
+                          {startLabel && <span className="sn-badge">DÃƒÂ©but: {startLabel}</span>}
+                          {dueLabel && <span className="sn-badge">Ãƒâ€°chÃƒÂ©ance: {dueLabel}</span>}
                           {task.priority && (
                             <span className="sn-badge inline-flex items-center gap-2">
                               <span className={`h-2 w-2 rounded-full ${priorityDotClass(task.priority)}`} aria-hidden />
-                              <span>Priorité: {priorityLabel(task.priority)}</span>
+                              <span>PrioritÃƒÂ©: {priorityLabel(task.priority)}</span>
                             </span>
                           )}
                         </div>
@@ -2123,7 +2132,7 @@ export default function TasksPage() {
                           aria-label={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                           title={task.favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
                         >
-                          {task.favorite ? "★" : "☆"}
+                          {task.favorite ? "Ã¢Ëœâ€¦" : "Ã¢Ëœâ€ "}
                         </button>
                       </div>
                     </div>
@@ -2136,7 +2145,7 @@ export default function TasksPage() {
                           onClick={(e) => e.stopPropagation()}
                           onChange={(e) => toggleDone(task, e.target.checked)}
                         />
-                        <span className="text-muted-foreground">Terminé</span>
+                        <span className="text-muted-foreground">TerminÃƒÂ©</span>
                       </label>
                     </div>
                   </div>
@@ -2149,7 +2158,7 @@ export default function TasksPage() {
 
       {!loading && !error && archiveView === "active" && viewMode !== "calendar" && statusFilter === "all" && completedTasks.length > 0 && (
         <section>
-          <h2 className="text-lg font-semibold mt-6 mb-2">Terminées</h2>
+          <h2 className="text-lg font-semibold mt-6 mb-2">TerminÃƒÂ©es</h2>
           <ul className="space-y-2">
             {completedTasks.map((task) => (
               <li
@@ -2167,7 +2176,7 @@ export default function TasksPage() {
                   <div className="min-w-0">
                     <div className="sn-card-title truncate">{task.title}</div>
                     <div className="sn-card-meta">
-                      <span className="sn-badge">Terminée</span>
+                      <span className="sn-badge">TerminÃƒÂ©e</span>
                     </div>
                   </div>
                   <div className="sn-card-actions sn-card-actions-secondary shrink-0">

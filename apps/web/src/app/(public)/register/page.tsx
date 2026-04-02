@@ -1,11 +1,13 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { auth } from "@/lib/firebase";
+import { trackEvent } from "@/lib/analytics";
 import { getRuntimePlatformInfo } from "@/lib/runtimePlatform";
 import {
   createUserWithEmailAndPassword,
+  getAdditionalUserInfo,
   GoogleAuthProvider,
   getRedirectResult,
   signInWithCredential,
@@ -39,24 +41,24 @@ function getFirebaseAuthErrorMessage(err: unknown): string {
   const code = getFirebaseAuthErrorCode(err);
   if (typeof code !== "string") {
     const message = getFirebaseAuthErrorRawMessage(err);
-    return message || "Une erreur est survenue. Réessaie.";
+    return message || "Une erreur est survenue. RÃƒÂ©essaie.";
   }
 
   switch (code) {
     case "auth/email-already-in-use":
-      return "Cette adresse email est déjà utilisée.";
+      return "Cette adresse email est dÃƒÂ©jÃƒÂ  utilisÃƒÂ©e.";
     case "auth/invalid-email":
       return "Adresse email invalide.";
     case "auth/weak-password":
-      return "Mot de passe trop faible (6 caractères minimum).";
+      return "Mot de passe trop faible (6 caractÃƒÂ¨res minimum).";
     case "auth/popup-closed-by-user":
-      return "Inscription annulée.";
+      return "Inscription annulÃƒÂ©e.";
     case "auth/popup-blocked":
-      return "La popup a été bloquée par le navigateur. Autorise les popups puis réessaie.";
+      return "La popup a ÃƒÂ©tÃƒÂ© bloquÃƒÂ©e par le navigateur. Autorise les popups puis rÃƒÂ©essaie.";
     case "auth/network-request-failed":
-      return "Problème réseau. Vérifie ta connexion puis réessaie.";
+      return "ProblÃƒÂ¨me rÃƒÂ©seau. VÃƒÂ©rifie ta connexion puis rÃƒÂ©essaie.";
     default:
-      return "Une erreur est survenue. Réessaie.";
+      return "Une erreur est survenue. RÃƒÂ©essaie.";
   }
 }
 
@@ -69,7 +71,7 @@ function isNativeGoogleSignInUnavailable(err: unknown): boolean {
 }
 
 function getNativeGoogleSignInUnavailableMessage() {
-  return "Inscription Google indisponible dans cette version Android. Termine la configuration Google native Android, ou utilise email + mot de passe pour l’instant.";
+  return "Inscription Google indisponible dans cette version Android. Termine la configuration Google native Android, ou utilise email + mot de passe pour lÃ¢â‚¬â„¢instant.";
 }
 
 export default function RegisterPage() {
@@ -112,14 +114,24 @@ function RegisterPageInner() {
     }
   };
 
+  const finalizeRegistration = useCallback(async (params: { method: "email" | "google"; isNewUser: boolean }) => {
+    await establishSession();
+    if (params.isNewUser) {
+      void trackEvent("sign_up", {
+        method: params.method,
+        source: "app",
+      });
+    }
+    router.replace(nextPath);
+  }, [nextPath, router]);
+
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
     try {
       await createUserWithEmailAndPassword(auth, email, password);
-      await establishSession();
-      router.replace(nextPath);
+      await finalizeRegistration({ method: "email", isNewUser: true });
     } catch (err) {
       setError(getFirebaseAuthErrorMessage(err));
     } finally {
@@ -137,8 +149,8 @@ function RegisterPageInner() {
 
         setError(null);
         setLoading(true);
-        await establishSession();
-        router.replace(nextPath);
+        const isNewUser = getAdditionalUserInfo(result)?.isNewUser === true;
+        await finalizeRegistration({ method: "google", isNewUser });
       } catch (err) {
         if (cancelled) return;
         const code = getFirebaseAuthErrorCode(err);
@@ -152,7 +164,7 @@ function RegisterPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [nextPath, router]);
+  }, [finalizeRegistration]);
 
   const handleGoogleRegister = async () => {
     setError(null);
@@ -174,9 +186,9 @@ function RegisterPageInner() {
           }
 
           const credential = GoogleAuthProvider.credential(idToken ?? undefined, accessToken ?? undefined);
-          await signInWithCredential(auth, credential);
-          await establishSession();
-          router.replace(nextPath);
+          const credentialResult = await signInWithCredential(auth, credential);
+          const isNewUser = getAdditionalUserInfo(credentialResult)?.isNewUser === true;
+          await finalizeRegistration({ method: "google", isNewUser });
           return;
         } catch (err) {
           if (!isNativeGoogleSignInUnavailable(err)) {
@@ -189,9 +201,9 @@ function RegisterPageInner() {
       }
 
       try {
-        await signInWithPopup(auth, provider);
-        await establishSession();
-        router.replace(nextPath);
+        const popupResult = await signInWithPopup(auth, provider);
+        const isNewUser = getAdditionalUserInfo(popupResult)?.isNewUser === true;
+        await finalizeRegistration({ method: "google", isNewUser });
       } catch (err) {
         const code = getFirebaseAuthErrorCode(err) ?? "";
         if (code === "auth/popup-blocked") {
@@ -212,7 +224,7 @@ function RegisterPageInner() {
       <div className="w-full max-w-md border border-border rounded-lg p-6 shadow-sm bg-card">
         <h1 className="text-xl font-semibold mb-4 text-center">TaskNote</h1>
         <p className="text-sm text-muted-foreground mb-6 text-center">
-          Crée un compte pour accéder à tes notes et tâches.
+          Cree un compte pour acceder a tes notes et taches.
         </p>
 
         <form onSubmit={handleRegister} className="space-y-4">
@@ -268,7 +280,7 @@ function RegisterPageInner() {
             disabled={loading}
             className="w-full mt-2 inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? "Création..." : "Créer mon compte"}
+            {loading ? "CrÃƒÂ©ation..." : "CrÃƒÂ©er mon compte"}
           </button>
         </form>
 
@@ -284,11 +296,11 @@ function RegisterPageInner() {
           onClick={handleGoogleRegister}
           className="w-full inline-flex items-center justify-center px-4 py-2 rounded-md border border-input bg-background text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? "Connexion…" : "Continuer avec Google"}
+          {loading ? "Connexion..." : "Continuer avec Google"}
         </button>
 
         <p className="text-xs text-muted-foreground mt-4 text-center">
-          Déjà un compte ?{" "}
+          Deja un compte ?{" "}
           <a className="underline" href={`/login?next=${encodeURIComponent(nextPath)}`}>
             Se connecter
           </a>

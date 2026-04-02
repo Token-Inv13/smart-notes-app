@@ -2,48 +2,51 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { trackEvent } from '@/lib/analytics';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { isAndroidNative } from '@/lib/runtimePlatform';
 import type { UserDoc } from '@/types/firestore';
 
 const FREE_FEATURES = [
-  'JusquÃ¢â‚¬â„¢ÃƒÂ  15 notes',
-  'JusquÃ¢â‚¬â„¢ÃƒÂ  10 notes favorites',
-  'JusquÃ¢â‚¬â„¢ÃƒÂ  5 piÃƒÂ¨ces jointes par note',
+  'JusquÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â  15 notes',
+  'JusquÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â  10 notes favorites',
+  'JusquÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â  5 piÃƒÆ’Ã‚Â¨ces jointes par note',
   'Images et PDF uniquement',
-  'JusquÃ¢â‚¬â„¢ÃƒÂ  20 Mo par fichier joint',
-  'JusquÃ¢â‚¬â„¢ÃƒÂ  15 tÃƒÂ¢ches agenda actives',
-  'JusquÃ¢â‚¬â„¢ÃƒÂ  15 tÃƒÂ¢ches favorites actives',
-  'Rappels dÃƒÂ©sactivÃƒÂ©s',
+  'JusquÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â  20 Mo par fichier joint',
+  'JusquÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â  15 tÃƒÆ’Ã‚Â¢ches agenda actives',
+  'JusquÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â  15 tÃƒÆ’Ã‚Â¢ches favorites actives',
+  'Rappels dÃƒÆ’Ã‚Â©sactivÃƒÆ’Ã‚Â©s',
   'Assistant disponible avec quotas Free',
 ];
 
 const PRO_FEATURES = [
   'Notes et favoris sans limite',
-  'JusquÃ¢â‚¬â„¢ÃƒÂ  10 piÃƒÂ¨ces jointes par note',
-  'Images, PDF et vidÃƒÂ©os',
-  'JusquÃ¢â‚¬â„¢ÃƒÂ  350 Mo par fichier joint',
-  'TÃƒÂ¢ches agenda actives et favorites sans limite',
-  'Rappels activÃƒÂ©s',
-  'Quotas assistant ÃƒÂ©tendus',
-  'CrÃƒÂ©ation de rappels et bundles assistant avancÃƒÂ©s',
+  'JusquÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â  10 piÃƒÆ’Ã‚Â¨ces jointes par note',
+  'Images, PDF et vidÃƒÆ’Ã‚Â©os',
+  'JusquÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã‚Â  350 Mo par fichier joint',
+  'TÃƒÆ’Ã‚Â¢ches agenda actives et favorites sans limite',
+  'Rappels activÃƒÆ’Ã‚Â©s',
+  'Quotas assistant ÃƒÆ’Ã‚Â©tendus',
+  'CrÃƒÆ’Ã‚Â©ation de rappels et bundles assistant avancÃƒÆ’Ã‚Â©s',
 ];
 
 const FEATURE_MATRIX = [
   { label: 'Notes', free: '15 max', pro: 'Sans limite' },
   { label: 'Notes favorites', free: '10 max', pro: 'Sans limite' },
-  { label: 'PiÃƒÂ¨ces jointes par note', free: '5 max', pro: '10 max' },
-  { label: 'Types de fichiers', free: 'Images + PDF', pro: 'Images + PDF + vidÃƒÂ©os' },
-  { label: 'Taille max par piÃƒÂ¨ce jointe', free: '20 Mo', pro: '350 Mo' },
-  { label: 'TÃƒÂ¢ches agenda actives', free: '15 max', pro: 'Sans limite' },
-  { label: 'TÃƒÂ¢ches favorites actives', free: '15 max', pro: 'Sans limite' },
+  { label: 'PiÃƒÆ’Ã‚Â¨ces jointes par note', free: '5 max', pro: '10 max' },
+  { label: 'Types de fichiers', free: 'Images + PDF', pro: 'Images + PDF + vidÃƒÆ’Ã‚Â©os' },
+  { label: 'Taille max par piÃƒÆ’Ã‚Â¨ce jointe', free: '20 Mo', pro: '350 Mo' },
+  { label: 'TÃƒÆ’Ã‚Â¢ches agenda actives', free: '15 max', pro: 'Sans limite' },
+  { label: 'TÃƒÆ’Ã‚Â¢ches favorites actives', free: '15 max', pro: 'Sans limite' },
   { label: 'Rappels agenda', free: 'Non', pro: 'Oui' },
   { label: 'Checklist', free: 'Inclus', pro: 'Inclus' },
   { label: 'Analyse IA de notes', free: '2 / jour', pro: '100 / jour' },
-  { label: 'RÃƒÂ©analyse assistant', free: '10 / jour', pro: '200 / jour' },
-  { label: 'Assistant: crÃƒÂ©er un rappel', free: 'Non', pro: 'Oui' },
+  { label: 'RÃƒÆ’Ã‚Â©analyse assistant', free: '10 / jour', pro: '200 / jour' },
+  { label: 'Assistant: crÃƒÆ’Ã‚Â©er un rappel', free: 'Non', pro: 'Oui' },
   { label: 'Assistant: bundle multi-actions', free: 'Non', pro: 'Oui' },
 ];
+
+const PENDING_SUBSCRIBE_TRACKING_KEY = "tasknote_pending_subscribe_tracking";
 
 export default function UpgradePage() {
   const searchParams = useSearchParams();
@@ -93,7 +96,7 @@ export default function UpgradePage() {
       if (json && json.found === false) {
         const mode = json.stripeMode ?? 'unknown';
         setSyncError(
-          `Aucun abonnement Stripe nÃ¢â‚¬â„¢a ÃƒÂ©tÃƒÂ© retrouvÃƒÂ© pour ce compte (mode Stripe: ${mode}). Si la souscription est visible dans lÃ¢â‚¬â„¢autre mode (test/live), corrige STRIPE_SECRET_KEY.`,
+          `Aucun abonnement Stripe nÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢a ÃƒÆ’Ã‚Â©tÃƒÆ’Ã‚Â© retrouvÃƒÆ’Ã‚Â© pour ce compte (mode Stripe: ${mode}). Si la souscription est visible dans lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢autre mode (test/live), corrige STRIPE_SECRET_KEY.`,
         );
         return;
       }
@@ -101,7 +104,7 @@ export default function UpgradePage() {
       refetch();
     } catch (e) {
       console.error('Sync error', e);
-      setSyncError('Impossible de rafraÃƒÂ®chir le statut pour le moment. RÃƒÂ©essaie dans quelques instants.');
+      setSyncError('Impossible de rafraÃƒÆ’Ã‚Â®chir le statut pour le moment. RÃƒÆ’Ã‚Â©essaie dans quelques instants.');
     } finally {
       setSyncLoading(false);
     }
@@ -119,20 +122,27 @@ export default function UpgradePage() {
 
   useEffect(() => {
     if (!portalReturnDetected) return;
-    setPortalReturnFeedback('Retour Stripe dÃƒÂ©tectÃƒÂ©. TaskNote actualise ton statut dÃ¢â‚¬â„¢abonnement.');
+    setPortalReturnFeedback('Retour Stripe dÃƒÆ’Ã‚Â©tectÃƒÆ’Ã‚Â©. TaskNote actualise ton statut dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢abonnement.');
     const timer = window.setTimeout(() => setPortalReturnFeedback(null), 5000);
     return () => window.clearTimeout(timer);
   }, [portalReturnDetected]);
 
   const handleCheckout = async () => {
     if (isAndroid) {
-      setError('Ton abonnement est gÃƒÂ©rÃƒÂ© via Google Play.');
+      setError('Ton abonnement est gÃƒÆ’Ã‚Â©rÃƒÆ’Ã‚Â© via Google Play.');
       return;
     }
     setLoading(true);
     setError(null);
 
     try {
+      if (typeof window !== "undefined") {
+        window.sessionStorage.setItem(PENDING_SUBSCRIBE_TRACKING_KEY, String(Date.now()));
+      }
+      void trackEvent("upgrade_click", {
+        source: "app",
+        plan: "pro",
+      });
       const res = await fetch('/api/stripe/checkout', { method: 'POST', credentials: 'include' });
       if (!res.ok) {
         const text = await res.text().catch(() => '');
@@ -145,7 +155,7 @@ export default function UpgradePage() {
       window.location.href = json.url;
     } catch (e) {
       console.error('Checkout error', e);
-      setError("Impossible dÃ¢â‚¬â„¢ouvrir le paiement pour le moment. RÃƒÂ©essaie dans quelques instants.");
+      setError("Impossible dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ouvrir le paiement pour le moment. RÃƒÆ’Ã‚Â©essaie dans quelques instants.");
     } finally {
       setLoading(false);
     }
@@ -153,7 +163,7 @@ export default function UpgradePage() {
 
   const handleOpenPortal = async () => {
     if (isAndroid) {
-      setPortalError('Ton abonnement est gÃƒÂ©rÃƒÂ© via Google Play.');
+      setPortalError('Ton abonnement est gÃƒÆ’Ã‚Â©rÃƒÆ’Ã‚Â© via Google Play.');
       return;
     }
     setPortalLoading(true);
@@ -194,29 +204,29 @@ export default function UpgradePage() {
       console.error('Portal error', e);
       const message = e instanceof Error ? e.message : '';
       if (message === 'SESSION_EXPIRED') {
-        setPortalError('Ta session a expirÃƒÂ©. RafraÃƒÂ®chis la page et reconnecte-toi si besoin.');
+        setPortalError('Ta session a expirÃƒÆ’Ã‚Â©. RafraÃƒÆ’Ã‚Â®chis la page et reconnecte-toi si besoin.');
       } else if (message === 'RETURN_URL_NOT_ALLOWED') {
         const upgradeUrl =
           typeof window !== 'undefined' && window.location?.origin
             ? `${window.location.origin}/upgrade?portal=return`
             : 'https://app.tasknote.io/upgrade?portal=return';
         setPortalError(
-          `Configuration Stripe requise: ajoute ${upgradeUrl} dans les URLs de retour autorisÃƒÂ©es du portail client, puis rÃƒÂ©essaie.`,
+          `Configuration Stripe requise: ajoute ${upgradeUrl} dans les URLs de retour autorisÃƒÆ’Ã‚Â©es du portail client, puis rÃƒÆ’Ã‚Â©essaie.`,
         );
       } else if (message === 'NO_SUCH_CUSTOMER') {
         setPortalError(
-          'Ce compte Stripe est introuvable (souvent un mismatch test/live). VÃƒÂ©rifie que STRIPE_SECRET_KEY et le customerId utilisent le mÃƒÂªme mode.',
+          'Ce compte Stripe est introuvable (souvent un mismatch test/live). VÃƒÆ’Ã‚Â©rifie que STRIPE_SECRET_KEY et le customerId utilisent le mÃƒÆ’Ã‚Âªme mode.',
         );
       } else if (message === 'MISSING_CUSTOMER') {
         setPortalError(
-          'La gestion de lÃ¢â‚¬â„¢abonnement nÃ¢â‚¬â„¢est pas encore disponible pour ce compte. Contacte le support si le problÃƒÂ¨me persiste.',
+          'La gestion de lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢abonnement nÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢est pas encore disponible pour ce compte. Contacte le support si le problÃƒÆ’Ã‚Â¨me persiste.',
         );
       } else if (message === 'PORTAL_NOT_ENABLED') {
-        setPortalError('Active le portail client dans Stripe (Billing > Customer portal), puis rÃƒÂ©essaie.');
+        setPortalError('Active le portail client dans Stripe (Billing > Customer portal), puis rÃƒÆ’Ã‚Â©essaie.');
       } else if (message === 'PORTAL_UNAVAILABLE') {
-        setPortalError('Le portail Stripe est temporairement indisponible. RÃƒÂ©essaie dans quelques instants.');
+        setPortalError('Le portail Stripe est temporairement indisponible. RÃƒÆ’Ã‚Â©essaie dans quelques instants.');
       } else {
-        setPortalError('Impossible dÃ¢â‚¬â„¢ouvrir la gestion de lÃ¢â‚¬â„¢abonnement. VÃƒÂ©rifie ta connexion et rÃƒÂ©essaie.');
+        setPortalError('Impossible dÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ouvrir la gestion de lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢abonnement. VÃƒÆ’Ã‚Â©rifie ta connexion et rÃƒÆ’Ã‚Â©essaie.');
       }
     } finally {
       setPortalLoading(false);
@@ -228,7 +238,7 @@ export default function UpgradePage() {
       <div className="space-y-2">
         <h1 className="text-xl font-semibold">Abonnement</h1>
         {isAndroid ? (
-          <p className="text-sm text-muted-foreground">Ton abonnement est gÃƒÂ©rÃƒÂ© via Google Play.</p>
+          <p className="text-sm text-muted-foreground">Ton abonnement est gÃƒÆ’Ã‚Â©rÃƒÆ’Ã‚Â© via Google Play.</p>
         ) : (
           <p className="text-sm text-muted-foreground">
             Compare les limites reellement appliquees entre Free et Pro. Tu peux annuler a tout moment depuis le portail securise Stripe.
@@ -247,7 +257,7 @@ export default function UpgradePage() {
           <div className="text-sm">
             <span className="font-medium">Statut actuel:</span>{' '}
             <span>
-              {userLoading ? 'ChargementÃ¢â‚¬Â¦' : isPro ? (hasActiveStripeSubscription ? 'Pro' : 'Pro (ÃƒÂ  confirmer)') : 'Free'}
+              {userLoading ? 'ChargementÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦' : isPro ? (hasActiveStripeSubscription ? 'Pro' : 'Pro (ÃƒÆ’Ã‚Â  confirmer)') : 'Free'}
             </span>
           </div>
           <div
@@ -257,7 +267,7 @@ export default function UpgradePage() {
                 : 'border-border bg-background text-muted-foreground'
             }`}
           >
-            {isPro ? (hasActiveStripeSubscription ? 'Plan actif' : 'Statut ÃƒÂ  vÃƒÂ©rifier') : 'Plan de base'}
+            {isPro ? (hasActiveStripeSubscription ? 'Plan actif' : 'Statut ÃƒÆ’Ã‚Â  vÃƒÆ’Ã‚Â©rifier') : 'Plan de base'}
           </div>
         </div>
 
@@ -272,7 +282,7 @@ export default function UpgradePage() {
               {!isPro && <div className="text-xs font-medium text-primary">Actuel</div>}
             </div>
             <p className="text-sm text-muted-foreground">
-              LÃ¢â‚¬â„¢essentiel pour organiser tes notes, ton agenda et tes checklists avec des limites claires.
+              LÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢essentiel pour organiser tes notes, ton agenda et tes checklists avec des limites claires.
             </p>
             <ul className="text-sm text-muted-foreground space-y-1">
               {FREE_FEATURES.map((feature) => (
@@ -291,14 +301,14 @@ export default function UpgradePage() {
               {isPro && <div className="text-xs font-medium text-primary">Actuel</div>}
             </div>
             <p className="text-sm text-muted-foreground">
-              Plus de libertÃƒÂ©, des quotas ÃƒÂ©largis et les fonctionnalitÃƒÂ©s avancÃƒÂ©es rÃƒÂ©ellement disponibles aujourdÃ¢â‚¬â„¢hui.
+              Plus de libertÃƒÆ’Ã‚Â©, des quotas ÃƒÆ’Ã‚Â©largis et les fonctionnalitÃƒÆ’Ã‚Â©s avancÃƒÆ’Ã‚Â©es rÃƒÆ’Ã‚Â©ellement disponibles aujourdÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢hui.
             </p>
             <ul className="text-sm text-muted-foreground space-y-1">
               {PRO_FEATURES.map((feature) => (
                 <li key={feature}>{feature}</li>
               ))}
             </ul>
-            <div className="text-sm font-medium pt-1">1,99Ã¢â€šÂ¬ / mois</div>
+            <div className="text-sm font-medium pt-1">1,99ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ / mois</div>
           </div>
         </div>
 
@@ -306,14 +316,14 @@ export default function UpgradePage() {
           <div className="space-y-1">
             <div className="text-sm font-medium">Comparatif Free / Pro</div>
             <div className="text-xs text-muted-foreground">
-              Cette grille reflÃƒÂ¨te les limites et accÃƒÂ¨s rÃƒÂ©ellement appliquÃƒÂ©s dans TaskNote aujourdÃ¢â‚¬â„¢hui.
+              Cette grille reflÃƒÆ’Ã‚Â¨te les limites et accÃƒÆ’Ã‚Â¨s rÃƒÆ’Ã‚Â©ellement appliquÃƒÆ’Ã‚Â©s dans TaskNote aujourdÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢hui.
             </div>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left">
-                  <th className="py-2 pr-4 font-medium">FonctionnalitÃƒÂ©</th>
+                  <th className="py-2 pr-4 font-medium">FonctionnalitÃƒÆ’Ã‚Â©</th>
                   <th className="py-2 pr-4 font-medium">Free</th>
                   <th className="py-2 font-medium">Pro</th>
                 </tr>
@@ -330,7 +340,7 @@ export default function UpgradePage() {
             </table>
           </div>
           <div className="text-xs text-muted-foreground">
-            Les checklists restent disponibles sur les deux plans, sans quota dÃƒÂ©diÃƒÂ© supplÃƒÂ©mentaire affichÃƒÂ© aujourdÃ¢â‚¬â„¢hui.
+            Les checklists restent disponibles sur les deux plans, sans quota dÃƒÆ’Ã‚Â©diÃƒÆ’Ã‚Â© supplÃƒÆ’Ã‚Â©mentaire affichÃƒÆ’Ã‚Â© aujourdÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢hui.
           </div>
         </div>
 
@@ -338,7 +348,7 @@ export default function UpgradePage() {
           {isAndroid ? (
             <div className="rounded-lg border border-border bg-background p-3 space-y-2">
               <div className="text-sm font-medium">Abonnement Android</div>
-              <div className="text-xs text-muted-foreground">Ton abonnement est gÃƒÂ©rÃƒÂ© via Google Play.</div>
+              <div className="text-xs text-muted-foreground">Ton abonnement est gÃƒÆ’Ã‚Â©rÃƒÆ’Ã‚Â© via Google Play.</div>
               <a
                 href={googlePlayManageUrl}
                 target="_blank"
@@ -357,13 +367,13 @@ export default function UpgradePage() {
                   disabled={loading || (isPro && hasActiveStripeSubscription)}
                   className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
                 >
-                  {isPro && hasActiveStripeSubscription ? 'Pro activÃƒÂ©' : loading ? 'RedirectionÃ¢â‚¬Â¦' : 'Passer ÃƒÂ  Pro'}
+                  {isPro && hasActiveStripeSubscription ? 'Pro activÃƒÆ’Ã‚Â©' : loading ? 'RedirectionÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦' : 'Passer ÃƒÆ’Ã‚Â  Pro'}
                 </button>
               </div>
 
               {!isPro && (
                 <div className="text-xs text-muted-foreground">
-                  La gestion de lÃ¢â‚¬â„¢abonnement est disponible aprÃƒÂ¨s activation du plan Pro.
+                  La gestion de lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢abonnement est disponible aprÃƒÆ’Ã‚Â¨s activation du plan Pro.
                 </div>
               )}
 
@@ -371,7 +381,7 @@ export default function UpgradePage() {
                 <div className="rounded-lg border border-border bg-background p-3 space-y-2">
                   <div className="text-sm font-medium">Deja abonne ?</div>
                   <div className="text-xs text-muted-foreground">
-                    Si ton paiement Stripe a ÃƒÂ©tÃƒÂ© confirmÃƒÂ© mais que ton statut est encore Free, rafraÃƒÂ®chis le statut.
+                    Si ton paiement Stripe a ÃƒÆ’Ã‚Â©tÃƒÆ’Ã‚Â© confirmÃƒÆ’Ã‚Â© mais que ton statut est encore Free, rafraÃƒÆ’Ã‚Â®chis le statut.
                   </div>
                   <button
                     type="button"
@@ -379,7 +389,7 @@ export default function UpgradePage() {
                     disabled={syncLoading}
                     className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium disabled:opacity-50"
                   >
-                    {syncLoading ? 'RafraÃƒÂ®chissementÃ¢â‚¬Â¦' : 'RafraÃƒÂ®chir le statut'}
+                    {syncLoading ? 'RafraÃƒÆ’Ã‚Â®chissementÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦' : 'RafraÃƒÆ’Ã‚Â®chir le statut'}
                   </button>
                   {syncError && <p className="text-sm text-destructive">{syncError}</p>}
                 </div>
@@ -387,9 +397,9 @@ export default function UpgradePage() {
 
               {isPro && hasActiveStripeSubscription && (
                 <div className="rounded-lg border border-border bg-background p-3 space-y-2">
-                  <div className="text-sm font-medium">GÃƒÂ©rer mon abonnement</div>
+                  <div className="text-sm font-medium">GÃƒÆ’Ã‚Â©rer mon abonnement</div>
                   <div className="text-xs text-muted-foreground">
-                    Tout se fait dans le portail Stripe sÃƒÂ©curisÃƒÂ©. Tu peux y modifier ton moyen de paiement, tÃƒÂ©lÃƒÂ©charger tes factures ou annuler.
+                    Tout se fait dans le portail Stripe sÃƒÆ’Ã‚Â©curisÃƒÆ’Ã‚Â©. Tu peux y modifier ton moyen de paiement, tÃƒÆ’Ã‚Â©lÃƒÆ’Ã‚Â©charger tes factures ou annuler.
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2">
                     <button
@@ -398,7 +408,7 @@ export default function UpgradePage() {
                       disabled={portalLoading}
                       className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
                     >
-                      {portalLoading ? 'OuvertureÃ¢â‚¬Â¦' : 'GÃƒÂ©rer mon abonnement'}
+                      {portalLoading ? 'OuvertureÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦' : 'GÃƒÆ’Ã‚Â©rer mon abonnement'}
                     </button>
                     <button
                       type="button"
@@ -406,7 +416,7 @@ export default function UpgradePage() {
                       disabled={portalLoading}
                       className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-destructive/30 bg-destructive/5 text-sm font-medium text-destructive disabled:opacity-50"
                     >
-                      {portalLoading ? 'OuvertureÃ¢â‚¬Â¦' : 'Annuler lÃ¢â‚¬â„¢abonnement'}
+                      {portalLoading ? 'OuvertureÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦' : 'Annuler lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢abonnement'}
                     </button>
                   </div>
                   <button
@@ -415,7 +425,7 @@ export default function UpgradePage() {
                     disabled={syncLoading}
                     className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium disabled:opacity-50"
                   >
-                    {syncLoading ? 'RafraÃƒÂ®chissementÃ¢â‚¬Â¦' : 'RafraÃƒÂ®chir le statut'}
+                    {syncLoading ? 'RafraÃƒÆ’Ã‚Â®chissementÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦' : 'RafraÃƒÆ’Ã‚Â®chir le statut'}
                   </button>
                   {!stripeCustomerId && (
                     <div className="text-xs text-muted-foreground">
@@ -438,7 +448,7 @@ export default function UpgradePage() {
                     disabled={syncLoading}
                     className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium disabled:opacity-50"
                   >
-                    {syncLoading ? 'RafraÃƒÂ®chissementÃ¢â‚¬Â¦' : 'RafraÃƒÂ®chir le statut'}
+                    {syncLoading ? 'RafraÃƒÆ’Ã‚Â®chissementÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦' : 'RafraÃƒÆ’Ã‚Â®chir le statut'}
                   </button>
                   {syncError && <p className="text-sm text-destructive">{syncError}</p>}
                 </div>

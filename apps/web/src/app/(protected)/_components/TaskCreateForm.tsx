@@ -7,6 +7,7 @@ import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
+import { trackEvent } from "@/lib/analytics";
 import {
   DATETIME_PLACEHOLDER_FR,
   DATE_PLACEHOLDER_FR,
@@ -59,9 +60,9 @@ const newTaskSchema = z.object({
 });
 
 const GOOGLE_SYNC_INCOMPLETE_WINDOW_MESSAGE =
-  "Élément enregistré dans TaskNote, mais non synchronisé avec Google Calendar faute de plage horaire complète.";
+  "Ã‰lÃ©ment enregistrÃ© dans TaskNote, mais non synchronisÃ© avec Google Calendar faute de plage horaire complÃ¨te.";
 const GOOGLE_SYNC_FAILED_MESSAGE =
-  "Élément enregistré dans TaskNote, mais non synchronisé avec Google Calendar.";
+  "Ã‰lÃ©ment enregistrÃ© dans TaskNote, mais non synchronisÃ© avec Google Calendar.";
 
 function toLocalDateInputValue(date: Date) {
   const year = date.getFullYear();
@@ -229,7 +230,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
     const startTs = parseLocalDateToTimestamp(newStartDate);
     const dueTs = parseLocalDateTimeToTimestamp(newDueDate);
     if (!startTs || !dueTs) return null;
-    if (startTs.toMillis() > dueTs.toMillis()) return "La date de début est après la date de fin.";
+    if (startTs.toMillis() > dueTs.toMillis()) return "La date de dÃ©but est aprÃ¨s la date de fin.";
     return null;
   }, [newStartDate, newDueDate]);
 
@@ -244,7 +245,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
     }
     return {
       tone: "muted" as const,
-      text: `Échéance: ${formatTimestampToDateTimeFr(ts)}`,
+      text: `Ã‰chÃ©ance: ${formatTimestampToDateTimeFr(ts)}`,
     };
   }, [newDueDate]);
 
@@ -259,14 +260,14 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
     }
     return {
       tone: "muted" as const,
-      text: `Début: ${formatTimestampToDateFr(ts)}`,
+      text: `DÃ©but: ${formatTimestampToDateFr(ts)}`,
     };
   }, [newStartDate]);
 
   const handleCreateTask = async () => {
     const user = auth.currentUser;
     if (!user) {
-      setCreateError("Connecte-toi pour créer ton premier élément d’agenda.");
+      setCreateError("Connecte-toi pour crÃ©er ton premier Ã©lÃ©ment dâ€™agenda.");
       return;
     }
 
@@ -286,7 +287,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
     });
 
     if (!validation.success) {
-      setCreateError(validation.error.issues[0]?.message ?? "Données invalides.");
+      setCreateError(validation.error.issues[0]?.message ?? "DonnÃ©es invalides.");
       return;
     }
 
@@ -297,12 +298,12 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
     const dueTimestamp = validation.data.dueDate ? parseLocalDateTimeToTimestamp(validation.data.dueDate) : null;
 
     if (validation.data.startDate && !startTimestamp) {
-      setCreateError(`Date de début invalide (format attendu: ${DATE_PLACEHOLDER_FR}).`);
+      setCreateError(`Date de dÃ©but invalide (format attendu: ${DATE_PLACEHOLDER_FR}).`);
       return;
     }
 
     if (validation.data.dueDate && !dueTimestamp) {
-      setCreateError(`Date d'échéance invalide (format attendu: ${DATETIME_PLACEHOLDER_FR}).`);
+      setCreateError(`Date d'Ã©chÃ©ance invalide (format attendu: ${DATETIME_PLACEHOLDER_FR}).`);
       return;
     }
 
@@ -340,7 +341,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
           if (typeof window !== "undefined") {
             window.sessionStorage.setItem(
               "smartnotes:flash",
-              "Élément d’agenda créé, mais non épinglé (limite Free). Passe en Pro ou retire un favori.",
+              "Ã‰lÃ©ment dâ€™agenda crÃ©Ã©, mais non Ã©pinglÃ© (limite Free). Passe en Pro ou retire un favori.",
             );
           }
         } catch {
@@ -449,16 +450,25 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
       setNewStartDate("");
       setNewDueDate("");
       setNewPriority("");
-      setCreateFeedback((prev) => prev ?? "Élément ajouté à l’agenda.");
+      setCreateFeedback((prev) => prev ?? "Ã‰lÃ©ment ajoutÃ© Ã  lâ€™agenda.");
 
-      window.requestAnimationFrame(() => {
-        titleInputRef.current?.focus();
-      });
+        window.requestAnimationFrame(() => {
+          titleInputRef.current?.focus();
+        });
 
-      onCreated?.();
+        void trackEvent("create_task", {
+          source: "app",
+          surface: "task_form",
+          all_day: explicitAllDay,
+          has_due_date: Boolean(dueTimestamp),
+          priority: validation.data.priority ?? null,
+          workspace_bound: Boolean(validation.data.workspaceId ?? null),
+        });
+
+        onCreated?.();
     } catch (e) {
       console.error("Error creating task", e);
-      setCreateError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "Impossible de créer l’élément d’agenda."));
+      setCreateError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "Impossible de crÃ©er lâ€™Ã©lÃ©ment dâ€™agenda."));
     } finally {
       setCreating(false);
     }
@@ -516,7 +526,7 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
               }}
             />
             {dictationStatus === "listening" ? (
-              <div className="text-xs text-muted-foreground">Écoute…</div>
+              <div className="text-xs text-muted-foreground">Ã‰couteâ€¦</div>
             ) : dictationError ? (
               <div className="text-xs text-destructive">{dictationError}</div>
             ) : null}
@@ -534,9 +544,9 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
             className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm"
             disabled={creating}
           >
-            <option value="todo">À faire</option>
+            <option value="todo">Ã€ faire</option>
             <option value="doing">En cours</option>
-            <option value="done">Terminée</option>
+            <option value="done">TerminÃ©e</option>
           </select>
         </div>
 
@@ -654,13 +664,13 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
           disabled={creating || !canCreate}
           className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
         >
-          {creating ? "Création de l’agenda…" : "Créer dans l’agenda"}
+          {creating ? "CrÃ©ation de lâ€™agendaâ€¦" : "CrÃ©er dans lâ€™agenda"}
         </button>
       </div>
 
       {creating ? (
         <div className="text-xs text-muted-foreground" role="status" aria-live="polite">
-          Enregistrement de l’élément d’agenda…
+          Enregistrement de lâ€™Ã©lÃ©ment dâ€™agendaâ€¦
         </div>
       ) : null}
       {createFeedback && <div className="sn-alert sn-alert--success sn-animate-in" role="status" aria-live="polite">{createFeedback}</div>}

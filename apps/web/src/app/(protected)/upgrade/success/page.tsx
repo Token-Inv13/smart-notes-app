@@ -3,6 +3,9 @@
 import Link from 'next/link';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { useCallback, useEffect, useState } from 'react';
+import { trackEvent } from '@/lib/analytics';
+
+const PENDING_SUBSCRIBE_TRACKING_KEY = "tasknote_pending_subscribe_tracking";
 
 export default function UpgradeSuccessPage() {
   const { data: userSettings, loading, refetch } = useUserSettings();
@@ -34,7 +37,7 @@ export default function UpgradeSuccessPage() {
       if (json && json.found === false) {
         const mode = json.stripeMode ?? 'unknown';
         setSyncError(
-          `Aucun abonnement Stripe nÃ¢â‚¬â„¢a ÃƒÂ©tÃƒÂ© retrouvÃƒÂ© pour ce compte (mode Stripe: ${mode}). Si la souscription est visible dans lÃ¢â‚¬â„¢autre mode (test/live), corrige STRIPE_SECRET_KEY.`,
+          `Aucun abonnement Stripe nÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢a ÃƒÆ’Ã‚Â©tÃƒÆ’Ã‚Â© retrouvÃƒÆ’Ã‚Â© pour ce compte (mode Stripe: ${mode}). Si la souscription est visible dans lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢autre mode (test/live), corrige STRIPE_SECRET_KEY.`,
         );
         return;
       }
@@ -42,7 +45,7 @@ export default function UpgradeSuccessPage() {
       refetch();
     } catch (e) {
       console.error('Sync error', e);
-      setSyncError('Impossible de rafraÃƒÂ®chir le statut pour le moment. RÃƒÂ©essaie dans quelques instants.');
+      setSyncError('Impossible de rafraÃƒÆ’Ã‚Â®chir le statut pour le moment. RÃƒÆ’Ã‚Â©essaie dans quelques instants.');
     } finally {
       setSyncLoading(false);
     }
@@ -53,6 +56,20 @@ export default function UpgradeSuccessPage() {
     if (isPro) return;
     void handleSync();
   }, [handleSync, isPro, loading]);
+
+  useEffect(() => {
+    if (loading || !isPro || typeof window === "undefined") return;
+
+    const pending = window.sessionStorage.getItem(PENDING_SUBSCRIBE_TRACKING_KEY);
+    if (!pending) return;
+
+    window.sessionStorage.removeItem(PENDING_SUBSCRIBE_TRACKING_KEY);
+    void trackEvent('subscribe', {
+      source: 'app',
+      plan: 'pro',
+      method: 'stripe',
+    });
+  }, [isPro, loading]);
 
   return (
     <div className="max-w-xl space-y-4">
@@ -76,7 +93,7 @@ export default function UpgradeSuccessPage() {
             disabled={syncLoading}
             className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium disabled:opacity-50"
           >
-            {syncLoading ? 'RafraÃƒÂ®chissementÃ¢â‚¬Â¦' : 'RafraÃƒÂ®chir le statut'}
+            {syncLoading ? 'RafraÃƒÆ’Ã‚Â®chissementÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦' : 'RafraÃƒÆ’Ã‚Â®chir le statut'}
           </button>
           {syncError && <p className="text-sm text-destructive">{syncError}</p>}
         </div>
@@ -99,7 +116,7 @@ export default function UpgradeSuccessPage() {
           href="/settings"
           className="inline-flex items-center justify-center px-4 py-2 rounded-md border border-border bg-background text-sm font-medium"
         >
-          ParamÃƒÂ¨tres
+          ParamÃƒÆ’Ã‚Â¨tres
         </Link>
       </div>
     </div>

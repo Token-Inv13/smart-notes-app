@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { httpsCallable } from "firebase/functions";
 import { functions as fbFunctions } from "@/lib/firebase";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
+import { trackEvent } from "@/lib/analytics";
 import { sanitizeNoteHtml } from "@/lib/richText";
 import { useAuth } from "@/hooks/useAuth";
 import { toUserErrorMessage } from "@/lib/userError";
@@ -45,10 +46,10 @@ export default function QuickCapturePage() {
   };
 
   const createNote = async (text: string) => {
-    if (!user?.uid) throw new Error("Tu dois être connecté.");
+    if (!user?.uid) throw new Error("Tu dois Ãªtre connectÃ©.");
 
     const titleLine = text.split(/\r\n|\n|\r/).map((l) => l.trim()).find((l) => l) || "Quick capture";
-    const title = titleLine.length > 64 ? `${titleLine.slice(0, 61)}…` : titleLine;
+    const title = titleLine.length > 64 ? `${titleLine.slice(0, 61)}â€¦` : titleLine;
 
     const result = await createNoteWithPlanGuard({
       workspaceId: null,
@@ -60,10 +61,10 @@ export default function QuickCapturePage() {
   };
 
   const createTodo = async (text: string) => {
-    if (!user?.uid) throw new Error("Tu dois être connecté.");
+    if (!user?.uid) throw new Error("Tu dois Ãªtre connectÃ©.");
 
     const titleLine = text.split(/\r\n|\n|\r/).map((l) => l.trim()).find((l) => l) || "Quick capture";
-    const title = titleLine.length > 96 ? `${titleLine.slice(0, 93)}…` : titleLine;
+    const title = titleLine.length > 96 ? `${titleLine.slice(0, 93)}â€¦` : titleLine;
 
     const payload: Omit<TodoDoc, "id"> = {
       userId: user.uid,
@@ -93,9 +94,13 @@ export default function QuickCapturePage() {
 
     try {
       const id = await createNote(text);
+      void trackEvent("create_note", {
+        source: "app",
+        surface: "quick_capture",
+      });
       window.location.href = `/notes/${encodeURIComponent(id)}`;
     } catch (e) {
-      setError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "Création de note impossible.", { allowMessages: ["Tu dois être connecté."] }));
+      setError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "CrÃ©ation de note impossible.", { allowMessages: ["Tu dois Ãªtre connectÃ©."] }));
     } finally {
       setBusy(null);
     }
@@ -112,9 +117,15 @@ export default function QuickCapturePage() {
 
     try {
       const id = await createTodo(text);
+      void trackEvent("create_todo", {
+        source: "app",
+        surface: "quick_capture",
+        item_count: 0,
+        scheduled_items_count: 0,
+      });
       window.location.href = `/todo/${encodeURIComponent(id)}`;
     } catch (e) {
-      setError(toUserErrorMessage(e, "Création de checklist impossible.", { allowMessages: ["Tu dois être connecté."] }));
+      setError(toUserErrorMessage(e, "CrÃ©ation de checklist impossible.", { allowMessages: ["Tu dois Ãªtre connectÃ©."] }));
     } finally {
       setBusy(null);
     }
@@ -133,14 +144,14 @@ export default function QuickCapturePage() {
       const noteId = await createNote(text);
       const fn = httpsCallable<{ noteId: string }, { jobId: string; resultId?: string }>(fbFunctions, "assistantRequestAIAnalysis");
       await fn({ noteId });
-      setMessage("Analyse IA demandée. Ouverture de la note…");
+      setMessage("Analyse IA demandÃ©e. Ouverture de la noteâ€¦");
       window.location.href = `/notes/${encodeURIComponent(noteId)}`;
     } catch (e) {
       if (isCallableUnauthenticated(e)) {
         void invalidateAuthSession();
         return;
       }
-      setError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "Impossible de lancer l’analyse IA.", { allowMessages: ["Tu dois être connecté."] }));
+      setError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "Impossible de lancer lâ€™analyse IA.", { allowMessages: ["Tu dois Ãªtre connectÃ©."] }));
     } finally {
       setBusy(null);
     }
@@ -161,7 +172,7 @@ export default function QuickCapturePage() {
           <div className="text-sm font-medium">Texte</div>
           <textarea
             className="w-full min-h-[120px] rounded-md border border-input bg-background p-3 text-sm"
-            placeholder="Écris ici…"
+            placeholder="Ã‰cris iciâ€¦"
             value={typedText}
             onChange={(e) => setTypedText(e.target.value)}
           />
@@ -181,7 +192,7 @@ export default function QuickCapturePage() {
             disabled={!finalText.trim() || !!busy}
             onClick={() => void handleCreateNote()}
           >
-            {busy === "note" ? "Création…" : "Créer une note"}
+            {busy === "note" ? "CrÃ©ationâ€¦" : "CrÃ©er une note"}
           </button>
 
           <button
@@ -190,7 +201,7 @@ export default function QuickCapturePage() {
             disabled={!finalText.trim() || !!busy}
             onClick={() => void handleCreateTodo()}
           >
-            {busy === "todo" ? "Création…" : "Ajouter à la Checklist"}
+            {busy === "todo" ? "CrÃ©ationâ€¦" : "Ajouter Ã  la Checklist"}
           </button>
 
           <button
@@ -199,7 +210,7 @@ export default function QuickCapturePage() {
             disabled={!finalText.trim() || !!busy}
             onClick={() => void handleAnalyzeAI()}
           >
-            {busy === "ai" ? "Analyse…" : "Analyser avec IA"}
+            {busy === "ai" ? "Analyseâ€¦" : "Analyser avec IA"}
           </button>
         </div>
       </section>

@@ -1,9 +1,10 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { auth } from "@/lib/firebase";
+import { trackEvent } from "@/lib/analytics";
 import { observeCaughtError } from "@/lib/clientObservability";
 import { getRuntimePlatformInfo } from "@/lib/runtimePlatform";
 import {
@@ -63,7 +64,7 @@ function getFirebaseAuthErrorMessage(err: unknown): string {
   const internalPayload = `${rawMessage}\n${tokenMessage}`.toUpperCase();
 
   if (typeof code !== "string") {
-    return rawMessage || "Une erreur est survenue. Réessaie.";
+    return rawMessage || "Une erreur est survenue. RÃƒÂ©essaie.";
   }
 
   switch (code) {
@@ -74,15 +75,15 @@ function getFirebaseAuthErrorMessage(err: unknown): string {
     case "auth/invalid-email":
       return "Adresse email invalide.";
     case "auth/user-disabled":
-      return "Ce compte a été désactivé.";
+      return "Ce compte a ÃƒÂ©tÃƒÂ© dÃƒÂ©sactivÃƒÂ©.";
     case "auth/too-many-requests":
-      return "Trop de tentatives. Réessaie plus tard.";
+      return "Trop de tentatives. RÃƒÂ©essaie plus tard.";
     case "auth/popup-closed-by-user":
-      return "Connexion annulée.";
+      return "Connexion annulÃƒÂ©e.";
     case "auth/popup-blocked":
-      return "La popup a été bloquée par le navigateur. Autorise les popups puis réessaie.";
+      return "La popup a ÃƒÂ©tÃƒÂ© bloquÃƒÂ©e par le navigateur. Autorise les popups puis rÃƒÂ©essaie.";
     case "auth/network-request-failed":
-      return "Problème réseau. Vérifie ta connexion puis réessaie.";
+      return "ProblÃƒÂ¨me rÃƒÂ©seau. VÃƒÂ©rifie ta connexion puis rÃƒÂ©essaie.";
     case "auth/internal-error":
       if (
         internalPayload.includes("CONFIGURATION_NOT_FOUND") ||
@@ -97,11 +98,11 @@ function getFirebaseAuthErrorMessage(err: unknown): string {
         internalPayload.includes("PROJECT_NOT_FOUND") ||
         internalPayload.includes("INVALID_PROJECT")
       ) {
-        return "Configuration Firebase invalide côté client (API key / projet). Vérifie les variables Firebase sur Vercel.";
+        return "Configuration Firebase invalide cÃƒÂ´tÃƒÂ© client (API key / projet). VÃƒÂ©rifie les variables Firebase sur Vercel.";
       }
-      return "Erreur interne Firebase Auth. Réessaie puis contacte le support si le problème persiste.";
+      return "Erreur interne Firebase Auth. RÃƒÂ©essaie puis contacte le support si le problÃƒÂ¨me persiste.";
     default:
-      return `Une erreur est survenue (${code}). Réessaie.`;
+      return `Une erreur est survenue (${code}). RÃƒÂ©essaie.`;
   }
 }
 
@@ -114,7 +115,7 @@ function isNativeGoogleSignInUnavailable(err: unknown): boolean {
 }
 
 function getNativeGoogleSignInUnavailableMessage() {
-  return "Connexion Google indisponible dans cette version Android. Termine la configuration Google native Android, ou utilise email + mot de passe pour l’instant.";
+  return "Connexion Google indisponible dans cette version Android. Termine la configuration Google native Android, ou utilise email + mot de passe pour lÃ¢â‚¬â„¢instant.";
 }
 
 export default function LoginPage() {
@@ -158,6 +159,15 @@ function LoginPageInner() {
     }
   };
 
+  const finalizeLogin = useCallback(async (method: "email" | "google") => {
+    await establishSession();
+    void trackEvent("login", {
+      method,
+      source: "app",
+    });
+    router.replace(nextPath);
+  }, [nextPath, router]);
+
   const debugAuthFailure = (stage: string, err: unknown, meta?: Record<string, unknown>) => {
     const code = getFirebaseAuthErrorCode(err);
     const message = getFirebaseAuthErrorRawMessage(err);
@@ -194,8 +204,7 @@ function LoginPageInner() {
         setError(null);
         setResetStatus(null);
         setLoading(true);
-        await establishSession();
-        router.replace(nextPath);
+        await finalizeLogin("google");
       } catch (err) {
         if (cancelled) return;
         // If no redirect is pending, Firebase may throw; treat it as non-blocking.
@@ -212,7 +221,7 @@ function LoginPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [nextPath, router]);
+  }, [finalizeLogin]);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -224,17 +233,16 @@ function LoginPageInner() {
         debugAuthFailure("firebase_sign_in", err, { provider: "password" });
         throw err;
       });
-      await establishSession().catch((err: unknown) => {
+      await finalizeLogin("email").catch((err: unknown) => {
         debugAuthFailure("session_api", err, { provider: "password" });
         throw err;
       });
-      router.replace(nextPath);
     } catch (err) {
       const code = getFirebaseAuthErrorCode(err);
       if (code) {
         setError(getFirebaseAuthErrorMessage(err));
       } else if (err instanceof Error && err.message.startsWith("Session API error")) {
-        setError("Connexion réussie, mais la session serveur a échoué. Vérifie la configuration serveur Firebase.");
+        setError("Connexion rÃƒÂ©ussie, mais la session serveur a ÃƒÂ©chouÃƒÂ©. VÃƒÂ©rifie la configuration serveur Firebase.");
       } else {
         setError(getFirebaseAuthErrorMessage(err));
       }
@@ -264,8 +272,7 @@ function LoginPageInner() {
 
           const credential = GoogleAuthProvider.credential(idToken ?? undefined, accessToken ?? undefined);
           await signInWithCredential(auth, credential);
-          await establishSession();
-          router.replace(nextPath);
+          await finalizeLogin("google");
           return;
         } catch (err) {
           if (!isNativeGoogleSignInUnavailable(err)) {
@@ -279,8 +286,7 @@ function LoginPageInner() {
 
       try {
         await signInWithPopup(auth, provider);
-        await establishSession();
-        router.replace(nextPath);
+        await finalizeLogin("google");
       } catch (err) {
         const code = getFirebaseAuthErrorCode(err) ?? "";
         // On some mobile browsers the popup may be blocked; redirect is more reliable.
@@ -304,14 +310,14 @@ function LoginPageInner() {
 
     const trimmed = email.trim();
     if (!trimmed) {
-      setError("Renseigne ton email pour recevoir un lien de réinitialisation.");
+      setError("Renseigne ton email pour recevoir un lien de rÃƒÂ©initialisation.");
       return;
     }
 
     setLoading(true);
     try {
       await sendPasswordResetEmail(auth, trimmed);
-      setResetStatus("Email de réinitialisation envoyé (si un compte existe pour cette adresse).");
+      setResetStatus("Email de rÃƒÂ©initialisation envoyÃƒÂ© (si un compte existe pour cette adresse).");
     } catch (err) {
       debugAuthFailure("password_reset", err, { provider: "password" });
       setError(getFirebaseAuthErrorMessage(err));
@@ -325,7 +331,7 @@ function LoginPageInner() {
       <div className="w-full max-w-md border border-border rounded-lg p-6 shadow-sm bg-card">
         <h1 className="text-xl font-semibold mb-4 text-center">TaskNote</h1>
         <p className="text-sm text-muted-foreground mb-6 text-center">
-          Connecte-toi pour accéder à tes notes et tâches.
+          Connecte-toi pour acceder a tes notes et taches.
         </p>
 
         <form onSubmit={handleEmailLogin} className="space-y-4">
@@ -396,7 +402,7 @@ function LoginPageInner() {
             onClick={handleResetPassword}
             className="w-full inline-flex items-center justify-center px-4 py-2 rounded-md border border-input bg-background text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Mot de passe oublié ?
+            Mot de passe oubliÃƒÂ© ?
           </button>
         </form>
 
@@ -412,13 +418,13 @@ function LoginPageInner() {
           onClick={handleGoogleLogin}
           className="w-full inline-flex items-center justify-center px-4 py-2 rounded-md border border-input bg-background text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? "Connexion…" : "Continuer avec Google"}
+          {loading ? "ConnexionÃ¢â‚¬Â¦" : "Continuer avec Google"}
         </button>
 
         <p className="text-xs text-muted-foreground mt-4 text-center">
           Pas encore de compte ?{" "}
           <a className="underline" href={`/register?next=${encodeURIComponent(nextPath)}`}>
-            Créer un compte
+            CrÃƒÂ©er un compte
           </a>
         </p>
       </div>

@@ -10,6 +10,7 @@ import { useUserSettings } from "@/hooks/useUserSettings";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import { toUserErrorMessage } from "@/lib/userError";
+import { trackEvent } from "@/lib/analytics";
 import RichTextEditor from "./RichTextEditor";
 import { sanitizeNoteHtml } from "@/lib/richText";
 import DictationMicButton from "./DictationMicButton";
@@ -33,18 +34,18 @@ type AssistantActionId =
 
 const ASSISTANT_ACTIONS: Record<AssistantActionId, { label: string; instruction: string }> = {
   summary: {
-    label: "Résumer",
+    label: "RÃ©sumer",
     instruction:
-      "Résume cette note en gardant les points essentiels. Réponds avec un titre concis puis un contenu structuré en paragraphes courts.",
+      "RÃ©sume cette note en gardant les points essentiels. RÃ©ponds avec un titre concis puis un contenu structurÃ© en paragraphes courts.",
   },
   correction: {
     label: "Correction",
-    instruction: "Corrige l'orthographe, la grammaire et la ponctuation de cette note en français, sans changer le sens.",
+    instruction: "Corrige l'orthographe, la grammaire et la ponctuation de cette note en franÃ§ais, sans changer le sens.",
   },
   structure: {
     label: "Structurer",
     instruction:
-      "Réorganise cette note pour qu'elle soit claire et actionnable: titre explicite, sections courtes, points importants en évidence.",
+      "RÃ©organise cette note pour qu'elle soit claire et actionnable: titre explicite, sections courtes, points importants en Ã©vidence.",
   },
   translation: {
     label: "Traduction",
@@ -52,15 +53,15 @@ const ASSISTANT_ACTIONS: Record<AssistantActionId, { label: string; instruction:
   },
   rewrite_pro: {
     label: "Reformuler (pro)",
-    instruction: "Reformule la note avec un ton professionnel, clair et orienté décision/action.",
+    instruction: "Reformule la note avec un ton professionnel, clair et orientÃ© dÃ©cision/action.",
   },
   rewrite_humor: {
     label: "Reformuler (humour)",
-    instruction: "Reformule la note avec une légère touche d'humour, tout en restant utile et lisible.",
+    instruction: "Reformule la note avec une lÃ©gÃ¨re touche d'humour, tout en restant utile et lisible.",
   },
   rewrite_short: {
     label: "Reformuler (succinct)",
-    instruction: "Reformule la note de manière très concise, avec des phrases courtes.",
+    instruction: "Reformule la note de maniÃ¨re trÃ¨s concise, avec des phrases courtes.",
   },
 };
 
@@ -110,7 +111,7 @@ function parseAssistantNoteText(raw: string, fallbackTitle: string): { title: st
     return { title: fallbackTitle || "Nouvelle note", contentHtml: "<p></p>" };
   }
 
-  const first = lines[0]?.replace(/^[-*•#\d.\s)]+/, "").trim() || "";
+  const first = lines[0]?.replace(/^[-*â€¢#\d.\s)]+/, "").trim() || "";
   const title = first || fallbackTitle || "Nouvelle note";
   const body = lines.slice(1).join("\n").trim();
   const contentHtml = plainTextToNoteHtml(body || raw);
@@ -217,19 +218,19 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
       const source = noteDraftToAssistantText(noteTitle, noteContent);
       const response = await fn({ text: source, instruction: action.instruction });
       const transformed = typeof response.data?.text === "string" ? response.data.text.trim() : "";
-      if (!transformed) throw new Error("Réponse IA vide.");
+      if (!transformed) throw new Error("RÃ©ponse IA vide.");
 
       const parsed = parseAssistantNoteText(transformed, noteTitle || "Nouvelle note");
       setNoteTitle(parsed.title);
       setNoteContent(parsed.contentHtml);
-      setAssistantInfo(`${action.label} appliqué.`);
+      setAssistantInfo(`${action.label} appliquÃ©.`);
     } catch (e) {
       if (e instanceof FirebaseError) {
         const code = String(e.code || "");
-        if (code.includes("internal")) setAssistantError("Aide à la rédaction indisponible pour le moment. Réessaie dans quelques secondes.");
-        else setAssistantError(toUserErrorMessage(e, "Impossible d’appliquer l’action assistant."));
+        if (code.includes("internal")) setAssistantError("Aide Ã  la rÃ©daction indisponible pour le moment. RÃ©essaie dans quelques secondes.");
+        else setAssistantError(toUserErrorMessage(e, "Impossible dâ€™appliquer lâ€™action assistant."));
       } else {
-        setAssistantError("Impossible d’appliquer l’action assistant.");
+        setAssistantError("Impossible dâ€™appliquer lâ€™action assistant.");
       }
     } finally {
       setAssistantBusyAction(null);
@@ -239,7 +240,7 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
   const handleCreateNote = async () => {
     const user = auth.currentUser;
     if (!user) {
-      setCreateError("Connecte-toi pour créer ta première note.");
+      setCreateError("Connecte-toi pour crÃ©er ta premiÃ¨re note.");
       return;
     }
 
@@ -254,7 +255,7 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
       workspaceId: noteWorkspaceId || undefined,
     });
     if (!validation.success) {
-      setCreateError(validation.error.issues[0]?.message ?? "Données invalides.");
+      setCreateError(validation.error.issues[0]?.message ?? "DonnÃ©es invalides.");
       return;
     }
 
@@ -274,7 +275,7 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
           if (typeof window !== "undefined") {
             window.sessionStorage.setItem(
               "smartnotes:flash",
-              "Note créée, mais non épinglée (limite Free). Passe en Pro ou retire un favori.",
+              "Note crÃ©Ã©e, mais non Ã©pinglÃ©e (limite Free). Passe en Pro ou retire un favori.",
             );
           }
         } catch {
@@ -288,13 +289,19 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
         // ignore
       }
 
-      setNoteTitle("");
-      setNoteContent("");
+        setNoteTitle("");
+        setNoteContent("");
 
-      onCreated?.();
+        void trackEvent("create_note", {
+          source: "app",
+          surface: "note_form",
+          workspace_bound: Boolean(validation.data.workspaceId ?? null),
+        });
+
+        onCreated?.();
     } catch (e) {
       console.error("Error creating note", e);
-      setCreateError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "Impossible de créer la note."));
+      setCreateError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "Impossible de crÃ©er la note."));
     } finally {
       setCreating(false);
     }
@@ -314,7 +321,7 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
               value={noteTitle}
               onChange={(e) => setNoteTitle(e.target.value)}
               className="flex-1 w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              placeholder="Ex: Idées pour demain"
+              placeholder="Ex: IdÃ©es pour demain"
               disabled={creating}
             />
           </div>
@@ -352,7 +359,7 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
             />
           </div>
           {dictationStatus === "listening" ? (
-            <div className="text-xs text-muted-foreground">Écoute…</div>
+            <div className="text-xs text-muted-foreground">Ã‰couteâ€¦</div>
           ) : dictationError ? (
             <div className="text-xs text-destructive">{dictationError}</div>
           ) : null}
@@ -369,7 +376,7 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
             className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             disabled={creating}
           >
-            <option value="">—</option>
+            <option value="">â€”</option>
             {workspaces.map((ws) => (
               <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
                 {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
@@ -385,14 +392,14 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
             onClick={handleCreateNote}
             className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {creating ? "Création de la note…" : "Créer la note"}
+            {creating ? "CrÃ©ation de la noteâ€¦" : "CrÃ©er la note"}
           </button>
         </div>
       </div>
 
       {creating ? (
         <div className="text-xs text-muted-foreground" role="status" aria-live="polite">
-          Enregistrement de la note…
+          Enregistrement de la noteâ€¦
         </div>
       ) : null}
 
@@ -409,7 +416,7 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
               disabled={creating || !!assistantBusyAction}
               onClick={() => void runAssistantAction("summary")}
             >
-              {assistantBusyAction === "summary" ? "Résumé…" : "Résumer"}
+              {assistantBusyAction === "summary" ? "RÃ©sumÃ©â€¦" : "RÃ©sumer"}
             </button>
             <button
               type="button"
@@ -417,7 +424,7 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
               disabled={creating || !!assistantBusyAction}
               onClick={() => void runAssistantAction("correction")}
             >
-              {assistantBusyAction === "correction" ? "Correction…" : "Correction"}
+              {assistantBusyAction === "correction" ? "Correctionâ€¦" : "Correction"}
             </button>
             <button
               type="button"
@@ -425,7 +432,7 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
               disabled={creating || !!assistantBusyAction}
               onClick={() => void runAssistantAction("structure")}
             >
-              {assistantBusyAction === "structure" ? "Structure…" : "Structurer"}
+              {assistantBusyAction === "structure" ? "Structureâ€¦" : "Structurer"}
             </button>
             <div className="relative">
               <button
@@ -452,7 +459,7 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
         <RichTextEditor
           value={noteContent}
           onChange={setNoteContent}
-          placeholder="Quelques lignes pour te rappeler l’essentiel…"
+          placeholder="Quelques lignes pour te rappeler lâ€™essentielâ€¦"
           minHeightClassName="min-h-[120px]"
           enableDictation
           disabled={creating}

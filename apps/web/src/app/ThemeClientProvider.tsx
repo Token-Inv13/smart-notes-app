@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
+import { usePathname, useSearchParams } from "next/navigation";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import { installGlobalErrorHandlers, observeCaughtError } from "@/lib/clientObservability";
+import { trackEvent } from "@/lib/analytics";
 
 type ThemeMode = "light" | "dark";
 
@@ -50,6 +52,26 @@ function readLocalAppearance(): { mode: ThemeMode; background: BackgroundPreset 
 }
 
 export default function ThemeClientProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const lastTrackedPathRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const query = searchParams.toString();
+    const pagePath = query ? `${pathname}?${query}` : pathname;
+    if (!pagePath || lastTrackedPathRef.current === pagePath) return;
+
+    lastTrackedPathRef.current = pagePath;
+    void trackEvent("page_view", {
+      page_path: pagePath,
+      page_location: window.location.href,
+      page_title: document.title || null,
+      source: "app",
+    });
+  }, [pathname, searchParams]);
+
   useEffect(() => {
     const uninstallGlobalErrorHandlers = installGlobalErrorHandlers();
 
