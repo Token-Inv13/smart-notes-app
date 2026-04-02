@@ -152,7 +152,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   const isAdminBackofficeRoute = pathname.startsWith("/admin");
   const isAgendaRoute = pathname.startsWith("/tasks");
   const shouldShowPwaInstallCta = pathname === "/dashboard";
-  const shouldRenderDock = !isAgendaRoute || !isTasksCalendarView || isMobileViewport;
+  const shouldRenderDock = !isAgendaRoute || !isTasksCalendarView;
   const currentPath = useMemo(() => {
     const qs = searchParams.toString();
     return qs ? `${pathname}?${qs}` : pathname;
@@ -899,7 +899,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
           {shouldRenderDock ? (
             <SmartActionDock
               mobileHidden={mobileOpen}
-              hiddenOnScroll={isAgendaRoute ? false : dockHiddenOnScroll}
+              hiddenOnScroll={dockHiddenOnScroll}
               desktopTopClass={dockDesktopTopClass}
               subtleIdle={isAgendaRoute}
               createAction={(

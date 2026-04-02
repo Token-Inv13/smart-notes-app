@@ -51,7 +51,6 @@ import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
 import { CALENDAR_PREFERENCES_STORAGE_KEY } from "../_components/agendaCalendarUtils";
 import type { AgendaCalendarPreferences } from "../_components/AgendaCalendar";
 import AgendaActionBar from "../_components/AgendaActionBar";
-import CreateButton from "../_components/CreateButton";
 import {
   createTaskWithPlanGuard,
   FREE_TASK_LIMIT_MESSAGE,
@@ -811,7 +810,6 @@ export default function TasksPage() {
     [optimisticAllTasks, optimisticWorkspaceIdByTaskId],
   );
   const tasks = viewMode === "calendar" ? effectiveCalendarWindowTasks : effectiveAllTasks;
-  const isCalendarView = viewMode === "calendar";
 
   useEffect(() => {
     setOptimisticAgendaTaskById((prev) => {
@@ -1576,12 +1574,9 @@ export default function TasksPage() {
       onDragCancel={handleFolderDragCancel}
       onDragEnd={handleFolderDragEnd}
     >
-      <div
-        className={isCalendarView ? "flex min-h-0 flex-1 flex-col gap-2 md:gap-2" : "space-y-3 md:space-y-2"}
-        {...workspaceTabsSwipeHandlers}
-      >
+      <div className="space-y-4 md:space-y-3" {...workspaceTabsSwipeHandlers}>
       {workspaceIdParam && tabs}
-      <header className={isCalendarView ? "flex flex-col gap-1.5 mb-1 md:mb-1" : "flex flex-col gap-2 mb-2 md:mb-2"}>
+      <header className="flex flex-col gap-2 mb-4 md:mb-3">
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-xl font-semibold">Agenda</h1>
         </div>
@@ -1595,25 +1590,7 @@ export default function TasksPage() {
             searchValue={searchInput}
             onSearchChange={setSearchInput}
             onFilterToggle={() => setFiltersOpen(true)}
-            trailingSlot={
-              <div id="sn-create-slot" data-task-view-mode={viewMode}>
-                {viewMode === "calendar" ? (
-                  <CreateButton
-                    renderCustomTrigger={({ onClick, className, ariaLabel, title }) => (
-                      <button
-                        type="button"
-                        onClick={onClick}
-                        aria-label={ariaLabel}
-                        title={title}
-                        className={`hidden md:inline-flex ${className} text-[0] before:content-['+'] before:text-2xl before:leading-none`}
-                      >
-                        Créer
-                      </button>
-                    )}
-                  />
-                ) : null}
-              </div>
-            }
+            trailingSlot={<div id="sn-create-slot" data-task-view-mode={viewMode} />}
           />
         </div>
 
@@ -1811,7 +1788,7 @@ export default function TasksPage() {
         </section>
       )}
 
-      {showMicroGuide && !workspaceIdParam && viewMode !== "calendar" && (
+      {showMicroGuide && !workspaceIdParam && (
         <div>
           <div className="sn-card sn-card--muted p-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -1849,7 +1826,7 @@ export default function TasksPage() {
 
       {error && <div className="sn-alert sn-alert--error">Impossible de charger l’agenda pour le moment.</div>}
 
-      {!loading && !error && archiveView === "active" && mainTasks.length === 0 && viewMode !== "calendar" && (
+      {!loading && !error && archiveView === "active" && mainTasks.length === 0 && (
         <div className="sn-empty sn-empty--premium sn-animate-in">
           <div className="sn-empty-title">
             {hasActiveSearchOrFilters ? "Aucun résultat" : workspaceIdParam ? "Aucun élément direct dans ce dossier" : "Aucun élément d’agenda pour le moment"}
@@ -1892,7 +1869,7 @@ export default function TasksPage() {
                   const qs = params.toString();
                   router.push(qs ? `/tasks?${qs}` : "/tasks");
                 }}
-                className="hidden inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 transition-opacity"
+                className="inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-95 transition-opacity"
               >
                 Créer une tâche
               </button>
@@ -1975,28 +1952,26 @@ export default function TasksPage() {
       )}
 
       {!loading && !error && archiveView === "active" && viewMode === "calendar" && (
-        <div className="min-h-0 flex-1">
-          <AgendaCalendar
-            tasks={mainTasks}
-            todos={todosForCounter}
-            workspaces={effectiveWorkspaces}
-            initialAnchorDate={initialCalendarAnchorDate}
-            initialPreferences={calendarInitialPreferences}
-            onPreferencesChange={handleAgendaCalendarPreferencesChange}
-            createRequest={agendaCreateRequest}
-            onCreateRequestHandled={handleAgendaCreateRequestHandled}
-            onCreateEvent={handleCalendarCreate}
-            onDeleteEvent={handleCalendarDelete}
-            hiddenGoogleEventIds={optimisticDeletedGoogleEventIds}
-            onUpdateEvent={handleCalendarUpdate}
-            onSkipOccurrence={handleSkipOccurrence}
-            onVisibleRangeChange={handleCalendarVisibleRangeChange}
-            onOpenTask={(taskId) => {
-              const qs = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
-              router.push(`/tasks/${taskId}${qs}`);
-            }}
-          />
-        </div>
+        <AgendaCalendar
+          tasks={mainTasks}
+          todos={todosForCounter}
+          workspaces={effectiveWorkspaces}
+          initialAnchorDate={initialCalendarAnchorDate}
+          initialPreferences={calendarInitialPreferences}
+          onPreferencesChange={handleAgendaCalendarPreferencesChange}
+          createRequest={agendaCreateRequest}
+          onCreateRequestHandled={handleAgendaCreateRequestHandled}
+          onCreateEvent={handleCalendarCreate}
+          onDeleteEvent={handleCalendarDelete}
+          hiddenGoogleEventIds={optimisticDeletedGoogleEventIds}
+          onUpdateEvent={handleCalendarUpdate}
+          onSkipOccurrence={handleSkipOccurrence}
+          onVisibleRangeChange={handleCalendarVisibleRangeChange}
+          onOpenTask={(taskId) => {
+            const qs = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
+            router.push(`/tasks/${taskId}${qs}`);
+          }}
+        />
       )}
 
       {!loading && !error && archiveView === "active" && viewMode === "list" && mainTasks.length > 0 && (
