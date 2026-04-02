@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { trackEvent } from '@/lib/analytics';
+import { trackEventBeforeNavigation } from '@/lib/analytics';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { isAndroidNative } from '@/lib/runtimePlatform';
 import type { UserDoc } from '@/types/firestore';
@@ -139,7 +139,7 @@ export default function UpgradePage() {
       if (typeof window !== "undefined") {
         window.sessionStorage.setItem(PENDING_SUBSCRIBE_TRACKING_KEY, String(Date.now()));
       }
-      void trackEvent("upgrade_click", {
+      await trackEventBeforeNavigation("upgrade_click", {
         source: "app",
         plan: "pro",
       });

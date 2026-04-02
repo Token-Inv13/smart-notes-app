@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { auth } from "@/lib/firebase";
-import { trackEvent } from "@/lib/analytics";
+import { trackEventBeforeNavigation } from "@/lib/analytics";
 import { observeCaughtError } from "@/lib/clientObservability";
 import { getRuntimePlatformInfo } from "@/lib/runtimePlatform";
 import {
@@ -161,7 +161,7 @@ function LoginPageInner() {
 
   const finalizeLogin = useCallback(async (method: "email" | "google") => {
     await establishSession();
-    void trackEvent("login", {
+    await trackEventBeforeNavigation("login", {
       method,
       source: "app",
     });

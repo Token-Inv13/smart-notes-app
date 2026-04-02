@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { auth } from "@/lib/firebase";
-import { trackEvent } from "@/lib/analytics";
+import { trackEventBeforeNavigation } from "@/lib/analytics";
 import { getRuntimePlatformInfo } from "@/lib/runtimePlatform";
 import {
   createUserWithEmailAndPassword,
@@ -117,7 +117,7 @@ function RegisterPageInner() {
   const finalizeRegistration = useCallback(async (params: { method: "email" | "google"; isNewUser: boolean }) => {
     await establishSession();
     if (params.isNewUser) {
-      void trackEvent("sign_up", {
+      await trackEventBeforeNavigation("sign_up", {
         method: params.method,
         source: "app",
       });

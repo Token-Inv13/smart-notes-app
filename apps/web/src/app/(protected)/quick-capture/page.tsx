@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { httpsCallable } from "firebase/functions";
 import { functions as fbFunctions } from "@/lib/firebase";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
-import { trackEvent } from "@/lib/analytics";
+import { trackEventBeforeNavigation } from "@/lib/analytics";
 import { sanitizeNoteHtml } from "@/lib/richText";
 import { useAuth } from "@/hooks/useAuth";
 import { toUserErrorMessage } from "@/lib/userError";
@@ -94,7 +94,7 @@ export default function QuickCapturePage() {
 
     try {
       const id = await createNote(text);
-      void trackEvent("create_note", {
+      await trackEventBeforeNavigation("create_note", {
         source: "app",
         surface: "quick_capture",
       });
@@ -117,7 +117,7 @@ export default function QuickCapturePage() {
 
     try {
       const id = await createTodo(text);
-      void trackEvent("create_todo", {
+      await trackEventBeforeNavigation("create_todo", {
         source: "app",
         surface: "quick_capture",
         item_count: 0,
