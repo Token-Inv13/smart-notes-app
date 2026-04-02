@@ -9,6 +9,7 @@ import { trackEvent } from "@/lib/analytics";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
 import type { ChecklistItemScheduleData } from "@/lib/checklistAgenda";
 import { DATE_PLACEHOLDER_FR, formatTimestampToDateFr, parseLocalDateToTimestamp } from "@/lib/datetime";
+import { normalizeDisplayText } from "@/lib/normalizeText";
 import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
 import { toUserErrorMessage } from "@/lib/userError";
 import type { TodoDoc, TodoItemDoc } from "@/types/firestore";
@@ -27,36 +28,36 @@ type AssistantActionId =
 
 const ASSISTANT_ACTIONS: Record<AssistantActionId, { label: string; instruction: string }> = {
   summary: {
-    label: "RÃ©sumer",
+    label: "Résumer",
     instruction:
-      "RÃ©sume ce todo en conservant uniquement l'essentiel. RÃ©ponds avec un titre court puis une liste Ã  puces d'actions claires.",
+      "Résume ce todo en conservant uniquement l'essentiel. Réponds avec un titre court puis une liste à puces d'actions claires.",
   },
   correction: {
     label: "Correction",
     instruction:
-      "Corrige l'orthographe, la grammaire et la ponctuation en franÃ§ais, sans modifier le sens des Ã©lÃ©ments.",
+      "Corrige l'orthographe, la grammaire et la ponctuation en français, sans modifier le sens des éléments.",
   },
   structure: {
     label: "Structurer",
     instruction:
-      "RÃ©organise ce todo pour le rendre plus lisible: un titre explicite et une liste d'items ordonnÃ©s et actionnables.",
+      "Réorganise ce todo pour le rendre plus lisible: un titre explicite et une liste d'items ordonnés et actionnables.",
   },
   translation: {
     label: "Traduction",
     instruction:
-      "Traduis le todo en anglais naturel, en gardant exactement le mÃªme sens et la mÃªme structure (titre + liste).",
+      "Traduis le todo en anglais naturel, en gardant exactement le même sens et la même structure (titre + liste).",
   },
   rewrite_pro: {
     label: "Reformuler (pro)",
-    instruction: "Reformule le todo dans un style professionnel, clair et orientÃ© action.",
+    instruction: "Reformule le todo dans un style professionnel, clair et orienté action.",
   },
   rewrite_humor: {
     label: "Reformuler (humour)",
-    instruction: "Reformule le todo avec une touche d'humour lÃ©gÃ¨re et positive, tout en restant utile.",
+    instruction: "Reformule le todo avec une touche d'humour légère et positive, tout en restant utile.",
   },
   rewrite_short: {
     label: "Reformuler (succinct)",
-    instruction: "Reformule le todo de faÃ§on trÃ¨s concise avec des phrases courtes.",
+    instruction: "Reformule le todo de façon très concise avec des phrases courtes.",
   },
 };
 
@@ -76,7 +77,7 @@ function toPersistedTodoItem(item: TodoDraftItem): TodoItemDoc {
 
 function todoDraftToAssistantText(title: string, items: TodoDraftItem[]): string {
   const safeTitle = title.trim() || "Checklist";
-  const lines = [safeTitle, "", "Ã‰lÃ©ments actifs:"];
+  const lines = [safeTitle, "", "Éléments actifs:"];
   if (items.length === 0) lines.push("- Aucun");
   for (const item of items) {
     const text = typeof item?.text === "string" ? item.text.trim() : "";
@@ -91,13 +92,13 @@ function parseAssistantTodoText(raw: string, fallbackTitle: string): { title: st
     .map((line) => line.trim())
     .filter(Boolean);
   const first = lines[0] ?? "";
-  const cleanedTitle = first.replace(/^[-*â€¢#\d.\s)]+/, "").trim();
+  const cleanedTitle = first.replace(/^[-*•#\d.\s)]+/, "").trim();
   const title = cleanedTitle || fallbackTitle || "Checklist";
 
   const bulletItems = lines
     .slice(1)
-    .map((line) => line.replace(/^[-*â€¢\d.\s)]+/, "").trim())
-    .filter((line) => line.length > 0 && !/^Ã©lÃ©ments actifs:?$/i.test(line) && !/^terminÃ©s:?$/i.test(line) && !/^aucun$/i.test(line));
+    .map((line) => line.replace(/^[-*•\d.\s)]+/, "").trim())
+    .filter((line) => line.length > 0 && !/^éléments actifs:?$/i.test(line) && !/^terminés:?$/i.test(line) && !/^aucun$/i.test(line));
 
   const uniq = Array.from(new Set(bulletItems)).slice(0, 60);
   const itemsOut = uniq.map((text) => ({
@@ -199,7 +200,7 @@ export default function TodoCreateForm({
     }
     return {
       tone: "muted" as const,
-      text: `Ã‰chÃ©ance: ${formatTimestampToDateFr(ts)}`,
+      text: `Échéance: ${formatTimestampToDateFr(ts)}`,
     };
   }, [dueDateDraft]);
 
@@ -243,19 +244,19 @@ export default function TodoCreateForm({
       const source = todoDraftToAssistantText(title, itemsDraft);
       const response = await fn({ text: source, instruction: action.instruction });
       const transformed = typeof response.data?.text === "string" ? response.data.text.trim() : "";
-      if (!transformed) throw new Error("RÃ©ponse IA vide.");
+      if (!transformed) throw new Error("Réponse IA vide.");
 
       const parsed = parseAssistantTodoText(transformed, title || "Checklist");
       setTitle(parsed.title);
       if (parsed.items.length > 0) setItemsDraft(parsed.items);
-      setAssistantInfo(`${action.label} appliquÃ©.`);
+      setAssistantInfo(`${action.label} appliqué.`);
     } catch (e) {
       if (e instanceof FirebaseError) {
         const code = String(e.code || "");
-        if (code.includes("internal")) setAssistantError("Aide Ã  la rÃ©daction indisponible pour le moment. RÃ©essaie dans quelques secondes.");
-        else setAssistantError(toUserErrorMessage(e, "Impossible dâ€™appliquer lâ€™action assistant."));
+        if (code.includes("internal")) setAssistantError("Aide à la rédaction indisponible pour le moment. Réessaie dans quelques secondes.");
+        else setAssistantError(toUserErrorMessage(e, "Impossible d’appliquer l’action assistant."));
       } else {
-        setAssistantError("Impossible dâ€™appliquer lâ€™action assistant.");
+        setAssistantError("Impossible d’appliquer l’action assistant.");
       }
     } finally {
       setAssistantBusyAction(null);
@@ -265,7 +266,7 @@ export default function TodoCreateForm({
   const submit = async () => {
     const user = auth.currentUser;
     if (!user) {
-      setCreateError("Session expirÃ©e ou accÃ¨s refusÃ©. Recharge la page et reconnecte-toi.");
+      setCreateError("Session expirée ou accès refusé. Recharge la page et reconnecte-toi.");
       return;
     }
 
@@ -355,7 +356,7 @@ export default function TodoCreateForm({
       onCreated?.(todoRef.id);
     } catch (e) {
       console.error("Error creating todo", e);
-      setCreateError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "Impossible de crÃ©er la checklist."));
+      setCreateError(getPlanLimitMessage(e) ?? toUserErrorMessage(e, "Impossible de créer la checklist."));
     } finally {
       setCreating(false);
     }
@@ -373,7 +374,7 @@ export default function TodoCreateForm({
             ref={inputRef}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Ex: PrÃ©parer la semaine"
+            placeholder="Ex: Préparer la semaine"
             className="flex-1 w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-base font-medium focus:outline-none focus:ring-2 focus:ring-primary"
             disabled={creating}
             onKeyDown={(e) => {
@@ -434,7 +435,7 @@ export default function TodoCreateForm({
           />
         </div>
         {dictationStatus === "listening" ? (
-          <div className="text-xs text-muted-foreground">Ã‰couteâ€¦</div>
+          <div className="text-xs text-muted-foreground">Écoute...</div>
         ) : dictationError ? (
           <div className="text-xs text-destructive">{dictationError}</div>
         ) : null}
@@ -450,7 +451,7 @@ export default function TodoCreateForm({
               disabled={creating || !!assistantBusyAction}
               onClick={() => void runAssistantAction("correction")}
             >
-              {assistantBusyAction === "correction" ? "Correctionâ€¦" : "Correction"}
+              {assistantBusyAction === "correction" ? "Correction..." : "Correction"}
             </button>
             {assistantMode === "full" && (
               <>
@@ -460,7 +461,7 @@ export default function TodoCreateForm({
                   disabled={creating || !!assistantBusyAction}
                   onClick={() => void runAssistantAction("summary")}
                 >
-                  {assistantBusyAction === "summary" ? "RÃ©sumÃ©â€¦" : "RÃ©sumer"}
+                  {assistantBusyAction === "summary" ? "Résumé..." : "Résumer"}
                 </button>
                 <button
                   type="button"
@@ -468,7 +469,7 @@ export default function TodoCreateForm({
                   disabled={creating || !!assistantBusyAction}
                   onClick={() => void runAssistantAction("structure")}
                 >
-                  {assistantBusyAction === "structure" ? "Structureâ€¦" : "Structurer"}
+                  {assistantBusyAction === "structure" ? "Structure..." : "Structurer"}
                 </button>
                 <div className="relative">
                   <button
@@ -510,7 +511,7 @@ export default function TodoCreateForm({
           <div className="px-3 pb-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-sm font-medium" htmlFor="todo-due-date">
-                Ã‰chÃ©ance
+                Échéance
               </label>
               <input
                 id="todo-due-date"
@@ -537,7 +538,7 @@ export default function TodoCreateForm({
 
             <div className="space-y-1">
               <label className="text-sm font-medium" htmlFor="todo-priority">
-                PrioritÃ©
+                Priorité
               </label>
               <select
                 id="todo-priority"
@@ -550,32 +551,32 @@ export default function TodoCreateForm({
                 className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                 disabled={creating}
               >
-                <option value="">â€”</option>
+                <option value="">—</option>
                 <option value="low">Basse</option>
                 <option value="medium">Moyenne</option>
                 <option value="high">Haute</option>
               </select>
-        </div>
-      </div>
+            </div>
+          </div>
 
-      <div className="space-y-1">
-        <label className="text-sm font-medium" htmlFor="todo-workspace">
-          Dossier
-        </label>
-        <select
-          id="todo-workspace"
-          value={workspaceId}
-          onChange={(e) => setWorkspaceId(e.target.value)}
-          className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-        >
-          <option value="">â€”</option>
-          {workspaces.map((ws) => (
-            <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
-              {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
-            </option>
-          ))}
-        </select>
-      </div>
+          <div className="space-y-1 px-3 pb-3">
+            <label className="text-sm font-medium" htmlFor="todo-workspace">
+              Dossier
+            </label>
+            <select
+              id="todo-workspace"
+              value={workspaceId}
+              onChange={(e) => setWorkspaceId(e.target.value)}
+              className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="">—</option>
+              {workspaces.map((ws) => (
+                <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
+                  {workspaceOptionLabelById.get(ws.id ?? "") ?? normalizeDisplayText(ws.name)}
+                </option>
+              ))}
+            </select>
+          </div>
         </details>
       )}
 
@@ -586,9 +587,9 @@ export default function TodoCreateForm({
           onToggle={(e) => setItemsOpen((e.currentTarget as HTMLDetailsElement).open)}
         >
           <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium">
-            Ajouter des Ã©lÃ©ments
+            Ajouter des éléments
             <span className="text-muted-foreground font-normal"> (optionnel)</span>
-            {itemsDraft.length > 0 ? <span className="text-muted-foreground font-normal"> Â· {itemsDraft.length}</span> : null}
+            {itemsDraft.length > 0 ? <span className="text-muted-foreground font-normal"> · {itemsDraft.length}</span> : null}
           </summary>
 
           <div className="px-3 pb-3 space-y-2">
@@ -649,7 +650,7 @@ export default function TodoCreateForm({
             </div>
 
             {itemDictationStatus === "listening" ? (
-              <div className="text-xs text-muted-foreground">Ã‰couteâ€¦</div>
+              <div className="text-xs text-muted-foreground">Écoute...</div>
             ) : itemDictationError ? (
               <div className="text-xs text-destructive">{itemDictationError}</div>
             ) : null}
@@ -667,7 +668,7 @@ export default function TodoCreateForm({
                       onClick={() => removeDraftItem(it.id)}
                       disabled={creating}
                       className="sn-text-btn"
-                      aria-label="Supprimer lâ€™Ã©lÃ©ment"
+                      aria-label="Supprimer l’élément"
                     >
                       Supprimer
                     </button>
@@ -696,7 +697,7 @@ export default function TodoCreateForm({
             disabled={creating || !canSubmit}
             className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {creating ? "CrÃ©ationâ€¦" : "CrÃ©er"}
+            {creating ? "Création..." : "Créer"}
           </button>
         </div>
       )}
