@@ -253,6 +253,7 @@ export default function AgendaCalendar({
   const [googleCalendarFetchState, setGoogleCalendarFetchState] = useState<GoogleCalendarFetchState>("idle");
   const [calendarAnchorDate, setCalendarAnchorDate] = useState<Date>(initialAnchorDate ?? new Date());
   const [userTimezone, setUserTimezone] = useState<string>("UTC");
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [focusPulseActive, setFocusPulseActive] = useState(false);
   const [viewTransitioning, setViewTransitioning] = useState(false);
   const initialScrollTime = useMemo(() => {
@@ -272,6 +273,16 @@ export default function AgendaCalendar({
 
   useEffect(() => {
     setUserTimezone(getUserTimezone());
+  }, []);
+
+  useEffect(() => {
+    const syncViewport = () => {
+      setIsMobileViewport(window.innerWidth < 768);
+    };
+
+    syncViewport();
+    window.addEventListener("resize", syncViewport, { passive: true });
+    return () => window.removeEventListener("resize", syncViewport);
   }, []);
 
   useEffect(() => {
@@ -684,7 +695,7 @@ export default function AgendaCalendar({
     googleCalendarEvents.length === 0;
 
   return (
-    <section className="space-y-3 overflow-x-hidden md:flex md:min-h-[calc(100dvh-18rem)] md:flex-col md:space-y-0 md:gap-3">
+    <section className="space-y-3 overflow-x-hidden md:flex md:h-[calc(100dvh-9rem)] md:min-h-[calc(100dvh-9rem)] md:flex-col md:space-y-0 md:gap-2">
       <div className="rounded-xl border border-border bg-card/60 p-2.5 sm:p-3">
         <div className="flex flex-col gap-2.5">
           <div className="flex flex-col gap-2 sm:hidden">
@@ -887,7 +898,7 @@ export default function AgendaCalendar({
               ref={calendarRef}
               plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
               initialView={viewMode}
-              height="100%"
+              height={isMobileViewport ? "auto" : "100%"}
               headerToolbar={false}
               locale="fr"
               firstDay={1}
