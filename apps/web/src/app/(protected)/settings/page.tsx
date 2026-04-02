@@ -7,7 +7,7 @@ import Link from "next/link";
 import { auth, db } from "@/lib/firebase";
 import { isAndroidNative } from "@/lib/runtimePlatform";
 import { doc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
-import { registerFcmToken } from "@/lib/fcm";
+import { getFcmRegistrationFailureMessage, registerFcmToken } from "@/lib/fcm";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import LogoutButton from "../LogoutButton";
 
@@ -468,7 +468,7 @@ export default function SettingsPage() {
 
     const currentUser = auth.currentUser;
     if (!currentUser || currentUser.uid !== user.uid) {
-      setToggleMessage("Cannot update settings for this user.");
+      setToggleMessage("Impossible de modifier les réglages pour ce compte.");
       return;
     }
 
@@ -479,25 +479,30 @@ export default function SettingsPage() {
     setToggleMessage(null);
 
     try {
+      if (nextValue) {
+        setFcmStatus(null);
+        const registrationResult = await registerFcmToken();
+        if (!registrationResult.ok) {
+          const failureMessage = getFcmRegistrationFailureMessage(registrationResult.reason);
+          setFcmStatus(failureMessage);
+          setToggleMessage("Rappels non activés : cet appareil n’est pas enregistré pour les notifications push.");
+          return;
+        }
+      }
+
       const userRef = doc(db, "users", currentUser.uid);
       await updateDoc(userRef, {
         "settings.notifications.taskReminders": nextValue,
         updatedAt: serverTimestamp(),
       });
-      setToggleMessage("Task reminders updated.");
-
-      if (nextValue) {
-        setFcmStatus(null);
-        // Ensure this device is registered for push notifications.
-        await registerFcmToken();
-      }
+      setToggleMessage("Rappels mis à jour.");
     } catch (e) {
       console.error("Error updating task reminders", e);
       if (isAuthInvalidError(e)) {
         void invalidateAuthSession();
         return;
       }
-      setToggleMessage("Error updating task reminders.");
+      setToggleMessage("Erreur lors de la mise à jour des rappels.");
     } finally {
       setToggling(false);
     }
@@ -574,15 +579,11 @@ export default function SettingsPage() {
     setFcmStatus("Activation des notifications push…");
     setEnablingPush(true);
     try {
-      await registerFcmToken();
-
-      const permission = typeof window !== "undefined" && "Notification" in window ? Notification.permission : "denied";
-      if (permission === "granted") {
+      const registrationResult = await registerFcmToken();
+      if (registrationResult.ok) {
         setFcmStatus("✅ Notifications activées");
-      } else if (permission === "denied") {
-        setFcmStatus("⚠️ Permission refusée. Tu peux réactiver les notifications depuis les paramètres de ton navigateur.");
       } else {
-        setFcmStatus("Permission non accordée.");
+        setFcmStatus(getFcmRegistrationFailureMessage(registrationResult.reason));
       }
     } catch (e) {
       console.error("Error enabling push notifications", e);

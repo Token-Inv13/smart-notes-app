@@ -29,7 +29,7 @@ import {
   normalizeDateForFirestore,
 } from "@/lib/datetime";
 import { FEATURE_FLAGS } from "@/lib/featureFlags";
-import { registerFcmToken } from "@/lib/fcm";
+import { getFcmRegistrationFailureMessage, registerFcmToken } from "@/lib/fcm";
 import { trackEvent } from "@/lib/analytics";
 import { normalizeDisplayText } from "@/lib/normalizeText";
 import { DraggableCard, type FolderDragData } from "../_components/folderDnd";
@@ -1535,14 +1535,11 @@ export default function TasksPage() {
     setPushStatus("Activation des notifications…");
     setEnablingPush(true);
     try {
-      await registerFcmToken();
-      const nextPermission = ("Notification" in window ? Notification.permission : "denied") as NotificationPermission;
-      if (nextPermission === "granted") {
+      const registrationResult = await registerFcmToken();
+      if (registrationResult.ok) {
         setPushStatus("✓ Notifications activées");
-      } else if (nextPermission === "denied") {
-        setPushStatus("⚠️ Permission refusée. Tu peux réactiver depuis les paramètres du navigateur.");
       } else {
-        setPushStatus("Permission non accordée.");
+        setPushStatus(getFcmRegistrationFailureMessage(registrationResult.reason));
       }
     } catch (e) {
       console.error("Error enabling notifications", e);
