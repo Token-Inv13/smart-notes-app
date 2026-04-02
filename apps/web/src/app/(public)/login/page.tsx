@@ -64,7 +64,7 @@ function getFirebaseAuthErrorMessage(err: unknown): string {
   const internalPayload = `${rawMessage}\n${tokenMessage}`.toUpperCase();
 
   if (typeof code !== "string") {
-    return rawMessage || "Une erreur est survenue. RÃƒÂ©essaie.";
+    return rawMessage || "Une erreur est survenue. Réessaie.";
   }
 
   switch (code) {
@@ -75,15 +75,15 @@ function getFirebaseAuthErrorMessage(err: unknown): string {
     case "auth/invalid-email":
       return "Adresse email invalide.";
     case "auth/user-disabled":
-      return "Ce compte a ÃƒÂ©tÃƒÂ© dÃƒÂ©sactivÃƒÂ©.";
+      return "Ce compte a été désactivé.";
     case "auth/too-many-requests":
-      return "Trop de tentatives. RÃƒÂ©essaie plus tard.";
+      return "Trop de tentatives. Réessaie plus tard.";
     case "auth/popup-closed-by-user":
-      return "Connexion annulÃƒÂ©e.";
+      return "Connexion annulée.";
     case "auth/popup-blocked":
-      return "La popup a ÃƒÂ©tÃƒÂ© bloquÃƒÂ©e par le navigateur. Autorise les popups puis rÃƒÂ©essaie.";
+      return "La popup a été bloquée par le navigateur. Autorise les popups puis réessaie.";
     case "auth/network-request-failed":
-      return "ProblÃƒÂ¨me rÃƒÂ©seau. VÃƒÂ©rifie ta connexion puis rÃƒÂ©essaie.";
+      return "Problème réseau. Vérifie ta connexion puis réessaie.";
     case "auth/internal-error":
       if (
         internalPayload.includes("CONFIGURATION_NOT_FOUND") ||
@@ -98,11 +98,11 @@ function getFirebaseAuthErrorMessage(err: unknown): string {
         internalPayload.includes("PROJECT_NOT_FOUND") ||
         internalPayload.includes("INVALID_PROJECT")
       ) {
-        return "Configuration Firebase invalide cÃƒÂ´tÃƒÂ© client (API key / projet). VÃƒÂ©rifie les variables Firebase sur Vercel.";
+        return "Configuration Firebase invalide côté client (API key / projet). Vérifie les variables Firebase sur Vercel.";
       }
-      return "Erreur interne Firebase Auth. RÃƒÂ©essaie puis contacte le support si le problÃƒÂ¨me persiste.";
+      return "Erreur interne Firebase Auth. Réessaie puis contacte le support si le problème persiste.";
     default:
-      return `Une erreur est survenue (${code}). RÃƒÂ©essaie.`;
+      return `Une erreur est survenue (${code}). Réessaie.`;
   }
 }
 
@@ -115,7 +115,7 @@ function isNativeGoogleSignInUnavailable(err: unknown): boolean {
 }
 
 function getNativeGoogleSignInUnavailableMessage() {
-  return "Connexion Google indisponible dans cette version Android. Termine la configuration Google native Android, ou utilise email + mot de passe pour lÃ¢â‚¬â„¢instant.";
+  return "Connexion Google indisponible dans cette version Android. Termine la configuration Google native Android, ou utilise email + mot de passe pour l’instant.";
 }
 
 export default function LoginPage() {
@@ -242,7 +242,7 @@ function LoginPageInner() {
       if (code) {
         setError(getFirebaseAuthErrorMessage(err));
       } else if (err instanceof Error && err.message.startsWith("Session API error")) {
-        setError("Connexion rÃƒÂ©ussie, mais la session serveur a ÃƒÂ©chouÃƒÂ©. VÃƒÂ©rifie la configuration serveur Firebase.");
+        setError("Connexion réussie, mais la session serveur a échoué. Vérifie la configuration serveur Firebase.");
       } else {
         setError(getFirebaseAuthErrorMessage(err));
       }
@@ -310,14 +310,14 @@ function LoginPageInner() {
 
     const trimmed = email.trim();
     if (!trimmed) {
-      setError("Renseigne ton email pour recevoir un lien de rÃƒÂ©initialisation.");
+      setError("Renseigne ton email pour recevoir un lien de réinitialisation.");
       return;
     }
 
     setLoading(true);
     try {
       await sendPasswordResetEmail(auth, trimmed);
-      setResetStatus("Email de rÃƒÂ©initialisation envoyÃƒÂ© (si un compte existe pour cette adresse).");
+      setResetStatus("Email de réinitialisation envoyé (si un compte existe pour cette adresse).");
     } catch (err) {
       debugAuthFailure("password_reset", err, { provider: "password" });
       setError(getFirebaseAuthErrorMessage(err));
@@ -331,7 +331,7 @@ function LoginPageInner() {
       <div className="w-full max-w-md border border-border rounded-lg p-6 shadow-sm bg-card">
         <h1 className="text-xl font-semibold mb-4 text-center">TaskNote</h1>
         <p className="text-sm text-muted-foreground mb-6 text-center">
-          Connecte-toi pour acceder a tes notes et taches.
+          Connecte-toi pour accéder à tes notes et tâches.
         </p>
 
         <form onSubmit={handleEmailLogin} className="space-y-4">
@@ -402,7 +402,7 @@ function LoginPageInner() {
             onClick={handleResetPassword}
             className="w-full inline-flex items-center justify-center px-4 py-2 rounded-md border border-input bg-background text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Mot de passe oubliÃƒÂ© ?
+            Mot de passe oublié ?
           </button>
         </form>
 
@@ -418,13 +418,13 @@ function LoginPageInner() {
           onClick={handleGoogleLogin}
           className="w-full inline-flex items-center justify-center px-4 py-2 rounded-md border border-input bg-background text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? "ConnexionÃ¢â‚¬Â¦" : "Continuer avec Google"}
+          {loading ? "Connexion..." : "Continuer avec Google"}
         </button>
 
         <p className="text-xs text-muted-foreground mt-4 text-center">
           Pas encore de compte ?{" "}
           <a className="underline" href={`/register?next=${encodeURIComponent(nextPath)}`}>
-            CrÃƒÂ©er un compte
+            Créer un compte
           </a>
         </p>
       </div>

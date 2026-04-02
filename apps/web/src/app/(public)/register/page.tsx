@@ -41,24 +41,24 @@ function getFirebaseAuthErrorMessage(err: unknown): string {
   const code = getFirebaseAuthErrorCode(err);
   if (typeof code !== "string") {
     const message = getFirebaseAuthErrorRawMessage(err);
-    return message || "Une erreur est survenue. RÃƒÂ©essaie.";
+    return message || "Une erreur est survenue. Réessaie.";
   }
 
   switch (code) {
     case "auth/email-already-in-use":
-      return "Cette adresse email est dÃƒÂ©jÃƒÂ  utilisÃƒÂ©e.";
+      return "Cette adresse email est déjà utilisée.";
     case "auth/invalid-email":
       return "Adresse email invalide.";
     case "auth/weak-password":
-      return "Mot de passe trop faible (6 caractÃƒÂ¨res minimum).";
+      return "Mot de passe trop faible (6 caractères minimum).";
     case "auth/popup-closed-by-user":
-      return "Inscription annulÃƒÂ©e.";
+      return "Inscription annulée.";
     case "auth/popup-blocked":
-      return "La popup a ÃƒÂ©tÃƒÂ© bloquÃƒÂ©e par le navigateur. Autorise les popups puis rÃƒÂ©essaie.";
+      return "La popup a été bloquée par le navigateur. Autorise les popups puis réessaie.";
     case "auth/network-request-failed":
-      return "ProblÃƒÂ¨me rÃƒÂ©seau. VÃƒÂ©rifie ta connexion puis rÃƒÂ©essaie.";
+      return "Problème réseau. Vérifie ta connexion puis réessaie.";
     default:
-      return "Une erreur est survenue. RÃƒÂ©essaie.";
+      return "Une erreur est survenue. Réessaie.";
   }
 }
 
@@ -71,7 +71,7 @@ function isNativeGoogleSignInUnavailable(err: unknown): boolean {
 }
 
 function getNativeGoogleSignInUnavailableMessage() {
-  return "Inscription Google indisponible dans cette version Android. Termine la configuration Google native Android, ou utilise email + mot de passe pour lÃ¢â‚¬â„¢instant.";
+  return "Inscription Google indisponible dans cette version Android. Termine la configuration Google native Android, ou utilise email + mot de passe pour l’instant.";
 }
 
 export default function RegisterPage() {
@@ -224,7 +224,7 @@ function RegisterPageInner() {
       <div className="w-full max-w-md border border-border rounded-lg p-6 shadow-sm bg-card">
         <h1 className="text-xl font-semibold mb-4 text-center">TaskNote</h1>
         <p className="text-sm text-muted-foreground mb-6 text-center">
-          Cree un compte pour acceder a tes notes et taches.
+          Crée un compte pour accéder à tes notes et tâches.
         </p>
 
         <form onSubmit={handleRegister} className="space-y-4">
@@ -280,7 +280,7 @@ function RegisterPageInner() {
             disabled={loading}
             className="w-full mt-2 inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? "CrÃƒÂ©ation..." : "CrÃƒÂ©er mon compte"}
+            {loading ? "Création..." : "Créer mon compte"}
           </button>
         </form>
 
@@ -300,7 +300,7 @@ function RegisterPageInner() {
         </button>
 
         <p className="text-xs text-muted-foreground mt-4 text-center">
-          Deja un compte ?{" "}
+          Déjà un compte ?{" "}
           <a className="underline" href={`/login?next=${encodeURIComponent(nextPath)}`}>
             Se connecter
           </a>
