@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Bug, Loader2, PanelLeft, Menu, X } from "lucide-react";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import SidebarWorkspaces from "./SidebarWorkspaces";
-import PwaInstallCta, { PwaInstallSidebarEntry } from "./_components/PwaInstallCta";
+import { PwaInstallBanner, PwaInstallSidebarEntry, usePwaInstallState } from "./_components/PwaInstallCta";
 import CreateButton from "./_components/CreateButton";
 import SmartActionDock from "./_components/SmartActionDock";
 import { useUserWorkspaces } from "@/hooks/useUserWorkspaces";
@@ -149,6 +149,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   const [bugSubmitting, setBugSubmitting] = useState(false);
   const [bugError, setBugError] = useState<string | null>(null);
   const [bugFeedback, setBugFeedback] = useState<string | null>(null);
+  const pwaInstallState = usePwaInstallState();
   const isAdminBackofficeRoute = pathname.startsWith("/admin");
   const isAgendaRoute = pathname.startsWith("/tasks");
   const shouldShowPwaInstallCta = pathname === "/dashboard";
@@ -732,6 +733,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
       mobile={mobile}
       collapsed={collapsed}
       onNavigate={mobile ? closeMobile : undefined}
+      installState={pwaInstallState}
     />
   );
 
@@ -868,7 +870,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
         </div>
 
         <main className={`flex-1 p-4 min-w-0 ${shouldRenderDock ? "pb-[calc(6.5rem+env(safe-area-inset-bottom))] md:pb-20" : "pb-4 md:pb-8"}`}>
-          {shouldShowPwaInstallCta ? <PwaInstallCta /> : null}
+          {shouldShowPwaInstallCta ? <PwaInstallBanner installState={pwaInstallState} /> : null}
           {proactiveBanner ? (
             <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">

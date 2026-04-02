@@ -98,10 +98,15 @@ export function usePwaInstallState() {
     if (!deferred) return;
     try {
       await deferred.prompt();
-      await deferred.userChoice;
+      const choice = await deferred.userChoice;
+      if (choice.outcome === "accepted") {
+        setInstalled(true);
+      }
+      if (choice.outcome === "dismissed") {
+        setDismissed(true);
+      }
     } finally {
       setDeferred(null);
-      dismiss();
     }
   };
 
@@ -119,16 +124,20 @@ export function usePwaInstallState() {
   };
 }
 
+type PwaInstallViewState = ReturnType<typeof usePwaInstallState>;
+
 export function PwaInstallSidebarEntry({
   mobile = false,
   collapsed = false,
   onNavigate,
+  installState,
 }: {
   mobile?: boolean;
   collapsed?: boolean;
   onNavigate?: () => void;
+  installState: PwaInstallViewState;
 }) {
-  const { shouldShowEntry, canPromptInstall, ios, android, onInstall } = usePwaInstallState();
+  const { shouldShowEntry, canPromptInstall, ios, android, onInstall } = installState;
 
   if (!shouldShowEntry) return null;
 
@@ -163,7 +172,11 @@ export function PwaInstallSidebarEntry({
   );
 }
 
-export default function PwaInstallCta() {
+export function PwaInstallBanner({
+  installState,
+}: {
+  installState: PwaInstallViewState;
+}) {
   const {
     shouldShowBanner,
     ios,
@@ -172,7 +185,7 @@ export default function PwaInstallCta() {
     canPromptInstall,
     dismiss,
     onInstall,
-  } = usePwaInstallState();
+  } = installState;
 
   if (!shouldShowBanner) return null;
 
@@ -232,3 +245,5 @@ export default function PwaInstallCta() {
     </div>
   );
 }
+
+export default PwaInstallBanner;
