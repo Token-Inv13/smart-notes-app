@@ -842,10 +842,10 @@ export default function TasksPage() {
   useEffect(() => {
     setOptimisticCreatedAgendaTasks((prev) => {
       if (prev.length === 0) return prev;
-      const next = prev.filter((task) => !allTasks.some((current) => current.id === task.id));
+      const next = prev.filter((task) => !calendarWindowTasks.some((current) => current.id === task.id));
       return next.length === prev.length ? prev : next;
     });
-  }, [allTasks]);
+  }, [calendarWindowTasks]);
 
   useEffect(() => {
     setOptimisticDeletedAgendaTaskIds((prev) => {
