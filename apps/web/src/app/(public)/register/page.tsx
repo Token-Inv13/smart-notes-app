@@ -81,6 +81,27 @@ function getNativeGoogleSignInUnavailableMessage() {
   return "Inscription Google indisponible dans cette version Android. Termine la configuration Google native Android, ou utilise email + mot de passe pour l’instant.";
 }
 
+function trackGoogleAdsSignupConversion() {
+  if (typeof window === "undefined") return;
+
+  const gtag = (window as Window & {
+    gtag?: (
+      command: string,
+      eventName: string,
+      params: { send_to: string },
+    ) => void;
+  }).gtag as
+    | ((command: string, eventName: string, params: { send_to: string }) => void)
+    | undefined;
+
+  if (!gtag) return;
+
+  // TODO: replace PLACEHOLDER_LABEL with the real Google Ads conversion label.
+  gtag("event", "conversion", {
+    send_to: "AW-17905037083/Aj_uCLiGpZUcEJve5NlC",
+  });
+}
+
 export default function RegisterPage() {
   return (
     <Suspense>
@@ -125,6 +146,7 @@ function RegisterPageInner() {
   const finalizeRegistration = useCallback(async (params: { method: "email" | "google"; isNewUser: boolean }) => {
     await establishSession();
     if (params.isNewUser) {
+      trackGoogleAdsSignupConversion();
       await trackEventBeforeNavigation("sign_up", {
         method: params.method,
         source: trackingSource,

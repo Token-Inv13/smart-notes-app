@@ -1,4 +1,5 @@
 import './globals.css';
+import Script from 'next/script';
 import type { ReactNode } from 'react';
 import ThemeClientProvider from './ThemeClientProvider';
 import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from '@/lib/siteConfig';
@@ -63,6 +64,11 @@ export default function RootLayout(props: RootLayoutProps) {
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-title" content={SITE_NAME} />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <Script id="google-ads-config" strategy="afterInteractive">
+          {`if (typeof window !== 'undefined' && window.gtag) {
+  window.gtag('config', 'AW-17905037083');
+}`}
+        </Script>
       </head>
       <body className="min-h-screen bg-background text-foreground antialiased">
         <ThemeClientProvider>{children}</ThemeClientProvider>
