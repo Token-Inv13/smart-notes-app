@@ -109,12 +109,12 @@ function ProductPreview() {
 
         <div className="absolute inset-x-[14%] top-[10%] h-[80%] overflow-hidden rounded-[30px] border border-slate-200/80 bg-white shadow-[0_34px_85px_rgba(15,23,42,0.2)] ring-1 ring-white/60">
           <Image
-            src="/assets/screens/notes.png"
+            src="/assets/screens/notes-hero-crop.png"
             alt="Interface TaskNote avec notes récentes, dossiers et navigation"
             fill
             priority
             sizes="(max-width: 1024px) 100vw, 48vw"
-            className="object-cover object-left-top"
+            className="object-cover"
           />
         </div>
 
