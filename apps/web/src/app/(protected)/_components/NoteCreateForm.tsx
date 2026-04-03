@@ -133,13 +133,18 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
   const freeLimitMessage = FREE_NOTE_LIMIT_MESSAGE;
 
   const { data: allNotesForLimit } = useUserNotes({ limit: 16 });
-  const { data: favoriteNotesForLimit } = useUserNotes({ favoriteOnly: true, limit: 11 });
+  const { data: favoriteNotesForLimit } = useUserNotes({
+    favoriteOnly: true,
+    limit: 11,
+    enabled: initialFavorite === true,
+  });
 
   const [noteTitle, setNoteTitle] = useState("");
   const [noteContent, setNoteContent] = useState("");
   const [noteWorkspaceId, setNoteWorkspaceId] = useState<string>(initialWorkspaceId ?? "");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [createFeedback, setCreateFeedback] = useState<string | null>(null);
 
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const [dictationStatus, setDictationStatus] = useState<"idle" | "listening" | "stopped" | "error">("idle");
@@ -156,6 +161,12 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
   useEffect(() => {
     setNoteWorkspaceId(initialWorkspaceId ?? "");
   }, [initialWorkspaceId]);
+
+  useEffect(() => {
+    if (!createFeedback) return;
+    const timer = window.setTimeout(() => setCreateFeedback(null), 1800);
+    return () => window.clearTimeout(timer);
+  }, [createFeedback]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -261,6 +272,7 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
     }
 
     setCreateError(null);
+    setCreateFeedback(null);
     setCreating(true);
     try {
       const requestFavorite = initialFavorite === true ? isPro || favoriteNotesForLimit.length < 10 : false;
@@ -292,6 +304,11 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
 
       setNoteTitle("");
       setNoteContent("");
+      setCreateFeedback("Note créée.");
+
+      window.requestAnimationFrame(() => {
+        titleInputRef.current?.focus();
+      });
 
       void trackEvent("create_note", {
         source: "app",
@@ -470,6 +487,11 @@ export default function NoteCreateForm({ initialWorkspaceId, initialFavorite, on
       {createError && (
         <div className="sn-alert sn-alert--error" role="status" aria-live="polite">
           {createError}
+        </div>
+      )}
+      {createFeedback && (
+        <div className="sn-alert sn-alert--success" role="status" aria-live="polite">
+          {createFeedback}
         </div>
       )}
     </div>

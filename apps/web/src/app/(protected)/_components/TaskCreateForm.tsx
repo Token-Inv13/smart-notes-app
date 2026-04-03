@@ -80,7 +80,11 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
   const freeLimitMessage = FREE_TASK_LIMIT_MESSAGE;
 
   const { data: allTasksForLimit } = useUserTasks({ limit: 16 });
-  const { data: favoriteTasksForLimit } = useUserTasks({ favoriteOnly: true, limit: 16 });
+  const { data: favoriteTasksForLimit } = useUserTasks({
+    favoriteOnly: true,
+    limit: 16,
+    enabled: initialFavorite === true,
+  });
 
   const [newTitle, setNewTitle] = useState("");
   const [newStatus, setNewStatus] = useState<TaskStatus>("todo");

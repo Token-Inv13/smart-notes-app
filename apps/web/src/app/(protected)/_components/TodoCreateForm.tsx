@@ -145,6 +145,7 @@ export default function TodoCreateForm({
   const [priorityDraft, setPriorityDraft] = useState<"" | NonNullable<TodoDoc["priority"]>>("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [createFeedback, setCreateFeedback] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
   const itemInputRef = useRef<HTMLInputElement | null>(null);
@@ -184,6 +185,12 @@ export default function TodoCreateForm({
   useEffect(() => {
     if (dueDateDraft || priorityDraft) setOptionsOpen(true);
   }, [dueDateDraft, priorityDraft]);
+
+  useEffect(() => {
+    if (!createFeedback) return;
+    const timer = window.setTimeout(() => setCreateFeedback(null), 1800);
+    return () => window.clearTimeout(timer);
+  }, [createFeedback]);
 
   const canSubmit = useMemo(() => !!title.trim(), [title]);
 
@@ -281,6 +288,7 @@ export default function TodoCreateForm({
     }
 
     setCreateError(null);
+    setCreateFeedback(null);
     setCreating(true);
     try {
       const dueTimestamp = dueDateDraft ? parseLocalDateToTimestamp(dueDateDraft) : null;
@@ -309,6 +317,10 @@ export default function TodoCreateForm({
         setWorkspaceId(initialWorkspaceId ?? "");
         setDueDateDraft("");
         setPriorityDraft("");
+        setCreateFeedback("Checklist créée.");
+        window.requestAnimationFrame(() => {
+          inputRef.current?.focus();
+        });
         void trackEvent("create_todo", {
           source: "app",
           surface: "todo_form",
@@ -346,6 +358,10 @@ export default function TodoCreateForm({
       setWorkspaceId(initialWorkspaceId ?? "");
       setDueDateDraft("");
       setPriorityDraft("");
+      setCreateFeedback("Checklist créée.");
+      window.requestAnimationFrame(() => {
+        inputRef.current?.focus();
+      });
       void trackEvent("create_todo", {
         source: "app",
         surface: "todo_form",
@@ -703,6 +719,7 @@ export default function TodoCreateForm({
       )}
 
       {createError && <div className="sn-alert sn-alert--error">{createError}</div>}
+      {createFeedback && <div className="sn-alert sn-alert--success" role="status" aria-live="polite">{createFeedback}</div>}
     </div>
   );
 }

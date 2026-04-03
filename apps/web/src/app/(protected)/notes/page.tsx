@@ -42,6 +42,7 @@ export default function NotesPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId") || undefined;
+  const shouldLoadWorkspaceCounters = Boolean(workspaceId);
   const createParam = searchParams.get("create");
   const { data: workspaces } = useUserWorkspaces();
 
@@ -62,8 +63,8 @@ export default function NotesPage() {
 
   const { data: notes, loading, error } = useUserNotes();
   const { data: favoriteNotesForLimit } = useUserNotes({ favoriteOnly: true, limit: 11 });
-  const { data: tasksForCounter } = useUserTasks();
-  const { data: todosForCounter } = useUserTodos({ completed: false });
+  const { data: tasksForCounter } = useUserTasks({ enabled: shouldLoadWorkspaceCounters });
+  const { data: todosForCounter } = useUserTodos({ completed: false, enabled: shouldLoadWorkspaceCounters });
 
   const userId = auth.currentUser?.uid;
   const showMicroGuide = !!userId && !getOnboardingFlag(userId, "notes_microguide_v1");
@@ -105,7 +106,7 @@ export default function NotesPage() {
     return 0;
   };
 
-  const normalizeSearchText = (raw: string) => {
+  const normalizeSearchText = useCallback((raw: string) => {
     try {
       return normalizeDisplayText(raw)
         .toLowerCase()
@@ -115,7 +116,7 @@ export default function NotesPage() {
     } catch {
       return normalizeDisplayText(raw).toLowerCase().trim();
     }
-  };
+  }, []);
 
   const effectiveWorkspaces = useMemo(
     () => applyWorkspaceParentOverrides(workspaces, optimisticParentIdByWorkspaceId),
@@ -160,6 +161,23 @@ export default function NotesPage() {
     }
     return m;
   }, [effectiveWorkspaces]);
+  const noteSearchTextById = useMemo(() => {
+    const searchTextById = new Map<string, string>();
+
+    for (const note of effectiveNotesWithFavoriteOverrides) {
+      if (!note.id) continue;
+      const workspaceName = note.workspaceId ? workspaceNameById.get(note.workspaceId) ?? "" : "";
+      const tagsText = Array.isArray(note.tags) ? note.tags.join(" ") : "";
+      searchTextById.set(
+        note.id,
+        normalizeSearchText(
+          `${normalizeDisplayText(note.title)}\n${htmlToPlainText(note.content ?? "")}\n${workspaceName}\n${tagsText}`,
+        ),
+      );
+    }
+
+    return searchTextById;
+  }, [effectiveNotesWithFavoriteOverrides, normalizeSearchText, workspaceNameById]);
   const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(effectiveWorkspaces), [effectiveWorkspaces]);
   const currentWorkspace = useMemo(() => getWorkspaceById(effectiveWorkspaces, workspaceId), [effectiveWorkspaces, workspaceId]);
   const currentWorkspaceChain = useMemo(() => getWorkspaceChain(effectiveWorkspaces, workspaceId), [effectiveWorkspaces, workspaceId]);
@@ -314,14 +332,10 @@ export default function NotesPage() {
 
       if (!q) return true;
 
-      const workspaceName = n.workspaceId ? workspaceNameById.get(n.workspaceId) ?? "" : "";
-      const tagsText = Array.isArray(n.tags) ? n.tags.join(" ") : "";
-      const text = normalizeSearchText(
-        `${normalizeDisplayText(n.title)}\n${htmlToPlainText(n.content ?? "")}\n${workspaceName}\n${tagsText}`,
-      );
+      const text = n.id ? noteSearchTextById.get(n.id) ?? "" : "";
       return text.includes(q);
     });
-  }, [archiveView, archivedNotesSorted, debouncedSearch, favoriteOnly, selectedWorkspaceIds, sortedNotes, workspaceNameById]);
+  }, [archiveView, archivedNotesSorted, debouncedSearch, favoriteOnly, normalizeSearchText, noteSearchTextById, selectedWorkspaceIds, sortedNotes]);
 
   const visibleNotesCount = useMemo(
     () => (archiveView === "archived" ? archivedNotesSorted.length : sortedNotes.filter((n) => n.archived !== true).length),

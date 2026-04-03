@@ -200,6 +200,7 @@ export default function TasksPage() {
   const highlightedTaskId = searchParams.get("taskId");
   const focusDateParam = searchParams.get("focusDate");
   const workspaceIdParam = searchParams.get("workspaceId");
+  const shouldLoadWorkspaceCounters = Boolean(workspaceIdParam);
   const createParam = searchParams.get("create");
   const favoriteParam = searchParams.get("favorite");
   const viewParam = searchParams.get("view");
@@ -208,20 +209,20 @@ export default function TasksPage() {
   const isPro = userSettings?.plan === "pro";
   const freeLimitMessage = FREE_TASK_LIMIT_MESSAGE;
 
-  const statusLabel = (s: TaskStatus) => {
+  const statusLabel = useCallback((s: TaskStatus) => {
     if (s === "todo") return "À faire";
     if (s === "doing") return "En cours";
     return "Terminée";
-  };
+  }, []);
 
-  const formatDueDate = (ts: TaskDoc["dueDate"] | null | undefined) => {
+  const formatDueDate = useCallback((ts: TaskDoc["dueDate"] | null | undefined) => {
     if (!ts) return "";
     try {
       return formatTimestampToDateTimeFr(ts);
     } catch {
       return "";
     }
-  };
+  }, []);
 
   const handleCalendarCreate = async (input: {
     title: string;
@@ -635,20 +636,20 @@ export default function TasksPage() {
     }
   };
 
-  const formatStartDate = (ts: TaskDoc["startDate"] | null | undefined) => {
+  const formatStartDate = useCallback((ts: TaskDoc["startDate"] | null | undefined) => {
     if (!ts) return "";
     try {
       return formatTimestampToDateFr(ts);
     } catch {
       return "";
     }
-  };
+  }, []);
 
-  const priorityLabel = (p: NonNullable<TaskDoc["priority"]>) => {
+  const priorityLabel = useCallback((p: NonNullable<TaskDoc["priority"]>) => {
     if (p === "high") return "Haute";
     if (p === "medium") return "Moyenne";
     return "Basse";
-  };
+  }, []);
 
   const priorityDotClass = (p: NonNullable<TaskDoc["priority"]>) => {
     if (p === "high") return "bg-red-500/80";
@@ -800,7 +801,7 @@ export default function TasksPage() {
     return 0;
   };
 
-  const normalizeSearchText = (raw: string) => {
+  const normalizeSearchText = useCallback((raw: string) => {
     try {
       return normalizeDisplayText(raw)
         .toLowerCase()
@@ -810,7 +811,7 @@ export default function TasksPage() {
     } catch {
       return normalizeDisplayText(raw).toLowerCase().trim();
     }
-  };
+  }, []);
 
   const effectiveWorkspaces = useMemo(
     () => applyWorkspaceParentOverrides(workspaces, optimisticParentIdByWorkspaceId),
@@ -864,8 +865,8 @@ export default function TasksPage() {
     }
     return m;
   }, [effectiveWorkspaces]);
-  const { data: notesForCounter } = useUserNotes();
-  const { data: todosForCounter } = useUserTodos({ completed: false });
+  const { data: notesForCounter } = useUserNotes({ enabled: shouldLoadWorkspaceCounters });
+  const { data: todosForCounter } = useUserTodos({ completed: false, enabled: shouldLoadWorkspaceCounters });
   const workspaceOptionLabelById = useMemo(() => buildWorkspacePathLabelMap(effectiveWorkspaces), [effectiveWorkspaces]);
   const currentWorkspace = useMemo(() => getWorkspaceById(effectiveWorkspaces, workspaceIdParam), [effectiveWorkspaces, workspaceIdParam]);
   const currentWorkspaceChain = useMemo(() => getWorkspaceChain(effectiveWorkspaces, workspaceIdParam), [effectiveWorkspaces, workspaceIdParam]);
@@ -1124,6 +1125,27 @@ export default function TasksPage() {
     },
     [optimisticStatusById],
   );
+  const taskSearchTextById = useMemo(() => {
+    const searchTextById = new Map<string, string>();
+
+    for (const task of tasks) {
+      if (!task.id) continue;
+      const workspaceName = task.workspaceId ? workspaceNameById.get(task.workspaceId) ?? "" : "";
+      const status = statusForTask(task);
+      const priority = task.priority ? priorityLabel(task.priority) : "";
+      const startLabel = formatStartDate(task.startDate ?? null);
+      const dueLabel = formatDueDate(task.dueDate ?? null);
+      const sourceLabel = task.sourceType === "checklist_item" ? "checklist" : "tache";
+      searchTextById.set(
+        task.id,
+        normalizeSearchText(
+          `${normalizeDisplayText(task.title)}\n${task.description ?? ""}\n${workspaceName}\n${statusLabel(status)}\n${priority}\n${startLabel}\n${dueLabel}\n${sourceLabel}`,
+        ),
+      );
+    }
+
+    return searchTextById;
+  }, [tasks, workspaceNameById, statusForTask, priorityLabel, formatStartDate, formatDueDate, normalizeSearchText, statusLabel]);
 
   const filteredTasks = useMemo(() => {
     const now = new Date();
@@ -1143,15 +1165,7 @@ export default function TasksPage() {
 
     if (q) {
       result = result.filter((task) => {
-        const workspaceName = task.workspaceId ? workspaceNameById.get(task.workspaceId) ?? "" : "";
-        const status = statusForTask(task);
-        const priority = task.priority ? priorityLabel(task.priority) : "";
-        const startLabel = formatStartDate(task.startDate ?? null);
-        const dueLabel = formatDueDate(task.dueDate ?? null);
-        const sourceLabel = task.sourceType === "checklist_item" ? "checklist" : "tache";
-        const text = normalizeSearchText(
-          `${normalizeDisplayText(task.title)}\n${task.description ?? ""}\n${workspaceName}\n${statusLabel(status)}\n${priority}\n${startLabel}\n${dueLabel}\n${sourceLabel}`,
-        );
+        const text = task.id ? taskSearchTextById.get(task.id) ?? "" : "";
         return text.includes(q);
       });
     }
@@ -1210,7 +1224,7 @@ export default function TasksPage() {
     });
 
     return sorted;
-  }, [tasks, archiveView, selectedWorkspaceIds, priorityFilter, debouncedSearch, dueFilter, statusFilter, sortBy, workspaceNameById, statusForTask]);
+  }, [tasks, archiveView, selectedWorkspaceIds, priorityFilter, debouncedSearch, dueFilter, statusFilter, sortBy, normalizeSearchText, statusForTask, taskSearchTextById]);
 
   useEffect(() => {
     setOptimisticStatusById((prev) => {

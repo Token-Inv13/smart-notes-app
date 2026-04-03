@@ -17,6 +17,7 @@ import { useCollection } from '@/hooks/useCollection';
 import type { TodoDoc } from '@/types/firestore';
 
 interface UseUserTodosParams {
+  enabled?: boolean;
   workspaceId?: string;
   favoriteOnly?: boolean;
   completed?: boolean;
@@ -26,33 +27,39 @@ interface UseUserTodosParams {
 export function useUserTodos(params?: UseUserTodosParams) {
   const { user } = useAuth();
   const userUid = user?.uid;
+  const enabled = params?.enabled;
+  const workspaceId = params?.workspaceId;
+  const favoriteOnly = params?.favoriteOnly;
+  const completed = params?.completed;
+  const queryLimit = params?.limit;
 
   const todosQuery: Query<TodoDoc> | null = useMemo(() => {
+    if (enabled === false) return null;
     if (!userUid) return null;
 
     const baseRef = collection(db, 'todos') as CollectionReference<TodoDoc>;
     const constraints: QueryConstraint[] = [where('userId', '==', userUid)];
 
-    if (params?.workspaceId) {
-      constraints.push(where('workspaceId', '==', params.workspaceId));
+    if (workspaceId) {
+      constraints.push(where('workspaceId', '==', workspaceId));
     }
 
-    if (params?.favoriteOnly) {
+    if (favoriteOnly) {
       constraints.push(where('favorite', '==', true));
     }
 
-    if (typeof params?.completed === 'boolean') {
-      constraints.push(where('completed', '==', params.completed));
+    if (typeof completed === 'boolean') {
+      constraints.push(where('completed', '==', completed));
     }
 
     constraints.push(orderBy('updatedAt', 'desc'));
 
-    if (params?.limit && params.limit > 0) {
-      constraints.push(fsLimit(params.limit));
+    if (queryLimit && queryLimit > 0) {
+      constraints.push(fsLimit(queryLimit));
     }
 
     return query(baseRef, ...constraints) as Query<TodoDoc>;
-  }, [userUid, params?.workspaceId, params?.favoriteOnly, params?.completed, params?.limit]);
+  }, [userUid, enabled, workspaceId, favoriteOnly, completed, queryLimit]);
 
   return useCollection<TodoDoc>(todosQuery);
 }

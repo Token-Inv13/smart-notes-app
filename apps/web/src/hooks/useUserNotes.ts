@@ -17,6 +17,7 @@ import { useCollection } from '@/hooks/useCollection';
 import type { NoteDoc } from '@/types/firestore';
 
 interface UseUserNotesParams {
+  enabled?: boolean;
   workspaceId?: string;
   favoriteOnly?: boolean;
   limit?: number;
@@ -25,29 +26,34 @@ interface UseUserNotesParams {
 export function useUserNotes(params?: UseUserNotesParams) {
   const { user } = useAuth();
   const userUid = user?.uid;
+  const enabled = params?.enabled;
+  const workspaceId = params?.workspaceId;
+  const favoriteOnly = params?.favoriteOnly;
+  const queryLimit = params?.limit;
 
   const notesQuery: Query<NoteDoc> | null = useMemo(() => {
+    if (enabled === false) return null;
     if (!userUid) return null;
 
     const baseRef = collection(db, 'notes') as CollectionReference<NoteDoc>;
     const constraints: QueryConstraint[] = [where('userId', '==', userUid)];
 
-    if (params?.workspaceId) {
-      constraints.push(where('workspaceId', '==', params.workspaceId));
+    if (workspaceId) {
+      constraints.push(where('workspaceId', '==', workspaceId));
     }
 
-    if (params?.favoriteOnly) {
+    if (favoriteOnly) {
       constraints.push(where('favorite', '==', true));
     }
 
     constraints.push(orderBy('updatedAt', 'desc'));
 
-    if (params?.limit && params.limit > 0) {
-      constraints.push(fsLimit(params.limit));
+    if (queryLimit && queryLimit > 0) {
+      constraints.push(fsLimit(queryLimit));
     }
 
     return query(baseRef, ...constraints) as Query<NoteDoc>;
-  }, [userUid, params?.workspaceId, params?.favoriteOnly, params?.limit]);
+  }, [userUid, enabled, workspaceId, favoriteOnly, queryLimit]);
 
   return useCollection<NoteDoc>(notesQuery);
 }
