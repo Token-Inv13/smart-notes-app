@@ -1979,10 +1979,6 @@ export default function TasksPage() {
             onUpdateEvent={handleCalendarUpdate}
             onSkipOccurrence={handleSkipOccurrence}
             onVisibleRangeChange={handleCalendarVisibleRangeChange}
-            onOpenTask={(taskId) => {
-              const qs = workspaceIdParam ? `?workspaceId=${encodeURIComponent(workspaceIdParam)}` : "";
-              router.push(`/tasks/${taskId}${qs}`);
-            }}
           />
         </div>
       )}

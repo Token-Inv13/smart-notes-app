@@ -97,7 +97,6 @@ interface AgendaCalendarProps {
     recurrence?: CalendarRecurrenceInput;
   }) => Promise<void>;
   onSkipOccurrence?: (taskId: string, occurrenceDate: string) => Promise<void>;
-  onOpenTask: (taskId: string) => void;
   onVisibleRangeChange?: (range: { start: Date; end: Date }) => void;
   initialPreferences?: Partial<AgendaCalendarPreferences> | null;
   onPreferencesChange?: (prefs: AgendaCalendarPreferences) => void;
@@ -224,7 +223,6 @@ export default function AgendaCalendar({
   hiddenGoogleEventIds,
   onUpdateEvent,
   onSkipOccurrence,
-  onOpenTask,
   onVisibleRangeChange,
   initialPreferences,
   onPreferencesChange,
@@ -953,7 +951,6 @@ export default function AgendaCalendar({
         editScope={editScope}
         setEditScope={setEditScope}
         workspaces={workspaces}
-        onOpenTask={onOpenTask}
         onDeleteTask={onDeleteEvent}
         skipOccurrence={skipOccurrence}
         saveDraft={saveDraft}
