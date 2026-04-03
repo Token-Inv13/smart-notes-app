@@ -91,16 +91,41 @@ export const metadata: Metadata = {
 
 function ProductPreview() {
   return (
-    <figure className="overflow-hidden rounded-[28px] border border-white/10 bg-white/90 p-3 shadow-[0_30px_80px_rgba(15,23,42,0.45)]">
-      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[20px] bg-white">
-        <Image
-          src="/assets/screens/get-started-hero-illustration.png"
-          alt="Aperçu de TaskNote avec notes, tâches et agenda sur desktop et mobile"
-          fill
-          priority
-          sizes="(max-width: 1024px) 100vw, 48vw"
-          className="object-cover"
-        />
+    <figure className="relative overflow-hidden rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(96,165,250,0.16),transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(241,245,249,0.98))] p-4 shadow-[0_34px_90px_rgba(15,23,42,0.34)]">
+      <div className="pointer-events-none absolute -left-16 bottom-10 h-44 w-44 rounded-full bg-cyan-200/40 blur-3xl" />
+      <div className="pointer-events-none absolute right-0 top-0 h-56 w-56 rounded-full bg-blue-200/40 blur-3xl" />
+
+      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[24px]">
+        <div className="absolute inset-x-[12%] top-[6%] h-[86%] overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_28px_70px_rgba(15,23,42,0.18)]">
+          <Image
+            src="/assets/screens/notes.png"
+            alt="Interface TaskNote avec notes récentes, dossiers et navigation"
+            fill
+            priority
+            sizes="(max-width: 1024px) 100vw, 48vw"
+            className="object-cover object-left-top"
+          />
+        </div>
+
+        <div className="absolute -bottom-[1%] left-[2%] h-[48%] w-[44%] overflow-hidden rounded-[26px] border border-slate-200/80 bg-white shadow-[0_26px_60px_rgba(15,23,42,0.18)]">
+          <Image
+            src="/assets/screens/capture.png"
+            alt="Fenêtre TaskNote pour capturer rapidement une idée"
+            fill
+            sizes="(max-width: 1024px) 42vw, 18vw"
+            className="object-cover object-[38%_14%]"
+          />
+        </div>
+
+        <div className="absolute bottom-[3%] right-[2%] h-[62%] w-[27%] overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_26px_60px_rgba(15,23,42,0.18)]">
+          <Image
+            src="/assets/screens/hero.png"
+            alt="Aperçu mobile de TaskNote"
+            fill
+            sizes="(max-width: 1024px) 24vw, 14vw"
+            className="object-cover object-[96%_58%]"
+          />
+        </div>
       </div>
     </figure>
   );
