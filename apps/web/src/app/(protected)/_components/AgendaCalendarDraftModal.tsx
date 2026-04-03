@@ -118,8 +118,8 @@ export default function AgendaCalendarDraftModal({
     if (!draft.taskId || saving || deleting) return;
 
     const confirmMessage = isOccurrenceDeletion
-      ? "Supprimer cette occurrence ? Cette action est irrÃ©versible."
-      : "Supprimer cet Ã©lÃ©ment ? Cette action est irrÃ©versible.";
+      ? "Supprimer cette occurrence ? Cette action est irréversible."
+      : "Supprimer cet élément ? Cette action est irréversible.";
     if (!window.confirm(confirmMessage)) return;
 
     setDeleting(true);
@@ -133,7 +133,7 @@ export default function AgendaCalendarDraftModal({
       await onDeleteTask(draft.taskId);
       requestClose();
     } catch {
-      setDeleteError("Impossible de supprimer lâ€™Ã©lÃ©ment pour le moment.");
+      setDeleteError("Impossible de supprimer l’élément pour le moment.");
     } finally {
       setDeleting(false);
     }
@@ -169,7 +169,7 @@ export default function AgendaCalendarDraftModal({
               onClick={() => setEditScope("series")}
               className={`h-9 rounded-md border text-sm ${editScope === "series" ? "border-primary bg-accent" : "border-border bg-background"}`}
             >
-              Toute la sÃ©rie
+              Toute la série
             </button>
           </div>
         )}
@@ -214,7 +214,7 @@ export default function AgendaCalendarDraftModal({
                   })
                 }
               />
-              Toute la journÃ©e
+              Toute la journée
             </label>
           </div>
 
@@ -249,15 +249,15 @@ export default function AgendaCalendarDraftModal({
               value={draft.calendarKind}
               onChange={(e) => applyCalendarKind(e.target.value as TaskCalendarKind)}
               className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-              aria-label="Type dâ€™Ã©vÃ©nement"
+              aria-label="Type d’événement"
             >
-              <option value="task">Ã‰lÃ©ment agenda</option>
+              <option value="task">Élément agenda</option>
               <option value="birthday">Anniversaire</option>
             </select>
           </label>
 
           <label className="space-y-1">
-            <span className="text-sm font-medium">RÃ©currence</span>
+            <span className="text-sm font-medium">Récurrence</span>
             <select
               value={draft.recurrenceFreq}
               onChange={(e) =>
@@ -266,14 +266,14 @@ export default function AgendaCalendarDraftModal({
                 )
               }
               className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-              aria-label="RÃ©currence"
+              aria-label="Récurrence"
               disabled={isBirthday}
             >
-              <option value="">Sans rÃ©currence</option>
+              <option value="">Sans récurrence</option>
               <option value="daily">Chaque jour</option>
               <option value="weekly">Chaque semaine</option>
               <option value="monthly">Chaque mois</option>
-              <option value="yearly">Chaque annÃ©e</option>
+              <option value="yearly">Chaque année</option>
             </select>
           </label>
         </div>
@@ -319,7 +319,7 @@ export default function AgendaCalendarDraftModal({
         {(draft.recurrenceFreq || isBirthday) && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <label className="space-y-1">
-              <span className="text-sm font-medium">RÃ©currence jusquâ€™au</span>
+              <span className="text-sm font-medium">Récurrence jusqu’au</span>
               <input
                 type="date"
                 value={draft.recurrenceUntil}
@@ -327,7 +327,7 @@ export default function AgendaCalendarDraftModal({
                   setDraft((prev) => (prev ? { ...prev, recurrenceUntil: e.target.value } : prev))
                 }
                 className="w-full border border-input rounded-md px-3 py-2 bg-background text-sm"
-                aria-label="RÃ©currence jusquâ€™au"
+                aria-label="Récurrence jusqu’au"
                 disabled={!draft.recurrenceFreq && !isBirthday}
               />
             </label>
@@ -349,7 +349,7 @@ export default function AgendaCalendarDraftModal({
                 disabled={saving || deleting}
                 className="inline-flex items-center justify-center h-10 px-4 rounded-md border border-destructive/30 bg-destructive/5 text-sm font-medium text-destructive disabled:opacity-50"
               >
-                {deleting ? "Suppressionâ€¦" : isOccurrenceDeletion ? "Supprimer cette occurrence" : "Supprimer"}
+                {deleting ? "Suppression..." : isOccurrenceDeletion ? "Supprimer cette occurrence" : "Supprimer"}
               </button>
             ) : null}
             <button
@@ -358,7 +358,7 @@ export default function AgendaCalendarDraftModal({
               disabled={saving}
               className="inline-flex items-center justify-center h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium"
             >
-              {saving ? "Enregistrementâ€¦" : "Enregistrer"}
+              {saving ? "Enregistrement..." : "Enregistrer"}
             </button>
           </div>
         </div>
