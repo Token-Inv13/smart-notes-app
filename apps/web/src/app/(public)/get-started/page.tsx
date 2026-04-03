@@ -91,12 +91,23 @@ export const metadata: Metadata = {
 
 function ProductPreview() {
   return (
-    <figure className="relative overflow-hidden rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(96,165,250,0.16),transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(241,245,249,0.98))] p-4 shadow-[0_34px_90px_rgba(15,23,42,0.34)]">
-      <div className="pointer-events-none absolute -left-16 bottom-10 h-44 w-44 rounded-full bg-cyan-200/40 blur-3xl" />
-      <div className="pointer-events-none absolute right-0 top-0 h-56 w-56 rounded-full bg-blue-200/40 blur-3xl" />
+    <figure className="relative overflow-hidden rounded-[34px] border border-white/15 bg-[radial-gradient(circle_at_top_left,rgba(186,230,253,0.42),transparent_24%),radial-gradient(circle_at_bottom_right,rgba(96,165,250,0.18),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.98),rgba(238,245,255,0.96))] p-4 shadow-[0_38px_100px_rgba(15,23,42,0.34)]">
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.42),transparent_36%,transparent_64%,rgba(255,255,255,0.22))]" />
+      <div className="pointer-events-none absolute -left-14 bottom-6 h-44 w-44 rounded-full bg-cyan-200/40 blur-3xl" />
+      <div className="pointer-events-none absolute right-2 top-2 h-56 w-56 rounded-full bg-blue-200/45 blur-3xl" />
 
-      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[24px]">
-        <div className="absolute inset-x-[12%] top-[6%] h-[86%] overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_28px_70px_rgba(15,23,42,0.18)]">
+      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[26px]">
+        <div className="absolute left-[4%] top-[4%] z-20 inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/70 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-slate-600 backdrop-blur">
+          <span className="h-2 w-2 rounded-full bg-cyan-400" />
+          Notes • Tâches • Rappels
+        </div>
+
+        <div className="absolute right-[5%] top-[6%] z-20 rounded-2xl border border-white/60 bg-white/72 px-4 py-2 text-xs text-slate-600 shadow-[0_18px_45px_rgba(15,23,42,0.12)] backdrop-blur">
+          <div className="font-semibold text-slate-900">Vue claire</div>
+          <div>Capture, priorités, rappels</div>
+        </div>
+
+        <div className="absolute inset-x-[14%] top-[10%] h-[80%] overflow-hidden rounded-[30px] border border-slate-200/80 bg-white shadow-[0_34px_85px_rgba(15,23,42,0.2)] ring-1 ring-white/60">
           <Image
             src="/assets/screens/notes.png"
             alt="Interface TaskNote avec notes récentes, dossiers et navigation"
@@ -107,7 +118,7 @@ function ProductPreview() {
           />
         </div>
 
-        <div className="absolute -bottom-[1%] left-[2%] h-[48%] w-[44%] overflow-hidden rounded-[26px] border border-slate-200/80 bg-white shadow-[0_26px_60px_rgba(15,23,42,0.18)]">
+        <div className="absolute -bottom-[1%] left-[1%] z-20 h-[49%] w-[45%] -rotate-[5deg] overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_30px_75px_rgba(15,23,42,0.2)] ring-1 ring-white/70">
           <Image
             src="/assets/screens/capture.png"
             alt="Fenêtre TaskNote pour capturer rapidement une idée"
@@ -117,7 +128,7 @@ function ProductPreview() {
           />
         </div>
 
-        <div className="absolute bottom-[3%] right-[2%] h-[62%] w-[27%] overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_26px_60px_rgba(15,23,42,0.18)]">
+        <div className="absolute bottom-[2%] right-[1%] z-30 h-[64%] w-[28%] rotate-[4deg] overflow-hidden rounded-[30px] border border-slate-200/80 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.22)] ring-1 ring-white/70">
           <Image
             src="/assets/screens/hero.png"
             alt="Aperçu mobile de TaskNote"
@@ -126,6 +137,8 @@ function ProductPreview() {
             className="object-cover object-[96%_58%]"
           />
         </div>
+
+        <div className="pointer-events-none absolute inset-x-[18%] bottom-[9%] h-20 rounded-full bg-slate-950/10 blur-2xl" />
       </div>
     </figure>
   );
