@@ -92,14 +92,16 @@ export const metadata: Metadata = {
 function ProductPreview() {
   return (
     <figure className="overflow-hidden rounded-[28px] border border-white/10 bg-white/90 p-3 shadow-[0_30px_80px_rgba(15,23,42,0.45)]">
-      <Image
-        src="/assets/screens/hero.png"
-        alt="Aperçu de TaskNote avec notes, tâches et agenda sur desktop et mobile"
-        width={1536}
-        height={1024}
-        priority
-        className="h-auto w-full rounded-[20px]"
-      />
+      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[20px] bg-white">
+        <Image
+          src="/assets/screens/hero.png"
+          alt="Aperçu de TaskNote avec notes, tâches et agenda sur desktop et mobile"
+          fill
+          priority
+          sizes="(max-width: 1024px) 100vw, 48vw"
+          className="object-cover object-[78%_center]"
+        />
+      </div>
     </figure>
   );
 }
