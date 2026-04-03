@@ -31,6 +31,13 @@ function normalizeNextPath(raw: string | null): string {
   return next;
 }
 
+function normalizeTrackingSource(raw: string | null): string {
+  if (!raw) return "app";
+  const normalized = raw.trim().toLowerCase();
+  if (!/^[a-z0-9_-]{1,40}$/.test(normalized)) return "app";
+  return normalized;
+}
+
 function getFirebaseAuthErrorRawMessage(err: unknown): string {
   if (typeof err !== "object" || err === null) return "";
   const message = (err as Record<string, unknown>).message;
@@ -86,6 +93,7 @@ function RegisterPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = normalizeNextPath(searchParams.get("next"));
+  const trackingSource = normalizeTrackingSource(searchParams.get("source"));
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -119,11 +127,11 @@ function RegisterPageInner() {
     if (params.isNewUser) {
       await trackEventBeforeNavigation("sign_up", {
         method: params.method,
-        source: "app",
+        source: trackingSource,
       });
     }
     router.replace(nextPath);
-  }, [nextPath, router]);
+  }, [nextPath, router, trackingSource]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
