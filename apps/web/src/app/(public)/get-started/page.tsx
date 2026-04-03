@@ -1,14 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import {
-  ArrowRight,
-  BellRing,
-  CheckCircle2,
-  Clock3,
-  Layers3,
-  NotebookPen,
-} from "lucide-react";
+import { ArrowRight, CheckCircle2, Clock3, Layers3 } from "lucide-react";
 import { SITE_NAME, SITE_URL } from "@/lib/siteConfig";
 
 const ctaHref = "/register?source=google_ads_lp";
@@ -98,76 +91,16 @@ export const metadata: Metadata = {
 
 function ProductPreview() {
   return (
-    <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-slate-950/80 p-4 shadow-[0_30px_80px_rgba(15,23,42,0.45)]">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.22),_transparent_35%),radial-gradient(circle_at_bottom_left,_rgba(34,197,94,0.16),_transparent_30%)]" />
-      <div className="relative space-y-4">
-        <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Aujourd'hui</p>
-            <p className="mt-1 text-sm font-semibold text-white">Tableau de bord TaskNote</p>
-          </div>
-          <div className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-xs font-medium text-cyan-100">
-            3 priorités
-          </div>
-        </div>
-
-        <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-          <section className="rounded-2xl border border-white/10 bg-slate-900/85 p-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-white">
-              <CheckCircle2 className="h-4 w-4 text-emerald-300" />
-              Tâches importantes
-            </div>
-            <div className="mt-4 space-y-3">
-              {[
-                { title: "Préparer la réunion client", meta: "10:00 • priorité haute" },
-                { title: "Finaliser la liste de tâches du jour", meta: "14:30 • rappel activé" },
-                { title: "Planifier les actions de demain", meta: "17:00 • organisation" },
-              ].map((task) => (
-                <div key={task.title} className="rounded-xl border border-white/10 bg-white/5 px-3 py-3">
-                  <p className="text-sm font-medium text-white">{task.title}</p>
-                  <p className="mt-1 text-xs text-slate-400">{task.meta}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="space-y-4">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="flex items-center gap-2 text-sm font-medium text-white">
-                <NotebookPen className="h-4 w-4 text-cyan-300" />
-                Note rapide
-              </div>
-              <p className="mt-4 text-sm leading-6 text-slate-300">
-                Notes rapides
-                <br />
-                - appeler Julien à 15h
-                <br />
-                - préparer la liste des priorités
-                <br />
-                - noter les idées pour demain
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-emerald-400/10 p-4">
-              <div className="flex items-center gap-2 text-sm font-medium text-white">
-                <BellRing className="h-4 w-4 text-emerald-300" />
-                Rappels actifs
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {["Réunion à 10:00", "Appel à 14:30", "Bilan de journée à 17:00"].map((reminder) => (
-                  <span
-                    key={reminder}
-                    className="rounded-full border border-emerald-300/20 bg-slate-950/60 px-3 py-1 text-xs text-emerald-100"
-                  >
-                    {reminder}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </section>
-        </div>
-      </div>
-    </div>
+    <figure className="overflow-hidden rounded-[28px] border border-white/10 bg-white/90 p-3 shadow-[0_30px_80px_rgba(15,23,42,0.45)]">
+      <Image
+        src="/assets/screens/hero.png"
+        alt="Aperçu de TaskNote avec notes, tâches et agenda sur desktop et mobile"
+        width={1536}
+        height={1024}
+        priority
+        className="h-auto w-full rounded-[20px]"
+      />
+    </figure>
   );
 }
 
