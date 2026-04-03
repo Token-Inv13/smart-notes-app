@@ -1,12 +1,14 @@
+import Link from "next/link";
+
 export const metadata = {
-  title: "Privacy Policy – TaskNote",
+  title: "Privacy Policy - TaskNote",
 };
 
 export default function PrivacyPolicyPage() {
   return (
-    <div className="min-h-screen bg-background text-foreground px-4 py-10">
+    <div className="min-h-screen bg-background px-4 py-10 text-foreground">
       <div className="mx-auto w-full max-w-3xl">
-        <h1 className="text-2xl font-semibold">Privacy Policy – TaskNote</h1>
+        <h1 className="text-2xl font-semibold">Privacy Policy - TaskNote</h1>
         <p className="mt-2 text-sm text-muted-foreground">Last updated: January 13, 2026</p>
 
         <div className="mt-8 space-y-6 text-sm leading-6">
@@ -21,7 +23,7 @@ export default function PrivacyPolicyPage() {
           <section className="space-y-2">
             <h2 className="text-base font-semibold">Data We Collect</h2>
             <p>We only collect data needed to provide and improve the service:</p>
-            <ul className="list-disc pl-5 space-y-1">
+            <ul className="list-disc space-y-1 pl-5">
               <li>
                 <span className="font-medium">Email address</span> (for account creation and authentication).
               </li>
@@ -36,7 +38,7 @@ export default function PrivacyPolicyPage() {
 
           <section className="space-y-2">
             <h2 className="text-base font-semibold">Why We Use This Data</h2>
-            <ul className="list-disc pl-5 space-y-1">
+            <ul className="list-disc space-y-1 pl-5">
               <li>
                 <span className="font-medium">Authentication</span>: to sign you in and secure your account.
               </li>
@@ -51,7 +53,7 @@ export default function PrivacyPolicyPage() {
 
           <section className="space-y-2">
             <h2 className="text-base font-semibold">Payments</h2>
-            <ul className="list-disc pl-5 space-y-1">
+            <ul className="list-disc space-y-1 pl-5">
               <li>
                 <span className="font-medium">Web</span>: payments are processed by Stripe.
               </li>
@@ -97,6 +99,19 @@ export default function PrivacyPolicyPage() {
                 demande-service@tasknote.io
               </a>
             </p>
+          </section>
+
+          <section className="space-y-2 border-t border-border pt-6">
+            <h2 className="text-base font-semibold">Useful links</h2>
+            <p>Learn more about TaskNote and create an account:</p>
+            <div className="flex flex-wrap gap-4">
+              <Link href="/get-started" className="underline">
+                TaskNote notes, tasks and reminders
+              </Link>
+              <Link href="/register" className="underline">
+                Create a TaskNote account
+              </Link>
+            </div>
           </section>
         </div>
       </div>

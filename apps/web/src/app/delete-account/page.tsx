@@ -1,17 +1,17 @@
+import Link from "next/link";
+
 export const metadata = {
-  title: "Delete Account – TaskNote",
+  title: "Delete Account - TaskNote",
 };
 
 export default function DeleteAccountPage() {
   return (
-    <div className="min-h-screen bg-background text-foreground px-4 py-10">
+    <div className="min-h-screen bg-background px-4 py-10 text-foreground">
       <div className="mx-auto w-full max-w-3xl">
-        <h1 className="text-2xl font-semibold">Delete Account – TaskNote</h1>
+        <h1 className="text-2xl font-semibold">Delete Account - TaskNote</h1>
 
         <div className="mt-8 space-y-6 text-sm leading-6">
-          <p>
-            You can request deletion of your TaskNote account and associated data.
-          </p>
+          <p>You can request deletion of your TaskNote account and associated data.</p>
 
           <div className="space-y-2">
             <p className="font-medium">How to request deletion</p>
@@ -22,14 +22,12 @@ export default function DeleteAccountPage() {
                 demande-service@tasknote.io
               </a>
             </p>
-            <p>
-              Please include the email address linked to your TaskNote account in your request.
-            </p>
+            <p>Please include the email address linked to your TaskNote account in your request.</p>
           </div>
 
           <div className="space-y-2">
             <p className="font-medium">What will be deleted</p>
-            <ul className="list-disc pl-5 space-y-1">
+            <ul className="list-disc space-y-1 pl-5">
               <li>User account information</li>
               <li>All notes, tasks, and workspaces</li>
             </ul>
@@ -45,9 +43,19 @@ export default function DeleteAccountPage() {
             <p>Requests are processed within 30 days.</p>
           </div>
 
-          <footer className="pt-6 text-xs text-muted-foreground">
-            TaskNote
-          </footer>
+          <div className="space-y-2 border-t border-border pt-6">
+            <p className="font-medium">Useful links</p>
+            <div className="flex flex-wrap gap-4">
+              <Link href="/get-started" className="underline">
+                Discover TaskNote
+              </Link>
+              <Link href="/register" className="underline">
+                Create an account
+              </Link>
+            </div>
+          </div>
+
+          <footer className="pt-6 text-xs text-muted-foreground">TaskNote</footer>
         </div>
       </div>
     </div>

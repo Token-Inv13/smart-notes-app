@@ -14,46 +14,85 @@ import { SITE_NAME, SITE_URL } from "@/lib/siteConfig";
 const ctaHref = "/register?source=google_ads_lp";
 
 const coreBenefits = [
-  "Prends tes notes et tes tâches au même endroit, sans changer d'outil.",
-  "Ajoute des rappels clairs pour arrêter d'oublier ce qui compte.",
-  "Retrouve immédiatement ce qu'il faut faire aujourd'hui.",
+  "Centralise tes notes, tes tâches et tes rappels dans une seule application.",
+  "Retrouve rapidement les actions prioritaires sans te disperser entre plusieurs outils.",
+  "Organise ton quotidien avec un espace simple pour capturer, planifier et avancer.",
 ];
 
 const conversionPoints = [
   {
-    title: "Mise en route rapide",
-    description: "Crée ton compte et commence à capturer tes premières tâches en moins de 2 minutes.",
+    title: "Notes, tâches et rappels",
+    description: "TaskNote rassemble l'essentiel pour suivre tes idées, tes actions et tes échéances.",
     icon: Clock3,
   },
   {
-    title: "Un seul espace de travail",
-    description: "Notes, tâches, rappels et dossiers restent regroupés au même endroit.",
+    title: "Organisation simple",
+    description: "Classe tes éléments dans un espace clair pour savoir quoi faire maintenant et ensuite.",
     icon: Layers3,
   },
   {
-    title: "Pensé pour l'action",
-    description: "L'interface va droit au but pour t'aider à noter, prioriser et avancer.",
+    title: "Productivité quotidienne",
+    description: "Passe plus vite de la capture à l'exécution avec une interface pensée pour l'action.",
     icon: CheckCircle2,
   },
 ];
 
+const structuredData = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: SITE_NAME,
+  applicationCategory: "ProductivityApplication",
+  operatingSystem: "Web",
+  url: `${SITE_URL}/get-started`,
+  description:
+    "TaskNote est une application de notes, tâches et rappels pour organiser le quotidien et les priorités dans un seul espace.",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "EUR",
+  },
+  featureList: [
+    "Prise de notes",
+    "Gestion des tâches",
+    "Rappels",
+    "Organisation des priorités",
+  ],
+};
+
 export const metadata: Metadata = {
-  title: `Commencer avec ${SITE_NAME}`,
-  description: "Page d'atterrissage dédiée à l'inscription TaskNote, conçue pour une conversion rapide.",
+  title: `${SITE_NAME} | Notes, tâches et rappels dans une seule application`,
+  description:
+    "TaskNote aide à organiser notes, tâches et rappels dans une application simple pour mieux gérer le quotidien et les priorités.",
+  keywords: [
+    "TaskNote",
+    "application de notes",
+    "application de tâches",
+    "rappels",
+    "organisation personnelle",
+    "productivité",
+    "gestion des priorités",
+  ],
   alternates: {
     canonical: "/get-started",
   },
   robots: {
-    index: false,
-    follow: false,
+    index: true,
+    follow: true,
   },
   openGraph: {
-    title: `Commencer avec ${SITE_NAME}`,
-    description: "Lance-toi rapidement sur TaskNote et crée ton compte en quelques secondes.",
+    title: `${SITE_NAME} | Notes, tâches et rappels dans une seule application`,
+    description:
+      "Découvre TaskNote pour centraliser notes, tâches et rappels dans un outil simple orienté organisation et productivité.",
     url: `${SITE_URL}/get-started`,
     siteName: SITE_NAME,
     locale: "fr_FR",
     type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `${SITE_NAME} | Notes, tâches et rappels dans une seule application`,
+    description:
+      "Une application simple pour prendre des notes, gérer des tâches et suivre des rappels au même endroit.",
   },
 };
 
@@ -81,8 +120,8 @@ function ProductPreview() {
             <div className="mt-4 space-y-3">
               {[
                 { title: "Préparer la réunion client", meta: "10:00 • priorité haute" },
-                { title: "Relancer le devis signé", meta: "14:30 • rappel activé" },
-                { title: "Vérifier la campagne Google Ads", meta: "17:00 • à suivre" },
+                { title: "Finaliser la liste de tâches du jour", meta: "14:30 • rappel activé" },
+                { title: "Planifier les actions de demain", meta: "17:00 • organisation" },
               ].map((task) => (
                 <div key={task.title} className="rounded-xl border border-white/10 bg-white/5 px-3 py-3">
                   <p className="text-sm font-medium text-white">{task.title}</p>
@@ -99,13 +138,13 @@ function ProductPreview() {
                 Note rapide
               </div>
               <p className="mt-4 text-sm leading-6 text-slate-300">
-                Idées campagne Q2
+                Notes rapides
                 <br />
-                - tester une landing sans navigation
+                - appeler Julien à 15h
                 <br />
-                - envoyer vers /register
+                - préparer la liste des priorités
                 <br />
-                - suivre le taux d'inscription
+                - noter les idées pour demain
               </p>
             </div>
 
@@ -115,7 +154,7 @@ function ProductPreview() {
                 Rappels actifs
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                {["Réunion à 10:00", "Devis à 14:30", "Suivi campagne à 17:00"].map((reminder) => (
+                {["Réunion à 10:00", "Appel à 14:30", "Bilan de journée à 17:00"].map((reminder) => (
                   <span
                     key={reminder}
                     className="rounded-full border border-emerald-300/20 bg-slate-950/60 px-3 py-1 text-xs text-emerald-100"
@@ -135,6 +174,10 @@ function ProductPreview() {
 export default function GetStartedPage() {
   return (
     <main className="min-h-screen bg-[linear-gradient(180deg,#0f172a_0%,#111827_45%,#f8fafc_45%,#f8fafc_100%)] text-slate-950">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
       <section className="mx-auto flex min-h-screen w-full max-w-6xl items-center px-4 py-12 sm:px-6 lg:px-8">
         <div className="grid w-full gap-10 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
           <div className="max-w-xl text-white">
@@ -144,12 +187,12 @@ export default function GetStartedPage() {
             </div>
 
             <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-              Capture tes tâches et tes notes avant qu'elles ne se perdent.
+              TaskNote, l'application simple pour gérer notes, tâches et rappels.
             </h1>
 
             <p className="mt-5 text-lg leading-8 text-slate-300">
-              Une page claire, un seul objectif: t'inscrire rapidement pour commencer à organiser tes priorités,
-              tes rappels et tes notes dans TaskNote.
+              Capture tes idées, organise tes priorités et garde une vue claire sur ce que tu dois faire aujourd'hui
+              et demain, dans un seul espace de travail.
             </p>
 
             <div className="mt-8 space-y-3">
@@ -166,10 +209,10 @@ export default function GetStartedPage() {
                 href={ctaHref}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-400 px-6 py-3 text-base font-semibold text-slate-950 no-underline shadow-[0_12px_30px_rgba(34,211,238,0.28)] transition hover:-translate-y-0.5 hover:bg-cyan-300 hover:no-underline"
               >
-                Créer mon compte
+                Commencer avec TaskNote
                 <ArrowRight className="h-4 w-4" />
               </Link>
-              <p className="text-sm text-slate-400">Accès immédiat. Pas de navigation parasite. Direction l'inscription.</p>
+              <p className="text-sm text-slate-400">Crée ton compte et commence à organiser tes notes et tes tâches.</p>
             </div>
           </div>
 
@@ -180,9 +223,9 @@ export default function GetStartedPage() {
       <section className="border-t border-slate-200/80 bg-slate-50">
         <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:px-8">
           <div className="max-w-2xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-cyan-700">Pourquoi cette page convertit mieux</p>
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-cyan-700">Pourquoi choisir TaskNote</p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-              Le message est court, le parcours est direct, l'action est évidente.
+              Une application pensée pour noter, planifier et suivre ce qui compte.
             </h2>
           </div>
 
@@ -201,10 +244,10 @@ export default function GetStartedPage() {
           <div className="mt-12 rounded-[28px] border border-slate-200 bg-slate-950 px-6 py-8 text-white shadow-[0_22px_55px_rgba(15,23,42,0.18)] sm:px-8">
             <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
               <div className="max-w-2xl">
-                <h3 className="text-2xl font-semibold tracking-tight">Lance le funnel Ads sur une page faite pour inscrire.</h3>
+                <h3 className="text-2xl font-semibold tracking-tight">Commence à utiliser TaskNote pour mieux organiser tes journées.</h3>
                 <p className="mt-3 text-sm leading-6 text-slate-300">
-                  Envoie ton trafic Google Ads ici, garde la landing actuelle pour le SEO et le branding, et pousse
-                  chaque visiteur vers un seul résultat: l'ouverture d'un compte.
+                  Si tu cherches une application de notes, de tâches et de rappels simple à prendre en main, TaskNote
+                  te permet de capturer l'information rapidement et de la transformer en actions concrètes.
                 </p>
               </div>
 
@@ -212,7 +255,7 @@ export default function GetStartedPage() {
                 href={ctaHref}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-6 py-3 text-base font-semibold text-slate-950 no-underline transition hover:-translate-y-0.5 hover:bg-slate-100 hover:no-underline"
               >
-                Aller à l'inscription
+                Créer mon compte
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
