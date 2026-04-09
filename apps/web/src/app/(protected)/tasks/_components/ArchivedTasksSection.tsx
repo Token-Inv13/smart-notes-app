@@ -3,15 +3,15 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { normalizeDisplayText } from "@/lib/normalizeText";
-import type { TaskDoc, WorkspaceDoc } from "@/types/firestore";
+import type { Priority, TaskDoc, WorkspaceDoc } from "@/types/firestore";
 
 interface ArchivedTasksSectionProps {
   tasks: TaskDoc[];
   workspaces: WorkspaceDoc[];
   hrefSuffix: string;
   statusLabel: (s: "todo" | "doing" | "done") => string;
-  priorityLabel: (p: string) => string;
-  priorityDotClass: (p: string) => string;
+  priorityLabel: (p: Priority | string | null | undefined) => string;
+  priorityDotClass: (p: Priority | string | null | undefined) => string;
   formatDueDate: (ts: any) => string;
   formatStartDate: (ts: any) => string;
   restoreArchivedTask: (task: TaskDoc) => void;

@@ -3,12 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { auth, db } from "@/lib/firebase";
-import { arrayUnion, deleteDoc, doc, Timestamp, updateDoc, serverTimestamp } from "firebase/firestore";
-import { trackEvent } from "@/lib/analytics";
+import { deleteDoc, doc, Timestamp, updateDoc, serverTimestamp } from "firebase/firestore";
 import { 
-  getUserTimezone, 
   normalizeAgendaWindowForFirestore, 
-  normalizeDateForFirestore,
   formatTimestampToDateTimeFr,
   formatTimestampToDateFr
 } from "@/lib/datetime";
@@ -16,13 +13,11 @@ import { registerFcmToken, getFcmRegistrationFailureMessage } from "@/lib/fcm";
 import { 
   createTaskWithPlanGuard, 
   getPlanLimitMessage, 
-  serializeTaskRecurrence, 
-  serializeTimestampMillis,
   setTaskFavoriteWithPlanGuard
 } from "@/lib/planGuardedMutations";
-import type { Priority, TaskCalendarKind, TaskDoc, WorkspaceDoc } from "@/types/firestore";
+import type { Priority, TaskDoc, WorkspaceDoc } from "@/types/firestore";
 import type { AgendaCalendarPreferences } from "../_components/AgendaCalendar";
-import { canMoveWorkspaceToParent, applyWorkspaceAssignmentOverrides, applyWorkspaceParentOverrides, getWorkspaceById, getWorkspaceChain, getWorkspaceDirectChildren, countItemsByWorkspaceId, buildWorkspacePathLabelMap, getWorkspaceSelfAndDescendantIds, getWorkspaceDirectContentIds } from "@/lib/workspaces";
+import { canMoveWorkspaceToParent, applyWorkspaceAssignmentOverrides, applyWorkspaceParentOverrides, buildWorkspacePathLabelMap, getWorkspaceSelfAndDescendantIds } from "@/lib/workspaces";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
 import { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import { FolderDragData } from "../_components/folderDnd";
@@ -214,7 +209,7 @@ export function useAgendaController(params: {
     return "Terminée";
   };
 
-  const priorityLabel = (p: Priority) => {
+  const priorityLabel = (p: Priority | string | null | undefined) => {
     if (p === "high") return "Haute";
     if (p === "medium") return "Moyenne";
     return "Basse";
