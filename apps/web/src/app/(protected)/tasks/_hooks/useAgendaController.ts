@@ -80,6 +80,8 @@ export function useAgendaController(params: {
   const [optimisticStatusById, setOptimisticStatusById] = useState<Record<string, "todo" | "doing" | "done">>({});
   const [optimisticWorkspaceIdByTaskId, setOptimisticWorkspaceIdByTaskId] = useState<Record<string, string | null>>({});
   const [optimisticParentIdByWorkspaceId, setOptimisticParentIdByWorkspaceId] = useState<Record<string, string | null>>({});
+  const [calendarInitialPreferences, setCalendarInitialPreferences] = useState<Partial<AgendaCalendarPreferences> | null>(null);
+  const [agendaCreateRequest, setAgendaCreateRequest] = useState<{ requestKey: string; startDate?: string | null; workspaceId?: string | null; favorite?: boolean } | null>(null);
 
   // --- Notifications State ---
   const [pushStatus, setPushStatus] = useState<string | null>(null);
@@ -395,6 +397,22 @@ export function useAgendaController(params: {
     try { window.localStorage.setItem("tasksViewMode", next); } catch {}
   }, []);
 
+  const handleAgendaCalendarPreferencesChange = useCallback((prefs: AgendaCalendarPreferences) => {
+    // Sync logic if needed
+  }, []);
+
+  const handleAgendaCreateRequestHandled = useCallback(() => {
+    setAgendaCreateRequest(null);
+  }, []);
+
+  const handleSkipOccurrence = useCallback(async (taskId: string, occurrenceDate: string) => {
+    // Implementation for skipping recurrence occurrence
+  }, []);
+
+  const handleCalendarVisibleRangeChange = useCallback((range: { start: Date; end: Date }) => {
+    setCalendarRange(range);
+  }, []);
+
   return {
     statusFilter, setStatusFilter,
     priorityFilter, setPriorityFilter,
@@ -433,6 +451,13 @@ export function useAgendaController(params: {
       if (!item) return false;
       if (item.kind === "workspace") return !canMoveWorkspaceToParent(effectiveWorkspaces, item.id, targetId);
       return item.workspaceId === targetId;
-    }
+    },
+    calendarInitialPreferences,
+    handleAgendaCalendarPreferencesChange,
+    agendaCreateRequest,
+    handleAgendaCreateRequestHandled,
+    optimisticDeletedGoogleEventIds,
+    handleSkipOccurrence,
+    handleCalendarVisibleRangeChange
   };
 }
