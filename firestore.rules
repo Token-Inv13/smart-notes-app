@@ -14,9 +14,17 @@ service cloud.firestore {
       return request.auth != null && request.auth.token.admin == true;
     }
 
+    function getRawUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
     function isProUser() {
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.plan == 'pro';
+      let userData = getRawUserData();
+      return userData != null && userData.data.plan == 'pro';
+    }
+
+    function isProUserFromData(userData) {
+      return userData != null && userData.data.plan == 'pro';
     }
 
     function isNonEmptyString(value) {
@@ -43,13 +51,13 @@ service cloud.firestore {
       return value == request.time;
     }
 
-    function maxNoteAttachmentsForPlan() {
-      return isProUser() ? 10 : 5;
+    function maxNoteAttachmentsForPlan(isPro) {
+      return isPro ? 10 : 5;
     }
 
-    function hasAllowedNoteAttachmentCount(data) {
+    function hasAllowedNoteAttachmentCount(data, isPro) {
       return !('attachments' in data) ||
-        (data.attachments is list && data.attachments.size() <= maxNoteAttachmentsForPlan());
+        (data.attachments is list && data.attachments.size() <= maxNoteAttachmentsForPlan(isPro));
     }
     
     // Users collection
@@ -146,33 +154,33 @@ service cloud.firestore {
       // Free note creation is enforced server-side through a callable so quotas
       // remain non-contournable. Pro users can still create directly.
       allow create: if isAuthenticated()
-        && isProUser()
+        && (let isPro = isProUser(); isPro
         && request.auth.uid == request.resource.data.userId
         && ('workspaceId' in request.resource.data)
         && isNullOrString(request.resource.data.workspaceId)
         && isNonEmptyString(request.resource.data.title)
         && isNullOrString(request.resource.data.content)
         // Keep note attachment limits non-contournable even with direct SDK writes.
-        && hasAllowedNoteAttachmentCount(request.resource.data)
+        && hasAllowedNoteAttachmentCount(request.resource.data, isPro)
         && isOptionalBool(request.resource.data.favorite)
         && isOptionalBool(request.resource.data.completed)
         && isServerTimestamp(request.resource.data.createdAt)
-        && isServerTimestamp(request.resource.data.updatedAt);
+        && isServerTimestamp(request.resource.data.updatedAt));
 
       // Free users can keep editing notes directly, but favorite quota changes
       // are routed through a callable so the server can enforce limits safely.
       allow update: if isAuthenticated()
         && request.auth.uid == resource.data.userId
         && request.resource.data.userId == resource.data.userId
-        && (isProUser() || request.resource.data.favorite == resource.data.favorite)
+        && (let isPro = isProUser(); (isPro || request.resource.data.favorite == resource.data.favorite)
         && isNullOrString(request.resource.data.workspaceId)
         && isNonEmptyString(request.resource.data.title)
         && isNullOrString(request.resource.data.content)
         // Enforce the attachment cap by plan on every note update.
-        && hasAllowedNoteAttachmentCount(request.resource.data)
+        && hasAllowedNoteAttachmentCount(request.resource.data, isPro)
         && isOptionalBool(request.resource.data.favorite)
         && isOptionalBool(request.resource.data.completed)
-        && isServerTimestamp(request.resource.data.updatedAt);
+        && isServerTimestamp(request.resource.data.updatedAt));
 
       allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
     }
@@ -232,7 +240,7 @@ service cloud.firestore {
       // Free task creation is enforced server-side through callables/helpers so
       // the active-task quota cannot be bypassed with direct SDK writes.
       allow create: if isAuthenticated()
-        && isProUser()
+        && (let isPro = isProUser(); isPro
         && request.auth.uid == request.resource.data.userId
         && ('workspaceId' in request.resource.data)
         && isNullOrString(request.resource.data.workspaceId)
@@ -243,14 +251,14 @@ service cloud.firestore {
         && (!('priority' in request.resource.data) || isNullOrPriority(request.resource.data.priority))
         && isOptionalBool(request.resource.data.favorite)
         && isServerTimestamp(request.resource.data.createdAt)
-        && isServerTimestamp(request.resource.data.updatedAt);
+        && isServerTimestamp(request.resource.data.updatedAt));
 
       // Free users can still edit existing tasks directly, but favorite quota
       // changes go through a callable to keep the limit non-contournable.
       allow update: if isAuthenticated()
         && request.auth.uid == resource.data.userId
         && request.resource.data.userId == resource.data.userId
-        && (isProUser() || request.resource.data.favorite == resource.data.favorite)
+        && (let isPro = isProUser(); (isPro || request.resource.data.favorite == resource.data.favorite)
         && isNullOrString(request.resource.data.workspaceId)
         && isNonEmptyString(request.resource.data.title)
         && (request.resource.data.status in ['todo', 'doing', 'done'])
@@ -258,22 +266,22 @@ service cloud.firestore {
         && isNullOrTimestamp(request.resource.data.dueDate)
         && (!('priority' in request.resource.data) || isNullOrPriority(request.resource.data.priority))
         && isOptionalBool(request.resource.data.favorite)
-        && isServerTimestamp(request.resource.data.updatedAt);
+        && isServerTimestamp(request.resource.data.updatedAt));
 
       allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
     }
     
     // Task Reminders collection
     match /taskReminders/{reminderId} {
-      allow read: if request.auth != null && isProUser() && request.auth.uid == resource.data.userId;
-      allow create: if request.auth != null && isProUser() && request.auth.uid == request.resource.data.userId;
+      allow read: if (let isPro = isProUser(); isAuthenticated() && isPro && request.auth.uid == resource.data.userId);
+      allow create: if (let isPro = isProUser(); isAuthenticated() && isPro && request.auth.uid == request.resource.data.userId);
       // Only allow updates to the 'sent' field
-      allow update: if request.auth != null && 
+      allow update: if isAuthenticated() && 
                       request.auth.uid == resource.data.userId &&
                       request.resource.data.userId == resource.data.userId &&
                       request.resource.data.taskId == resource.data.taskId &&
                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dueDate', 'reminderTime', 'sent']);
-      allow delete: if request.auth != null && isProUser() && request.auth.uid == resource.data.userId;
+      allow delete: if (let isPro = isProUser(); isAuthenticated() && isPro && request.auth.uid == resource.data.userId);
     }
     
     // Workspaces collection

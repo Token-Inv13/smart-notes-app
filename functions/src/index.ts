@@ -4,6 +4,11 @@ import * as nodemailer from 'nodemailer';
 import { createHash } from 'crypto';
 import { parseAssistantVoiceIntent } from './assistant/voiceIntent';
 import { syncTaskToGoogleCalendar } from './googleCalendarSync';
+
+// --- Modularized Services ---
+import * as AI from './services/ai';
+import * as Telemetry from './services/telemetry';
+import * as Email from './services/email';
 export * from './admin';
 
 if (!admin.apps.length) {
@@ -23,21 +28,8 @@ function beginFunctionObserve(params: {
   functionName: string;
   requestId?: string;
   meta?: Record<string, unknown>;
-}): ObserveFunctionContext {
-  const ctx: ObserveFunctionContext = {
-    functionName: params.functionName,
-    requestId: params.requestId ?? crypto.randomUUID(),
-    startMs: Date.now(),
-    meta: params.meta,
-  };
-
-  console.info('ops.function.started', {
-    functionName: ctx.functionName,
-    requestId: ctx.requestId,
-    ...(ctx.meta ?? {}),
-  });
-
-  return ctx;
+}): Telemetry.ObserveFunctionContext {
+  return Telemetry.beginFunctionObserve(params);
 }
 
 async function writeFunctionErrorLog(params: {
@@ -46,55 +38,15 @@ async function writeFunctionErrorLog(params: {
   message: string;
   context?: Record<string, unknown>;
 }) {
-  try {
-    const db = admin.firestore();
-    await db.collection('appErrorLogs').add({
-      source: 'functions',
-      category: 'functions',
-      scope: params.functionName,
-      code: params.code,
-      message: params.message,
-      context: params.context ?? {},
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-  } catch {
-    // best effort
-  }
+  return Telemetry.writeFunctionErrorLog(params);
 }
 
 async function endFunctionObserve(
-  ctx: ObserveFunctionContext,
-  status: ObserveStatus,
+  ctx: Telemetry.ObserveFunctionContext,
+  status: Telemetry.ObserveStatus,
   extra?: Record<string, unknown>,
 ) {
-  const durationMs = Date.now() - ctx.startMs;
-  const payload = {
-    functionName: ctx.functionName,
-    requestId: ctx.requestId,
-    durationMs,
-    status,
-    ...(ctx.meta ?? {}),
-    ...(extra ?? {}),
-  };
-
-  if (status === 'error') {
-    console.error('ops.function.failed', payload);
-    console.warn('ops.metric.functions_error', {
-      functionName: ctx.functionName,
-      count: 1,
-      requestId: ctx.requestId,
-      durationMs,
-    });
-    await writeFunctionErrorLog({
-      functionName: ctx.functionName,
-      code: 'internal',
-      message: 'Function execution failed.',
-      context: payload,
-    });
-    return;
-  }
-
-  console.info('ops.function.completed', payload);
+  return Telemetry.endFunctionObserve(ctx, status, extra);
 }
 
 type OpsMetricLabels = Record<string, string>;
@@ -1294,20 +1246,7 @@ function decodeBasicHtmlEntities(raw: string): string {
 }
 
 function sanitizeAssistantSnippet(raw: unknown): string {
-  const input = typeof raw === 'string' ? raw : '';
-  const decoded = decodeBasicHtmlEntities(input.replace(/\r\n?/g, '\n'));
-  return decoded
-    .replace(/<style[\s\S]*?(<\/style>|$)/gi, ' ')
-    .replace(/<script[\s\S]*?(<\/script>|$)/gi, ' ')
-    .replace(/<\s*br\s*\/?>/gi, '\n')
-    .replace(/<\s*\/?\s*(div|p|li|h[1-6]|section|article|blockquote|pre|ul|ol|tr)\b[^>]*>/gi, '\n')
-    .replace(/<\/?[a-z][^>\n]*>/gi, ' ')
-    .replace(/<\/?[a-z][^>\n]*$/gim, ' ')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n[ \t]+/g, '\n')
-    .replace(/[ \t]{2,}/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  return AI.sanitizeAssistantSnippet(raw);
 }
 
 function sha256Hex(input: string): string {
@@ -2446,126 +2385,8 @@ function detectIntentsV2(params: {
   return { single: null, bundle };
 }
 
-function detectIntentsV1(params: { title: string; content: string; now: Date; memory?: AssistantMemoryLiteDefaults }): DetectedIntent[] {
-  const { title, content, now } = params;
-  const memory = params.memory;
-  const rawText = `${title}\n${content}`;
-  const textNorm = normalizeForIntentMatch(rawText);
-
-  const priorityInText = parsePriorityInText(rawText);
-  const reminderKeyword = hasReminderKeyword(rawText);
-
-  const dateHit = parseDateInText(rawText, now);
-  const timeHit = parseTimeInText(rawText);
-  const dt = composeDateTime({
-    now,
-    baseDate: dateHit ? dateHit.date : null,
-    time: timeHit ? { hours: timeHit.hours, minutes: timeHit.minutes } : null,
-  });
-
-  let dtFinal = dt;
-  let appliedDefaultReminderHour = false;
-  if (dtFinal && dateHit && !timeHit && reminderKeyword && typeof memory?.defaultReminderHour === 'number') {
-    const h = Math.trunc(memory.defaultReminderHour);
-    if (Number.isFinite(h) && h >= 0 && h <= 23) {
-      const next = new Date(startOfDay(dateHit.date).getTime());
-      next.setHours(h, 0, 0, 0);
-      dtFinal = next;
-      appliedDefaultReminderHour = true;
-    }
-  }
-
-  const dtTs = dtFinal ? admin.firestore.Timestamp.fromDate(dtFinal) : null;
-
-  const intents: DetectedIntent[] = [];
-
-  const add = (next: Omit<DetectedIntent, 'dedupeMinimal'> & { dedupeMinimal?: DetectedIntent['dedupeMinimal'] }) => {
-    const confidence = next.confidence;
-    if (confidence < 0.7) return;
-    const minimal: DetectedIntent['dedupeMinimal'] = next.dedupeMinimal ?? {
-      title: next.title,
-      dueDateMs: next.dueDate ? next.dueDate.toMillis() : undefined,
-      remindAtMs: next.remindAt ? next.remindAt.toMillis() : undefined,
-    };
-    intents.push({ ...next, confidence, dedupeMinimal: minimal });
-  };
-
-  const appliedDefaultPriority = !priorityInText && !!memory?.defaultPriority;
-  const finalPriority = priorityInText ?? (memory?.defaultPriority ?? undefined);
-
-  const payHasKeyword =
-    textNorm.includes('payer') ||
-    textNorm.includes('regler') ||
-    textNorm.includes('facture') ||
-    textNorm.includes('loyer') ||
-    textNorm.includes('impots') ||
-    textNorm.includes('abonnement');
-
-  const mPay = rawText.match(/\b(payer|r[ée]gler)\b\s+([^\n\r\.,;]+)/i);
-  if (mPay || payHasKeyword) {
-    const obj = mPay ? String(mPay[2] ?? '').trim() : '';
-    const objTitle = obj ? obj : 'facture';
-    const sugTitle = `Payer ${objTitle}`.replace(/\s+/g, ' ').trim();
-    const kind: AssistantSuggestionKind = dtTs && (timeHit || reminderKeyword) ? 'create_reminder' : 'create_task';
-    add({
-      intent: 'PAYER',
-      title: sugTitle,
-      originFromText: clampFromText(mPay ? mPay[0] : 'payer', 120),
-      explanation: `Détecté une intention de paiement dans la note.`,
-      kind,
-      dueDate: kind === 'create_task' && dtTs ? dtTs : undefined,
-      remindAt: kind === 'create_reminder' && dtTs ? dtTs : undefined,
-      ...(finalPriority ? { priority: finalPriority } : {}),
-      ...(appliedDefaultPriority ? { appliedDefaultPriority: true } : {}),
-      ...(appliedDefaultReminderHour ? { appliedDefaultReminderHour: true } : {}),
-      confidence: 0.8,
-    });
-  }
-
-  const mCall = rawText.match(/\b(appeler|t[ée]l[ée]phoner|tel|phone)\b\s+([^\n\r\.,;]+)/i);
-  if (mCall) {
-    const obj = String(mCall[2] ?? '').trim();
-    const objTitle = obj ? obj : 'quelqu’un';
-    const sugTitle = `Appeler ${objTitle}`.replace(/\s+/g, ' ').trim();
-    const kind: AssistantSuggestionKind = dtTs && (timeHit || reminderKeyword) ? 'create_reminder' : 'create_task';
-    add({
-      intent: 'APPELER',
-      title: sugTitle,
-      originFromText: clampFromText(mCall[0], 120),
-      explanation: `Détecté une intention d’appel dans la note.`,
-      kind,
-      dueDate: kind === 'create_task' && dtTs ? dtTs : undefined,
-      remindAt: kind === 'create_reminder' && dtTs ? dtTs : undefined,
-      ...(finalPriority ? { priority: finalPriority } : {}),
-      ...(appliedDefaultPriority ? { appliedDefaultPriority: true } : {}),
-      ...(appliedDefaultReminderHour ? { appliedDefaultReminderHour: true } : {}),
-      confidence: 0.8,
-    });
-  }
-
-  const mRdv = rawText.match(/\b(prendre\s+rdv|prendre\s+rendez-vous|rdv|rendez-vous|r[ée]server)\b\s*([^\n\r\.,;]+)?/i);
-  if (mRdv) {
-    const obj = String(mRdv[2] ?? '').trim();
-    const objTitle = obj ? obj : '';
-    const baseTitle = objTitle ? `Prendre RDV ${objTitle}` : 'Prendre RDV';
-    const sugTitle = baseTitle.replace(/\s+/g, ' ').trim();
-    const kind: AssistantSuggestionKind = dtTs && (timeHit || reminderKeyword) ? 'create_reminder' : 'create_task';
-    add({
-      intent: 'PRENDRE_RDV',
-      title: sugTitle,
-      originFromText: clampFromText(mRdv[0], 120),
-      explanation: `Détecté une intention de rendez-vous dans la note.`,
-      kind,
-      dueDate: kind === 'create_task' && dtTs ? dtTs : undefined,
-      remindAt: kind === 'create_reminder' && dtTs ? dtTs : undefined,
-      ...(finalPriority ? { priority: finalPriority } : {}),
-      ...(appliedDefaultPriority ? { appliedDefaultPriority: true } : {}),
-      ...(appliedDefaultReminderHour ? { appliedDefaultReminderHour: true } : {}),
-      confidence: 0.8,
-    });
-  }
-
-  return intents;
+function detectIntentsV1(params: { title: string; content: string; now: Date; memory?: AI.AssistantMemoryLiteDefaults }): AI.DetectedIntent[] {
+  return AI.detectIntentsV1(params);
 }
 
 function assistantObjectIdForNote(noteId: string): string {
@@ -2673,81 +2494,8 @@ function computeAssistantSuggestionRankScore(params: {
   return byPreset + Math.round(confidence * 10) + dueDateBonus + remindAtBonus + sourceBonus;
 }
 
-type SmtpEnv = {
-  host: string;
-  port: number;
-  user: string;
-  pass: string;
-  from: string;
-  appBaseUrl: string;
-};
-
-type SmtpEnvResolved = {
-  env: SmtpEnv;
-  source: {
-    host: 'process.env';
-    port: 'process.env';
-    user: 'process.env';
-    pass: 'process.env';
-    from: 'process.env';
-    appBaseUrl: 'process.env';
-  };
-};
-
-type BugReportEmailPayload = {
-  bugReportId: string;
-  userId: string | null;
-  email: string | null;
-  message: string;
-  currentPath: string | null;
-  userAgent: string | null;
-  createdAtIso: string | null;
-};
-
-function getSmtpEnv(): SmtpEnvResolved | null {
-  const hostEnv = process.env.SMTP_HOST;
-  const portEnv = process.env.SMTP_PORT;
-  const userEnv = process.env.SMTP_USER;
-  const passEnv = process.env.SMTP_PASS;
-  const fromEnv = process.env.SMTP_FROM;
-  const appBaseUrlEnv = process.env.APP_BASE_URL;
-
-  const host = hostEnv;
-  const portRaw = portEnv;
-  const user = userEnv;
-  const pass = passEnv;
-  const from = fromEnv;
-  const appBaseUrl = appBaseUrlEnv;
-
-  const source = {
-    host: 'process.env',
-    port: 'process.env',
-    user: 'process.env',
-    pass: 'process.env',
-    from: 'process.env',
-    appBaseUrl: 'process.env',
-  } as const;
-
-  if (!host || !portRaw || !user || !pass || !from || !appBaseUrl) {
-    console.error('SMTP config missing', {
-      hasHost: !!host,
-      hasPort: !!portRaw,
-      hasUser: !!user,
-      hasPass: !!pass,
-      hasFrom: !!from,
-      hasAppBaseUrl: !!appBaseUrl,
-      source,
-    });
-    return null;
-  }
-
-  const port = Number(portRaw);
-  if (!Number.isFinite(port)) {
-    console.error('SMTP config invalid port', { portRaw, source });
-    return null;
-  }
-
-  return { env: { host, port, user, pass, from, appBaseUrl }, source };
+function getSmtpEnv(): Email.SmtpEnvResolved | null {
+  return Email.getSmtpEnv();
 }
 
 function getEmailTestSecret(): string | null {
@@ -2755,20 +2503,8 @@ function getEmailTestSecret(): string | null {
   return secret ?? null;
 }
 
-function createSmtpTransport(env: SmtpEnv) {
-  return nodemailer.createTransport({
-    host: env.host,
-    port: env.port,
-    secure: env.port === 465,
-    requireTLS: env.port === 587,
-    tls: {
-      minVersion: 'TLSv1.2',
-    },
-    auth: {
-      user: env.user,
-      pass: env.pass,
-    },
-  });
+function createSmtpTransport(env: Email.SmtpEnv) {
+  return Email.createSmtpTransport(env);
 }
 
 async function sendReminderEmail(params: {
