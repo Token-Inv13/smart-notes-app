@@ -21,16 +21,19 @@ export function useUserWorkspaces(): UseUserWorkspacesState {
   const [error, setError] = useState<Error | null>(null);
   const [version, setVersion] = useState(0);
 
+  // Reset state during render if user changes/logs out
+  const [prevUserId, setPrevUserId] = useState<string | undefined>(user?.uid);
+  if (user?.uid !== prevUserId) {
+    setPrevUserId(user?.uid);
+    setData([]);
+    setLoading(!!user);
+    setError(null);
+  }
+
   useEffect(() => {
-    if (!user) {
-      setData([]);
-      setLoading(false);
-      setError(null);
-      return;
-    }
+    if (!user) return;
 
     setLoading(true);
-    setData([]);
     setError(null);
 
     const ownerRef = query(
