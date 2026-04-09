@@ -194,7 +194,7 @@ export function useAgendaController(params: {
       });
     }
 
-    });
+    return result;
   }, [effectiveAllTasks, archiveView, workspaceFilter, effectiveWorkspaces, priorityFilter, statusFilter, statusForTask, debouncedSearch, taskSearchTextById, dueFilter, sortBy, normalizeSearchText]);
 
   const activeTasks = useMemo(() => filteredTasks.filter(t => statusForTask(t) !== "done"), [filteredTasks, statusForTask]);
