@@ -16,13 +16,13 @@ import {
   setTaskFavoriteWithPlanGuard
 } from "@/lib/planGuardedMutations";
 import type { Priority, TaskDoc, WorkspaceDoc } from "@/types/firestore";
-import type { AgendaCalendarPreferences } from "../_components/AgendaCalendar";
+import type { AgendaCalendarPreferences } from "../../_components/AgendaCalendar";
 import { canMoveWorkspaceToParent, applyWorkspaceAssignmentOverrides, applyWorkspaceParentOverrides, buildWorkspacePathLabelMap, getWorkspaceSelfAndDescendantIds } from "@/lib/workspaces";
 import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
 import { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
-import { FolderDragData } from "../_components/folderDnd";
+import { FolderDragData } from "../../_components/folderDnd";
 import { normalizeDisplayText } from "@/lib/normalizeText";
-import { CALENDAR_PREFERENCES_STORAGE_KEY } from "../_components/agendaCalendarUtils";
+import { CALENDAR_PREFERENCES_STORAGE_KEY } from "../../_components/agendaCalendarUtils";
 
 export type TaskViewMode = "list" | "grid" | "calendar";
 export type TaskStatusFilter = "all" | "todo" | "doing" | "done";
@@ -30,8 +30,7 @@ export type TaskPriorityFilter = "all" | "low" | "medium" | "high";
 export type DueFilter = "all" | "today" | "overdue";
 export type TaskSortBy = "dueDate" | "updatedAt" | "createdAt";
 
-const GOOGLE_SYNC_FAILED_MESSAGE = "Élément enregistré dans TaskNote, mais non synchronisé avec Google Calendar.";
-const AGENDA_GRID_ENABLED = true; // FEATURE_FLAGS.agendaGridEnabled;
+// Agenda Grid logic can be re-enabled if needed
 
 export function useAgendaController(params: {
   allTasks: TaskDoc[];
