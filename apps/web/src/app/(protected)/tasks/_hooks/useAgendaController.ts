@@ -394,7 +394,7 @@ export function useAgendaController(params: {
 
   const applyViewMode = useCallback((next: TaskViewMode) => {
     setViewMode(next);
-    try { window.localStorage.setItem("tasksViewMode", next); } catch {}
+    try { window.localStorage.setItem("tasksViewMode", next); } catch { /* ignore */ }
   }, []);
 
   const handleAgendaCalendarPreferencesChange = useCallback((prefs: AgendaCalendarPreferences) => {

@@ -9,9 +9,9 @@ interface ArchivedTasksSectionProps {
   tasks: TaskDoc[];
   workspaces: WorkspaceDoc[];
   hrefSuffix: string;
-  statusLabel: (s: any) => string;
-  priorityLabel: (p: any) => string;
-  priorityDotClass: (p: any) => string;
+  statusLabel: (s: "todo" | "doing" | "done") => string;
+  priorityLabel: (p: string) => string;
+  priorityDotClass: (p: string) => string;
   formatDueDate: (ts: any) => string;
   formatStartDate: (ts: any) => string;
   restoreArchivedTask: (task: TaskDoc) => void;
@@ -33,7 +33,7 @@ const ArchivedTasksSection: React.FC<ArchivedTasksSectionProps> = ({
   return (
     <ul className="space-y-2">
       {tasks.map((task) => {
-        const status = (task.status as any) || "todo";
+        const status = (task.status as "todo" | "doing" | "done") || "todo";
         const workspaceName = workspaces.find((ws) => ws.id === task.workspaceId)?.name ?? "—";
         const dueLabel = formatDueDate(task.dueDate ?? null);
         const startLabel = formatStartDate(task.startDate ?? null);
