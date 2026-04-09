@@ -13,7 +13,7 @@ const CompletedTasksSection: React.FC<CompletedTasksSectionProps> = ({
   tasks,
   toggleDone,
 }) => {
-  if (tasks.length === 0) return null;
+  if (!tasks || tasks.length === 0) return null;
 
   return (
     <section>

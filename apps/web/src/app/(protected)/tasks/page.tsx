@@ -142,7 +142,7 @@ export default function TasksPage() {
             onSearchChange={controller.setSearchInput}
             onFilterToggle={() => controller.setFiltersOpen(true)}
             activeSearchLabel={controller.activeSearchLabel}
-            filteredTasksCount={controller.filteredTasks.length}
+            filteredTasksCount={controller.filteredTasks?.length || 0}
             filtersOpen={controller.filtersOpen}
             onFiltersClose={() => controller.setFiltersOpen(false)}
             statusFilter={controller.statusFilter}
@@ -210,7 +210,7 @@ export default function TasksPage() {
         {controller.editError && <div className="sn-alert sn-alert--error">{controller.editError}</div>}
         {controller.actionFeedback && <div className="sn-alert" role="status" aria-live="polite">{controller.actionFeedback}</div>}
 
-        {!loading && !error && controller.archiveView === "active" && controller.activeTasks.length === 0 && controller.completedTasks.length === 0 && (
+        {!loading && !error && controller.archiveView === "active" && (controller.activeTasks?.length || 0) === 0 && (controller.completedTasks?.length || 0) === 0 && (
           <AgendaEmptyState
             activeSearchLabel={controller.activeSearchLabel}
             workspaceIdParam={workspaceIdParam}

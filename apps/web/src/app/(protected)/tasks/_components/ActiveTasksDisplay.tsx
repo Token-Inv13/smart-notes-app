@@ -35,6 +35,8 @@ const ActiveTasksDisplay: React.FC<ActiveTasksDisplayProps> = ({
   toggleFavorite,
   toggleDone,
 }) => {
+  if (!tasks || tasks.length === 0) return null;
+
   if (viewMode === "grid") {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">

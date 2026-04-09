@@ -196,15 +196,15 @@ export function useAgendaController(params: {
       });
     }
 
-    return result;
+    return result || [];
   }, [effectiveAllTasks, archiveView, workspaceFilter, effectiveWorkspaces, priorityFilter, statusFilter, statusForTask, debouncedSearch, taskSearchTextById, dueFilter, sortBy, normalizeSearchText]);
 
-  const activeTasks = useMemo(() => filteredTasks.filter(t => statusForTask(t) !== "done"), [filteredTasks, statusForTask]);
-  const completedTasks = useMemo(() => filteredTasks.filter(t => statusForTask(t) === "done"), [filteredTasks, statusForTask]);
-  const visibleTasksCount = useMemo(() => activeTasks.length + completedTasks.length, [activeTasks.length, completedTasks.length]);
+  const activeTasks = useMemo(() => (filteredTasks || []).filter(t => statusForTask(t) !== "done"), [filteredTasks, statusForTask]);
+  const completedTasks = useMemo(() => (filteredTasks || []).filter(t => statusForTask(t) === "done"), [filteredTasks, statusForTask]);
+  const visibleTasksCount = useMemo(() => (activeTasks?.length || 0) + (completedTasks?.length || 0), [activeTasks, completedTasks]);
 
-  const activeNoteCount = useMemo(() => notesForCounter.filter(n => n.archived !== true).length, [notesForCounter]);
-  const activeTodoCount = useMemo(() => todosForCounter.length, [todosForCounter]);
+  const activeNoteCount = useMemo(() => (notesForCounter || []).filter(n => n.archived !== true).length, [notesForCounter]);
+  const activeTodoCount = useMemo(() => (todosForCounter || []).length, [todosForCounter]);
 
   const activeSearchLabel = useMemo(() => debouncedSearch.trim().slice(0, 60), [debouncedSearch]);
 
