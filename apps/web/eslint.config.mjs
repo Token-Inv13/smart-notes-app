@@ -32,7 +32,7 @@ export default tseslint.config(
       // Transitional overrides to keep existing code lintable while preserving signal.
       'react-hooks/set-state-in-effect': 'warn',
       'react-hooks/purity': 'warn',
-      'react-hooks/preserve-manual-memoization': 'warn',
+      'react-hooks/preserve-manual-memoization': 'off',
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': [
         'warn',

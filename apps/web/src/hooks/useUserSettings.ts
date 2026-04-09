@@ -28,17 +28,17 @@ export function useUserSettings(): UseUserSettingsState {
   const [error, setError] = useState<Error | null>(null);
   const [version, setVersion] = useState(0);
 
-  useEffect(() => {
-    if (!user) {
-      setData(null);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
-    setLoading(true);
+  // Reset state during render if user changes/logs out
+  const [prevUserId, setPrevUserId] = useState<string | undefined>(user?.uid);
+  if (user?.uid !== prevUserId) {
+    setPrevUserId(user?.uid);
     setData(null);
+    setLoading(!!user);
     setError(null);
+  }
+
+  useEffect(() => {
+    if (!user) return;
 
     const ref = doc(db, 'users', user.uid) as DocumentReference<UserDoc>;
 

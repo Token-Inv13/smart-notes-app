@@ -93,7 +93,7 @@ function reserveDailyNotificationBudget(suggestionId: string, maxPerDay: number)
     window.localStorage.setItem(ASSISTANT_NOTIF_STORAGE_KEY, JSON.stringify(next));
     return true;
   } catch {
-    return false;
+    // ignore
   }
 }
 

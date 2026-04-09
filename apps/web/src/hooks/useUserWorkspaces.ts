@@ -33,9 +33,6 @@ export function useUserWorkspaces(): UseUserWorkspacesState {
   useEffect(() => {
     if (!user) return;
 
-    setLoading(true);
-    setError(null);
-
     const ownerRef = query(
       collection(db, 'workspaces'),
       where('ownerId', '==', user.uid),
