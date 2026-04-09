@@ -3,7 +3,7 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { normalizeDisplayText } from "@/lib/normalizeText";
-import { DraggableCard } from "../_components/folderDnd";
+import { DraggableCard } from "../../_components/folderDnd";
 import type { TaskDoc, Priority } from "@/types/firestore";
 
 interface TaskItemCardProps {
