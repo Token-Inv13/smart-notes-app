@@ -135,9 +135,17 @@ function initFirebase() {
       supported ? getMessaging(app) : null,
     );
 
-    analyticsPromise = isAnalyticsSupported().then((supported) =>
-      supported ? getAnalytics(app) : null,
-    );
+    analyticsPromise = isAnalyticsSupported()
+      .then((supported) => {
+        if (!supported || !firebaseConfig.measurementId) return null;
+        try {
+          return getAnalytics(app);
+        } catch (e) {
+          console.warn('[firebase] Failed to initialize Analytics:', e);
+          return null;
+        }
+      })
+      .catch(() => null);
   }
 }
 

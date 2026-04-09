@@ -130,9 +130,18 @@ export function useAgendaController(params: {
 
   function mergeCollections(base: TaskDoc[], optById: Record<string, TaskDoc>, optCreated: TaskDoc[], deletedIds: Record<string, true>) {
     const byId = new Map<string, TaskDoc>();
-    base.forEach(t => { if (t.id && !deletedIds[t.id]) byId.set(t.id, t); });
-    Object.entries(optById).forEach(([id, t]) => { if (!deletedIds[id]) byId.set(id, t); });
-    optCreated.forEach(t => { if (t.id && !deletedIds[t.id]) byId.set(t.id, t); });
+    const safeBase = Array.isArray(base) ? base : [];
+    const safeOptCreated = Array.isArray(optCreated) ? optCreated : [];
+    const safeDeletedIds = deletedIds || {};
+
+    safeBase.forEach(t => { if (t.id && !safeDeletedIds[t.id]) byId.set(t.id, t); });
+    
+    if (optById) {
+      Object.entries(optById).forEach(([id, t]) => { if (!safeDeletedIds[id]) byId.set(id, t); });
+    }
+
+    safeOptCreated.forEach(t => { if (t.id && !safeDeletedIds[t.id]) byId.set(t.id, t); });
+    
     return Array.from(byId.values());
   }
 
@@ -142,7 +151,7 @@ export function useAgendaController(params: {
   );
 
   const effectiveAllTasks = useMemo(
-    () => applyWorkspaceAssignmentOverrides(optimisticAllTasks, optimisticWorkspaceIdByTaskId),
+    () => applyWorkspaceAssignmentOverrides(optimisticAllTasks || [], optimisticWorkspaceIdByTaskId || {}),
     [optimisticAllTasks, optimisticWorkspaceIdByTaskId]
   );
 
