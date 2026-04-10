@@ -25,8 +25,10 @@ function getWorkspaceId(workspace: WorkspaceDoc): string | null {
 
 function buildWorkspaceById(workspaces: WorkspaceDoc[]) {
   const byId = new Map<string, WorkspaceDoc>();
+  if (!Array.isArray(workspaces)) return byId;
 
   for (const workspace of workspaces) {
+    if (!workspace) continue;
     const id = getWorkspaceId(workspace);
     if (!id) continue;
     byId.set(id, workspace);
@@ -48,10 +50,12 @@ function getResolvedParentId(workspace: WorkspaceDoc, byId: Map<string, Workspac
 }
 
 export function sortWorkspaces(workspaces: WorkspaceDoc[]) {
+  if (!Array.isArray(workspaces)) return [];
   return workspaces.slice().sort(compareWorkspaces);
 }
 
 export function flattenWorkspaces(workspaces: WorkspaceDoc[]): FlattenedWorkspaceItem[] {
+  if (!Array.isArray(workspaces)) return [];
   const byId = buildWorkspaceById(workspaces);
   const childrenByParent = new Map<string | null, WorkspaceDoc[]>();
 
@@ -62,6 +66,7 @@ export function flattenWorkspaces(workspaces: WorkspaceDoc[]): FlattenedWorkspac
   };
 
   for (const workspace of workspaces) {
+    if (!workspace) continue;
     pushChild(getResolvedParentId(workspace, byId), workspace);
   }
 
@@ -78,157 +83,6 @@ export function flattenWorkspaces(workspaces: WorkspaceDoc[]): FlattenedWorkspac
     if (workspaceId) visited.add(workspaceId);
 
     const safeName = normalizeDisplayText(workspace.name) || "Dossier";
-    const pathLabel = [...ancestors, safeName].join(" / ");
-
-    flattened.push({
-      workspace,
-      depth,
-      pathLabel,
-      ancestorIds,
-    });
-
-    const children = childrenByParent.get(workspaceId) ?? [];
-    for (const child of children) {
-      visit(child, depth + 1, [...ancestors, safeName], workspaceId ? [...ancestorIds, workspaceId] : ancestorIds);
-    }
-  };
-
-  for (const rootWorkspace of childrenByParent.get(null) ?? []) {
-    visit(rootWorkspace, 0, [], []);
-  }
-
-  for (const workspace of sortWorkspaces(workspaces)) {
-    const workspaceId = getWorkspaceId(workspace);
-    if (!workspaceId || !visited.has(workspaceId)) {
-      visit(workspace, 0, [], []);
-    }
-  }
-
-  return flattened;
-}
-
-export function buildWorkspacePathLabelMap(workspaces: WorkspaceDoc[]) {
-  const labels = new Map<string, string>();
-
-  for (const item of flattenWorkspaces(workspaces)) {
-    const workspaceId = getWorkspaceId(item.workspace);
-    if (!workspaceId) continue;
-    labels.set(workspaceId, item.pathLabel);
-  }
-
-  return labels;
-}
-
-export function buildWorkspaceDescendantIdsMap(workspaces: WorkspaceDoc[]) {
-  const items = flattenWorkspaces(workspaces);
-  const descendantIdsById = new Map<string, Set<string>>();
-
-  for (const item of items) {
-    const workspaceId = getWorkspaceId(item.workspace);
-    if (!workspaceId) continue;
-    descendantIdsById.set(workspaceId, new Set([workspaceId]));
-  }
-
-  for (const item of items) {
-    const workspaceId = getWorkspaceId(item.workspace);
-    if (!workspaceId) continue;
-    for (const ancestorId of item.ancestorIds) {
-      descendantIdsById.get(ancestorId)?.add(workspaceId);
-    }
-  }
-
-  return descendantIdsById;
-}
-
-export function getWorkspaceSelfAndDescendantIds(workspaces: WorkspaceDoc[], workspaceId?: string | null) {
-  if (!workspaceId) return null;
-  return buildWorkspaceDescendantIdsMap(workspaces).get(workspaceId) ?? new Set([workspaceId]);
-}
-
-export function getWorkspaceDirectContentIds(workspaceId?: string | null) {
-  if (!workspaceId) return null;
-  return new Set([workspaceId]);
-}
-
-export function getWorkspaceResolvedParentId(workspaces: WorkspaceDoc[], workspaceId?: string | null) {
-  if (!workspaceId) return null;
-  const byId = buildWorkspaceById(workspaces);
-  const workspace = byId.get(workspaceId);
-  if (!workspace) return null;
-  return getResolvedParentId(workspace, byId);
-}
-
-export function getWorkspaceById(workspaces: WorkspaceDoc[], workspaceId?: string | null) {
-  if (!workspaceId) return null;
-  return buildWorkspaceById(workspaces).get(workspaceId) ?? null;
-}
-
-export function getWorkspaceDirectChildren(workspaces: WorkspaceDoc[], parentId?: string | null) {
-  if (!parentId) return [];
-
-  const byId = buildWorkspaceById(workspaces);
-  return sortWorkspaces(workspaces).filter((workspace) => getResolvedParentId(workspace, byId) === parentId);
-}
-
-export function getWorkspaceChain(workspaces: WorkspaceDoc[], workspaceId?: string | null) {
-  if (!workspaceId) return [];
-
-  const byId = buildWorkspaceById(workspaces);
-  const chain: WorkspaceDoc[] = [];
-  const visited = new Set<string>();
-  let currentId: string | null = workspaceId;
-
-  while (currentId && !visited.has(currentId)) {
-    visited.add(currentId);
-    const workspace = byId.get(currentId);
-    if (!workspace) break;
-    chain.unshift(workspace);
-    currentId = getResolvedParentId(workspace, byId);
-  }
-
-  return chain;
-}
-
-export function countItemsByWorkspaceId<T extends { workspaceId?: string | null }>(
-  items: T[],
-  predicate?: (item: T) => boolean,
-) {
-  const counts = new Map<string, number>();
-
-  for (const item of items) {
-    if (predicate && !predicate(item)) continue;
-    const workspaceId = typeof item.workspaceId === "string" && item.workspaceId.trim() ? item.workspaceId.trim() : null;
-    if (!workspaceId) continue;
-    counts.set(workspaceId, (counts.get(workspaceId) ?? 0) + 1);
-  }
-
-  return counts;
-}
-
-export function applyWorkspaceAssignmentOverrides<T extends { id?: string; workspaceId?: string | null }>(
-  items: T[],
-  overrides: Record<string, string | null>,
-) {
-  return items.map((item) => {
-    if (!item.id || !Object.prototype.hasOwnProperty.call(overrides, item.id)) return item;
-    return { ...item, workspaceId: overrides[item.id] ?? null };
-  });
-}
-
-export function applyWorkspaceParentOverrides(
-  workspaces: WorkspaceDoc[],
-  overrides: Record<string, string | null>,
-) {
-  return workspaces.map((workspace) => {
-    if (!workspace.id || !Object.prototype.hasOwnProperty.call(overrides, workspace.id)) return workspace;
-    return { ...workspace, parentId: overrides[workspace.id] ?? null };
-  });
-}
-
-export function canMoveWorkspaceToParent(
-  workspaces: WorkspaceDoc[],
-  workspaceId?: string | null,
-  targetParentId?: string | null,
 ) {
   if (!workspaceId || !targetParentId) return false;
   if (workspaceId === targetParentId) return false;
