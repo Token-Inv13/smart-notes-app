@@ -483,7 +483,7 @@ export default function AgendaCalendar({
       instanceDate: undefined,
       todoEvent: true as const,
     }));
-    const withDates = [...projected.events, ...todoProjected];
+    const withDates = [...(projected?.events || []), ...(todoProjected || [])];
 
     withDates.sort((a, b) => a.start.getTime() - b.start.getTime());
 
