@@ -360,13 +360,6 @@ export default function AgendaCalendar({
     onPreferencesChange?.(normalizedPreferences);
   }, [normalizedPreferences, onPreferencesChange, prefsHydrated]);
 
-  const activeTasks = useMemo(() => (Array.isArray(filteredTasks) ? filteredTasks : []).filter(t => statusForTask(t) !== "done"), [filteredTasks, statusForTask]);
-  const completedTasks = useMemo(() => (Array.isArray(filteredTasks) ? filteredTasks : []).filter(t => statusForTask(t) === "done"), [filteredTasks, statusForTask]);
-  const visibleTasksCount = useMemo(() => (activeTasks?.length || 0) + (completedTasks?.length || 0), [activeTasks, completedTasks]);
-
-  const activeNoteCount = useMemo(() => (Array.isArray(notesForCounter) ? notesForCounter : []).filter(n => n.archived !== true).length, [notesForCounter]);
-  const activeTodoCount = useMemo(() => (Array.isArray(todosForCounter) ? todosForCounter : []).length, [todosForCounter]);
-
   const workspaceNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const workspace of workspaces) {
