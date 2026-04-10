@@ -146,12 +146,18 @@ export function useAgendaController(params: {
   }
 
   const optimisticAllTasks = useMemo(
-    () => mergeCollections(allTasks, optimisticAgendaTaskById, optimisticCreatedAgendaTasks, optimisticDeletedAgendaTaskIds),
+    () => {
+      const result = mergeCollections(allTasks || [], optimisticAgendaTaskById || {}, optimisticCreatedAgendaTasks || [], optimisticDeletedAgendaTaskIds || {});
+      return Array.isArray(result) ? result : [];
+    },
     [allTasks, optimisticAgendaTaskById, optimisticCreatedAgendaTasks, optimisticDeletedAgendaTaskIds]
   );
 
   const effectiveAllTasks = useMemo(
-    () => applyWorkspaceAssignmentOverrides(optimisticAllTasks || [], optimisticWorkspaceIdByTaskId || {}),
+    () => {
+      const base = Array.isArray(optimisticAllTasks) ? optimisticAllTasks : [];
+      return applyWorkspaceAssignmentOverrides(base, optimisticWorkspaceIdByTaskId || {});
+    },
     [optimisticAllTasks, optimisticWorkspaceIdByTaskId]
   );
 
@@ -162,8 +168,11 @@ export function useAgendaController(params: {
 
   const taskSearchTextById = useMemo(() => {
     const m = new Map<string, string>();
-    const workspaceLabels = buildWorkspacePathLabelMap(effectiveWorkspaces);
-    effectiveAllTasks.forEach(task => {
+    const safeWorkspaces = Array.isArray(effectiveWorkspaces) ? effectiveWorkspaces : [];
+    const safeTasks = Array.isArray(effectiveAllTasks) ? effectiveAllTasks : [];
+    const workspaceLabels = buildWorkspacePathLabelMap(safeWorkspaces);
+    
+    safeTasks.forEach(task => {
       if (!task.id) return;
       const ws = task.workspaceId ? workspaceLabels.get(task.workspaceId) ?? "" : "";
       const status = statusForTask(task);
