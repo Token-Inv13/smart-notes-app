@@ -234,6 +234,10 @@ export default function AgendaCalendar({
   initialAnchorDate,
   createRequest,
   onCreateRequestHandled,
+  externalPriorityFilter,
+  onPriorityFilterChange,
+  externalTimeWindowFilter,
+  onTimeWindowFilterChange,
 }: AgendaCalendarProps) {
   const calendarRef = useRef<FullCalendar | null>(null);
   const datesSetRafRef = useRef<number | null>(null);
