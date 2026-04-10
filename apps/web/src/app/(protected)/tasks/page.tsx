@@ -250,6 +250,9 @@ export default function TasksPage() {
               onUpdateEvent={controller.handleCalendarUpdate}
               onSkipOccurrence={controller.handleSkipOccurrence}
               onVisibleRangeChange={controller.handleCalendarVisibleRangeChange}
+              // Filter synchronization
+              externalPriorityFilter={controller.priorityFilter}
+              onPriorityFilterChange={controller.setPriorityFilter}
             />
           </div>
         )}

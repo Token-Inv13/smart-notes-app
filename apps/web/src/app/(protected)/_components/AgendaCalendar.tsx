@@ -108,6 +108,11 @@ interface AgendaCalendarProps {
     favorite?: boolean;
   } | null;
   onCreateRequestHandled?: () => void;
+  // External filter state synchronization
+  externalPriorityFilter?: Priority | "all";
+  onPriorityFilterChange?: (p: Priority | "all") => void;
+  externalTimeWindowFilter?: CalendarTimeWindowFilter;
+  onTimeWindowFilterChange?: (tw: CalendarTimeWindowFilter) => void;
 }
 
 function normalizePreferences(raw: Partial<AgendaCalendarPreferences> | null | undefined): AgendaCalendarPreferences | null {
@@ -237,12 +242,30 @@ export default function AgendaCalendar({
   const displayMode: AgendaDisplayMode = "calendar";
   const [prefsHydrated, setPrefsHydrated] = useState(false);
   const {
-    priorityFilter,
-    setPriorityFilter,
-    timeWindowFilter,
-    setTimeWindowFilter,
-    clearFilters,
+    priorityFilter: localPriorityFilter,
+    setPriorityFilter: setLocalPriorityFilter,
+    timeWindowFilter: localTimeWindowFilter,
+    setTimeWindowFilter: setLocalTimeWindowFilter,
+    clearFilters: clearLocalFilters,
   } = useAgendaCalendarFilters();
+
+  const priorityFilter = externalPriorityFilter !== undefined ? (externalPriorityFilter === "all" ? "" : externalPriorityFilter) : localPriorityFilter;
+  const setPriorityFilter = (p: CalendarPriorityFilter) => {
+    if (onPriorityFilterChange) onPriorityFilterChange(p === "" ? "all" : p);
+    else setLocalPriorityFilter(p);
+  };
+
+  const timeWindowFilter = externalTimeWindowFilter !== undefined ? externalTimeWindowFilter : localTimeWindowFilter;
+  const setTimeWindowFilter = (tw: CalendarTimeWindowFilter) => {
+    if (onTimeWindowFilterChange) onTimeWindowFilterChange(tw);
+    else setLocalTimeWindowFilter(tw);
+  };
+
+  const clearFilters = useCallback(() => {
+    if (onPriorityFilterChange) onPriorityFilterChange("all");
+    if (onTimeWindowFilterChange) onTimeWindowFilterChange("");
+    clearLocalFilters();
+  }, [clearLocalFilters, onPriorityFilterChange, onTimeWindowFilterChange]);
   const [visibleRange, setVisibleRange] = useState<{ start: Date; end: Date } | null>(null);
   const [label, setLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -460,10 +483,12 @@ export default function AgendaCalendar({
 
     withDates.sort((a, b) => a.start.getTime() - b.start.getTime());
 
+    // Optimized conflict detection: O(N log N) sweep-line or sorted window check
     const conflictIds = new Set<string>();
     for (let i = 0; i < withDates.length; i += 1) {
       const left = withDates[i];
       if (!left) continue;
+      // We only need to check a small window because the array is sorted by start time
       for (let j = i + 1; j < withDates.length; j += 1) {
         const right = withDates[j];
         if (!right) continue;
