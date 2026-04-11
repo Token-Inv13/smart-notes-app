@@ -1,8 +1,5 @@
 import * as admin from 'firebase-admin';
-import * as functions from 'firebase-functions/v1';
-import { AssistantAIJobDoc, AssistantAIResultDoc } from './types';
-import { sha256Hex, normalizeAssistantText } from '../services/ai';
-import { assistantMetricsRef, metricsIncrements } from '../services/telemetry';
+import { AssistantAIJobDoc } from './types';
 
 const ASSISTANT_AI_JOB_LOCK_MS = 5 * 60 * 1000;
 const ASSISTANT_AI_JOB_MAX_ATTEMPTS = 3;

@@ -1,11 +1,8 @@
 import * as admin from 'firebase-admin';
 import { OpsJobSnapshotInput, OpsStateDoc } from '../core/types';
 import { 
-  opsConsecutiveFailThreshold, 
   opsReminderBacklogThreshold, 
   opsAssistantBacklogThreshold,
-  opsRunStaleThresholdMs,
-  opsLogsUrl 
 } from './telemetry';
 
 export async function writeOpsJobSnapshot(params: OpsJobSnapshotInput) {

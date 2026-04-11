@@ -1,5 +1,4 @@
 import * as admin from 'firebase-admin';
-import * as functions from 'firebase-functions/v1';
 import { UserPlan } from './types';
 
 export function readEnvNumber(name: string, fallback: number): number {

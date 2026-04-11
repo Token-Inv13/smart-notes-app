@@ -218,8 +218,9 @@ export default function AgendaCalendar({
   workspaces,
   onCreateEvent,
   onUpdateEvent,
-  onSkipOccurrence,
   onOpenTask,
+  onSkipOccurrence,
+  onOpenTask: _onOpenTask,
   onVisibleRangeChange,
   initialPreferences,
   onPreferencesChange,
@@ -891,6 +892,7 @@ export default function AgendaCalendar({
         setEditScope={setEditScope}
         workspaces={workspaces}
         onOpenTask={onOpenTask}
+        onDeleteTask={async () => {}}
         onSkipOccurrence={onSkipOccurrence}
         skipOccurrence={skipOccurrence}
         saveDraft={saveDraft}

@@ -95,6 +95,8 @@ function reserveDailyNotificationBudget(suggestionId: string, maxPerDay: number)
   } catch {
     // ignore
   }
+
+  return false;
 }
 
 export default function SidebarShell({ children }: { children: React.ReactNode }) {

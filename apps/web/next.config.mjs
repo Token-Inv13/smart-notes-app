@@ -10,11 +10,6 @@ const nextConfig = withPWA({
   skipWaiting: true,
   disable: process.env.NODE_ENV === 'development',
   swSrc: 'src/sw.ts',
-})({
-  ...baseConfig,
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-});
+})(baseConfig);
 
 export default nextConfig;

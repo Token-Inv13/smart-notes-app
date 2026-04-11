@@ -1,6 +1,4 @@
-import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions/v1';
-import { assertCanCreateFreeTask } from '../core/guards';
 
 export const assistantExecuteIntent = functions.https.onCall(async (data: any, context) => {
   const uid = context.auth?.uid;

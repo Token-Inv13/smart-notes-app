@@ -103,15 +103,15 @@ const AgendaHeader: React.FC<AgendaHeaderProps> = ({
         isOpen={filtersOpen}
         onClose={onFiltersClose}
         statusFilter={statusFilter}
-        onStatusFilterChange={onStatusFilterChange}
+        onStatusChange={onStatusFilterChange}
         priorityFilter={priorityFilter}
-        onPriorityFilterChange={onPriorityFilterChange}
+        onPriorityChange={onPriorityFilterChange}
         dueFilter={dueFilter}
-        onDueFilterChange={onDueFilterChange}
+        onDueChange={onDueFilterChange}
         sortBy={sortBy}
         onSortByChange={onSortByChange}
         workspaceFilter={workspaceFilter}
-        onWorkspaceFilterChange={onWorkspaceFilterChange}
+        onWorkspaceChange={onWorkspaceFilterChange}
         workspaces={workspaces}
         workspaceOptionLabels={workspaceOptionLabels}
         onReset={onResetFilters}
@@ -119,7 +119,7 @@ const AgendaHeader: React.FC<AgendaHeaderProps> = ({
 
       <AgendaNotificationPrompt
         permission={notificationPermission}
-        enablingPush={enablingPush}
+        isEnabling={enablingPush}
         pushStatus={pushStatus}
         onEnable={onEnableNotifications}
       />

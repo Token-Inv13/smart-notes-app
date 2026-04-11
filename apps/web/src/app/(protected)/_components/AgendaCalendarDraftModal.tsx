@@ -28,7 +28,9 @@ type AgendaCalendarDraftModalProps = {
   editScope: "series" | "occurrence";
   setEditScope: Dispatch<SetStateAction<"series" | "occurrence">>;
   workspaces: WorkspaceDoc[];
+  onOpenTask?: (taskId: string) => void;
   onDeleteTask: (taskId: string) => Promise<void>;
+  onSkipOccurrence?: ((taskId: string, occurrenceDate: string) => Promise<void>) | undefined;
   skipOccurrence: () => Promise<void>;
   saveDraft: () => Promise<void>;
   saving: boolean;
@@ -40,7 +42,9 @@ export default function AgendaCalendarDraftModal({
   editScope,
   setEditScope,
   workspaces,
+  onOpenTask: _onOpenTask,
   onDeleteTask,
+  onSkipOccurrence: _onSkipOccurrence,
   skipOccurrence,
   saveDraft,
   saving,

@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { auth, db } from "@/lib/firebase";
-import { deleteDoc, doc, Timestamp, updateDoc, serverTimestamp } from "firebase/firestore";
+import { deleteDoc, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { 
   normalizeAgendaWindowForFirestore, 
   formatTimestampToDateTimeFr,
@@ -22,7 +22,6 @@ import { getOnboardingFlag, setOnboardingFlag } from "@/lib/onboarding";
 import { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import { FolderDragData } from "../../_components/folderDnd";
 import { normalizeDisplayText } from "@/lib/normalizeText";
-import { CALENDAR_PREFERENCES_STORAGE_KEY } from "../../_components/agendaCalendarUtils";
 
 export type TaskViewMode = "list" | "grid" | "calendar";
 export type TaskStatusFilter = "all" | "todo" | "doing" | "done";
@@ -40,14 +39,12 @@ export function useAgendaController(params: {
   notesForCounter: any[];
   todosForCounter: any[];
 }) {
-  const { allTasks, calendarWindowTasks, workspaces, userSettings, notesForCounter, todosForCounter } = params;
+  const { allTasks, workspaces, notesForCounter, todosForCounter } = params;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const isPro = userSettings?.plan === "pro";
   const highlightedTaskId = searchParams.get("taskId");
-  const focusDateParam = searchParams.get("focusDate");
   const workspaceIdParam = searchParams.get("workspaceId");
 
   // --- Filter State ---
@@ -68,13 +65,13 @@ export function useAgendaController(params: {
 
   // --- Optimistic UI State ---
   const [optimisticAgendaTaskById, setOptimisticAgendaTaskById] = useState<Record<string, TaskDoc>>({});
-  const [optimisticCreatedAgendaTasks, setOptimisticCreatedAgendaTasks] = useState<TaskDoc[]>([]);
+  const [optimisticCreatedAgendaTasks] = useState<TaskDoc[]>([]);
   const [optimisticDeletedAgendaTaskIds, setOptimisticDeletedAgendaTaskIds] = useState<Record<string, true>>({});
-  const [optimisticDeletedGoogleEventIds, setOptimisticDeletedGoogleEventIds] = useState<Record<string, true>>({});
+  const [optimisticDeletedGoogleEventIds] = useState<Record<string, true>>({});
   const [optimisticStatusById, setOptimisticStatusById] = useState<Record<string, "todo" | "doing" | "done">>({});
   const [optimisticWorkspaceIdByTaskId, setOptimisticWorkspaceIdByTaskId] = useState<Record<string, string | null>>({});
   const [optimisticParentIdByWorkspaceId, setOptimisticParentIdByWorkspaceId] = useState<Record<string, string | null>>({});
-  const [calendarInitialPreferences, setCalendarInitialPreferences] = useState<Partial<AgendaCalendarPreferences> | null>(null);
+  const [calendarInitialPreferences] = useState<Partial<AgendaCalendarPreferences> | null>(null);
   const [agendaCreateRequest, setAgendaCreateRequest] = useState<{ requestKey: string; startDate?: string | null; workspaceId?: string | null; favorite?: boolean } | null>(null);
 
   // --- Notifications State ---
@@ -88,18 +85,11 @@ export function useAgendaController(params: {
   // --- Drag & Drop State ---
   const [activeDragItem, setActiveDragItem] = useState<FolderDragData | null>(null);
 
-  const calendarPrefsWriteTimerRef = useRef<number | null>(null);
-
   // --- Helpers ---
   const showActionFeedback = useCallback((message: string) => {
     setActionFeedback(message);
     window.setTimeout(() => setActionFeedback(null), 1800);
   }, []);
-
-  const toErrorMessage = (e: unknown, fallback: string) => {
-    if (e instanceof Error && e.message) return e.message;
-    return fallback;
-  };
 
   const toMillisSafe = (ts: any) => {
     if (ts && typeof ts.toMillis === "function") return ts.toMillis();
@@ -113,14 +103,6 @@ export function useAgendaController(params: {
       return normalizeDisplayText(raw).toLowerCase().trim();
     }
   }, []);
-
-  const toTimestampOrNull = (date: Date | null) => date ? Timestamp.fromDate(date) : null;
-  const toLocalDateInputValue = (date: Date) => {
-    const y = date.getFullYear();
-    const m = `${date.getMonth() + 1}`.padStart(2, "0");
-    const d = `${date.getDate()}`.padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  };
 
   // --- Memos & Computed Values ---
   const effectiveWorkspaces = useMemo(
@@ -163,8 +145,11 @@ export function useAgendaController(params: {
   );
 
   const statusForTask = useCallback((task: TaskDoc): "todo" | "doing" | "done" => {
-    if (task.id && optimisticStatusById[task.id]) return optimisticStatusById[task.id];
-    return (task.status as any) || "todo";
+    if (task.id) {
+      const optimisticStatus = optimisticStatusById[task.id];
+      if (optimisticStatus) return optimisticStatus;
+    }
+    return task.status === "doing" || task.status === "done" ? task.status : "todo";
   }, [optimisticStatusById]);
 
   const taskSearchTextById = useMemo(() => {
@@ -192,7 +177,7 @@ export function useAgendaController(params: {
 
     if (workspaceFilter !== "all") {
       const descendantIds = getWorkspaceSelfAndDescendantIds(effectiveWorkspaces, workspaceFilter);
-      result = result.filter(t => descendantIds.has(t.workspaceId ?? ""));
+      result = descendantIds ? result.filter(t => descendantIds.has(t.workspaceId ?? "")) : [];
     }
 
     if (priorityFilter !== "all") result = result.filter(t => t.priority === priorityFilter);
@@ -277,10 +262,10 @@ export function useAgendaController(params: {
     if (!window?.startDate) return;
 
     try {
-      const res = await createTaskWithPlanGuard({
+      await createTaskWithPlanGuard({
         ...input,
         startDateMs: window.startDate.toMillis(),
-        dueDateMs: window.dueDate.toMillis(),
+        dueDateMs: window.dueDate?.toMillis() ?? window.startDate.toMillis(),
         allDay: window.allDay,
         status: "todo",
         archived: false,
@@ -410,7 +395,7 @@ export function useAgendaController(params: {
     try { window.localStorage.setItem("tasksViewMode", next); } catch { /* ignore */ }
   }, []);
 
-  const handleAgendaCalendarPreferencesChange = useCallback((prefs: AgendaCalendarPreferences) => {
+  const handleAgendaCalendarPreferencesChange = useCallback((_prefs: AgendaCalendarPreferences) => {
     // Sync logic if needed
   }, []);
 
@@ -418,7 +403,7 @@ export function useAgendaController(params: {
     setAgendaCreateRequest(null);
   }, []);
 
-  const handleSkipOccurrence = useCallback(async (taskId: string, occurrenceDate: string) => {
+  const handleSkipOccurrence = useCallback(async (_taskId: string, _occurrenceDate: string) => {
     // Implementation for skipping recurrence occurrence
   }, []);
 

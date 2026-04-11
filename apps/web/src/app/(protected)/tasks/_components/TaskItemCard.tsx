@@ -100,7 +100,7 @@ const TaskItemCard: React.FC<TaskItemCardProps> = ({
 
   if (viewMode === "list") {
     return (
-      <DraggableCard dragData={{ kind: "task", id: task.id ?? "", workspaceId: task.workspaceId }}>
+      <DraggableCard dragData={{ kind: "task", id: task.id ?? "", workspaceId: task.workspaceId ?? null }}>
         {({ dragHandle }) => cardContent(dragHandle)}
       </DraggableCard>
     );
