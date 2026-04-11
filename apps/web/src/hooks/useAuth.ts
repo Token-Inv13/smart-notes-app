@@ -27,6 +27,12 @@ let authObserverUnsubscribe: (() => void) | null = null;
 let currentUser: User | null = auth.currentUser;
 let authResolved = false;
 let authObserverError: string | null = null;
+let cachedSnapshot: AuthSnapshot = {
+  user: currentUser,
+  status: currentUser ? 'authenticated' : 'loading',
+  loading: currentUser == null,
+  error: null,
+};
 
 function emitChange() {
   for (const listener of listeners) {
@@ -36,39 +42,59 @@ function emitChange() {
 
 function computeSnapshot(): AuthSnapshot {
   const invalidation = getAuthInvalidationSnapshot();
+  let nextSnapshot: AuthSnapshot;
 
   if (!authResolved) {
-    return {
+    nextSnapshot = {
       user: currentUser,
       status: 'loading',
       loading: true,
       error: null,
     };
+  } else {
+    const sessionError = invalidation.error ?? authObserverError;
+    if (sessionError) {
+      nextSnapshot = {
+        user: currentUser,
+        status: 'session-error',
+        loading: false,
+        error: sessionError,
+      };
+    } else if (currentUser) {
+      nextSnapshot = {
+        user: currentUser,
+        status: 'authenticated',
+        loading: false,
+        error: null,
+      };
+    } else {
+      nextSnapshot = {
+        user: null,
+        status: 'unauthenticated',
+        loading: false,
+        error: null,
+      };
+    }
   }
 
-  const sessionError = invalidation.error ?? authObserverError;
-  if (sessionError) {
-    return {
-      user: currentUser,
-      status: 'session-error',
-      loading: false,
-      error: sessionError,
-    };
+  if (
+    cachedSnapshot.user === nextSnapshot.user &&
+    cachedSnapshot.status === nextSnapshot.status &&
+    cachedSnapshot.loading === nextSnapshot.loading &&
+    cachedSnapshot.error === nextSnapshot.error
+  ) {
+    return cachedSnapshot;
   }
 
-  if (currentUser) {
-    return {
-      user: currentUser,
-      status: 'authenticated',
-      loading: false,
-      error: null,
-    };
-  }
+  cachedSnapshot = nextSnapshot;
+  return cachedSnapshot;
+}
 
-  return {
-    user: null,
-    status: 'unauthenticated',
-    loading: false,
+function resetSnapshotCache() {
+  cachedSnapshot = {
+    user: currentUser,
+    status: currentUser ? 'authenticated' : 'loading',
+    loading: currentUser == null,
     error: null,
   };
 }
@@ -119,6 +145,7 @@ function subscribe(callback: () => void) {
       authResolved = auth.currentUser != null;
       currentUser = auth.currentUser;
       authObserverError = null;
+      resetSnapshotCache();
     }
   };
 }
