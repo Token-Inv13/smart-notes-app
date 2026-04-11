@@ -1,10 +1,10 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { auth } from "@/lib/firebase";
-import { trackEventBeforeNavigation } from "@/lib/analytics";
+import { useAuth } from "@/hooks/useAuth";
 import { observeCaughtError } from "@/lib/clientObservability";
 import { getRuntimePlatformInfo } from "@/lib/runtimePlatform";
 import {
@@ -15,6 +15,7 @@ import {
   getRedirectResult,
   signInWithCredential,
   sendPasswordResetEmail,
+  signOut,
 } from "firebase/auth";
 import { Eye, EyeOff } from "lucide-react";
 
@@ -118,6 +119,24 @@ function getNativeGoogleSignInUnavailableMessage() {
   return "Connexion Google indisponible dans cette version Android. Termine la configuration Google native Android, ou utilise email + mot de passe pour l’instant.";
 }
 
+function getAuthRouteMessage(reason: string | null): string | null {
+  if (reason === "session-invalid") {
+    return "Ta session a expiré ou est invalide. Reconnecte-toi pour continuer.";
+  }
+  if (reason === "session-service-unavailable") {
+    return "La session serveur Firebase est indisponible. Vérifie la configuration serveur avant de réessayer.";
+  }
+  if (reason === "auth-required") {
+    return "Connecte-toi pour accéder à cette page.";
+  }
+  return null;
+}
+
+async function signOutAfterSessionFailure() {
+  await fetch("/api/logout", { method: "POST" }).catch(() => null);
+  await signOut(auth).catch(() => null);
+}
+
 export default function LoginPage() {
   return (
     <Suspense>
@@ -129,6 +148,7 @@ export default function LoginPage() {
 function LoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { status: authStatus, user } = useAuth();
   const nextPath = normalizeNextPath(searchParams.get("next"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -136,39 +156,46 @@ function LoginPageInner() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetStatus, setResetStatus] = useState<string | null>(null);
+  const [recoveringSession, setRecoveringSession] = useState(false);
 
   const runtimeInfo = getRuntimePlatformInfo();
+  const routeMessage = useMemo(() => getAuthRouteMessage(searchParams.get("reason")), [searchParams]);
 
-  const establishSession = async () => {
-    const user = auth.currentUser;
-    if (!user) {
+  const establishSession = useCallback(async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
       throw new Error("No authenticated user after sign-in");
     }
 
-    const idToken = await user.getIdToken();
-    const res = await fetch("/api/session", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ idToken }),
-    });
+    try {
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch("/api/session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ idToken }),
+      });
 
-    if (!res.ok) {
-      const text = await res.text();
-      const message = text || "Failed to establish session";
-      throw new Error(`Session API error (${res.status}): ${message}`);
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { code?: unknown; error?: unknown } | null;
+        const code = typeof payload?.code === "string" ? payload.code : null;
+        const apiMessage = typeof payload?.error === "string" ? payload.error : null;
+
+        if (code === "service_unavailable") {
+          throw new Error("SESSION_SERVICE_UNAVAILABLE");
+        }
+        if (code === "invalid_id_token") {
+          throw new Error("SESSION_INVALID_ID_TOKEN");
+        }
+
+        throw new Error(apiMessage || `SESSION_API_ERROR_${res.status}`);
+      }
+    } catch (error) {
+      await signOutAfterSessionFailure();
+      throw error;
     }
-  };
+  }, []);
 
-  const finalizeLogin = useCallback(async (method: "email" | "google") => {
-    await establishSession();
-    await trackEventBeforeNavigation("login", {
-      method,
-      source: "app",
-    });
-    router.replace(nextPath);
-  }, [nextPath, router]);
-
-  const debugAuthFailure = (stage: string, err: unknown, meta?: Record<string, unknown>) => {
+  const debugAuthFailure = useCallback((stage: string, err: unknown, meta?: Record<string, unknown>) => {
     const code = getFirebaseAuthErrorCode(err);
     const message = getFirebaseAuthErrorRawMessage(err);
     const tokenErrorMessage = getFirebaseAuthTokenErrorMessage(err);
@@ -190,7 +217,7 @@ function LoginPageInner() {
       firebaseClientAuthDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ?? null,
       ...meta,
     });
-  };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -204,7 +231,8 @@ function LoginPageInner() {
         setError(null);
         setResetStatus(null);
         setLoading(true);
-        await finalizeLogin("google");
+        await establishSession();
+        router.replace(nextPath);
       } catch (err) {
         if (cancelled) return;
         // If no redirect is pending, Firebase may throw; treat it as non-blocking.
@@ -221,7 +249,44 @@ function LoginPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [finalizeLogin]);
+  }, [debugAuthFailure, establishSession, nextPath, router]);
+
+  useEffect(() => {
+    if (authStatus !== "authenticated" || !user) return;
+    if (loading || recoveringSession) return;
+
+    let cancelled = false;
+    setRecoveringSession(true);
+    setError(null);
+    setResetStatus(null);
+
+    void (async () => {
+      try {
+        await establishSession();
+        if (!cancelled) {
+          router.replace(nextPath);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        debugAuthFailure("session_restore", err, { provider: "existing_session" });
+        if (err instanceof Error && err.message === "SESSION_SERVICE_UNAVAILABLE") {
+          setError("Connexion Firebase active, mais session serveur indisponible. Vérifie la configuration Firebase Admin.");
+        } else if (err instanceof Error && err.message === "SESSION_INVALID_ID_TOKEN") {
+          setError("Session Firebase expirée. Reconnecte-toi.");
+        } else {
+          setError("Connexion Firebase active, mais impossible d’ouvrir la session serveur.");
+        }
+      } finally {
+        if (!cancelled) {
+          setRecoveringSession(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authStatus, establishSession, loading, nextPath, recoveringSession, router, user]);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -233,16 +298,19 @@ function LoginPageInner() {
         debugAuthFailure("firebase_sign_in", err, { provider: "password" });
         throw err;
       });
-      await finalizeLogin("email").catch((err: unknown) => {
+      await establishSession().catch((err: unknown) => {
         debugAuthFailure("session_api", err, { provider: "password" });
         throw err;
       });
+      router.replace(nextPath);
     } catch (err) {
       const code = getFirebaseAuthErrorCode(err);
       if (code) {
         setError(getFirebaseAuthErrorMessage(err));
-      } else if (err instanceof Error && err.message.startsWith("Session API error")) {
-        setError("Connexion réussie, mais la session serveur a échoué. Vérifie la configuration serveur Firebase.");
+      } else if (err instanceof Error && err.message === "SESSION_SERVICE_UNAVAILABLE") {
+        setError("Connexion Firebase réussie, mais session serveur indisponible. Vérifie Firebase Admin.");
+      } else if (err instanceof Error && err.message === "SESSION_INVALID_ID_TOKEN") {
+        setError("Jeton Firebase expiré ou invalide. Reconnecte-toi.");
       } else {
         setError(getFirebaseAuthErrorMessage(err));
       }
@@ -272,7 +340,8 @@ function LoginPageInner() {
 
           const credential = GoogleAuthProvider.credential(idToken ?? undefined, accessToken ?? undefined);
           await signInWithCredential(auth, credential);
-          await finalizeLogin("google");
+          await establishSession();
+          router.replace(nextPath);
           return;
         } catch (err) {
           if (!isNativeGoogleSignInUnavailable(err)) {
@@ -286,7 +355,8 @@ function LoginPageInner() {
 
       try {
         await signInWithPopup(auth, provider);
-        await finalizeLogin("google");
+        await establishSession();
+        router.replace(nextPath);
       } catch (err) {
         const code = getFirebaseAuthErrorCode(err) ?? "";
         // On some mobile browsers the popup may be blocked; redirect is more reliable.
@@ -325,6 +395,8 @@ function LoginPageInner() {
       setLoading(false);
     }
   };
+
+  const busy = loading || recoveringSession;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background text-foreground px-4">
@@ -376,6 +448,12 @@ function LoginPageInner() {
             </div>
           </div>
 
+          {!error && routeMessage && (
+            <p className="text-sm text-amber-600 mt-2" aria-live="polite">
+              {routeMessage}
+            </p>
+          )}
+
           {error && (
             <p className="text-sm text-destructive mt-2" aria-live="polite">
               {error}
@@ -390,15 +468,15 @@ function LoginPageInner() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={busy}
             className="w-full mt-2 inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? "Connexion..." : "Se connecter"}
+            {busy ? "Connexion..." : "Se connecter"}
           </button>
 
           <button
             type="button"
-            disabled={loading}
+            disabled={busy}
             onClick={handleResetPassword}
             className="w-full inline-flex items-center justify-center px-4 py-2 rounded-md border border-input bg-background text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -414,11 +492,11 @@ function LoginPageInner() {
 
         <button
           type="button"
-          disabled={loading}
+          disabled={busy}
           onClick={handleGoogleLogin}
           className="w-full inline-flex items-center justify-center px-4 py-2 rounded-md border border-input bg-background text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? "Connexion..." : "Continuer avec Google"}
+          {busy ? "Connexion…" : "Continuer avec Google"}
         </button>
 
         <p className="text-xs text-muted-foreground mt-4 text-center">

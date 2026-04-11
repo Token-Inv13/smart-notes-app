@@ -1,12 +1,12 @@
 "use client";
 
-import { Suspense, useEffect, useRef } from "react";
-import { onAuthStateChanged } from "firebase/auth";
+import { useEffect } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
-import { usePathname, useSearchParams } from "next/navigation";
+import { db } from "@/lib/firebase";
+import { useAuth } from "@/hooks/useAuth";
+import { listenToForegroundMessages } from "@/lib/fcm";
 import { invalidateAuthSession, isAuthInvalidError } from "@/lib/authInvalidation";
 import { installGlobalErrorHandlers, observeCaughtError } from "@/lib/clientObservability";
-import { trackEvent } from "@/lib/analytics";
 
 type ThemeMode = "light" | "dark";
 
@@ -51,106 +51,63 @@ function readLocalAppearance(): { mode: ThemeMode; background: BackgroundPreset 
   };
 }
 
-function PageViewTracker() {
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const lastTrackedPathRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const query = searchParams.toString();
-    const pagePath = query ? `${pathname}?${query}` : pathname;
-    if (!pagePath || lastTrackedPathRef.current === pagePath) return;
-
-    lastTrackedPathRef.current = pagePath;
-    void trackEvent("page_view", {
-      page_path: pagePath,
-      page_location: window.location.href,
-      page_title: document.title || null,
-      source: "app",
-    });
-  }, [pathname, searchParams]);
-
-  return null;
-}
-
 export default function ThemeClientProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
 
   useEffect(() => {
+    listenToForegroundMessages();
     const uninstallGlobalErrorHandlers = installGlobalErrorHandlers();
 
     const local = readLocalAppearance();
     applyTheme(local.mode);
     applyBackground(local.background);
 
-    let unsubscribeSettings: (() => void) | null = null;
-    let unsubscribeAuth: (() => void) | null = null;
-    let cancelled = false;
-
-    void (async () => {
-      const [{ auth, db }, { listenToForegroundMessages }] = await Promise.all([
-        import("@/lib/firebase"),
-        import("@/lib/fcm"),
-      ]);
-
-      if (cancelled) return;
-
-      listenToForegroundMessages();
-
-      unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-        if (unsubscribeSettings) {
-          unsubscribeSettings();
-          unsubscribeSettings = null;
-        }
-        if (!user) return;
-
-        const ref = doc(db, "users", user.uid);
-        unsubscribeSettings = onSnapshot(
-          ref,
-          (snap) => {
-            const data = snap.data() as UserAppearanceDoc | undefined;
-            const mode = data?.settings?.appearance?.mode ?? local.mode;
-            const background = data?.settings?.appearance?.background ?? local.background;
-
-            const normalizedMode: ThemeMode = mode === "dark" ? "dark" : "light";
-            const normalizedBg: BackgroundPreset =
-              background === "dots" || background === "grid" ? background : "none";
-
-            localStorage.setItem("themeMode", normalizedMode);
-            localStorage.setItem("themeBackground", normalizedBg);
-
-            applyTheme(normalizedMode);
-            applyBackground(normalizedBg);
-          },
-          (err) => {
-            if (isAuthInvalidError(err)) {
-              void invalidateAuthSession();
-              return;
-            }
-
-            void observeCaughtError("frontend.auth_settings_snapshot_error", err, {
-              source: "ThemeClientProvider",
-            });
-          },
-        );
-      });
-    })();
-
     return () => {
-      cancelled = true;
-      if (unsubscribeSettings) unsubscribeSettings();
-      if (unsubscribeAuth) unsubscribeAuth();
       uninstallGlobalErrorHandlers();
     };
   }, []);
 
-  return (
-    <>
-      <Suspense fallback={null}>
-        <PageViewTracker />
-      </Suspense>
-      {children}
-    </>
-  );
+  useEffect(() => {
+    const local = readLocalAppearance();
+    if (!user) {
+      applyTheme(local.mode);
+      applyBackground(local.background);
+      return;
+    }
+
+    const ref = doc(db, "users", user.uid);
+    return onSnapshot(
+      ref,
+      (snap) => {
+        const data = snap.data() as UserAppearanceDoc | undefined;
+        const mode = data?.settings?.appearance?.mode ?? local.mode;
+        const background = data?.settings?.appearance?.background ?? local.background;
+
+        const normalizedMode: ThemeMode = mode === "dark" ? "dark" : "light";
+        const normalizedBg: BackgroundPreset =
+          background === "dots" || background === "grid" ? background : "none";
+
+        localStorage.setItem("themeMode", normalizedMode);
+        localStorage.setItem("themeBackground", normalizedBg);
+
+        applyTheme(normalizedMode);
+        applyBackground(normalizedBg);
+      },
+      (err) => {
+        if (isAuthInvalidError(err)) {
+          void invalidateAuthSession({
+            reason: "session-invalid",
+            message: "Session invalide pendant le chargement des préférences.",
+          });
+          return;
+        }
+
+        void observeCaughtError("frontend.auth_settings_snapshot_error", err, {
+          source: "ThemeClientProvider",
+        });
+      },
+    );
+  }, [user]);
+
+  return children;
 }

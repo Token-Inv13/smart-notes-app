@@ -2,6 +2,12 @@ import admin from 'firebase-admin';
 
 let app: admin.app.App | null = null;
 
+export type SessionCookieVerificationResult = {
+  decoded: admin.auth.DecodedIdToken | null;
+  errorCode: 'none' | 'invalid' | 'service_unavailable';
+  errorMessage: string | null;
+};
+
 function getAdminApp(): admin.app.App {
   if (app) return app;
 
@@ -109,12 +115,55 @@ export function getAdminProjectId(): string | null {
   return typeof value === 'string' && value ? value : null;
 }
 
-export async function verifySessionCookie(sessionCookie: string) {
-  try {
-    return await getAdminAuth().verifySessionCookie(sessionCookie, true);
-  } catch {
-    return null;
+export function isFirebaseAdminServiceError(error: unknown): boolean {
+  const code = typeof error === 'object' && error !== null && 'code' in error ? (error as { code?: unknown }).code : null;
+  if (typeof code === 'string') {
+    if (code.startsWith('app/')) return true;
+    if (code === 'auth/invalid-credential' || code === 'auth/internal-error') return true;
+    if (code === 'auth/session-cookie-expired' || code === 'auth/invalid-session-cookie' || code === 'auth/argument-error') {
+      return false;
+    }
   }
+
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('firebase admin') ||
+    message.includes('service account') ||
+    message.includes('credential') ||
+    message.includes('failed to parse firebase admin json') ||
+    message.includes('missing firebase admin environment variables')
+  );
+}
+
+export async function verifySessionCookieDetailed(sessionCookie: string): Promise<SessionCookieVerificationResult> {
+  try {
+    const decoded = await getAdminAuth().verifySessionCookie(sessionCookie, true);
+    return {
+      decoded,
+      errorCode: 'none',
+      errorMessage: null,
+    };
+  } catch (error) {
+    if (isFirebaseAdminServiceError(error)) {
+      return {
+        decoded: null,
+        errorCode: 'service_unavailable',
+        errorMessage: error instanceof Error ? error.message : 'Firebase Admin unavailable',
+      };
+    }
+
+    return {
+      decoded: null,
+      errorCode: 'invalid',
+      errorMessage: error instanceof Error ? error.message : 'Invalid session cookie',
+    };
+  }
+}
+
+export async function verifySessionCookie(sessionCookie: string) {
+  const result = await verifySessionCookieDetailed(sessionCookie);
+  return result.decoded;
 }
 
 export async function createSessionCookie(idToken: string, expiresInMs: number) {

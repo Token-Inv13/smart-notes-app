@@ -10,7 +10,7 @@ type UseAdminGuardState = {
 };
 
 export function useAdminGuard(): UseAdminGuardState {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, status: authStatus, error: authError } = useAuth();
   const [validatedUid, setValidatedUid] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,9 +50,11 @@ export function useAdminGuard(): UseAdminGuardState {
 
   const claimsLoading = Boolean(user?.uid) && validatedUid !== (user?.uid ?? null) && error == null;
   const effectiveError =
-    !authLoading && !user
-      ? 'Session Firebase indisponible. Recharge la page puis reconnecte-toi si besoin.'
-      : error;
+    authStatus === 'session-error'
+      ? authError ?? 'Session Firebase invalide. Recharge la page puis reconnecte-toi.'
+      : !authLoading && !user
+        ? 'Session Firebase indisponible. Recharge la page puis reconnecte-toi si besoin.'
+        : error;
 
   return {
     ready: !authLoading && !claimsLoading && !effectiveError,

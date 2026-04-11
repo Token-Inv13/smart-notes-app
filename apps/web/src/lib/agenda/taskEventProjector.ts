@@ -34,6 +34,19 @@ function overlapsRange(start: Date, end: Date, rangeStart: Date, rangeEnd: Date)
   return end.getTime() > rangeStart.getTime() && start.getTime() < rangeEnd.getTime();
 }
 
+function compareProjectedEvents(left: ProjectedTaskEvent, right: ProjectedTaskEvent) {
+  const startDiff = left.start.getTime() - right.start.getTime();
+  if (startDiff !== 0) return startDiff;
+
+  const endDiff = left.end.getTime() - right.end.getTime();
+  if (endDiff !== 0) return endDiff;
+
+  const taskDiff = left.taskId.localeCompare(right.taskId);
+  if (taskDiff !== 0) return taskDiff;
+
+  return left.eventId.localeCompare(right.eventId);
+}
+
 function addRecurrenceStep(base: Date, freq: TaskRecurrenceFreq, interval: number) {
   const next = new Date(base);
   if (freq === "daily") next.setDate(next.getDate() + interval);
@@ -169,7 +182,7 @@ export function projectTasksToEvents(input: {
       const instanceDate = toLocalDateInputValue(cursorStart);
       if (!exceptions.has(instanceDate) && overlapsRange(cursorStart, cursorEnd, rangeStart, rangeEnd)) {
         events.push({
-          eventId: `${taskId}__${cursorStart.toISOString()}`,
+          eventId: `${taskId}__${instanceDate}`,
           taskId,
           task,
           start: new Date(cursorStart),
@@ -185,5 +198,14 @@ export function projectTasksToEvents(input: {
     }
   }
 
-  return { events, excluded };
+  const uniqueEvents = Array.from(
+    events.reduce((map, event) => {
+      if (!map.has(event.eventId)) {
+        map.set(event.eventId, event);
+      }
+      return map;
+    }, new Map<string, ProjectedTaskEvent>()).values(),
+  ).sort(compareProjectedEvents);
+
+  return { events: uniqueEvents, excluded };
 }

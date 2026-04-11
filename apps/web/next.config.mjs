@@ -2,10 +2,6 @@ import withPWA from 'next-pwa';
 
 const baseConfig = {
   turbopack: {},
-  typescript: {
-    // Type safety is enforced by dedicated CI step (`pnpm web:typecheck`).
-    ignoreBuildErrors: true,
-  },
 };
 
 const nextConfig = withPWA({

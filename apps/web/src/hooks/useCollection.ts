@@ -20,17 +20,16 @@ export function useCollection<T>(query: Query<T> | null): UseCollectionState<T> 
   const [error, setError] = useState<Error | null>(null);
   const [version, setVersion] = useState(0);
 
-  // Reset state during render if query changes
-  const [prevQuery, setPrevQuery] = useState<Query<T> | null>(query);
-  if (query !== prevQuery) {
-    setPrevQuery(query);
-    setData([]);
-    setLoading(!!query);
-    setError(null);
-  }
-
   useEffect(() => {
-    if (!query) return;
+    if (!query) {
+      setData([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
     const unsubscribe = onSnapshot(
       query as Query<T>,
       (snapshot: QuerySnapshot<T>) => {
@@ -54,4 +53,3 @@ export function useCollection<T>(query: Query<T> | null): UseCollectionState<T> 
 
   return { data, loading, error, refetch };
 }
-

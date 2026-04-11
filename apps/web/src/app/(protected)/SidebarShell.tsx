@@ -102,7 +102,7 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const workspaceId = searchParams.get("workspaceId");
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, status: authStatus } = useAuth();
   const { data: assistantSettings } = useAssistantSettings();
   const { data: assistantSuggestions } = useUserAssistantSuggestions({ limit: 20 });
   const [authInvalidating, setAuthInvalidating] = useState(false);
@@ -111,10 +111,16 @@ export default function SidebarShell({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     if (authLoading) return;
-    if (user) return;
+    if (authStatus === "authenticated" && user) return;
     setAuthInvalidating(true);
-    void invalidateAuthSession();
-  }, [authLoading, user]);
+    void invalidateAuthSession({
+      reason: authStatus === "session-error" ? "session-invalid" : "auth-required",
+      message:
+        authStatus === "session-error"
+          ? "Session Firebase invalide ou expirée."
+          : "Authentification Firebase indisponible.",
+    });
+  }, [authLoading, authStatus, user]);
 
   const baseSortedWorkspaces = useMemo(() => {
     return workspaces

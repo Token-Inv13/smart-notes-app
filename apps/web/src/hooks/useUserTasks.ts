@@ -88,8 +88,8 @@ export function useUserTasks(params?: UseUserTasksParams) {
       constraints.push(where('recurrence.freq', 'in', normalizedRecurrenceFreqs));
     }
 
-    const shouldOrderByStart = startDateFrom || startDateTo;
-    const shouldOrderByDue = dueDateFrom || dueDateTo || !normalizedRecurrenceFreqs?.length;
+    const shouldOrderByStart = Boolean(startDateFrom || startDateTo);
+    const shouldOrderByDue = Boolean(dueDateFrom || dueDateTo);
     if (shouldOrderByStart) {
       constraints.push(orderBy('startDate', 'asc'));
     } else if (shouldOrderByDue) {

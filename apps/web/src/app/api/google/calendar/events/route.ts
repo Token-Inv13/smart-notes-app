@@ -15,9 +15,13 @@ type IntegrationDoc = {
 
 type GoogleEventItem = {
   id?: string;
+  status?: string;
   summary?: string;
   start?: { date?: string; dateTime?: string };
   end?: { date?: string; dateTime?: string };
+  extendedProperties?: {
+    private?: Record<string, string | undefined>;
+  };
 };
 
 type GoogleEventsResponse = {
@@ -25,6 +29,7 @@ type GoogleEventsResponse = {
 };
 
 type GoogleCreateEventInput = {
+  taskId?: unknown;
   title?: unknown;
   start?: unknown;
   end?: unknown;
@@ -37,6 +42,7 @@ type GoogleUpdateEventInput = GoogleCreateEventInput & {
 };
 
 type GoogleDeleteEventInput = {
+  taskId?: unknown;
   googleEventId?: unknown;
 };
 
@@ -45,7 +51,37 @@ type TokenRefreshResponse = {
   expires_in?: number;
   scope?: string;
   token_type?: string;
+  error?: string;
 };
+
+type TokenRefreshResult =
+  | { ok: true; accessToken: string }
+  | { ok: false; code: "service_unavailable" | "token_missing" | "token_invalid"; message: string };
+
+type OwnedTaskRecord = {
+  ref: FirebaseFirestore.DocumentReference<FirebaseFirestore.DocumentData>;
+  data: Record<string, unknown>;
+};
+
+function taskSyncSuccessPayload(input: {
+  eventId?: string | null;
+  googleSyncStatus?: "synced" | "pending" | "error" | "missing_remote" | null;
+  googleSyncError?: string | null;
+}) {
+  return {
+    ...(input.eventId !== undefined ? { googleEventId: input.eventId } : {}),
+    googleSyncStatus: input.googleSyncStatus ?? null,
+    googleSyncError: input.googleSyncError ?? null,
+    googleSyncUpdatedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+}
+
+function sanitizeTaskId(value: unknown) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
 
 function resolveStoredToken(encryptedValue: string | undefined): string | null {
   if (typeof encryptedValue === "string" && encryptedValue.length > 0) {
@@ -74,13 +110,23 @@ function sanitizeOptionalTimeZone(value: unknown): string | null {
 }
 
 function buildGoogleEventPayload(input: {
+  taskId?: string | null;
   title: string;
   start: unknown;
   end: unknown;
   allDay: boolean;
   timeZone: string | null;
 }) {
-  const { title, start, end, allDay, timeZone } = input;
+  const { taskId, title, start, end, allDay, timeZone } = input;
+  const extendedProperties = taskId
+    ? {
+        extendedProperties: {
+          private: {
+            taskId,
+          },
+        },
+      }
+    : {};
 
   if (allDay) {
     const startDate = sanitizeDateOnly(start);
@@ -90,6 +136,7 @@ function buildGoogleEventPayload(input: {
       summary: title,
       start: { date: startDate },
       end: { date: endDate },
+      ...extendedProperties,
     };
   }
 
@@ -101,13 +148,14 @@ function buildGoogleEventPayload(input: {
     summary: title,
     start: timeZone ? { dateTime: startDateTime, timeZone } : { dateTime: startDateTime },
     end: timeZone ? { dateTime: endDateTime, timeZone } : { dateTime: endDateTime },
+    ...extendedProperties,
   };
 }
 
 async function refreshAccessTokenIfNeeded(input: {
   integration: IntegrationDoc;
   userId: string;
-}): Promise<string | null> {
+}): Promise<TokenRefreshResult> {
   const { integration, userId } = input;
 
   if (!hasGoogleTokenEncryptionKey()) {
@@ -115,7 +163,11 @@ async function refreshAccessTokenIfNeeded(input: {
       reason: "missing_token_encryption_key",
       uid: userId,
     });
-    return null;
+    return {
+      ok: false,
+      code: "service_unavailable",
+      message: "Configuration du service indisponible.",
+    };
   }
 
   const nowMs = Date.now();
@@ -126,11 +178,22 @@ async function refreshAccessTokenIfNeeded(input: {
 
   const stillValid = typeof expiresAtMs === "number" && expiresAtMs > nowMs + 30_000;
   if (currentAccessToken && stillValid) {
-    return currentAccessToken;
+    return { ok: true, accessToken: currentAccessToken };
   }
 
   if (!currentRefreshToken) {
-    return currentAccessToken;
+    if (currentAccessToken) {
+      return {
+        ok: false,
+        code: "token_invalid",
+        message: "Le jeton Google Calendar a expiré et ne peut pas être renouvelé.",
+      };
+    }
+    return {
+      ok: false,
+      code: "token_missing",
+      message: "Aucun jeton Google Calendar disponible.",
+    };
   }
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -139,7 +202,11 @@ async function refreshAccessTokenIfNeeded(input: {
       reason: "missing_google_client_id",
       uid: userId,
     });
-    return currentAccessToken;
+    return {
+      ok: false,
+      code: "service_unavailable",
+      message: "Configuration Google Calendar indisponible.",
+    };
   }
 
   const refreshPayload = new URLSearchParams({
@@ -160,13 +227,31 @@ async function refreshAccessTokenIfNeeded(input: {
   });
 
   if (!refreshRes.ok) {
-    return currentAccessToken;
+    const invalidGrant = refreshRes.status === 400 || refreshRes.status === 401;
+    return {
+      ok: false,
+      code: invalidGrant ? "token_invalid" : "service_unavailable",
+      message: invalidGrant
+        ? "Le compte Google Calendar doit être reconnecté."
+        : "Le renouvellement du jeton Google Calendar a échoué.",
+    };
   }
 
   const refreshJson = (await refreshRes.json()) as TokenRefreshResponse;
+  if (refreshJson.error === "invalid_grant") {
+    return {
+      ok: false,
+      code: "token_invalid",
+      message: "Le compte Google Calendar doit être reconnecté.",
+    };
+  }
   const refreshedAccessToken = typeof refreshJson.access_token === "string" ? refreshJson.access_token : null;
   if (!refreshedAccessToken) {
-    return currentAccessToken;
+    return {
+      ok: false,
+      code: "service_unavailable",
+      message: "Impossible de récupérer un jeton Google Calendar valide.",
+    };
   }
 
   const expiresIn = typeof refreshJson.expires_in === "number" ? refreshJson.expires_in : 3600;
@@ -182,7 +267,11 @@ async function refreshAccessTokenIfNeeded(input: {
       reason: "token_encryption_failed",
       uid: userId,
     });
-    return currentAccessToken;
+    return {
+      ok: false,
+      code: "service_unavailable",
+      message: "Le chiffrement des jetons Google Calendar a échoué.",
+    };
   }
 
   const tokenPayload = {
@@ -202,7 +291,7 @@ async function refreshAccessTokenIfNeeded(input: {
     { merge: true },
   );
 
-  return refreshedAccessToken;
+  return { ok: true, accessToken: refreshedAccessToken };
 }
 
 async function getAuthenticatedIntegration(request: NextRequest, requestId: string, eventName: string) {
@@ -260,6 +349,119 @@ async function getAuthenticatedIntegration(request: NextRequest, requestId: stri
   };
 }
 
+async function getOwnedTaskRecord(userId: string, taskId: string): Promise<OwnedTaskRecord | null> {
+  const db = getAdminDb();
+  const ref = db.collection("tasks").doc(taskId);
+  const snap = await ref.get();
+  if (!snap.exists) return null;
+
+  const data = snap.data();
+  if (!data || data.userId !== userId) return null;
+
+  return { ref, data };
+}
+
+async function setTaskGoogleSyncState(
+  taskRecord: OwnedTaskRecord | null,
+  input: {
+    eventId?: string | null;
+    googleSyncStatus?: "pending" | "synced" | "error" | "missing_remote" | null;
+    googleSyncError?: string | null;
+  },
+) {
+  if (!taskRecord) return;
+  await taskRecord.ref.set(taskSyncSuccessPayload(input), { merge: true });
+}
+
+async function findExistingGoogleEventByTaskId(input: {
+  accessToken: string;
+  calendarId: string;
+  taskId: string;
+}) {
+  const params = new URLSearchParams({
+    privateExtendedProperty: `taskId=${input.taskId}`,
+    showDeleted: "true",
+    singleEvents: "false",
+    maxResults: "10",
+  });
+
+  const response = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(input.calendarId)}/events?${params.toString()}`,
+    {
+      headers: {
+        Authorization: `Bearer ${input.accessToken}`,
+      },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) return null;
+
+  const payload = (await response.json()) as GoogleEventsResponse;
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  return items.find((item) => item.id && item.status !== "cancelled") ?? null;
+}
+
+async function createGoogleEventForTask(input: {
+  accessToken: string;
+  calendarId: string;
+  taskId: string;
+  title: string;
+  start: unknown;
+  end: unknown;
+  allDay: boolean;
+  timeZone: string | null;
+}) {
+  const googlePayload = buildGoogleEventPayload({
+    taskId: input.taskId,
+    title: input.title,
+    start: input.start,
+    end: input.end,
+    allDay: input.allDay,
+    timeZone: input.timeZone,
+  });
+
+  if (!googlePayload) {
+    return {
+      ok: false as const,
+      code: "invalid_payload",
+      message: "Plage horaire Google Calendar invalide.",
+      status: 400,
+    };
+  }
+
+  const createRes = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(input.calendarId)}/events`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${input.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(googlePayload),
+      cache: "no-store",
+    },
+  );
+
+  if (!createRes.ok) {
+    return {
+      ok: false as const,
+      code: createRes.status === 401 || createRes.status === 403 ? "token_invalid" : "create_failed",
+      message:
+        createRes.status === 401 || createRes.status === 403
+          ? "Le compte Google Calendar doit être reconnecté."
+          : "La création Google Calendar a échoué.",
+      status: createRes.status === 401 || createRes.status === 403 ? 401 : 502,
+    };
+  }
+
+  const createdJson = (await createRes.json()) as { id?: unknown };
+  return {
+    ok: true as const,
+    eventId: typeof createdJson.id === "string" ? createdJson.id : null,
+  };
+}
+
 export async function GET(request: NextRequest) {
   const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
 
@@ -284,10 +486,15 @@ export async function GET(request: NextRequest) {
       return observedJson(obsUser, { events: [] });
     }
 
-    const accessToken = await refreshAccessTokenIfNeeded({ integration, userId: uid });
-    if (!accessToken) {
-      return observedJson(obsUser, { events: [] });
+    const accessTokenResult = await refreshAccessTokenIfNeeded({ integration, userId: uid });
+    if (!accessTokenResult.ok) {
+      return observedJson(
+        obsUser,
+        { error: accessTokenResult.message, code: accessTokenResult.code },
+        { status: accessTokenResult.code === "token_invalid" ? 401 : 503 },
+      );
     }
+    const accessToken = accessTokenResult.accessToken;
 
     const calendarId = typeof integration.primaryCalendarId === "string" && integration.primaryCalendarId
       ? integration.primaryCalendarId
@@ -321,7 +528,11 @@ export async function GET(request: NextRequest) {
           count: 1,
         });
       }
-      return observedJson(obsUser, { events: [] });
+      return observedJson(
+        obsUser,
+        { error: "Google Calendar unavailable" },
+        { status: eventsRes.status === 429 ? 429 : 503 },
+      );
     }
 
     const eventsJson = (await eventsRes.json()) as GoogleEventsResponse;
@@ -331,12 +542,13 @@ export async function GET(request: NextRequest) {
             const startRaw = item.start?.dateTime ?? item.start?.date;
             const endRaw = item.end?.dateTime ?? item.end?.date;
             if (!startRaw || !endRaw || !item.id) return null;
+            const isAllDay = typeof item.start?.date === "string";
             return {
               id: item.id,
               title: typeof item.summary === "string" && item.summary.trim() ? item.summary : "Événement Google",
-              start: new Date(startRaw).toISOString(),
-              end: new Date(endRaw).toISOString(),
-              allDay: typeof item.start?.date === "string",
+              start: isAllDay ? startRaw : new Date(startRaw).toISOString(),
+              end: isAllDay ? endRaw : new Date(endRaw).toISOString(),
+              allDay: isAllDay,
             };
           })
           .filter((item) => Boolean(item))
@@ -364,71 +576,158 @@ export async function POST(request: NextRequest) {
     if (auth.kind === "response") return auth.response;
 
     const { uid, snap, obs: obsUser } = auth;
-    if (!snap.exists) {
-      return observedJson(obsUser, { created: false });
-    }
-
-    const integration = snap.data() as IntegrationDoc;
-    if (integration.connected !== true) {
-      return observedJson(obsUser, { created: false });
-    }
-
-    const accessToken = await refreshAccessTokenIfNeeded({ integration, userId: uid });
-    if (!accessToken) {
-      return observedJson(obsUser, { created: false });
-    }
-
     const body = (await request.json()) as GoogleCreateEventInput;
+    const taskId = sanitizeTaskId(body.taskId);
     const title = typeof body.title === "string" ? body.title.trim() : "";
     const allDay = body.allDay === true;
     const timeZone = sanitizeOptionalTimeZone(body.timeZone);
 
-    if (!title) {
-      return observedJson(obsUser, { error: "Invalid title" }, { status: 400 });
+    if (!taskId) {
+      return observedJson(obsUser, { error: "Invalid task id", code: "invalid_task_id" }, { status: 400 });
     }
 
-    const googlePayload = buildGoogleEventPayload({
-      title,
-      start: body.start,
-      end: body.end,
-      allDay,
-      timeZone,
-    });
+    const taskRecord = await getOwnedTaskRecord(uid, taskId);
+    if (!taskRecord) {
+      return observedJson(obsUser, { error: "Task not found", code: "task_not_found" }, { status: 404 });
+    }
 
-    if (!googlePayload) {
-      return observedJson(obsUser, { error: "Invalid event payload" }, { status: 400 });
+    if (!snap.exists) {
+      await setTaskGoogleSyncState(taskRecord, {
+        eventId: null,
+        googleSyncStatus: "error",
+        googleSyncError: "Google Calendar n’est pas connecté.",
+      });
+      return observedJson(
+        obsUser,
+        {
+          created: false,
+          code: "integration_not_connected",
+          message: "Google Calendar n’est pas connecté.",
+        },
+        { status: 409 },
+      );
+    }
+
+    const integration = snap.data() as IntegrationDoc;
+    if (integration.connected !== true) {
+      await setTaskGoogleSyncState(taskRecord, {
+        eventId: null,
+        googleSyncStatus: "error",
+        googleSyncError: "Google Calendar n’est pas connecté.",
+      });
+      return observedJson(
+        obsUser,
+        {
+          created: false,
+          code: "integration_not_connected",
+          message: "Google Calendar n’est pas connecté.",
+        },
+        { status: 409 },
+      );
+    }
+
+    const accessTokenResult = await refreshAccessTokenIfNeeded({ integration, userId: uid });
+    if (!accessTokenResult.ok) {
+      await setTaskGoogleSyncState(taskRecord, {
+        eventId: taskRecord.data.googleEventId as string | null | undefined,
+        googleSyncStatus: "error",
+        googleSyncError: accessTokenResult.message,
+      });
+      return observedJson(
+        obsUser,
+        {
+          created: false,
+          code: accessTokenResult.code,
+          message: accessTokenResult.message,
+        },
+        { status: accessTokenResult.code === "token_invalid" ? 401 : 503 },
+      );
+    }
+    const accessToken = accessTokenResult.accessToken;
+
+    if (!title) {
+      return observedJson(obsUser, { error: "Invalid title", code: "invalid_title" }, { status: 400 });
+    }
+
+    if (typeof taskRecord.data.googleEventId === "string" && taskRecord.data.googleEventId.trim()) {
+      await setTaskGoogleSyncState(taskRecord, {
+        eventId: taskRecord.data.googleEventId.trim(),
+        googleSyncStatus: "synced",
+        googleSyncError: null,
+      });
+      return observedJson(obsUser, {
+        created: true,
+        alreadyLinked: true,
+        eventId: taskRecord.data.googleEventId.trim(),
+        code: "already_linked",
+        message: "L’événement Google Calendar est déjà lié à cette tâche.",
+      });
     }
 
     const calendarId = typeof integration.primaryCalendarId === "string" && integration.primaryCalendarId
       ? integration.primaryCalendarId
       : "primary";
 
-    const createRes = await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(googlePayload),
-        cache: "no-store",
-      },
-    );
+    const existingEvent = await findExistingGoogleEventByTaskId({
+      accessToken,
+      calendarId,
+      taskId,
+    });
+    if (existingEvent?.id) {
+      await setTaskGoogleSyncState(taskRecord, {
+        eventId: existingEvent.id,
+        googleSyncStatus: "synced",
+        googleSyncError: null,
+      });
+      return observedJson(obsUser, {
+        created: true,
+        reconciled: true,
+        eventId: existingEvent.id,
+        code: "reconciled_existing_event",
+        message: "Lien Google Calendar réconcilié avec un événement existant.",
+      });
+    }
 
-    if (!createRes.ok) {
+    const created = await createGoogleEventForTask({
+      accessToken,
+      calendarId,
+      taskId,
+      title,
+      start: body.start,
+      end: body.end,
+      allDay,
+      timeZone,
+    });
+    if (!created.ok) {
+      await setTaskGoogleSyncState(taskRecord, {
+        eventId: null,
+        googleSyncStatus: "error",
+        googleSyncError: created.message,
+      });
       console.warn("google.calendar.events.create_failed", {
         requestId,
         uid,
-        status: createRes.status,
+        taskId,
+        code: created.code,
       });
-      return observedJson(obsUser, { created: false }, { status: 502 });
+      return observedJson(
+        obsUser,
+        { created: false, code: created.code, message: created.message },
+        { status: created.status },
+      );
     }
 
-    const createdJson = (await createRes.json()) as { id?: unknown };
+    await setTaskGoogleSyncState(taskRecord, {
+      eventId: created.eventId,
+      googleSyncStatus: "synced",
+      googleSyncError: null,
+    });
+
     return observedJson(obsUser, {
       created: true,
-      eventId: typeof createdJson.id === "string" ? createdJson.id : null,
+      eventId: created.eventId,
+      code: "created",
+      message: "Événement Google Calendar créé.",
     });
   } catch (e) {
     const obs = beginApiObserve({
@@ -451,35 +750,117 @@ export async function PATCH(request: NextRequest) {
     if (auth.kind === "response") return auth.response;
 
     const { uid, snap, obs: obsUser } = auth;
-    if (!snap.exists) {
-      return observedJson(obsUser, { updated: false });
-    }
-
-    const integration = snap.data() as IntegrationDoc;
-    if (integration.connected !== true) {
-      return observedJson(obsUser, { updated: false });
-    }
-
-    const accessToken = await refreshAccessTokenIfNeeded({ integration, userId: uid });
-    if (!accessToken) {
-      return observedJson(obsUser, { updated: false });
-    }
-
     const body = (await request.json()) as GoogleUpdateEventInput;
-    const googleEventId = typeof body.googleEventId === "string" ? body.googleEventId.trim() : "";
+    const taskId = sanitizeTaskId(body.taskId);
+    const requestedGoogleEventId = typeof body.googleEventId === "string" ? body.googleEventId.trim() : "";
     const title = typeof body.title === "string" ? body.title.trim() : "";
     const allDay = body.allDay === true;
     const timeZone = sanitizeOptionalTimeZone(body.timeZone);
 
-    if (!googleEventId) {
-      return observedJson(obsUser, { error: "Invalid google event id" }, { status: 400 });
+    if (!taskId) {
+      return observedJson(obsUser, { error: "Invalid task id", code: "invalid_task_id" }, { status: 400 });
     }
 
+    const taskRecord = await getOwnedTaskRecord(uid, taskId);
+    if (!taskRecord) {
+      return observedJson(obsUser, { error: "Task not found", code: "task_not_found" }, { status: 404 });
+    }
+
+    if (!snap.exists) {
+      await setTaskGoogleSyncState(taskRecord, {
+        eventId: taskRecord.data.googleEventId as string | null | undefined,
+        googleSyncStatus: "error",
+        googleSyncError: "Google Calendar n’est pas connecté.",
+      });
+      return observedJson(
+        obsUser,
+        { updated: false, code: "integration_not_connected", message: "Google Calendar n’est pas connecté." },
+        { status: 409 },
+      );
+    }
+
+    const integration = snap.data() as IntegrationDoc;
+    if (integration.connected !== true) {
+      await setTaskGoogleSyncState(taskRecord, {
+        eventId: taskRecord.data.googleEventId as string | null | undefined,
+        googleSyncStatus: "error",
+        googleSyncError: "Google Calendar n’est pas connecté.",
+      });
+      return observedJson(
+        obsUser,
+        { updated: false, code: "integration_not_connected", message: "Google Calendar n’est pas connecté." },
+        { status: 409 },
+      );
+    }
+
+    const accessTokenResult = await refreshAccessTokenIfNeeded({ integration, userId: uid });
+    if (!accessTokenResult.ok) {
+      await setTaskGoogleSyncState(taskRecord, {
+        eventId: taskRecord.data.googleEventId as string | null | undefined,
+        googleSyncStatus: "error",
+        googleSyncError: accessTokenResult.message,
+      });
+      return observedJson(
+        obsUser,
+        { updated: false, code: accessTokenResult.code, message: accessTokenResult.message },
+        { status: accessTokenResult.code === "token_invalid" ? 401 : 503 },
+      );
+    }
+    const accessToken = accessTokenResult.accessToken;
+
     if (!title) {
-      return observedJson(obsUser, { error: "Invalid title" }, { status: 400 });
+      return observedJson(obsUser, { error: "Invalid title", code: "invalid_title" }, { status: 400 });
+    }
+
+    const calendarId = typeof integration.primaryCalendarId === "string" && integration.primaryCalendarId
+      ? integration.primaryCalendarId
+      : "primary";
+    const googleEventId =
+      requestedGoogleEventId ||
+      (typeof taskRecord.data.googleEventId === "string" && taskRecord.data.googleEventId.trim()
+        ? taskRecord.data.googleEventId.trim()
+        : "");
+
+    if (!googleEventId) {
+      const created = await createGoogleEventForTask({
+        accessToken,
+        calendarId,
+        taskId,
+        title,
+        start: body.start,
+        end: body.end,
+        allDay,
+        timeZone,
+      });
+      if (!created.ok) {
+        await setTaskGoogleSyncState(taskRecord, {
+          eventId: null,
+          googleSyncStatus: "error",
+          googleSyncError: created.message,
+        });
+        return observedJson(
+          obsUser,
+          { updated: false, code: created.code, message: created.message },
+          { status: created.status },
+        );
+      }
+
+      await setTaskGoogleSyncState(taskRecord, {
+        eventId: created.eventId,
+        googleSyncStatus: "synced",
+        googleSyncError: null,
+      });
+      return observedJson(obsUser, {
+        updated: true,
+        recreated: true,
+        eventId: created.eventId,
+        code: "created_from_missing_link",
+        message: "Événement Google Calendar recréé pour cette tâche.",
+      });
     }
 
     const googlePayload = buildGoogleEventPayload({
+      taskId,
       title,
       start: body.start,
       end: body.end,
@@ -488,12 +869,17 @@ export async function PATCH(request: NextRequest) {
     });
 
     if (!googlePayload) {
-      return observedJson(obsUser, { error: "Invalid event payload" }, { status: 400 });
+      await setTaskGoogleSyncState(taskRecord, {
+        eventId: null,
+        googleSyncStatus: "error",
+        googleSyncError: "Plage horaire Google Calendar invalide.",
+      });
+      return observedJson(
+        obsUser,
+        { error: "Invalid event payload", code: "invalid_event_payload", message: "Plage horaire Google Calendar invalide." },
+        { status: 400 },
+      );
     }
-
-    const calendarId = typeof integration.primaryCalendarId === "string" && integration.primaryCalendarId
-      ? integration.primaryCalendarId
-      : "primary";
 
     const updateRes = await fetch(
       `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(googleEventId)}`,
@@ -508,19 +894,115 @@ export async function PATCH(request: NextRequest) {
       },
     );
 
+    if (updateRes.status === 404 || updateRes.status === 410) {
+      const existingEvent = await findExistingGoogleEventByTaskId({
+        accessToken,
+        calendarId,
+        taskId,
+      });
+
+      if (existingEvent?.id) {
+        const retryRes = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(existingEvent.id)}`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(googlePayload),
+            cache: "no-store",
+          },
+        );
+
+        if (retryRes.ok) {
+          await setTaskGoogleSyncState(taskRecord, {
+            eventId: existingEvent.id,
+            googleSyncStatus: "synced",
+            googleSyncError: null,
+          });
+          return observedJson(obsUser, {
+            updated: true,
+            reconciled: true,
+            eventId: existingEvent.id,
+            code: "relinked_existing_event",
+            message: "Événement Google Calendar relinké puis mis à jour.",
+          });
+        }
+      }
+
+      const recreated = await createGoogleEventForTask({
+        accessToken,
+        calendarId,
+        taskId,
+        title,
+        start: body.start,
+        end: body.end,
+        allDay,
+        timeZone,
+      });
+      if (!recreated.ok) {
+        await setTaskGoogleSyncState(taskRecord, {
+          eventId: null,
+          googleSyncStatus: "missing_remote",
+          googleSyncError: recreated.message,
+        });
+        return observedJson(
+          obsUser,
+          { updated: false, code: "remote_missing", message: "L’événement Google lié n’existe plus et la recréation a échoué." },
+          { status: 409 },
+        );
+      }
+
+      await setTaskGoogleSyncState(taskRecord, {
+        eventId: recreated.eventId,
+        googleSyncStatus: "synced",
+        googleSyncError: null,
+      });
+      return observedJson(obsUser, {
+        updated: true,
+        recreated: true,
+        eventId: recreated.eventId,
+        code: "recreated_after_remote_missing",
+        message: "L’événement Google manquant a été recréé.",
+      });
+    }
+
     if (!updateRes.ok) {
+      const message =
+        updateRes.status === 401 || updateRes.status === 403
+          ? "Le compte Google Calendar doit être reconnecté."
+          : "La mise à jour Google Calendar a échoué.";
+      await setTaskGoogleSyncState(taskRecord, {
+        eventId: googleEventId,
+        googleSyncStatus: "error",
+        googleSyncError: message,
+      });
       console.warn("google.calendar.events.update_failed", {
         requestId,
         uid,
         status: updateRes.status,
+        taskId,
       });
-      return observedJson(obsUser, { updated: false }, { status: 502 });
+      return observedJson(
+        obsUser,
+        { updated: false, code: updateRes.status === 401 || updateRes.status === 403 ? "token_invalid" : "update_failed", message },
+        { status: updateRes.status === 401 || updateRes.status === 403 ? 401 : 502 },
+      );
     }
 
     const updatedJson = (await updateRes.json()) as { id?: unknown };
+    const updatedEventId = typeof updatedJson.id === "string" ? updatedJson.id : googleEventId;
+    await setTaskGoogleSyncState(taskRecord, {
+      eventId: updatedEventId,
+      googleSyncStatus: "synced",
+      googleSyncError: null,
+    });
     return observedJson(obsUser, {
       updated: true,
-      eventId: typeof updatedJson.id === "string" ? updatedJson.id : googleEventId,
+      eventId: updatedEventId,
+      code: "updated",
+      message: "Événement Google Calendar mis à jour.",
     });
   } catch (e) {
     const obs = beginApiObserve({
@@ -543,24 +1025,77 @@ export async function DELETE(request: NextRequest) {
     if (auth.kind === "response") return auth.response;
 
     const { uid, snap, obs: obsUser } = auth;
+    const body = (await request.json()) as GoogleDeleteEventInput;
+    const taskId = sanitizeTaskId((body as GoogleDeleteEventInput & { taskId?: unknown }).taskId);
+    if (!taskId) {
+      return observedJson(obsUser, { error: "Invalid task id", code: "invalid_task_id" }, { status: 400 });
+    }
+
+    const taskRecord = await getOwnedTaskRecord(uid, taskId);
+    if (!taskRecord) {
+      return observedJson(obsUser, { error: "Task not found", code: "task_not_found" }, { status: 404 });
+    }
+
     if (!snap.exists) {
-      return observedJson(obsUser, { deleted: false });
+      await setTaskGoogleSyncState(taskRecord, {
+        eventId: taskRecord.data.googleEventId as string | null | undefined,
+        googleSyncStatus: "error",
+        googleSyncError: "Google Calendar n’est pas connecté.",
+      });
+      return observedJson(
+        obsUser,
+        { deleted: false, code: "integration_not_connected", message: "Google Calendar n’est pas connecté." },
+        { status: 409 },
+      );
     }
 
     const integration = snap.data() as IntegrationDoc;
     if (integration.connected !== true) {
-      return observedJson(obsUser, { deleted: false });
+      await setTaskGoogleSyncState(taskRecord, {
+        eventId: taskRecord.data.googleEventId as string | null | undefined,
+        googleSyncStatus: "error",
+        googleSyncError: "Google Calendar n’est pas connecté.",
+      });
+      return observedJson(
+        obsUser,
+        { deleted: false, code: "integration_not_connected", message: "Google Calendar n’est pas connecté." },
+        { status: 409 },
+      );
     }
 
-    const accessToken = await refreshAccessTokenIfNeeded({ integration, userId: uid });
-    if (!accessToken) {
-      return observedJson(obsUser, { deleted: false });
+    const accessTokenResult = await refreshAccessTokenIfNeeded({ integration, userId: uid });
+    if (!accessTokenResult.ok) {
+      await setTaskGoogleSyncState(taskRecord, {
+        eventId: taskRecord.data.googleEventId as string | null | undefined,
+        googleSyncStatus: "error",
+        googleSyncError: accessTokenResult.message,
+      });
+      return observedJson(
+        obsUser,
+        { deleted: false, code: accessTokenResult.code, message: accessTokenResult.message },
+        { status: accessTokenResult.code === "token_invalid" ? 401 : 503 },
+      );
     }
+    const accessToken = accessTokenResult.accessToken;
 
-    const body = (await request.json()) as GoogleDeleteEventInput;
-    const googleEventId = typeof body.googleEventId === "string" ? body.googleEventId.trim() : "";
+    const requestedGoogleEventId = typeof body.googleEventId === "string" ? body.googleEventId.trim() : "";
+    const googleEventId =
+      requestedGoogleEventId ||
+      (typeof taskRecord.data.googleEventId === "string" && taskRecord.data.googleEventId.trim()
+        ? taskRecord.data.googleEventId.trim()
+        : "");
     if (!googleEventId) {
-      return observedJson(obsUser, { error: "Invalid google event id" }, { status: 400 });
+      await setTaskGoogleSyncState(taskRecord, {
+        eventId: null,
+        googleSyncStatus: "error",
+        googleSyncError: null,
+      });
+      return observedJson(obsUser, {
+        deleted: true,
+        alreadyMissing: true,
+        code: "already_unlinked",
+        message: "Aucun événement Google Calendar n’était lié à cette tâche.",
+      });
     }
 
     const calendarId = typeof integration.primaryCalendarId === "string" && integration.primaryCalendarId
@@ -579,24 +1114,57 @@ export async function DELETE(request: NextRequest) {
     );
 
     if (deleteRes.status === 404 || deleteRes.status === 410) {
+      await setTaskGoogleSyncState(taskRecord, {
+        eventId: null,
+        googleSyncStatus: "missing_remote",
+        googleSyncError: "L’événement Google Calendar était déjà absent.",
+      });
       console.warn("google.calendar.events.delete_missing", {
         requestId,
         uid,
         status: deleteRes.status,
       });
-      return observedJson(obsUser, { deleted: true, alreadyMissing: true });
+      return observedJson(obsUser, {
+        deleted: true,
+        alreadyMissing: true,
+        code: "already_missing",
+        message: "L’événement Google Calendar était déjà absent.",
+      });
     }
 
     if (!deleteRes.ok) {
+      const message =
+        deleteRes.status === 401 || deleteRes.status === 403
+          ? "Le compte Google Calendar doit être reconnecté."
+          : "La suppression Google Calendar a échoué.";
+      await setTaskGoogleSyncState(taskRecord, {
+        eventId: googleEventId,
+        googleSyncStatus: "error",
+        googleSyncError: message,
+      });
       console.warn("google.calendar.events.delete_failed", {
         requestId,
         uid,
         status: deleteRes.status,
       });
-      return observedJson(obsUser, { deleted: false }, { status: 502 });
+      return observedJson(
+        obsUser,
+        { deleted: false, code: deleteRes.status === 401 || deleteRes.status === 403 ? "token_invalid" : "delete_failed", message },
+        { status: deleteRes.status === 401 || deleteRes.status === 403 ? 401 : 502 },
+      );
     }
 
-    return observedJson(obsUser, { deleted: true });
+    await setTaskGoogleSyncState(taskRecord, {
+      eventId: null,
+      googleSyncStatus: "synced",
+      googleSyncError: null,
+    });
+
+    return observedJson(obsUser, {
+      deleted: true,
+      code: "deleted",
+      message: "Événement Google Calendar supprimé.",
+    });
   } catch (e) {
     const obs = beginApiObserve({
       eventName: "google.calendar.events.delete",

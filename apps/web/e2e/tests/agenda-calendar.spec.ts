@@ -585,6 +585,9 @@ test("agenda_creation_attempts_google_event_creation_after_local_create", async 
     .poll(() => (googleCreatePayload as { title?: string } | null)?.title ?? null)
     .toBe(title);
   await expect
+    .poll(() => (googleCreatePayload as { taskId?: string } | null)?.taskId ?? null)
+    .not.toBeNull();
+  await expect
     .poll(() => (googleCreatePayload as { allDay?: boolean } | null)?.allDay ?? null)
     .toBe(true);
 });
@@ -686,6 +689,38 @@ test("agenda_update_keeps_local_change_when_google_patch_fails", async ({ page }
   await expect(editDialog).toBeHidden();
 
   await expect(page.getByText(`${title} kept`).first()).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText("La mise à jour Google Calendar a échoué.")).toBeVisible();
+});
+
+test("agenda_update_recreates_google_event_when_remote_event_is_missing", async ({ page }) => {
+  const users = getE2EUsers();
+  await loginViaUi(page, users.owner, "/tasks?view=calendar");
+
+  await mockGoogleCalendarCreate(page, {
+    body: { created: true, eventId: "gcal-linked-recreate-1" },
+  });
+
+  let googleUpdatePayload: unknown = null;
+  await mockGoogleCalendarUpdate(page, {
+    status: 200,
+    body: { updated: true, recreated: true, eventId: "gcal-linked-recreate-2" },
+    onRequest: (body) => {
+      googleUpdatePayload = body;
+    },
+  });
+
+  const title = uniqueAgendaTitle("googlePatchRecreate");
+  await createTaskFromCalendar(page, title);
+
+  await page.getByText(title).first().click();
+  const editDialog = page.getByRole("dialog", { name: "Modifier l’élément d’agenda" });
+  await expect(editDialog).toBeVisible();
+  await editDialog.getByLabel("Titre").fill(`${title} recreated`);
+  await editDialog.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(editDialog).toBeHidden();
+
+  await expect.poll(() => googleUpdatePayload).not.toBeNull();
+  await expect(page.getByText("Événement Google recréé après divergence détectée.")).toBeVisible();
 });
 
 test("agenda_detail_update_attempts_google_patch_for_linked_task", async ({ page }) => {
@@ -986,6 +1021,9 @@ test("agenda_delete_attempts_google_delete_for_linked_task", async ({ page }) =>
   await expect(detailDialog).toBeHidden();
   await expect.poll(() => googleDeletePayload).not.toBeNull();
   await expect
+    .poll(() => (googleDeletePayload as { taskId?: string } | null)?.taskId ?? null)
+    .not.toBeNull();
+  await expect
     .poll(() => (googleDeletePayload as { googleEventId?: string } | null)?.googleEventId ?? null)
     .toBe("gcal-delete-1");
 });
@@ -1013,7 +1051,7 @@ test("agenda_delete_skips_google_delete_when_task_has_no_google_event_id", async
   await expect.poll(() => deleteCalls).toBe(0);
 });
 
-test("agenda_delete_keeps_local_delete_when_google_delete_fails", async ({ page }) => {
+test("agenda_delete_blocks_local_delete_when_google_delete_fails", async ({ page }) => {
   const users = getE2EUsers();
   await loginViaUi(page, users.owner, "/tasks?view=calendar");
 
@@ -1033,7 +1071,8 @@ test("agenda_delete_keeps_local_delete_when_google_delete_fails", async ({ page 
   await detailDialog.getByRole("menuitem", { name: "Supprimer" }).click();
   await detailDialog.getByRole("button", { name: "Supprimer définitivement" }).click();
 
-  await expect(detailDialog).toBeHidden();
+  await expect(detailDialog).toBeVisible();
+  await expect(page.getByText("La suppression Google Calendar a échoué.")).toBeVisible();
   await page.goto("/tasks?view=list");
-  await expect(page.getByText(title)).toHaveCount(0);
+  await expect(page.getByText(title).first()).toBeVisible({ timeout: 15000 });
 });

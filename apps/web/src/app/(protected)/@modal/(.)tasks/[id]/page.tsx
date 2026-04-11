@@ -30,14 +30,12 @@ import {
   formatTimestampToDateTimeFr,
   formatTimestampForDateInput,
   formatTimestampForInput,
-  getUserTimezone,
   isExactAllDayWindow,
   parseLocalDateTimeToTimestamp,
   parseLocalDateToTimestamp,
 } from "@/lib/datetime";
 import { toUserErrorMessage } from "@/lib/userError";
 import { buildWorkspacePathLabelMap } from "@/lib/workspaces";
-import { normalizeDisplayText } from "@/lib/normalizeText";
 import DictationMicButton from "@/app/(protected)/_components/DictationMicButton";
 import { insertTextAtSelection, prepareDictationTextForInsertion } from "@/lib/textInsert";
 import Modal from "../../../Modal";
@@ -54,6 +52,15 @@ import {
   TASK_MODAL_EDIT_TITLE,
   TASK_PRIORITY_OPTIONS,
 } from "../../../_components/taskModalLabels";
+import {
+  buildGoogleCalendarSyncPayload,
+  deleteGoogleCalendarEvent,
+  GOOGLE_SYNC_DELETE_BLOCKED_MESSAGE,
+  GOOGLE_SYNC_DETACHED_MESSAGE,
+  GOOGLE_SYNC_INCOMPLETE_WINDOW_MESSAGE,
+  mirrorGoogleSyncStateOnTask,
+  updateGoogleCalendarEvent,
+} from "@/lib/googleCalendarSync";
 
 function formatFrDateTime(ts?: TaskDoc["dueDate"] | null) {
   return formatTimestampToDateTimeFr(ts ?? null);
@@ -83,13 +90,6 @@ function formatReminderDate(iso: string | null | undefined): string {
   return formatDateTimeFr(date);
 }
 
-function toLocalDateInputValue(date: Date) {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 function getReminderRestrictionMessage(task: TaskDoc | null | undefined): string | null {
   if (task?.recurrence?.freq) {
     return "Les rappels ne sont pas pris en charge pour les tâches récurrentes.";
@@ -99,9 +99,6 @@ function getReminderRestrictionMessage(task: TaskDoc | null | undefined): string
   }
   return null;
 }
-
-const GOOGLE_SYNC_INCOMPLETE_WINDOW_MESSAGE =
-  "Élément enregistré dans TaskNote, mais non synchronisé avec Google Calendar faute de plage horaire complète.";
 
 function priorityLabel(p?: TaskDoc["priority"] | null) {
   if (p === "high") return "Haute";
@@ -114,6 +111,17 @@ function statusLabel(s?: TaskDoc["status"] | null) {
   if (s === "doing") return "En cours";
   if (s === "done") return "Terminée";
   return "À faire";
+}
+
+function getGoogleSyncStateMessage(task: TaskDoc | null | undefined) {
+  if (!task) return null;
+  if (task.googleSyncStatus === "missing_remote") {
+    return task.googleSyncError || "L’événement Google lié n’existe plus. Une prochaine modification peut le recréer.";
+  }
+  if (task.googleSyncStatus === "error") {
+    return task.googleSyncError || "La synchronisation Google Calendar a échoué.";
+  }
+  return null;
 }
 
 type TaskStatus = "todo" | "doing" | "done";
@@ -871,7 +879,6 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
   const saveEdits = async (opts?: { setView?: boolean }): Promise<boolean> => {
     if (!task?.id) return false;
-    if (saving) return false;
 
     const user = auth.currentUser;
     if (!user || user.uid !== task.userId) {
@@ -956,29 +963,6 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       status: validation.data.status,
     });
 
-    const shouldSwitchToView = opts?.setView === true;
-    const previousTask = task;
-    const previousMode = mode;
-    const previousSnapshot = lastSavedSnapshotRef.current;
-    const previousDirty = isDirtyRef.current;
-    const optimisticTask = {
-      ...task,
-      title: validation.data.title,
-      status: validation.data.status,
-      workspaceId: validation.data.workspaceId ?? null,
-      allDay: explicitAllDay,
-      startDate: startTimestamp,
-      dueDate: dueTimestamp,
-      priority,
-    };
-
-    setTask(optimisticTask);
-    if (shouldSwitchToView) {
-      setMode("view");
-    }
-    lastSavedSnapshotRef.current = nextSnapshot;
-    setDirty(false);
-
     try {
       await updateDoc(doc(db, "tasks", task.id), {
         title: validation.data.title,
@@ -994,57 +978,134 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       console.info("[task modal] saveEdits success", { taskId: task.id });
 
       if (
-        typeof task.googleEventId === "string" &&
-        task.googleEventId.trim() &&
+        (
+          (typeof task.googleEventId === "string" && task.googleEventId.trim()) ||
+          task.googleSyncStatus === "error" ||
+          task.googleSyncStatus === "missing_remote"
+        ) &&
         startTimestamp &&
         dueTimestamp
       ) {
-        const googleStart = startTimestamp.toDate();
-        const googleEnd = dueTimestamp.toDate();
-        const googlePayload = explicitAllDay
-          ? {
-              googleEventId: task.googleEventId,
-              title: validation.data.title,
-              start: toLocalDateInputValue(googleStart),
-              end: toLocalDateInputValue(googleEnd),
-              allDay: true,
-            }
-          : {
-              googleEventId: task.googleEventId,
-              title: validation.data.title,
-              start: googleStart.toISOString(),
-              end: googleEnd.toISOString(),
-              allDay: false,
-              timeZone: getUserTimezone(),
-            };
-
-        void fetch("/api/google/calendar/events", {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(googlePayload),
-        }).then((response) => {
-          if (!response.ok) {
-            console.warn("agenda.google.update_failed", {
-              taskId: task.id,
-              status: response.status,
-            });
-          }
-        }).catch((error) => {
-          console.warn("agenda.google.update_failed", {
+        const syncResult = await updateGoogleCalendarEvent(
+          buildGoogleCalendarSyncPayload({
             taskId: task.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        });
+            googleEventId: task.googleEventId,
+            title: validation.data.title,
+            start: startTimestamp.toDate(),
+            end: dueTimestamp.toDate(),
+            allDay: explicitAllDay,
+          }),
+        );
+
+        if (!syncResult.ok) {
+          void mirrorGoogleSyncStateOnTask({
+            taskId: task.id,
+            eventId: task.googleEventId ?? null,
+            status: syncResult.code === "remote_missing" ? "missing_remote" : "error",
+            error: syncResult.message,
+          }).catch(() => {});
+          setSyncFeedback(syncResult.message);
+          setTask((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  googleSyncStatus: syncResult.code === "remote_missing" ? "missing_remote" : "error",
+                  googleSyncError: syncResult.message,
+                }
+              : prev,
+          );
+        } else {
+          void mirrorGoogleSyncStateOnTask({
+            taskId: task.id,
+            eventId: syncResult.eventId ?? task.googleEventId ?? null,
+            status: "synced",
+            error: null,
+          }).catch(() => {});
+          setTask((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  googleEventId: syncResult.eventId ?? prev.googleEventId ?? null,
+                  googleSyncStatus: "synced",
+                  googleSyncError: null,
+                }
+              : prev,
+          );
+          if (syncResult.recreated) {
+            setSyncFeedback("Événement Google recréé après divergence détectée.");
+          } else if (syncResult.reconciled) {
+            setSyncFeedback("Lien Google Calendar réparé automatiquement.");
+          }
+        }
       } else if (
         typeof task.googleEventId === "string" &&
         task.googleEventId.trim() &&
         googleCalendarConnected &&
         (!startTimestamp || !dueTimestamp)
       ) {
-        setSyncFeedback(GOOGLE_SYNC_INCOMPLETE_WINDOW_MESSAGE);
+        const syncResult = await deleteGoogleCalendarEvent({
+          taskId: task.id,
+          googleEventId: task.googleEventId,
+        });
+        if (!syncResult.ok) {
+          void mirrorGoogleSyncStateOnTask({
+            taskId: task.id,
+            eventId: task.googleEventId ?? null,
+            status: "error",
+            error: syncResult.message,
+          }).catch(() => {});
+          setSyncFeedback(syncResult.message || GOOGLE_SYNC_DELETE_BLOCKED_MESSAGE);
+          setTask((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  googleSyncStatus: "error",
+                  googleSyncError: syncResult.message,
+                }
+              : prev,
+          );
+        } else {
+          void mirrorGoogleSyncStateOnTask({
+            taskId: task.id,
+            eventId: null,
+            status: "error",
+            error: GOOGLE_SYNC_INCOMPLETE_WINDOW_MESSAGE,
+          }).catch(() => {});
+          setSyncFeedback(GOOGLE_SYNC_DETACHED_MESSAGE);
+          setTask((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  googleEventId: null,
+                  googleSyncStatus: "error",
+                  googleSyncError: GOOGLE_SYNC_INCOMPLETE_WINDOW_MESSAGE,
+                }
+              : prev,
+          );
+        }
       }
+
+      setTask((prev) =>
+        prev
+          ? {
+              ...prev,
+              title: validation.data.title,
+              status: validation.data.status,
+              workspaceId: validation.data.workspaceId ?? null,
+              allDay: explicitAllDay,
+              startDate: startTimestamp,
+              dueDate: dueTimestamp,
+              priority,
+              googleSyncStatus: prev.googleSyncStatus ?? null,
+              googleSyncError: prev.googleSyncError ?? null,
+              googleEventId: prev.googleEventId ?? null,
+            }
+          : prev,
+      );
+
+      lastSavedSnapshotRef.current = nextSnapshot;
+      setDirty(false);
+      if (opts?.setView) setMode("view");
 
       if (isPro) {
         const remindersAllowedForTask = !task.recurrence?.freq && !explicitAllDay;
@@ -1060,18 +1121,10 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       return true;
     } catch (e) {
       console.error("Error updating task (modal)", e);
-      if (isMountedRef.current) {
-        setTask(previousTask);
-        setMode(previousMode);
-        lastSavedSnapshotRef.current = previousSnapshot;
-        setDirty(previousDirty);
-        setEditError(toUserErrorMessage(e, "Erreur lors de la modification de l’élément d’agenda."));
-      }
+      setEditError(toUserErrorMessage(e, "Erreur lors de la modification de l’élément d’agenda."));
       return false;
     } finally {
-      if (isMountedRef.current) {
-        setSaving(false);
-      }
+      setSaving(false);
     }
   };
 
@@ -1139,8 +1192,28 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
 
     setDeleting(true);
     setEditError(null);
+    setSyncFeedback(null);
 
     try {
+      if (typeof task.googleEventId === "string" && task.googleEventId.trim()) {
+        const syncResult = await deleteGoogleCalendarEvent({
+          taskId: task.id,
+          googleEventId: task.googleEventId,
+        });
+
+        if (!syncResult.ok) {
+          void mirrorGoogleSyncStateOnTask({
+            taskId: task.id,
+            eventId: task.googleEventId ?? null,
+            status: "error",
+            error: syncResult.message || GOOGLE_SYNC_DELETE_BLOCKED_MESSAGE,
+          }).catch(() => {});
+          setSyncFeedback(syncResult.message || GOOGLE_SYNC_DELETE_BLOCKED_MESSAGE);
+          setEditError(syncResult.message || GOOGLE_SYNC_DELETE_BLOCKED_MESSAGE);
+          return;
+        }
+      }
+
       const remindersRef = collection(db, "taskReminders");
       const remindersSnap = await getDocs(
         query(
@@ -1156,29 +1229,6 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
       }
       batch.delete(doc(db, "tasks", task.id));
       await batch.commit();
-      if (typeof task.googleEventId === "string" && task.googleEventId.trim()) {
-        void fetch("/api/google/calendar/events", {
-          method: "DELETE",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            googleEventId: task.googleEventId,
-          }),
-        }).then(async (response) => {
-          if (!response.ok) {
-            console.warn("agenda.google.delete_failed", {
-              taskId: task.id,
-              status: response.status,
-            });
-          }
-        }).catch((error) => {
-          console.warn("agenda.google.delete_failed", {
-            taskId: task.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        });
-      }
       router.back();
     } catch (e) {
       console.error("Error deleting task (modal)", e);
@@ -1227,8 +1277,10 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
         return (
         <div className="space-y-4">
           {shareFeedback && <div className="sn-alert">{shareFeedback}</div>}
-          {saving ? <div className="sn-alert" role="status" aria-live="polite">Enregistrement en cours…</div> : null}
           {syncFeedback && <div className="sn-alert" role="status" aria-live="polite">{syncFeedback}</div>}
+          {getGoogleSyncStateMessage(task) && (
+            <div className="sn-alert sn-alert--error">{getGoogleSyncStateMessage(task)}</div>
+          )}
           {sharedUrl && (
             <div className="sn-card p-3">
               <div className="text-xs text-muted-foreground mb-1">Lien de partage</div>
@@ -1290,7 +1342,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                   {mode === "view" ? (
                     <div className="space-y-1 min-w-0">
                       <div className="text-sm font-semibold">{TASK_MODAL_DETAIL_TITLE}</div>
-                      <div className="text-sm text-muted-foreground truncate">{normalizeDisplayText(task.title)}</div>
+                      <div className="text-sm text-muted-foreground truncate">{task.title}</div>
                     </div>
                   ) : (
                     <div className="text-sm font-semibold">{TASK_MODAL_EDIT_TITLE}</div>
@@ -1747,7 +1799,7 @@ export default function TaskDetailModal(props: { params: Promise<{ id: string }>
                       <option value="">{TASK_EMPTY_WORKSPACE_LABEL}</option>
                       {workspaces.map((ws) => (
                         <option key={ws.id ?? ws.name} value={ws.id ?? ""}>
-                          {workspaceOptionLabelById.get(ws.id ?? "") ?? normalizeDisplayText(ws.name)}
+                          {workspaceOptionLabelById.get(ws.id ?? "") ?? ws.name}
                         </option>
                       ))}
                     </select>

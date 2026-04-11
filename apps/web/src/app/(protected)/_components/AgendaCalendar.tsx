@@ -10,7 +10,6 @@ import type {
   DatesSetArg,
   EventInput,
 } from "@fullcalendar/core";
-import { Plus } from "lucide-react";
 import {
   CALENDAR_PREFERENCES_STORAGE_KEY,
   priorityColor,
@@ -24,9 +23,8 @@ import { useAgendaMergedEvents } from "./useAgendaMergedEvents";
 import AgendaCalendarFiltersBar from "./AgendaCalendarFiltersBar";
 import AgendaCalendarDraftModal from "./AgendaCalendarDraftModal";
 import { projectTasksToEvents } from "@/lib/agenda/taskEventProjector";
-import { projectTodosToAgendaEvents } from "@/lib/agenda/todoEventProjector";
 import { getUserTimezone } from "@/lib/datetime";
-import type { TaskCalendarKind, TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq, TodoDoc } from "@/types/firestore";
+import type { TaskCalendarKind, TaskDoc, WorkspaceDoc, Priority, TaskRecurrenceFreq } from "@/types/firestore";
 
 type CalendarViewMode = "dayGridMonth" | "timeGridWeek" | "timeGridDay";
 type AgendaDisplayMode = "calendar";
@@ -60,6 +58,7 @@ type GoogleCalendarEvent = {
 };
 
 type GoogleCalendarFetchState = "idle" | "loading" | "success" | "error";
+type GoogleCalendarStatusState = "idle" | "loading" | "success" | "error";
 
 type CalendarRecurrenceInput = {
   freq: TaskRecurrenceFreq;
@@ -70,7 +69,6 @@ type CalendarRecurrenceInput = {
 
 interface AgendaCalendarProps {
   tasks: TaskDoc[];
-  todos: TodoDoc[];
   workspaces: WorkspaceDoc[];
   onCreateEvent: (input: {
     title: string;
@@ -83,8 +81,6 @@ interface AgendaCalendarProps {
     calendarKind?: TaskCalendarKind | null;
     recurrence?: CalendarRecurrenceInput;
   }) => Promise<void>;
-  onDeleteEvent: (taskId: string) => Promise<void>;
-  hiddenGoogleEventIds?: Record<string, true>;
   onUpdateEvent: (input: {
     taskId: string;
     title?: string;
@@ -97,6 +93,7 @@ interface AgendaCalendarProps {
     recurrence?: CalendarRecurrenceInput;
   }) => Promise<void>;
   onSkipOccurrence?: (taskId: string, occurrenceDate: string) => Promise<void>;
+  onOpenTask: (taskId: string) => void;
   onVisibleRangeChange?: (range: { start: Date; end: Date }) => void;
   initialPreferences?: Partial<AgendaCalendarPreferences> | null;
   onPreferencesChange?: (prefs: AgendaCalendarPreferences) => void;
@@ -108,11 +105,8 @@ interface AgendaCalendarProps {
     favorite?: boolean;
   } | null;
   onCreateRequestHandled?: () => void;
-  // External filter state synchronization
-  externalPriorityFilter?: Priority | "all";
-  onPriorityFilterChange?: (p: Priority | "all") => void;
-  externalTimeWindowFilter?: CalendarTimeWindowFilter;
-  onTimeWindowFilterChange?: (tw: CalendarTimeWindowFilter) => void;
+  taskSourceLoading?: boolean;
+  taskSourceError?: string | null;
 }
 
 function normalizePreferences(raw: Partial<AgendaCalendarPreferences> | null | undefined): AgendaCalendarPreferences | null {
@@ -221,23 +215,19 @@ function formatCalendarLabel(windowRange: { start: Date; end: Date }, mode: Cale
 
 export default function AgendaCalendar({
   tasks,
-  todos,
   workspaces,
   onCreateEvent,
-  onDeleteEvent,
-  hiddenGoogleEventIds,
   onUpdateEvent,
   onSkipOccurrence,
+  onOpenTask,
   onVisibleRangeChange,
   initialPreferences,
   onPreferencesChange,
   initialAnchorDate,
   createRequest,
   onCreateRequestHandled,
-  externalPriorityFilter,
-  onPriorityFilterChange,
-  externalTimeWindowFilter,
-  onTimeWindowFilterChange,
+  taskSourceLoading = false,
+  taskSourceError = null,
 }: AgendaCalendarProps) {
   const calendarRef = useRef<FullCalendar | null>(null);
   const datesSetRafRef = useRef<number | null>(null);
@@ -246,39 +236,21 @@ export default function AgendaCalendar({
   const displayMode: AgendaDisplayMode = "calendar";
   const [prefsHydrated, setPrefsHydrated] = useState(false);
   const {
-    priorityFilter: localPriorityFilter,
-    setPriorityFilter: setLocalPriorityFilter,
-    timeWindowFilter: localTimeWindowFilter,
-    setTimeWindowFilter: setLocalTimeWindowFilter,
-    clearFilters: clearLocalFilters,
+    priorityFilter,
+    setPriorityFilter,
+    timeWindowFilter,
+    setTimeWindowFilter,
+    clearFilters,
   } = useAgendaCalendarFilters();
-
-  const priorityFilter = externalPriorityFilter !== undefined ? (externalPriorityFilter === "all" ? "" : externalPriorityFilter) : localPriorityFilter;
-  const setPriorityFilter = (p: CalendarPriorityFilter) => {
-    if (onPriorityFilterChange) onPriorityFilterChange(p === "" ? "all" : p);
-    else setLocalPriorityFilter(p);
-  };
-
-  const timeWindowFilter = externalTimeWindowFilter !== undefined ? externalTimeWindowFilter : localTimeWindowFilter;
-  const setTimeWindowFilter = (tw: CalendarTimeWindowFilter) => {
-    if (onTimeWindowFilterChange) onTimeWindowFilterChange(tw);
-    else setLocalTimeWindowFilter(tw);
-  };
-
-  const clearFilters = useCallback(() => {
-    if (onPriorityFilterChange) onPriorityFilterChange("all");
-    if (onTimeWindowFilterChange) onTimeWindowFilterChange("");
-    clearLocalFilters();
-  }, [clearLocalFilters, onPriorityFilterChange, onTimeWindowFilterChange]);
   const [visibleRange, setVisibleRange] = useState<{ start: Date; end: Date } | null>(null);
   const [label, setLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [calendarConnected, setCalendarConnected] = useState(false);
+  const [googleCalendarStatusState, setGoogleCalendarStatusState] = useState<GoogleCalendarStatusState>("idle");
   const [googleCalendarEvents, setGoogleCalendarEvents] = useState<GoogleCalendarEvent[]>([]);
   const [googleCalendarFetchState, setGoogleCalendarFetchState] = useState<GoogleCalendarFetchState>("idle");
   const [calendarAnchorDate, setCalendarAnchorDate] = useState<Date>(initialAnchorDate ?? new Date());
   const [userTimezone, setUserTimezone] = useState<string>("UTC");
-  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [focusPulseActive, setFocusPulseActive] = useState(false);
   const [viewTransitioning, setViewTransitioning] = useState(false);
   const initialScrollTime = useMemo(() => {
@@ -298,16 +270,6 @@ export default function AgendaCalendar({
 
   useEffect(() => {
     setUserTimezone(getUserTimezone());
-  }, []);
-
-  useEffect(() => {
-    const syncViewport = () => {
-      setIsMobileViewport(window.innerWidth < 768);
-    };
-
-    syncViewport();
-    window.addEventListener("resize", syncViewport, { passive: true });
-    return () => window.removeEventListener("resize", syncViewport);
   }, []);
 
   useEffect(() => {
@@ -374,18 +336,26 @@ export default function AgendaCalendar({
 
     const loadGoogleCalendarStatus = async () => {
       try {
+        if (!cancelled) setGoogleCalendarStatusState("loading");
         const res = await fetch("/api/google/calendar/status", { method: "GET", cache: "no-store" });
         if (!res.ok) {
-          if (!cancelled) setCalendarConnected(false);
+          if (!cancelled) {
+            setCalendarConnected(false);
+            setGoogleCalendarStatusState("error");
+          }
           return;
         }
 
         const data = (await res.json()) as { connected?: unknown };
         if (!cancelled) {
           setCalendarConnected(data.connected === true);
+          setGoogleCalendarStatusState("success");
         }
       } catch {
-        if (!cancelled) setCalendarConnected(false);
+        if (!cancelled) {
+          setCalendarConnected(false);
+          setGoogleCalendarStatusState("error");
+        }
       }
     };
 
@@ -460,39 +430,14 @@ export default function AgendaCalendar({
       tasks,
       window: { start: rangeStart, end: rangeEnd },
     });
-    const projectedTodos = projectTodosToAgendaEvents({
-      todos,
-      window: { start: rangeStart, end: rangeEnd },
-    });
-    const todoProjected = projectedTodos.map((item) => ({
-      eventId: item.eventId,
-      taskId: item.eventId,
-      task: {
-        title: item.todo.title,
-        workspaceId: item.todo.workspaceId ?? null,
-        priority: item.todo.priority ?? null,
-        calendarKind: "task",
-        sourceType: null,
-        sourceTodoId: item.todoId,
-        sourceTodoItemId: null,
-      } as TaskDoc,
-      start: item.start,
-      end: item.end,
-      allDay: item.allDay,
-      recurrence: null,
-      instanceDate: undefined,
-      todoEvent: true as const,
-    }));
-    const withDates = [...(Array.isArray(projected?.events) ? projected.events : []), ...(Array.isArray(todoProjected) ? todoProjected : [])];
+    const withDates = [...projected.events];
 
     withDates.sort((a, b) => a.start.getTime() - b.start.getTime());
 
-    // Optimized conflict detection: O(N log N) sweep-line or sorted window check
     const conflictIds = new Set<string>();
     for (let i = 0; i < withDates.length; i += 1) {
       const left = withDates[i];
       if (!left) continue;
-      // We only need to check a small window because the array is sorted by start time
       for (let j = i + 1; j < withDates.length; j += 1) {
         const right = withDates[j];
         if (!right) continue;
@@ -508,7 +453,6 @@ export default function AgendaCalendar({
       const itemPriority = (task.priority ?? "") as Priority | "";
       const itemCalendarKind = (task.calendarKind ?? "task") as TaskCalendarKind;
       const itemHasConflict = conflictIds.has(eventId);
-      const isTodoEvent = "todoEvent" in item && item.todoEvent === true;
       const startHour = start.getHours();
 
       const matchesTimeWindow = (() => {
@@ -533,7 +477,6 @@ export default function AgendaCalendar({
         start: fcStart,
         end: fcEnd,
         allDay,
-        editable: isTodoEvent ? false : undefined,
         backgroundColor: itemCalendarKind === "birthday" ? "#db2777" : priorityColor(itemPriority),
         borderColor: itemCalendarKind === "birthday" ? "#db2777" : priorityColor(itemPriority),
         classNames: [
@@ -541,7 +484,6 @@ export default function AgendaCalendar({
           "agenda-event-local",
           `agenda-priority-${itemPriority || "none"}`,
           `agenda-kind-${itemCalendarKind}`,
-          ...(isTodoEvent ? ["agenda-kind-todo"] : []),
         ],
         extendedProps: {
           taskId,
@@ -552,7 +494,6 @@ export default function AgendaCalendar({
           sourceType: task.sourceType ?? null,
           sourceTodoId: task.sourceTodoId ?? null,
           sourceTodoItemId: task.sourceTodoItemId ?? null,
-          todoEvent: isTodoEvent,
           recurrence,
           instanceDate,
           conflict: itemHasConflict,
@@ -578,7 +519,6 @@ export default function AgendaCalendar({
     tasks,
     timeWindowFilter,
     workspaceNameById,
-    todos,
   ]);
 
   const { handleMoveOrResize } = useAgendaEventMutation({
@@ -605,14 +545,6 @@ export default function AgendaCalendar({
     onSkipOccurrence,
     setError,
   });
-
-  const handleEventClick = useCallback(
-    (arg: import("@fullcalendar/core").EventClickArg) => {
-      if (arg.event.extendedProps.todoEvent === true) return;
-      openDraftFromEvent(arg);
-    },
-    [openDraftFromEvent],
-  );
 
   useEffect(() => {
     if (!createRequest) {
@@ -704,10 +636,7 @@ export default function AgendaCalendar({
 
   const { agendaEvents, isCompactDensity } = useAgendaMergedEvents({
     calendarData,
-    googleCalendarEvents: useMemo(
-      () => googleCalendarEvents.filter((event) => !hiddenGoogleEventIds?.[event.id]),
-      [googleCalendarEvents, hiddenGoogleEventIds],
-    ),
+    googleCalendarEvents,
     showGoogleCalendar: true,
     visibleRange: effectiveVisibleRange,
   });
@@ -717,15 +646,27 @@ export default function AgendaCalendar({
 
   const showNoGoogleEventsMessage =
     calendarConnected &&
+    googleCalendarStatusState === "success" &&
     effectiveVisibleRange !== null &&
     googleCalendarFetchState === "success" &&
     googleCalendarEvents.length === 0;
+  const hasLocalAgendaItems = calendarData.events.length > 0;
+  const hasAnyAgendaItems = agendaEvents.length > 0;
+  const localAgendaUnavailable = Boolean(taskSourceError);
+  const googleCalendarStatusUnavailable = googleCalendarStatusState === "error";
+  const googleCalendarSourceUnavailable = calendarConnected && googleCalendarFetchState === "error";
+  const agendaUpdating = taskSourceLoading && hasLocalAgendaItems;
+  const showEmptyAgendaState =
+    !error &&
+    !taskSourceLoading &&
+    !hasAnyAgendaItems &&
+    !localAgendaUnavailable;
 
   return (
-    <section className="space-y-3 overflow-x-hidden md:flex md:h-[calc(100dvh-9rem)] md:min-h-[calc(100dvh-9rem)] md:flex-col md:space-y-0 md:gap-2">
+    <section className="space-y-3 overflow-x-hidden">
       <div className="rounded-xl border border-border bg-card/60 p-2.5 sm:p-3">
         <div className="flex flex-col gap-2.5">
-          <div className="flex flex-col gap-2 sm:hidden">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="inline-flex rounded-xl border border-input bg-background overflow-hidden w-fit max-w-full">
               <button
                 type="button"
@@ -759,66 +700,7 @@ export default function AgendaCalendar({
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={() => openQuickDraft()}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:opacity-95"
-              aria-label="Créer un élément d’agenda"
-              title="Créer un élément"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Créer</span>
-            </button>
-          </div>
-
-          <div className="hidden sm:flex sm:items-start sm:justify-between sm:gap-4">
-            <div className="inline-flex rounded-xl border border-input bg-background overflow-hidden w-fit max-w-full">
-              <button
-                type="button"
-                className="px-3 py-2 text-sm hover:bg-accent/60 transition-colors"
-                onClick={() => {
-                  triggerViewTransition();
-                  jump("prev");
-                }}
-              >
-                ←
-              </button>
-              <button
-                type="button"
-                className="px-3 py-2 text-sm border-l border-input hover:bg-accent/60 transition-colors"
-                onClick={() => {
-                  triggerViewTransition();
-                  jump("today");
-                }}
-              >
-                Aujourd’hui
-              </button>
-              <button
-                type="button"
-                className="px-3 py-2 text-sm border-l border-input hover:bg-accent/60 transition-colors"
-                onClick={() => {
-                  triggerViewTransition();
-                  jump("next");
-                }}
-              >
-                →
-              </button>
-            </div>
-
-            <div className="flex min-w-0 flex-col items-end gap-2">
-              <div className="min-w-0 text-sm font-semibold text-right">{label}</div>
-
-              <button
-                type="button"
-                onClick={() => openQuickDraft()}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:opacity-95"
-                aria-label="Créer un élément d’agenda"
-                title="Créer un élément"
-              >
-                <Plus className="h-4 w-4" />
-                <span>Créer</span>
-              </button>
-            </div>
+            <div className="hidden min-w-0 text-sm font-semibold sm:block">{label}</div>
           </div>
 
           <div className="text-sm font-semibold sm:hidden">{label}</div>
@@ -883,13 +765,37 @@ export default function AgendaCalendar({
 
       {error && <div className="sn-alert sn-alert--error">{error}</div>}
 
+      {taskSourceError ? (
+        <div className="sn-alert sn-alert--error">
+          Lecture locale indisponible. {taskSourceError}
+        </div>
+      ) : null}
+
+      {agendaUpdating ? (
+        <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          Mise à jour de l’agenda en cours. Les éléments déjà chargés restent affichés.
+        </div>
+      ) : null}
+
+      {googleCalendarStatusUnavailable ? (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+          La source Google Calendar est momentanément indisponible. L’agenda local reste affiché.
+        </div>
+      ) : null}
+
+      {!googleCalendarStatusUnavailable && googleCalendarSourceUnavailable ? (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+          Impossible de lire Google Calendar sur la plage affichée. Les éléments TaskNote restent visibles.
+        </div>
+      ) : null}
+
       {!error && showNoGoogleEventsMessage ? (
         <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
           Google Calendar est connecté, mais aucun événement n’existe sur la plage affichée.
         </div>
       ) : null}
 
-      {!error && displayMode === "calendar" && agendaEvents.length === 0 && (
+      {showEmptyAgendaState && displayMode === "calendar" && (
         <div className="sn-empty sn-empty--premium sn-animate-in">
           {hasActiveAgendaFilters ? (
             <>
@@ -908,15 +814,20 @@ export default function AgendaCalendar({
               </div>
             </>
           ) : (
-            <div className="sn-empty-title">Aucune tâche planifiée</div>
+            <>
+              <div className="sn-empty-title">Aucune tâche planifiée</div>
+              <div className="sn-empty-desc">
+                Aucun élément local n’est présent sur la plage affichée.
+              </div>
+            </>
           )}
         </div>
       )}
 
-      <div className="space-y-0 md:flex md:min-h-0 md:flex-1">
-        <div className="sn-card p-2 bg-[radial-gradient(900px_circle_at_100%_-10%,rgba(59,130,246,0.08),transparent_50%),linear-gradient(180deg,rgba(15,23,42,0.14),transparent_42%)] md:flex md:min-h-0 md:flex-1 md:flex-col md:h-full">
+      <div className="space-y-0">
+        <div className="sn-card p-2 bg-[radial-gradient(900px_circle_at_100%_-10%,rgba(59,130,246,0.08),transparent_50%),linear-gradient(180deg,rgba(15,23,42,0.14),transparent_42%)]">
           <div
-            className={`agenda-premium-calendar ${isCompactDensity ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"} ${viewTransitioning ? "agenda-transitioning" : ""} ${focusPulseActive ? "sn-highlight-soft" : ""} md:flex md:min-h-0 md:flex-1 md:flex-col`}
+            className={`agenda-premium-calendar ${isCompactDensity ? "agenda-density-compact" : "agenda-density-comfort"} ${viewMode === "dayGridMonth" ? "agenda-view-month" : "agenda-view-timegrid"} ${viewTransitioning ? "agenda-transitioning" : ""} ${focusPulseActive ? "sn-highlight-soft" : ""}`}
             data-user-timezone={userTimezone}
             onTouchStart={handleCalendarTouchStart}
             onTouchEnd={handleCalendarTouchEnd}
@@ -925,7 +836,6 @@ export default function AgendaCalendar({
               ref={calendarRef}
               plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
               initialView={viewMode}
-              height={isMobileViewport ? "auto" : "100%"}
               headerToolbar={false}
               locale="fr"
               firstDay={1}
@@ -958,10 +868,10 @@ export default function AgendaCalendar({
                   view: arg.view,
                 } as DateSelectArg)
               }
+              eventClick={openDraftFromEvent}
               eventDrop={handleMoveOrResize}
               eventResize={handleMoveOrResize}
               timeZone={userTimezone}
-              eventClick={handleEventClick}
             />
             <p className="mt-2 px-1 text-[11px] text-muted-foreground md:hidden">
               Astuce: glissez gauche/droite pour changer de période.
@@ -980,7 +890,8 @@ export default function AgendaCalendar({
         editScope={editScope}
         setEditScope={setEditScope}
         workspaces={workspaces}
-        onDeleteTask={onDeleteEvent}
+        onOpenTask={onOpenTask}
+        onSkipOccurrence={onSkipOccurrence}
         skipOccurrence={skipOccurrence}
         saveDraft={saveDraft}
         saving={saving}

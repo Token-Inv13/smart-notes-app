@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
-import { addDoc, collection, doc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useUserTasks } from "@/hooks/useUserTasks";
 import { useUserSettings } from "@/hooks/useUserSettings";
@@ -13,7 +13,6 @@ import {
   DATE_PLACEHOLDER_FR,
   formatTimestampToDateFr,
   formatTimestampToDateTimeFr,
-  getUserTimezone,
   isExactAllDayWindow,
   parseLocalDateTimeToTimestamp,
   parseLocalDateToTimestamp,
@@ -41,6 +40,13 @@ import {
   TASK_FIELD_WORKSPACE_LABEL,
   TASK_PRIORITY_OPTIONS,
 } from "./taskModalLabels";
+import {
+  buildGoogleCalendarSyncPayload,
+  createGoogleCalendarEvent,
+  GOOGLE_SYNC_FAILED_MESSAGE,
+  GOOGLE_SYNC_INCOMPLETE_WINDOW_MESSAGE,
+  mirrorGoogleSyncStateOnTask,
+} from "@/lib/googleCalendarSync";
 
 type TaskStatus = "todo" | "doing" | "done";
 
@@ -59,18 +65,6 @@ const newTaskSchema = z.object({
   dueDate: z.string().optional(),
   priority: z.union([z.literal("low"), z.literal("medium"), z.literal("high")]).optional(),
 });
-
-const GOOGLE_SYNC_INCOMPLETE_WINDOW_MESSAGE =
-  "Élément enregistré dans TaskNote, mais non synchronisé avec Google Calendar faute de plage horaire complète.";
-const GOOGLE_SYNC_FAILED_MESSAGE =
-  "Élément enregistré dans TaskNote, mais non synchronisé avec Google Calendar.";
-
-function toLocalDateInputValue(date: Date) {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
 
 export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, initialStartDate, onCreated }: Props) {
   const { data: workspaces } = useUserWorkspaces();
@@ -371,74 +365,31 @@ export default function TaskCreateForm({ initialWorkspaceId, initialFavorite, in
       }
 
       if (startTimestamp && dueTimestamp) {
-        const googleStart = startTimestamp.toDate();
-        const googleEnd = dueTimestamp.toDate();
-        const googlePayload = explicitAllDay
-          ? {
-              title: validation.data.title,
-              start: toLocalDateInputValue(googleStart),
-              end: toLocalDateInputValue(googleEnd),
-              allDay: true,
-            }
-          : {
-              title: validation.data.title,
-              start: googleStart.toISOString(),
-              end: googleEnd.toISOString(),
-              allDay: false,
-              timeZone: getUserTimezone(),
-            };
-
-        void fetch("/api/google/calendar/events", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(googlePayload),
-        }).then(async (response) => {
-          if (!response.ok) {
-            console.warn("agenda.google.create_failed", {
-              status: response.status,
-              taskId: taskResult.taskId,
-            });
-            if (isMountedRef.current) {
-              setCreateFeedback(GOOGLE_SYNC_FAILED_MESSAGE);
-            }
-            return;
-          }
-
-          const data = (await response.json().catch(() => null)) as { created?: unknown; eventId?: unknown } | null;
-          const googleEventId =
-            data?.created === true && typeof data.eventId === "string" && data.eventId.trim()
-              ? data.eventId.trim()
-              : null;
-
-          if (!googleEventId) {
-            if (isMountedRef.current) {
-              setCreateFeedback(GOOGLE_SYNC_FAILED_MESSAGE);
-            }
-            return;
-          }
-
-          try {
-            await updateDoc(doc(db, "tasks", taskResult.taskId), {
-              googleEventId,
-              updatedAt: serverTimestamp(),
-            });
-          } catch (error) {
-            console.warn("agenda.google.link_write_failed", {
-              taskId: taskResult.taskId,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }).catch((error) => {
-          console.warn("agenda.google.create_failed", {
+        const syncResult = await createGoogleCalendarEvent(
+          buildGoogleCalendarSyncPayload({
             taskId: taskResult.taskId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          if (isMountedRef.current) {
-            setCreateFeedback(GOOGLE_SYNC_FAILED_MESSAGE);
-          }
-        });
+            title: validation.data.title,
+            start: startTimestamp.toDate(),
+            end: dueTimestamp.toDate(),
+            allDay: explicitAllDay,
+          }),
+        );
+        if (!syncResult.ok && isMountedRef.current) {
+          void mirrorGoogleSyncStateOnTask({
+            taskId: taskResult.taskId,
+            eventId: null,
+            status: "error",
+            error: syncResult.message,
+          }).catch(() => {});
+          setCreateFeedback(syncResult.message || GOOGLE_SYNC_FAILED_MESSAGE);
+        } else if (syncResult.ok) {
+          void mirrorGoogleSyncStateOnTask({
+            taskId: taskResult.taskId,
+            eventId: syncResult.eventId ?? null,
+            status: "synced",
+            error: null,
+          }).catch(() => {});
+        }
       } else if (googleCalendarConnected) {
         setCreateFeedback(GOOGLE_SYNC_INCOMPLETE_WINDOW_MESSAGE);
       }

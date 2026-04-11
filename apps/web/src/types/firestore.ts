@@ -3,6 +3,7 @@ import type { FieldValue, Timestamp } from 'firebase/firestore';
 export type Priority = 'low' | 'medium' | 'high';
 export type TaskRecurrenceFreq = 'daily' | 'weekly' | 'monthly' | 'yearly';
 export type TaskCalendarKind = 'task' | 'birthday';
+export type GoogleSyncStatus = 'pending' | 'synced' | 'error' | 'missing_remote';
 
 export interface TaskRecurrenceRule {
   freq: TaskRecurrenceFreq;
@@ -121,6 +122,9 @@ export interface TaskDoc {
   recurrence?: TaskRecurrenceRule | null;
   favorite?: boolean;
   googleEventId?: string | null;
+  googleSyncStatus?: GoogleSyncStatus | null;
+  googleSyncError?: string | null;
+  googleSyncUpdatedAt?: Timestamp | FieldValue | null;
   completed?: boolean;
   archived?: boolean;
   archivedAt?: Timestamp | FieldValue | null;

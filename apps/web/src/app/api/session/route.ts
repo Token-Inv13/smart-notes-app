@@ -1,8 +1,21 @@
 import { NextResponse } from 'next/server';
-import { createSessionCookie, getAdminProjectId } from '@/lib/firebaseAdmin';
+import { createSessionCookie, getAdminProjectId, isFirebaseAdminServiceError } from '@/lib/firebaseAdmin';
 
 const SESSION_COOKIE_NAME = 'session';
 const SESSION_EXPIRES_IN_MS = 1000 * 60 * 60 * 24 * 5; // 5 days
+
+function clearSessionCookie(response: NextResponse) {
+  response.cookies.set({
+    name: SESSION_COOKIE_NAME,
+    value: '',
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 0,
+  });
+  return response;
+}
 
 export async function POST(request: Request) {
   try {
@@ -17,7 +30,12 @@ export async function POST(request: Request) {
     const idToken = body?.idToken;
 
     if (!idToken || typeof idToken !== 'string') {
-      return new NextResponse('Missing idToken', { status: 400 });
+      return clearSessionCookie(
+        NextResponse.json(
+          { code: 'missing_id_token', error: 'Missing idToken' },
+          { status: 400 },
+        ),
+      );
     }
 
     const sessionCookie = await createSessionCookie(idToken, SESSION_EXPIRES_IN_MS);
@@ -55,6 +73,37 @@ export async function POST(request: Request) {
           process.env.FIREBASE_ADMIN_CREDENTIALS_BASE64
       ),
     });
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+
+    if (isFirebaseAdminServiceError(e)) {
+      return clearSessionCookie(
+        NextResponse.json(
+          {
+            code: 'service_unavailable',
+            error: 'Configuration serveur Firebase indisponible.',
+          },
+          { status: 503 },
+        ),
+      );
+    }
+
+    const code = typeof error?.code === 'string' ? error.code : null;
+    if (code === 'auth/argument-error' || code === 'auth/id-token-expired' || code === 'auth/invalid-id-token') {
+      return clearSessionCookie(
+        NextResponse.json(
+          {
+            code: 'invalid_id_token',
+            error: 'Jeton Firebase invalide ou expiré.',
+          },
+          { status: 401 },
+        ),
+      );
+    }
+
+    return clearSessionCookie(
+      NextResponse.json(
+        { code: 'internal_error', error: 'Internal server error' },
+        { status: 500 },
+      ),
+    );
   }
 }

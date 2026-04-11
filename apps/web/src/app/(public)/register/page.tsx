@@ -1,18 +1,18 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { auth } from "@/lib/firebase";
-import { trackEventBeforeNavigation } from "@/lib/analytics";
+import { useAuth } from "@/hooks/useAuth";
 import { getRuntimePlatformInfo } from "@/lib/runtimePlatform";
 import {
   createUserWithEmailAndPassword,
-  getAdditionalUserInfo,
   GoogleAuthProvider,
   getRedirectResult,
   signInWithCredential,
   signInWithPopup,
   signInWithRedirect,
+  signOut,
 } from "firebase/auth";
 import { Eye, EyeOff } from "lucide-react";
 
@@ -29,13 +29,6 @@ function normalizeNextPath(raw: string | null): string {
   if (!next.startsWith("/")) return fallback;
   if (next.startsWith("//")) return fallback;
   return next;
-}
-
-function normalizeTrackingSource(raw: string | null): string {
-  if (!raw) return "app";
-  const normalized = raw.trim().toLowerCase();
-  if (!/^[a-z0-9_-]{1,40}$/.test(normalized)) return "app";
-  return normalized;
 }
 
 function getFirebaseAuthErrorRawMessage(err: unknown): string {
@@ -81,25 +74,22 @@ function getNativeGoogleSignInUnavailableMessage() {
   return "Inscription Google indisponible dans cette version Android. Termine la configuration Google native Android, ou utilise email + mot de passe pour l’instant.";
 }
 
-function trackGoogleAdsSignupConversion() {
-  if (typeof window === "undefined") return;
+function getAuthRouteMessage(reason: string | null): string | null {
+  if (reason === "session-invalid") {
+    return "Ta session a expiré ou est invalide. Reconnecte-toi pour continuer.";
+  }
+  if (reason === "session-service-unavailable") {
+    return "La session serveur Firebase est indisponible. Vérifie la configuration serveur avant de réessayer.";
+  }
+  if (reason === "auth-required") {
+    return "Connecte-toi pour accéder à cette page.";
+  }
+  return null;
+}
 
-  const gtag = (window as Window & {
-    gtag?: (
-      command: string,
-      eventName: string,
-      params: { send_to: string },
-    ) => void;
-  }).gtag as
-    | ((command: string, eventName: string, params: { send_to: string }) => void)
-    | undefined;
-
-  if (!gtag) return;
-
-  // TODO: replace PLACEHOLDER_LABEL with the real Google Ads conversion label.
-  gtag("event", "conversion", {
-    send_to: "AW-17905037083/Aj_uCLiGpZUcEJve5NlC",
-  });
+async function signOutAfterSessionFailure() {
+  await fetch("/api/logout", { method: "POST" }).catch(() => null);
+  await signOut(auth).catch(() => null);
 }
 
 export default function RegisterPage() {
@@ -113,47 +103,52 @@ export default function RegisterPage() {
 function RegisterPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { status: authStatus, user } = useAuth();
   const nextPath = normalizeNextPath(searchParams.get("next"));
-  const trackingSource = normalizeTrackingSource(searchParams.get("source"));
+  const routeMessage = useMemo(() => getAuthRouteMessage(searchParams.get("reason")), [searchParams]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recoveringSession, setRecoveringSession] = useState(false);
 
   const runtimeInfo = getRuntimePlatformInfo();
 
-  const establishSession = async () => {
-    const user = auth.currentUser;
-    if (!user) {
+  const establishSession = useCallback(async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
       throw new Error("No authenticated user after sign-up");
     }
 
-    const idToken = await user.getIdToken();
-    const res = await fetch("/api/session", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ idToken }),
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(text || "Failed to establish session");
-    }
-  };
-
-  const finalizeRegistration = useCallback(async (params: { method: "email" | "google"; isNewUser: boolean }) => {
-    await establishSession();
-    if (params.isNewUser) {
-      trackGoogleAdsSignupConversion();
-      await trackEventBeforeNavigation("sign_up", {
-        method: params.method,
-        source: trackingSource,
+    try {
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch("/api/session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ idToken }),
       });
+
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { code?: unknown; error?: unknown } | null;
+        const code = typeof payload?.code === "string" ? payload.code : null;
+        const apiMessage = typeof payload?.error === "string" ? payload.error : null;
+
+        if (code === "service_unavailable") {
+          throw new Error("SESSION_SERVICE_UNAVAILABLE");
+        }
+        if (code === "invalid_id_token") {
+          throw new Error("SESSION_INVALID_ID_TOKEN");
+        }
+
+        throw new Error(apiMessage || `SESSION_API_ERROR_${res.status}`);
+      }
+    } catch (error) {
+      await signOutAfterSessionFailure();
+      throw error;
     }
-    router.replace(nextPath);
-  }, [nextPath, router, trackingSource]);
+  }, []);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -161,9 +156,16 @@ function RegisterPageInner() {
     setLoading(true);
     try {
       await createUserWithEmailAndPassword(auth, email, password);
-      await finalizeRegistration({ method: "email", isNewUser: true });
+      await establishSession();
+      router.replace(nextPath);
     } catch (err) {
-      setError(getFirebaseAuthErrorMessage(err));
+      if (err instanceof Error && err.message === "SESSION_SERVICE_UNAVAILABLE") {
+        setError("Compte créé côté Firebase, mais session serveur indisponible. Vérifie Firebase Admin.");
+      } else if (err instanceof Error && err.message === "SESSION_INVALID_ID_TOKEN") {
+        setError("Jeton Firebase invalide ou expiré. Réessaie l’inscription.");
+      } else {
+        setError(getFirebaseAuthErrorMessage(err));
+      }
     } finally {
       setLoading(false);
     }
@@ -179,8 +181,8 @@ function RegisterPageInner() {
 
         setError(null);
         setLoading(true);
-        const isNewUser = getAdditionalUserInfo(result)?.isNewUser === true;
-        await finalizeRegistration({ method: "google", isNewUser });
+        await establishSession();
+        router.replace(nextPath);
       } catch (err) {
         if (cancelled) return;
         const code = getFirebaseAuthErrorCode(err);
@@ -194,7 +196,42 @@ function RegisterPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [finalizeRegistration]);
+  }, [establishSession, nextPath, router]);
+
+  useEffect(() => {
+    if (authStatus !== "authenticated" || !user) return;
+    if (loading || recoveringSession) return;
+
+    let cancelled = false;
+    setRecoveringSession(true);
+    setError(null);
+
+    void (async () => {
+      try {
+        await establishSession();
+        if (!cancelled) {
+          router.replace(nextPath);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof Error && err.message === "SESSION_SERVICE_UNAVAILABLE") {
+          setError("Inscription réussie côté Firebase, mais session serveur indisponible. Vérifie Firebase Admin.");
+        } else if (err instanceof Error && err.message === "SESSION_INVALID_ID_TOKEN") {
+          setError("Session Firebase expirée. Réessaie l’inscription.");
+        } else {
+          setError("Compte créé côté Firebase, mais impossible d’ouvrir la session serveur.");
+        }
+      } finally {
+        if (!cancelled) {
+          setRecoveringSession(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authStatus, establishSession, loading, nextPath, recoveringSession, router, user]);
 
   const handleGoogleRegister = async () => {
     setError(null);
@@ -216,9 +253,9 @@ function RegisterPageInner() {
           }
 
           const credential = GoogleAuthProvider.credential(idToken ?? undefined, accessToken ?? undefined);
-          const credentialResult = await signInWithCredential(auth, credential);
-          const isNewUser = getAdditionalUserInfo(credentialResult)?.isNewUser === true;
-          await finalizeRegistration({ method: "google", isNewUser });
+          await signInWithCredential(auth, credential);
+          await establishSession();
+          router.replace(nextPath);
           return;
         } catch (err) {
           if (!isNativeGoogleSignInUnavailable(err)) {
@@ -231,9 +268,9 @@ function RegisterPageInner() {
       }
 
       try {
-        const popupResult = await signInWithPopup(auth, provider);
-        const isNewUser = getAdditionalUserInfo(popupResult)?.isNewUser === true;
-        await finalizeRegistration({ method: "google", isNewUser });
+        await signInWithPopup(auth, provider);
+        await establishSession();
+        router.replace(nextPath);
       } catch (err) {
         const code = getFirebaseAuthErrorCode(err) ?? "";
         if (code === "auth/popup-blocked") {
@@ -248,6 +285,8 @@ function RegisterPageInner() {
       setLoading(false);
     }
   };
+
+  const busy = loading || recoveringSession;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background text-foreground px-4">
@@ -299,6 +338,12 @@ function RegisterPageInner() {
             </div>
           </div>
 
+          {!error && routeMessage && (
+            <p className="text-sm text-amber-600 mt-2" aria-live="polite">
+              {routeMessage}
+            </p>
+          )}
+
           {error && (
             <p className="text-sm text-destructive mt-2" aria-live="polite">
               {error}
@@ -307,10 +352,10 @@ function RegisterPageInner() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={busy}
             className="w-full mt-2 inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? "Création..." : "Créer mon compte"}
+            {busy ? "Création..." : "Créer mon compte"}
           </button>
         </form>
 
@@ -322,11 +367,11 @@ function RegisterPageInner() {
 
         <button
           type="button"
-          disabled={loading}
+          disabled={busy}
           onClick={handleGoogleRegister}
           className="w-full inline-flex items-center justify-center px-4 py-2 rounded-md border border-input bg-background text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? "Connexion..." : "Continuer avec Google"}
+          {busy ? "Connexion…" : "Continuer avec Google"}
         </button>
 
         <p className="text-xs text-muted-foreground mt-4 text-center">

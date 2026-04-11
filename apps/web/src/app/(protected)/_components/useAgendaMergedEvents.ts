@@ -21,6 +21,28 @@ type CalendarData = {
   };
 };
 
+function parseEventBoundary(raw: string, allDay: boolean) {
+  if (allDay && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return raw;
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function toEventSortTime(value: EventInput["start"]) {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "string") {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return new Date(`${value}T00:00:00`).getTime();
+    }
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed.getTime();
+  }
+  return 0;
+}
+
 export function useAgendaMergedEvents(params: {
   calendarData: CalendarData;
   googleCalendarEvents: GoogleCalendarEvent[];
@@ -33,9 +55,9 @@ export function useAgendaMergedEvents(params: {
     if (!showGoogleCalendar) return [];
     return googleCalendarEvents
       .map((event) => {
-        const start = new Date(event.start);
-        const end = new Date(event.end);
-        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+        const start = parseEventBoundary(event.start, event.allDay);
+        const end = parseEventBoundary(event.end, event.allDay);
+        if (!start || !end) return null;
 
         return {
           id: `gcal__${event.id}`,
@@ -63,10 +85,20 @@ export function useAgendaMergedEvents(params: {
   }, [visibleRange]);
 
   const agendaEvents = useMemo(() => {
-    const base = [...calendarData.events, ...googleCalendarEventInputs, ...holidayEventInputs].sort((a, b) => {
-      const aStart = a.start instanceof Date ? a.start.getTime() : 0;
-      const bStart = b.start instanceof Date ? b.start.getTime() : 0;
-      return aStart - bStart;
+    const base = Array.from(
+      [...calendarData.events, ...googleCalendarEventInputs, ...holidayEventInputs].reduce((map, event) => {
+        const key = String(event.id ?? "");
+        if (!key || map.has(key)) return map;
+        map.set(key, event);
+        return map;
+      }, new Map<string, EventInput>()).values(),
+    ).sort((a, b) => {
+      const startDiff = toEventSortTime(a.start) - toEventSortTime(b.start);
+      if (startDiff !== 0) return startDiff;
+
+      const leftId = String(a.id ?? "");
+      const rightId = String(b.id ?? "");
+      return leftId.localeCompare(rightId);
     });
 
     const conflictById = new Map<string, { local: boolean; google: boolean; score: number }>();
