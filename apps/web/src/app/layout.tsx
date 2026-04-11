@@ -4,6 +4,8 @@ import type { ReactNode } from 'react';
 import ThemeClientProvider from './ThemeClientProvider';
 import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from '@/lib/siteConfig';
 
+const GOOGLE_ADS_ID = 'AW-17905037083';
+
 export const metadata = {
   metadataBase: new URL(SITE_URL),
   applicationName: SITE_NAME,
@@ -56,6 +58,9 @@ interface RootLayoutProps {
 
 export default function RootLayout(props: RootLayoutProps) {
   const { children } = props;
+  const gaMeasurementId = process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID?.trim() || null;
+  const googleTagId = gaMeasurementId || GOOGLE_ADS_ID;
+
   return (
     <html lang="fr" suppressHydrationWarning>
       <head>
@@ -64,11 +69,26 @@ export default function RootLayout(props: RootLayoutProps) {
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-title" content={SITE_NAME} />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <Script id="google-ads-config" strategy="afterInteractive">
-          {`if (typeof window !== 'undefined' && window.gtag) {
-  window.gtag('config', 'AW-17905037083');
-}`}
-        </Script>
+        {googleTagId ? (
+          <>
+            <Script
+              id="google-tag-script"
+              src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(googleTagId)}`}
+              strategy="afterInteractive"
+            />
+            <Script id="google-tag-bootstrap" strategy="afterInteractive">
+              {`
+                window.dataLayer = Array.isArray(window.dataLayer) ? window.dataLayer : [];
+                window.gtag = typeof window.gtag === 'function'
+                  ? window.gtag
+                  : function gtag(){ window.dataLayer.push(arguments); };
+                window.gtag('js', new Date());
+                ${gaMeasurementId ? `window.gtag('config', '${gaMeasurementId}', { send_page_view: true });` : ''}
+                window.gtag('config', '${GOOGLE_ADS_ID}');
+              `}
+            </Script>
+          </>
+        ) : null}
       </head>
       <body className="min-h-screen bg-background text-foreground antialiased">
         <ThemeClientProvider>{children}</ThemeClientProvider>
