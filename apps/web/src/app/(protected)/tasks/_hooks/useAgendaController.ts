@@ -128,21 +128,22 @@ export function useAgendaController(params: {
     [workspaces, optimisticParentIdByWorkspaceId]
   );
 
-  function mergeCollections(base: TaskDoc[], optById: Record<string, TaskDoc>, optCreated: TaskDoc[], deletedIds: Record<string, true>) {
+  function mergeCollections(base: TaskDoc[] | null | undefined, optById: Record<string, TaskDoc> | null | undefined, optCreated: TaskDoc[] | null | undefined, deletedIds: Record<string, true> | null | undefined) {
     const byId = new Map<string, TaskDoc>();
     const safeBase = Array.isArray(base) ? base : [];
     const safeOptCreated = Array.isArray(optCreated) ? optCreated : [];
     const safeDeletedIds = deletedIds || {};
 
-    safeBase.forEach(t => { if (t.id && !safeDeletedIds[t.id]) byId.set(t.id, t); });
+    safeBase.forEach(t => { if (t && t.id && !safeDeletedIds[t.id]) byId.set(t.id, t); });
     
-    if (optById) {
-      Object.entries(optById).forEach(([id, t]) => { if (!safeDeletedIds[id]) byId.set(id, t); });
+    if (optById && typeof optById === "object") {
+      Object.entries(optById).forEach(([id, t]) => { if (t && id && !safeDeletedIds[id]) byId.set(id, t); });
     }
 
-    safeOptCreated.forEach(t => { if (t.id && !safeDeletedIds[t.id]) byId.set(t.id, t); });
+    safeOptCreated.forEach(t => { if (t && t.id && !safeDeletedIds[t.id]) byId.set(t.id, t); });
     
-    return Array.from(byId.values());
+    const result = Array.from(byId.values());
+    return Array.isArray(result) ? result : [];
   }
 
   const optimisticAllTasks = useMemo(

@@ -51,12 +51,12 @@ export default function TasksPage() {
   const { todos: todosForCounter } = useUserTodos();
 
   const controller = useAgendaController({
-    allTasks: allTasks ?? [],
-    calendarWindowTasks: allTasks ?? [],
-    workspaces: workspaces ?? [],
-    userSettings,
-    notesForCounter: notesForCounter ?? [],
-    todosForCounter: todosForCounter ?? [],
+    allTasks: Array.isArray(allTasks) ? allTasks : [],
+    calendarWindowTasks: Array.isArray(allTasks) ? allTasks : [],
+    workspaces: Array.isArray(workspaces) ? workspaces : [],
+    userSettings: userSettings || {},
+    notesForCounter: Array.isArray(notesForCounter) ? notesForCounter : [],
+    todosForCounter: Array.isArray(todosForCounter) ? todosForCounter : [],
   });
 
   const workspaceIdParam = searchParams.get("workspaceId");
